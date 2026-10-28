@@ -1,6 +1,7 @@
 import 'package:flick/features/flow/flow_screen.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/features/konnekted/lokal_home_greeting.dart';
@@ -283,7 +284,7 @@ class KonnektedHomeTopBar extends StatelessWidget {
                 (greeting ?? lokalHomeMessages(const [], now: at)).headline,
               ),
               style: TextStyle(
-                fontSize: 34,
+                fontSize: context.responsiveText(34),
                 fontWeight: FontWeight.w600,
                 letterSpacing: -.7,
                 color: context.lokal.text,
@@ -298,7 +299,7 @@ class KonnektedHomeTopBar extends StatelessWidget {
                 (greeting ?? lokalHomeMessages(const [], now: at)).subheader,
               ),
               key: ValueKey(greeting),
-              style: TextStyle(fontSize: 15, color: context.lokal.muted),
+              style: TextStyle(fontSize: context.responsiveText(15), color: context.lokal.muted),
             ),
           ),
         ],
@@ -387,32 +388,32 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => SingleChildScrollView(
-      key: _viewportKey,
-      controller: _scrollController,
-      scrollDirection: Axis.horizontal,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minWidth: constraints.maxWidth),
-        child: Align(
-          alignment: Alignment.center,
-          child: LokalGlass.capsule(
-            thickness: LokalGlassThickness.thin,
-            shadow: false,
-            padding: const EdgeInsets.symmetric(horizontal: 3),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final tab in KonnektedHomeTab.values)
-                  KeyedSubtree(
-                    key: _tabKeys[tab],
-                    child: _ShelfChip(
-                      label: lokalText(tab.label),
-                      selected: tab == widget.selectedTab,
-                      onTap: () => widget.onTabChanged?.call(tab),
-                    ),
+    builder: (context, constraints) => SizedBox(
+      width: constraints.maxWidth,
+      child: LokalGlass.capsule(
+        thickness: LokalGlassThickness.thin,
+        shadow: false,
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        // Keep the glass capsule fixed to the available width. Only the tabs
+        // inside it scroll; scrolling the capsule itself clipped its right
+        // border beside the Discord button on narrow screens.
+        child: SingleChildScrollView(
+          key: _viewportKey,
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final tab in KonnektedHomeTab.values)
+                KeyedSubtree(
+                  key: _tabKeys[tab],
+                  child: _ShelfChip(
+                    label: lokalText(tab.label),
+                    selected: tab == widget.selectedTab,
+                    onTap: () => widget.onTabChanged?.call(tab),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
