@@ -179,8 +179,8 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     final inactive = <double>[];
     final active = <double>[];
     for (final line in lines) {
-      inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth));
-      active.add(28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth));
+      inactive.add(32 + _estimateTextHeight(line.displayText, 17, 1.24, 2, textWidth));
+      active.add(28 + _estimateTextHeight(line.displayText, 22, 1.18, 3, textWidth));
     }
     _inactiveEstimates = inactive;
     _activeEstimates = active;
@@ -417,7 +417,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               vertical: isActive ? 8 : 10,
             ),
             child: Text(
-              line.text,
+              line.displayText,
               maxLines: 2,
               overflow: TextOverflow.fade,
               textAlign: alignment.textAlign,
