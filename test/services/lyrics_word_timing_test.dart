@@ -6,6 +6,35 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('lyrics voice marker display', () {
+    test('hides numbered voice labels with common separators', () {
+      const cases = <(String, String)>[
+        ('v1: Hello there', 'Hello there'),
+        ('V2：Hello there', 'Hello there'),
+        ('v3 - Hello there', 'Hello there'),
+        ('v12 — Hello there', 'Hello there'),
+        ('v4 Hello there', 'Hello there'),
+      ];
+
+      for (final (source, expected) in cases) {
+        final line = LyricsLine(
+          timestamp: Duration.zero,
+          text: source,
+        );
+        expect(line.displayText, expected, reason: source);
+        expect(line.text, source, reason: 'Source text should stay intact');
+      }
+    });
+
+    test('does not remove voice-like text inside a lyric', () {
+      const line = LyricsLine(
+        timestamp: Duration.zero,
+        text: 'I said v2 yesterday',
+      );
+      expect(line.displayText, 'I said v2 yesterday');
+    });
+  });
+
   group('enhanced LRC word parsing', () {
     final service = LyricsService();
 
