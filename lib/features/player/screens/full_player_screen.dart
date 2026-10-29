@@ -1079,37 +1079,55 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   ),
                 ),
                 ),
-                if (_immersiveLyrics)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleImmersiveLyrics,
-                      onLongPress: _showSpaceOptions,
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                if (_immersiveLyrics)
-                  Positioned(
-                    left: 10,
-                    right: 10,
-                    bottom: MediaQuery.paddingOf(context).bottom + 55,
+                // Keep the Space hit target mounted so entering and leaving
+                // immersive lyrics can animate instead of appearing abruptly.
+                Positioned.fill(
+                  child: AnimatedOpacity(
+                    opacity: _immersiveLyrics ? 1 : 0,
+                    duration: const Duration(milliseconds: 460),
+                    curve: Curves.easeInOutCubicEmphasized,
                     child: IgnorePointer(
-                      child: _videoActive
-                          ? ValueListenableBuilder<bool>(
-                              valueListenable: _videoController.nativeNotifier,
-                              builder: (context, native, _) => native
-                                  ? _spaceSubtitle(song)
-                                  : const Text(
-                                      'Timed subtitles unavailable in embedded video fallback',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: Colors.white70, fontSize: 13,
-                                      ),
-                                    ),
-                            )
-                          : _spaceSubtitle(song),
+                      ignoring: !_immersiveLyrics,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _toggleImmersiveLyrics,
+                        onLongPress: _showSpaceOptions,
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
+                ),
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: MediaQuery.paddingOf(context).bottom + 55,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _immersiveLyrics ? 1 : 0,
+                      duration: const Duration(milliseconds: 520),
+                      curve: Curves.easeInOutCubicEmphasized,
+                      child: AnimatedScale(
+                        scale: _immersiveLyrics ? 1 : 0.965,
+                        duration: const Duration(milliseconds: 520),
+                        curve: Curves.easeOutCubic,
+                        child: _videoActive
+                            ? ValueListenableBuilder<bool>(
+                                valueListenable: _videoController.nativeNotifier,
+                                builder: (context, native, _) => native
+                                    ? _spaceSubtitle(song)
+                                    : const Text(
+                                        'Timed subtitles unavailable in embedded video fallback',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.white70, fontSize: 13,
+                                        ),
+                                      ),
+                              )
+                            : _spaceSubtitle(song),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           );
