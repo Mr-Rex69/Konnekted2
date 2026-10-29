@@ -44,7 +44,7 @@ class LyricsLine {
   /// Voice markers such as "v1:" are source metadata, not sung lyrics.
   /// Keep [text] intact for source fidelity/export, but omit the marker in UI.
   String get displayText =>
-      text.replaceFirst(RegExp(r'^\\s*v\\d+\\s*:\\s*', caseSensitive: false), '');
+      text.replaceFirst(RegExp(r'^\s*v\d+\s*:\s*', caseSensitive: false), '');
 
   const LyricsLine({
     required this.timestamp,
