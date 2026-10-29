@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flick/features/player/widgets/lyric_motion_line.dart';
 import 'package:flick/features/player/widgets/lyrics_subline_timing.dart';
@@ -280,16 +281,17 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
                 )
               : const SizedBox.shrink();
         }
-        final indices = immersiveActiveLineIndices(
-          lyrics, position, playbackLines: _preparedLines,
-        );
+        final currentIndex = immersiveLyricsLineIndex(lyrics, position);
+        if (currentIndex < 0 || currentIndex >= _preparedLines.length) {
+          return const SizedBox.shrink();
+        }
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: _ImmersiveLineTransitions(
-            // Reset exit animations on a new song/source, not on each frame.
+            // Reset line transitions on a new song/source, not on each frame.
             key: ObjectKey(lyrics),
-            activeIndices: indices,
-            position: position,
+            currentIndex: currentIndex,
+            lineCount: _preparedLines.length,
             buildLine: (index) =>
                 _subtitleLine(_preparedLines[index], index, position),
           ),
@@ -356,110 +358,63 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
 }
 
 
-/// Animated, bottom-anchored multi-voice lyric stack.
-///
-/// Expanding an arriving line *below* the existing voice moves the earlier
-/// voice upward gradually instead of snapping to a new Column height. Exiting
-/// voices shrink/fade out in place. The entries are keyed by lyric index, so
-/// neither the lyric painter nor its projected translation remount on a
-/// syllable tick or when a neighboring voice enters/exits.
-class _ImmersiveLineTransitions extends StatefulWidget {
+/// Three-line Space lyric stack: the current line stays crisp, with the
+/// preceding and following lines softly blurred as visual context.
+class _ImmersiveLineTransitions extends StatelessWidget {
   const _ImmersiveLineTransitions({
     super.key,
-    required this.activeIndices,
-    required this.position,
+    required this.currentIndex,
+    required this.lineCount,
     required this.buildLine,
   });
 
-  final List<int> activeIndices;
-  final Duration position;
+  final int currentIndex;
+  final int lineCount;
   final Widget Function(int index) buildLine;
 
-  @override
-  State<_ImmersiveLineTransitions> createState() =>
-      _ImmersiveLineTransitionsState();
-}
-
-class _ImmersiveLineTransitionsState extends State<_ImmersiveLineTransitions> {
-  static const _duration = Duration(milliseconds: 280);
-  final List<int> _rendered = [];
-  final Set<int> _newEntries = {};
-
-  @override
-  void initState() {
-    super.initState();
-    // Opening Space halfway through a duet should display it immediately.
-    _rendered.addAll(widget.activeIndices);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ImmersiveLineTransitions oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // A seek is not a natural transition between concurrent voices: clear
-    // outgoing items instead of leaving old-song subtitles over the new spot.
-    final jumped = (widget.position - oldWidget.position).inMilliseconds.abs() >
-        1400;
-    if (jumped) {
-      _rendered
-        ..clear()
-        ..addAll(widget.activeIndices);
-      _newEntries.clear();
-      return;
+  Widget _slot(int index, {required bool focused}) {
+    if (index < 0 || index >= lineCount) {
+      return const SizedBox(height: 12);
     }
-    for (final index in widget.activeIndices) {
-      if (!_rendered.contains(index)) {
-        _rendered.add(index);
-        _newEntries.add(index);
-      }
+    Widget line = buildLine(index);
+    if (!focused) {
+      line = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 2.4, sigmaY: 2.4),
+        child: Opacity(opacity: 0.42, child: line),
+      );
     }
-    _rendered.sort();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final index in _rendered)
-          TweenAnimationBuilder<double>(
-            key: ValueKey('space-voice-transition-$index'),
-            tween: Tween<double>(
-              begin: _newEntries.contains(index) ? 0 : 1,
-              end: widget.activeIndices.contains(index) ? 1 : 0,
-            ),
-            duration: reduceMotion ? Duration.zero : _duration,
-            curve: Curves.easeOutCubic,
-            onEnd: () {
-              // Keep a voice if a backward seek or another overlap revived it.
-              if (!mounted || widget.activeIndices.contains(index)) {
-                _newEntries.remove(index);
-                return;
-              }
-              setState(() {
-                _rendered.remove(index);
-                _newEntries.remove(index);
-              });
-            },
-            builder: (context, fraction, child) => ClipRect(
-              child: Align(
-                alignment: Alignment.topCenter,
-                heightFactor: fraction,
-                child: Opacity(
-                  opacity: fraction,
-                  child: Transform.translate(
-                    offset: Offset(0, (1 - fraction) * 12),
-                    child: child,
-                  ),
-                ),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 5),
-              child: widget.buildLine(index),
-            ),
-          ),
-      ],
+    return AnimatedSwitcher(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.12),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: KeyedSubtree(
+        key: ValueKey(index),
+        child: line,
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _slot(currentIndex - 1, focused: false),
+      const SizedBox(height: 16),
+      _slot(currentIndex, focused: true),
+      const SizedBox(height: 16),
+      _slot(currentIndex + 1, focused: false),
+    ],
+  );
 }
