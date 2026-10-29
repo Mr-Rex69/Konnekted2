@@ -191,6 +191,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     duration: const Duration(milliseconds: 420),
   );
 
+  /// Circular reveal used when entering Space, expanding from the artwork's center.
+  late final AnimationController _spaceRevealProgress = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: const Duration(milliseconds: 480),
+  );
+
   bool _canvasHidden = false;
   String? _canvasReadyForSong;
   late final _canvasChrome = AnimationController(
@@ -269,6 +276,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _queue.dispose();
     _queueProgress.dispose();
     _lyricsProgress.dispose();
+    _spaceRevealProgress.dispose();
     _canvasChrome.dispose();
     _videoController.dispose();
     _player.currentSongNotifier.removeListener(_onSongChanged);
@@ -386,13 +394,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   void _toggleImmersiveLyrics() {
     _restoreCanvasControls();
     if (_immersiveLyrics) {
+      _spaceRevealProgress.value = 1;
       setState(() => _immersiveLyrics = false);
       return;
     }
     if (_showLyrics) _moveLyrics(false);
     _queue.setOpen(false, animate: false);
     HapticFeedback.selectionClick();
+    _spaceRevealProgress.value = _animate ? 0 : 1;
     setState(() => _immersiveLyrics = true);
+    if (_animate) unawaited(_spaceRevealProgress.forward());
     unawaited(_loadLyrics());
   }
 
@@ -824,7 +835,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 child: ValueListenableBuilder<bool>(
                   valueListenable: _videoController.nativeNotifier,
                   builder: (_, native, __) => native
-                      ? _spaceSubtitle(song)
+                      ? _spaceReveal(_spaceSubtitle(song))
                       : const Text(
                           'Timed subtitles unavailable in video fallback',
                           textAlign: TextAlign.center,
@@ -1035,11 +1046,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                         ),
                                       ),
                                       Expanded(
-                                        child: _panelStage(
+                                        child: _spaceReveal(_panelStage(
                                           song,
                                           compact,
                                           fullCover: fullCover,
-                                        ),
+                                        )),
                                       ),
                                       // Keep the timeline anchor painted in Space mode.
                                       CompositedTransformTarget(
@@ -1114,7 +1125,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                     ),
                                   ),
                           )
-                        : _spaceSubtitle(song),
+                        : _spaceReveal(_spaceSubtitle(song)),
                   ),
               ],
             ),
@@ -1123,6 +1134,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       ),
     );
   }
+
+  Widget _spaceReveal(Widget child) => AnimatedBuilder(
+    animation: _spaceRevealProgress,
+    child: child,
+    builder: (context, child) => !_immersiveLyrics
+        ? child!
+        : ClipPath(
+            clipper: _SpaceRadialRevealClipper(_spaceRevealProgress.value),
+            child: child,
+          ),
+  );
 
   Widget _spaceSubtitle(Song song) => ImmersiveLyricsSubtitle(
     key: ValueKey('space-subtitles:${song.id}'),
@@ -1136,12 +1158,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     loading: _lyricsLoading || _lyricsForSongId != song.id,
   );
 
-  Widget _spaceHidden(Widget child) => Visibility(
-    visible: !_immersiveLyrics,
-    maintainState: true,
-    maintainAnimation: true,
-    maintainSize: true,
+  Widget _spaceHidden(Widget child) => AnimatedBuilder(
+    animation: _spaceRevealProgress,
     child: child,
+    builder: (context, child) => IgnorePointer(
+      ignoring: _immersiveLyrics,
+      child: Opacity(
+        opacity: _immersiveLyrics ? 1 - _spaceRevealProgress.value : 1,
+        child: child,
+      ),
+    ),
   );
 
   // ───────────────────────────── top bar ─────────────────────────────
@@ -2869,4 +2895,25 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
       },
     );
   }
+}
+
+
+/// Circular clipping reveals Space content outward without replacing the
+/// player's existing background or changing the underlying layout.
+class _SpaceRadialRevealClipper extends CustomClipper<Path> {
+  const _SpaceRadialRevealClipper(this.progress);
+
+  final double progress;
+
+  @override
+  Path getClip(Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.sqrt(size.width * size.width + size.height * size.height) *
+        progress;
+    return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+  }
+
+  @override
+  bool shouldReclip(covariant _SpaceRadialRevealClipper oldClipper) =>
+      oldClipper.progress != progress;
 }
