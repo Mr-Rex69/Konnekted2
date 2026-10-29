@@ -110,7 +110,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
   double get _width => context.size?.width ?? MediaQuery.sizeOf(context).width;
 
   // Keep a small, responsive gutter between adjacent covers while swiping.
-  double get _stageGap => (_width * 0.06).clamp(20.0, 36.0);
+  double get _stageGap => (_width * 0.06).clamp(20.0, 36.0).toDouble();
 
   Future<bool> _moveTo(double target) async {
     if (!mounted) return false;
