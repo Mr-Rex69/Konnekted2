@@ -281,16 +281,16 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
                 )
               : const SizedBox.shrink();
         }
-        final currentIndex = immersiveLyricsLineIndex(lyrics, position);
-        if (currentIndex < 0 || currentIndex >= _preparedLines.length) {
-          return const SizedBox.shrink();
-        }
+        final activeIndices = immersiveActiveLineIndices(
+          lyrics, position, playbackLines: _preparedLines,
+        );
+        if (activeIndices.isEmpty) return const SizedBox.shrink();
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: _ImmersiveLineTransitions(
             // Reset line transitions on a new song/source, not on each frame.
             key: ObjectKey(lyrics),
-            currentIndex: currentIndex,
+            activeIndices: activeIndices,
             lineCount: _preparedLines.length,
             buildLine: (index) =>
                 _subtitleLine(_preparedLines[index], index, position),
@@ -363,20 +363,21 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
 class _ImmersiveLineTransitions extends StatelessWidget {
   const _ImmersiveLineTransitions({
     super.key,
-    required this.currentIndex,
+    required this.activeIndices,
     required this.lineCount,
     required this.buildLine,
   });
 
-  final int currentIndex;
+  final List<int> activeIndices;
   final int lineCount;
   final Widget Function(int index) buildLine;
 
-  Widget _slot(BuildContext context, int index, {required bool focused}) {
-    if (index < 0 || index >= lineCount) {
-      return const SizedBox(height: 12);
-    }
-    Widget line = buildLine(index);
+  Widget _slot(
+    BuildContext context,
+    Object key,
+    Widget line, {
+    required bool focused,
+  }) {
     if (!focused) {
       line = ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: 2.4, sigmaY: 2.4),
@@ -399,22 +400,48 @@ class _ImmersiveLineTransitions extends StatelessWidget {
           child: child,
         ),
       ),
-      child: KeyedSubtree(
-        key: ValueKey(index),
-        child: line,
-      ),
+      child: KeyedSubtree(key: ValueKey(key), child: line),
     );
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      _slot(context, currentIndex - 1, focused: false),
-      const SizedBox(height: 16),
-      _slot(context, currentIndex, focused: true),
-      const SizedBox(height: 16),
-      _slot(context, currentIndex + 1, focused: false),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final firstActive = activeIndices.first;
+    final lastActive = activeIndices.last;
+    final previousIndex = firstActive - 1;
+    final nextIndex = lastActive + 1;
+    final previous = previousIndex >= 0 && previousIndex < lineCount
+        ? buildLine(previousIndex)
+        : const SizedBox(height: 12);
+    final next = nextIndex >= 0 && nextIndex < lineCount
+        ? buildLine(nextIndex)
+        : const SizedBox(height: 12);
+    final current = activeIndices.length == 1
+        ? buildLine(activeIndices.single)
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final index in activeIndices) ...[
+                if (index != activeIndices.first) const SizedBox(height: 5),
+                buildLine(index),
+              ],
+            ],
+          );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _slot(context, previousIndex, previous, focused: false),
+        const SizedBox(height: 16),
+        _slot(
+          context,
+          activeIndices.join(','),
+          current,
+          focused: true,
+        ),
+        const SizedBox(height: 16),
+        _slot(context, nextIndex, next, focused: false),
+      ],
+    );
+  }
 }
