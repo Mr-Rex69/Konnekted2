@@ -208,7 +208,7 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
     if (selected == null ||
         !selected.lines.any((line) =>
             line.translation?.trim().isNotEmpty == true &&
-            line.translation!.trim() != line.text.trim())) {
+            line.translation!.trim() != line.displayText.trim())) {
       return null;
     }
     // Capture the selected result; a subsequent translation change must not
@@ -449,8 +449,8 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
           lyrics.lines
               .map(
                 (line) => line.translation?.isNotEmpty == true
-                    ? '${line.text}\n${line.translation}'
-                    : line.text,
+                    ? '${line.displayText}\n${line.translation}'
+                    : line.displayText,
               )
               .join('\n'),
           textAlign: alignment.textAlign,
