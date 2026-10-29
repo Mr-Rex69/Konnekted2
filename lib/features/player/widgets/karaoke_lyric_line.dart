@@ -218,7 +218,7 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
 
     if (_segments.isEmpty) {
       return Text(
-        _displayLine.text,
+        _displayLine.displayText,
         textAlign: widget.textAlign,
         style: widget.style,
       );
