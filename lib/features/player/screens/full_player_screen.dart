@@ -113,6 +113,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   bool _videoFullscreen = false;
   bool _immersiveLyrics = false;
+  bool _spaceTransitioning = false;
   final Media3MusicVideoController _videoController = Media3MusicVideoController();
   final GlobalKey _videoSurfaceKey = GlobalKey(debugLabel: 'persistent-media3-video');
 
@@ -188,6 +189,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   late final AnimationController _lyricsProgress = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
+  );
+
+  // Reveal the actual Space content, not just its tap target/subtitle.
+  late final AnimationController _spaceRevealProgress = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: const Duration(milliseconds: 760),
   );
 
   bool _canvasHidden = false;
@@ -268,6 +276,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _queue.dispose();
     _queueProgress.dispose();
     _lyricsProgress.dispose();
+    _spaceRevealProgress.dispose();
     _canvasChrome.dispose();
     _videoController.dispose();
     _player.currentSongNotifier.removeListener(_onSongChanged);
@@ -382,16 +391,35 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (open) unawaited(_loadLyrics());
   }
 
-  void _toggleImmersiveLyrics() {
+  void _toggleImmersiveLyrics() async {
+    if (_spaceTransitioning) return;
     _restoreCanvasControls();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     if (_immersiveLyrics) {
-      setState(() => _immersiveLyrics = false);
+      if (!reduceMotion) {
+        setState(() => _spaceTransitioning = true);
+        await _spaceRevealProgress.reverse();
+        if (!mounted) return;
+      }
+      setState(() {
+        _immersiveLyrics = false;
+        _spaceTransitioning = false;
+      });
       return;
     }
     if (_showLyrics) _moveLyrics(false);
     _queue.setOpen(false, animate: false);
     HapticFeedback.selectionClick();
-    setState(() => _immersiveLyrics = true);
+    _spaceRevealProgress.value = reduceMotion ? 1 : 0;
+    setState(() {
+      _immersiveLyrics = true;
+      _spaceTransitioning = !reduceMotion;
+    });
+    if (!reduceMotion) {
+      await _spaceRevealProgress.forward();
+      if (!mounted) return;
+      setState(() => _spaceTransitioning = false);
+    }
     unawaited(_loadLyrics());
   }
 
@@ -1029,11 +1057,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                         ),
                                       ),
                                       Expanded(
-                                        child: _panelStage(
+                                        child: _spaceReveal(_panelStage(
                                           song,
                                           compact,
                                           fullCover: fullCover,
-                                        ),
+                                        )),
                                       ),
                                       _spaceHidden(_seekRow()),
                                       // The timeline sits above the transport pads,
@@ -1114,7 +1142,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                             ? ValueListenableBuilder<bool>(
                                 valueListenable: _videoController.nativeNotifier,
                                 builder: (context, native, _) => native
-                                    ? _spaceSubtitle(song)
+                                    ? _spaceReveal(_spaceSubtitle(song))
                                     : const Text(
                                         'Timed subtitles unavailable in embedded video fallback',
                                         textAlign: TextAlign.center,
@@ -1123,7 +1151,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                         ),
                                       ),
                               )
-                            : _spaceSubtitle(song),
+                            : _spaceReveal(_spaceSubtitle(song)),
                       ),
                     ),
                   ),
@@ -1135,6 +1163,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       ),
     );
   }
+
+  Widget _spaceReveal(Widget child) => AnimatedBuilder(
+    animation: _spaceRevealProgress,
+    child: child,
+    builder: (context, child) => !_immersiveLyrics
+        ? child!
+        : ClipPath(
+            clipper: _SpaceRadialRevealClipper(_spaceRevealProgress.value),
+            child: child,
+          ),
+  );
 
   Widget _spaceSubtitle(Song song) => ImmersiveLyricsSubtitle(
     key: ValueKey('space-subtitles:${song.id}'),
@@ -2847,4 +2886,28 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
       },
     );
   }
+}
+
+
+/// Circular reveal expands from the centre of the Space content.
+class _SpaceRadialRevealClipper extends CustomClipper<Path> {
+  const _SpaceRadialRevealClipper(this.progress);
+
+  final double progress;
+
+  @override
+  Path getClip(Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = math.sqrt(
+      size.width * size.width + size.height * size.height,
+    ) / 2;
+    final eased = Curves.easeInOutCubicEmphasized.transform(
+      progress.clamp(0.0, 1.0).toDouble(),
+    );
+    return Path()..addOval(Rect.fromCircle(center: center, radius: maxRadius * eased));
+  }
+
+  @override
+  bool shouldReclip(covariant _SpaceRadialRevealClipper oldClipper) =>
+      oldClipper.progress != progress;
 }
