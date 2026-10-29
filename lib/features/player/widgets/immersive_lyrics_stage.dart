@@ -372,7 +372,7 @@ class _ImmersiveLineTransitions extends StatelessWidget {
   final int lineCount;
   final Widget Function(int index) buildLine;
 
-  Widget _slot(int index, {required bool focused}) {
+  Widget _slot(BuildContext context, int index, {required bool focused}) {
     if (index < 0 || index >= lineCount) {
       return const SizedBox(height: 12);
     }
@@ -410,11 +410,11 @@ class _ImmersiveLineTransitions extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      _slot(currentIndex - 1, focused: false),
+      _slot(context, currentIndex - 1, focused: false),
       const SizedBox(height: 16),
-      _slot(currentIndex, focused: true),
+      _slot(context, currentIndex, focused: true),
       const SizedBox(height: 16),
-      _slot(currentIndex + 1, focused: false),
+      _slot(context, currentIndex + 1, focused: false),
     ],
   );
 }
