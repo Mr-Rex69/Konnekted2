@@ -72,7 +72,7 @@ class _LyricMotionLineState extends State<LyricMotionLine> {
   );
   void _layout(double width) {
     final key = Object.hash(
-      widget.line.text,
+      widget.line.displayText,
       widget.line.words,
       widget.timing,
       widget.style,
@@ -90,14 +90,14 @@ class _LyricMotionLineState extends State<LyricMotionLine> {
     _dim?.dispose();
     _lit = LyricMotionLine.layout(
       context,
-      widget.line.text,
+      widget.line.displayText,
       widget.style.copyWith(color: widget.sung),
       width,
       align: widget.textAlign,
     );
     _dim = LyricMotionLine.layout(
       context,
-      widget.line.text,
+      widget.line.displayText,
       widget.style.copyWith(color: widget.unsung),
       width,
       align: widget.textAlign,
@@ -113,7 +113,7 @@ class _LyricMotionLineState extends State<LyricMotionLine> {
             : const <LyricsWord>[]) {
       final text = word.text.replaceAll(RegExp(r'\s+'), ' ').trim();
       if (text.isEmpty) continue;
-      final start = widget.line.text.indexOf(text, cursor);
+      final start = widget.line.displayText.indexOf(text, cursor);
       if (start < 0) continue;
       if (start > cursor) _runs.add(_Run(boxes(cursor, start), null));
       final end = start + text.length;
@@ -145,8 +145,8 @@ class _LyricMotionLineState extends State<LyricMotionLine> {
       }
       cursor = end;
     }
-    if (cursor < widget.line.text.length)
-      _runs.add(_Run(boxes(cursor, widget.line.text.length), null));
+    if (cursor < widget.line.displayText.length)
+      _runs.add(_Run(boxes(cursor, widget.line.displayText.length), null));
   }
 
   @override
@@ -161,7 +161,7 @@ class _LyricMotionLineState extends State<LyricMotionLine> {
     builder: (context, constraints) {
       _layout(constraints.maxWidth);
       return Semantics(
-        label: widget.line.text,
+        label: widget.line.displayText,
         child: SizedBox(
           height: _lit!.height + 8,
           width: constraints.maxWidth,
