@@ -109,6 +109,9 @@ class SongStageCarouselState extends State<SongStageCarousel>
 
   double get _width => context.size?.width ?? MediaQuery.sizeOf(context).width;
 
+  // Keep a small, responsive gutter between adjacent covers while swiping.
+  double get _stageGap => (_width * 0.06).clamp(20.0, 36.0);
+
   Future<bool> _moveTo(double target) async {
     if (!mounted) return false;
     if (MediaQuery.disableAnimationsOf(context)) {
@@ -197,7 +200,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
     _committing = true;
     final before = _current.id;
     try {
-      if (!await _moveTo(next ? -_width : _width)) return;
+      final travel = _width + _stageGap;
+      if (!await _moveTo(next ? -travel : travel)) return;
       HapticFeedback.selectionClick();
       if (next) {
         await widget.onNext();
@@ -242,7 +246,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
     if ((delta < 0 && _next == null) || (delta > 0 && _previous == null)) {
       delta *= .32 * math.exp(-_offset.abs() / math.max(_width * .6, 1));
     }
-    setState(() => _offset = (_offset + delta).clamp(-_width, _width));
+    final travel = _width + _stageGap;
+    setState(() => _offset = (_offset + delta).clamp(-travel, travel));
   }
 
   Future<void> _end(DragEndDetails details) async {
@@ -316,8 +321,9 @@ class SongStageCarouselState extends State<SongStageCarousel>
                 stage(oldSong, 0, 'outgoing')
               else ...[
                 if (_previous != null)
-                  stage(_previous!, -width + _offset, 'previous'),
-                if (_next != null) stage(_next!, width + _offset, 'next'),
+                  stage(_previous!, -width - _stageGap + _offset, 'previous'),
+                if (_next != null)
+                  stage(_next!, width + _stageGap + _offset, 'next'),
               ],
               if (_dissolveFrom != null)
                 CloudCoverReveal(
