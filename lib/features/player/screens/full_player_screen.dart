@@ -1116,7 +1116,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         ? ValueListenableBuilder<bool>(
                             valueListenable: _videoController.nativeNotifier,
                             builder: (context, native, _) => native
-                                ? _spaceSubtitle(song)
+                                ? _spaceReveal(_spaceSubtitle(song))
                                 : const Text(
                                     'Timed subtitles unavailable in embedded video fallback',
                                     textAlign: TextAlign.center,
