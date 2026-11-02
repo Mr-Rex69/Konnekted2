@@ -162,6 +162,45 @@ class LokalRemoteService {
   }
 
 
+
+  /// Desktop library playback also works if the paired WebSocket has dropped
+  /// but the authenticated HTTP remote remains reachable.
+  Future<void> sendLibraryCommand(
+    LokalRemoteCredentials credentials,
+    String action,
+    Map<String, dynamic> value,
+  ) async {
+    if (action != 'playLibraryTrack' && action != 'queueTracks') {
+      throw const LokalRemoteProtocolException(
+        'This remote library command is not supported.',
+      );
+    }
+    final response = await _request(
+      () => _client.post(
+        _endpoint(credentials.origin, 'command'),
+        headers: {
+          ..._headers(credentials),
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({'action': action, 'value': value}),
+      ).timeout(requestTimeout),
+    );
+    try {
+      final payload = jsonDecode(response.body);
+      if (payload is! Map || payload['ok'] != true) {
+        throw const LokalRemoteProtocolException(
+          'The desktop rejected the library playback command.',
+        );
+      }
+    } on LokalRemoteProtocolException {
+      rethrow;
+    } on Object {
+      throw const LokalRemoteProtocolException(
+        'The desktop returned an invalid library playback response.',
+      );
+    }
+  }
+
   /// Look up a shared phone recording without requiring the user to resync
   /// their whole library. The desktop already exposes an authenticated,
   /// paginated title search; never download or transfer audio here.
