@@ -26,13 +26,22 @@ String creditedLeadArtist(Song song) {
 /// desktop song may be hidden in the library in favour of an equivalent local
 /// recording, but that must never make a saved playlist entry disappear.
 class PreferredLibrarySongIndex {
-  const PreferredLibrarySongIndex({required this.visible, required this.byId});
+  const PreferredLibrarySongIndex({
+    required this.visible,
+    required this.byId,
+    this.desktopCopiesByPhoneId = const {},
+  });
 
   final List<Song> visible;
 
   /// Includes aliases from suppressed desktop track IDs to their phone copies.
   /// Ghost-only history tracks are intentionally absent.
   final Map<String, Song> byId;
+
+  /// The original desktop IDs suppressed by the same verified library
+  /// deduplication decision. Remote control uses these IDs to play the PC
+  /// copy; it must not try a title-only handoff for a local recording.
+  final Map<String, List<Song>> desktopCopiesByPhoneId;
 }
 
 /// Recording-level matching, not fuzzy artwork matching: require a lead
@@ -162,14 +171,24 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
 
   final visible = <Song>[];
   final byId = <String, Song>{};
+  final desktopCopiesByPhoneId = <String, List<Song>>{};
   for (final song in songs) {
     if (song.filePath?.startsWith('ghost://') ?? false) continue;
     final replacement = matchingPhoneCopy(song);
     if (replacement == null) visible.add(song);
+    if (replacement != null && song.remoteId?.isNotEmpty == true &&
+        song.remoteServerId != null &&
+        song.filePath?.startsWith('lokal://') == true) {
+      (desktopCopiesByPhoneId[replacement.id] ??= []).add(song);
+    }
     // Retain original IDs as aliases for playlists and other references.
     byId[song.id] = replacement ?? song;
   }
-  return PreferredLibrarySongIndex(visible: visible, byId: byId);
+  return PreferredLibrarySongIndex(
+    visible: visible,
+    byId: byId,
+    desktopCopiesByPhoneId: desktopCopiesByPhoneId,
+  );
 }
 
 /// In the library, prefer phone copies to equivalent desktop records.
