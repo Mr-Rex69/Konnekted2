@@ -248,7 +248,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
   void _update(DragUpdateDetails details) {
     if (!_dragging || !widget.enabled) return;
     var delta = details.delta.dx;
-    if ((delta < 0 && _next == null) || (delta > 0 && _previous == null)) {
+    if (!widget.allowUnresolvedSwipe &&
+        ((delta < 0 && _next == null) || (delta > 0 && _previous == null))) {
       delta *= .32 * math.exp(-_offset.abs() / math.max(_width * .6, 1));
     }
     setState(() => _offset = (_offset + delta).clamp(-_width, _width));
