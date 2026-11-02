@@ -9,9 +9,14 @@ import 'package:flick/core/utils/artist_credits.dart' show splitArtistCredits;
 String creditedLeadArtist(Song song) {
   final artist = song.artist.trim();
   final owner = song.albumArtist?.trim() ?? '';
+  // Album ownership is the display lead, even if Android exposes only the
+  // second repeated Vorbis ARTIST value (e.g. Kendrick instead of SZA).
+  // Compilations and absent/placeholder album artists keep track credits.
+  final generic = owner.toLowerCase();
   if (owner.isNotEmpty &&
-      splitArtistCredits(artist).any(
-        (credit) => recommendationKey(credit) == recommendationKey(owner))) {
+      generic != 'unknown artist' &&
+      generic != 'various artists' &&
+      generic != 'va') {
     return leadArtist(owner);
   }
   return leadArtist(artist);
@@ -50,9 +55,19 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
       byId: {for (final song in visible) song.id: song},
     );
   }
+  // Display ownership and recording identity are different. Do not make
+  // inferred album ownership merge two unrelated artists in playlists.
   String? recordingKey(Song song) {
     if (song.duration <= Duration.zero) return null;
-    final artist = recommendationKey(creditedLeadArtist(song));
+    final rawArtist = song.artist.trim();
+    final owner = song.albumArtist?.trim() ?? '';
+    final matchingOwner = owner.isNotEmpty &&
+        splitArtistCredits(rawArtist).any(
+          (credit) => recommendationKey(credit) == recommendationKey(owner),
+        );
+    final artist = recommendationKey(
+      matchingOwner ? leadArtist(owner) : leadArtist(rawArtist),
+    );
     final title = titleKey(song.title);
     if (artist.isEmpty || title.isEmpty) return null;
     return '$artist\u0000$title';

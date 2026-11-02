@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/providers.dart';
-import 'package:flick/services/link/library_song_identity.dart';
+import 'package:flick/features/search/providers/local_device_search.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/online_lyrics_service.dart';
 import 'package:flick/services/online_playlist_reference.dart';
@@ -90,7 +90,7 @@ class _LyricsSearchSectionState extends ConsumerState<LyricsSearchSection> {
   Stream<_LyricProgress> _searchLocal(String query) async* {
     final loaded = ref.read(songsProvider).value?.songs ??
         await ref.read(songRepositoryProvider).getAllSongs();
-    final songs = preferLocalLibrarySongs(loaded)
+    final songs = phoneLocalSearchSongs(loaded)
         .where((s) => s.filePath != null && s.filePath!.isNotEmpty)
         .toList(growable: false);
     final needle = normalizeLocalLyricSearch(query);

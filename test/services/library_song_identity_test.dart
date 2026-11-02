@@ -65,6 +65,15 @@ void main() {
         [phoneWithTitle, otherAlbum]);
   });
 
+  test('album artist wins display when Android exposes only a featured artist', () {
+    final phone = song('phone', '30 For 30 (with Kendrick Lamar)',
+      '/music/sza.flac', artist: 'Kendrick Lamar',
+      albumArtist: 'SZA', album: 'SOS Deluxe: LANA');
+    expect(creditedLeadArtist(phone), 'SZA');
+    // Track credits remain intact; only the presentation changes.
+    expect(phone.artist, 'Kendrick Lamar');
+  });
+
   test('album owner remains the lead when the full credit lists multiple artists', () {
     final phone = song('phone', 'All the Stars', '/music/stars.flac',
       artist: 'SZA', albumArtist: 'SZA');
@@ -121,7 +130,7 @@ void main() {
   test('album owner must be a whole credited name, not a substring', () {
     final pc = song('pc', 'Track', 'lokal://1/track',
       artist: 'Annabelle, Bob', albumArtist: 'Anna', source: 'lokal');
-    expect(creditedLeadArtist(pc), 'Annabelle');
+    expect(creditedLeadArtist(pc), 'Anna'); // ALBUMARTIST is the display lead.
     final phone = song('phone', 'Track', '/music/track.flac',
       artist: 'Anna', albumArtist: 'Anna');
     final index = preferredLibrarySongIndex([pc, phone]);

@@ -746,7 +746,9 @@ class LibraryScannerService {
           existing == null ||
           existing.sampleRate == null ||
           existing.bitDepth == null ||
-          existing.discNumber == null;
+          existing.discNumber == null ||
+          existing.artist == l10n.unknownArtist ||
+          existing.album == l10n.unknownAlbum;
 
       final artist = (file.artist?.trim().isNotEmpty ?? false)
           ? file.artist!.trim()
@@ -987,17 +989,22 @@ class LibraryScannerService {
           existing.albumArtist = (meta.albumArtist?.trim().isNotEmpty ?? false)
               ? meta.albumArtist!.trim()
               : existing.albumArtist;
-          // Synthesized fallback rows (unindexed DSD/WavPack) start with
-          // empty text and filename-derived titles; fill from real tags.
-          if (existing.title.trim().isEmpty &&
+          // Filename-derived placeholders can survive earlier scans even
+          // after their audio properties were marked complete. Replace only
+          // unedited placeholders with real embedded tags, not custom titles.
+          if ((existing.title.trim().isEmpty ||
+                  (existing.artist == l10n.unknownArtist &&
+                      existing.album == l10n.unknownAlbum)) &&
               (meta.title?.trim().isNotEmpty ?? false)) {
             existing.title = meta.title!.trim();
           }
-          if (existing.artist.trim().isEmpty &&
+          if ((existing.artist.trim().isEmpty ||
+                  existing.artist == l10n.unknownArtist) &&
               (meta.artist?.trim().isNotEmpty ?? false)) {
             existing.artist = meta.artist!.trim();
           }
-          if ((existing.album ?? '').trim().isEmpty &&
+          if (((existing.album ?? '').trim().isEmpty ||
+                  existing.album == l10n.unknownAlbum) &&
               (meta.album?.trim().isNotEmpty ?? false)) {
             existing.album = meta.album!.trim();
           }
@@ -1541,11 +1548,17 @@ class LibraryScannerService {
         final fileTypeMismatch =
             currentFileType.isNotEmpty &&
             (storedFileType == null || storedFileType != currentFileType);
+        final missingTags =
+            existing.artist.trim().isEmpty ||
+            existing.artist == l10n.unknownArtist ||
+            (existing.album ?? '').trim().isEmpty ||
+            existing.album == l10n.unknownAlbum;
         final missingMetadata =
             !existing.metadataComplete ||
             existing.bitrate == null ||
             existing.sampleRate == null ||
-            fileTypeMismatch;
+            fileTypeMismatch ||
+            missingTags;
 
         if (mode == ScanMode.full ||
             file.lastModified != existingTime ||
@@ -2814,7 +2827,10 @@ class LibraryScannerService {
           meta.duration != null &&
           meta.sampleRate != null &&
           meta.bitDepth != null &&
-          meta.bitrate != null;
+          meta.bitrate != null &&
+          meta.title?.trim().isNotEmpty == true &&
+          meta.artist?.trim().isNotEmpty == true &&
+          meta.album?.trim().isNotEmpty == true;
       if (retrieverSolved) continue;
 
       if (!shouldRustRetryMetadata(
