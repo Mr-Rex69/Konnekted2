@@ -128,12 +128,18 @@ class LyricsService {
       return (cleanedText, words, voice);
     }
 
-    final timedMarker = _voicePrefixPattern.firstMatch(
-      words.map((word) => word.text).join(),
-    );
+    final timedText = words.map((word) => word.text).join();
+    final timedMarker = _voicePrefixPattern.firstMatch(timedText);
     if (timedMarker == null) {
-      // An unmatched timed prefix must not reappear from the karaoke painter.
-      return (cleanedText, null, voice);
+      // The prefix may be outside the timed spans. Keep already-clean words,
+      // but never allow mismatched timed content to reintroduce a marker.
+      String normalize(String value) =>
+          value.replaceAll(RegExp(r'\s+'), ' ').trim();
+      return (
+        cleanedText,
+        normalize(timedText) == normalize(cleanedText) ? words : null,
+        voice,
+      );
     }
     var remaining = timedMarker.end;
     final cleanedWords = <LyricsWord>[];
