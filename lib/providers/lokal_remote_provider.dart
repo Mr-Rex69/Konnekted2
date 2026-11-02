@@ -64,6 +64,19 @@ final lokalRemoteControllerProvider =
       LokalRemoteController.new,
     );
 
+/// The desktop can publish a new track before its playback engine updates
+/// the top-level duration. Prefer the recording's own metadata when present,
+/// then correct Android again as fresh snapshots arrive.
+Duration desktopNotificationDuration(LokalRemoteSnapshot snapshot) {
+  final trackSeconds = snapshot.currentTrack?.duration ?? 0;
+  final seconds = trackSeconds.isFinite && trackSeconds > 0
+      ? trackSeconds
+      : snapshot.duration;
+  return Duration(milliseconds: (seconds * 1000).round());
+}
+
+
+
 /// A passive paired socket may be suspended to conserve resources. An active
 /// remote-control session must not be treated as idle merely because the phone
 /// itself is not playing: the desktop owns playback in that mode.
@@ -1091,6 +1104,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       unawaited(_loadNotificationArtwork(artworkKey, track.id));
     }
     final position = Duration(milliseconds: (snapshot.progress * 1000).round());
+    final duration = desktopNotificationDuration(snapshot);
     if (_notificationTrack == track.id &&
         _notificationPlaying == snapshot.isPlaying &&
         _notificationFavorite == track.liked &&
@@ -1100,6 +1114,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           _notificationOwner,
           position: position,
           isPlaying: snapshot.isPlaying,
+          duration: duration,
         ),
       );
       return;
@@ -1117,7 +1132,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           artist: track.artist,
           album: track.album,
           albumArt: _notificationArtwork,
-          duration: Duration(milliseconds: (snapshot.duration * 1000).round()),
+          duration: duration,
           fileType: track.fileType,
         ),
         isPlaying: snapshot.isPlaying,
