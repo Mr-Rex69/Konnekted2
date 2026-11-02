@@ -106,6 +106,15 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
       _onPositionTick();
       return;
     }
+    if (!identical(
+      oldWidget.playingNotifier ?? oldWidget.playerService.isPlayingNotifier,
+      _playingNotifier,
+    )) {
+      (oldWidget.playingNotifier ?? oldWidget.playerService.isPlayingNotifier)
+          .removeListener(_onPlayingChanged);
+      _playingNotifier.addListener(_onPlayingChanged);
+      _isPlaying = _playingNotifier.value;
+    }
     if (oldWidget.active != widget.active) {
       _onPositionTick();
       return;
@@ -140,7 +149,7 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
     // pausing does not jump the fill forward.
     _basePosition = _predictedPosition();
     _baseTickerElapsed = _tickerElapsed;
-    _isPlaying = widget.playerService.isPlayingNotifier.value;
+    _isPlaying = _playingNotifier.value;
     _updateTicker();
   }
 
