@@ -170,8 +170,10 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                     ),
                   ),
                 ),
-              SafeArea(
-                child: LayoutBuilder(
+              LokalPlayerChrome(
+                enabled: fullCover,
+                child: SafeArea(
+                  child: LayoutBuilder(
               builder: (context, bounds) {
                 // The local player's panel art is almost the full available
                 // content width. The former .38 * viewport-height cap made
@@ -237,7 +239,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                             ],
                           ),
                           SizedBox(height: compact ? 12 : 18),
-                          if (fullCover)
+                          if (fullCover && song != null)
                             SizedBox(
                               key: const ValueKey('remote-full-cover-spacer'),
                               height: artworkSize,
@@ -394,6 +396,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                 );
               },
             ),
+                ),
               ),
             ],
           ),
