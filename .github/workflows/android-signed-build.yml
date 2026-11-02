@@ -54,9 +54,10 @@ jobs:
           cache: 'true'
 
       # Catch newly introduced Dart type/import errors before the expensive
-      # Rust/Gradle release build. PR #381 imported a symbol only in the two
-      # provider detail screens, so the old two-file check missed the failure.
-      - name: Preflight provider playlist Dart compilation
+      # Rust/Gradle release build. Check both provider playlist screens and the
+      # remote/full-player gesture files: run #41471975563 failed 3 minutes
+      # into compilation from a missing DragUpdateDetails constructor field.
+      - name: Preflight changed player and playlist Dart compilation
         run: |
           set -euo pipefail
           for source in \
@@ -67,7 +68,10 @@ jobs:
             lib/features/spotify/provider_playlist_track_tile.dart \
             lib/features/spotify/provider_playlist_visibility.dart \
             lib/features/discovery/youtube_music_playlists_screen.dart \
-            lib/features/discovery/youtube_music_playlist_cache.dart; do
+            lib/features/discovery/youtube_music_playlist_cache.dart \
+            lib/features/player/widgets/song_stage_carousel.dart \
+            lib/features/player/screens/desktop_remote_full_player.dart \
+            lib/features/player/widgets/full_bleed_artwork_frame.dart; do
             echo "Analyzing $source"
             dart analyze --no-fatal-warnings "$source"
           done
