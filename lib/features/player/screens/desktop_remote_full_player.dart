@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:flick/core/theme/lokal_appearance.dart';
+import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
 import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/features/player/widgets/player_artwork_image.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
@@ -117,6 +119,11 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
     final player = ref.watch(playerProvider);
     final song = player.currentSong;
     final currentTrack = remote.snapshot?.currentTrack;
+    // Match the local full player: remote control changes the transport,
+    // not the listener's chosen artwork presentation.
+    final fullCover = ref.watch(
+      lokalAppearanceProvider.select((look) => look.fullscreenCover),
+    );
     const ink = FullPlayerVisuals.primaryText;
     const secondary = FullPlayerVisuals.secondaryText;
 
@@ -132,12 +139,51 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
               colors: [Color(0xFF28272E), Color(0xFF17171C), Color(0xFF080809)],
             ),
           ),
-          child: SafeArea(
-            child: LayoutBuilder(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (fullCover && song != null)
+                FullBleedArtworkFrame(
+                  canvas: false,
+                  child: PlayerArtworkImage(
+                    key: ValueKey('remote-full-cover:${song.id}'),
+                    song: song,
+                    radius: 0,
+                    decodeWidth: 2048,
+                  ),
+                ),
+              if (fullCover)
+                const IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0x33000000),
+                          Color(0x08000000),
+                          Color(0x20000000),
+                          Color(0xB0000000),
+                        ],
+                        stops: [0, .28, .63, 1],
+                      ),
+                    ),
+                  ),
+                ),
+              LokalPlayerChrome(
+                enabled: fullCover,
+                child: SafeArea(
+                  child: LayoutBuilder(
               builder: (context, bounds) {
+                // The local player's panel art is almost the full available
+                // content width. The former .38 * viewport-height cap made
+                // the remote sleeve visibly smaller and left dead space below
+                // the controls. Prefer the same near-edge-to-edge footprint,
+                // shrinking only on genuinely short screens; scroll metrics
+                // still protect the seek/transport/volume rows.
                 final artworkSize = math.min(
-                  math.max(160.0, bounds.maxWidth - 56),
-                  math.min(420.0, math.max(160.0, bounds.maxHeight * .38)),
+                  math.min(510.0, math.max(0.0, bounds.maxWidth - 48)),
+                  math.max(160.0, bounds.maxHeight - 345),
                 );
                 final compact = bounds.maxHeight < 700;
                 // Only let the inner scroll view claim vertical swipes
@@ -193,7 +239,12 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                             ],
                           ),
                           SizedBox(height: compact ? 12 : 18),
-                          if (song != null)
+                          if (fullCover && song != null)
+                            SizedBox(
+                              key: const ValueKey('remote-full-cover-spacer'),
+                              height: artworkSize,
+                            )
+                          else if (song != null)
                             LokalPlayerArtwork(
                               expandedRadius: 24,
                               child: SizedBox.square(
@@ -345,6 +396,9 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                 );
               },
             ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
