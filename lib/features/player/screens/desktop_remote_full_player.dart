@@ -73,10 +73,21 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
             child: LayoutBuilder(
               builder: (context, bounds) {
                 final artworkSize = math.min(
-                  math.max(180.0, bounds.maxWidth - 56),
-                  math.min(420.0, math.max(185.0, bounds.maxHeight * .46)),
+                  math.max(160.0, bounds.maxWidth - 56),
+                  math.min(420.0, math.max(160.0, bounds.maxHeight * .38)),
                 );
+                final compact = bounds.maxHeight < 700;
+                // A scrollable descendant wins Flutter's vertical-drag arena
+                // over LokalPullToDismiss, making the full player impossible
+                // to swipe down. On normal phone heights, the player fits in
+                // the viewport and must let the parent route own the gesture.
+                // Very short/large-text viewports keep accessible scrolling.
+                final needsScroll = bounds.maxHeight < 620 ||
+                    MediaQuery.textScalerOf(context).scale(16) > 23;
                 return SingleChildScrollView(
+                  physics: needsScroll
+                      ? const ClampingScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Center(
                     child: ConstrainedBox(
@@ -112,7 +123,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               ),
                             ],
                           ),
-                          SizedBox(height: math.max(18, bounds.maxHeight * .035)),
+                          SizedBox(height: compact ? 12 : 18),
                           if (song != null)
                             LokalPlayerArtwork(
                               expandedRadius: 24,
@@ -134,7 +145,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                                 child: Icon(Icons.music_note_rounded, size: 84, color: secondary),
                               ),
                             ),
-                          const SizedBox(height: 32),
+                          SizedBox(height: compact ? 14 : 20),
                           Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
@@ -170,7 +181,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 18),
+                          SizedBox(height: compact ? 6 : 10),
                           SliderTheme(
                             data: SliderTheme.of(context).copyWith(
                               trackHeight: 3.5,
@@ -201,7 +212,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               Text(_clock(player.duration), style: const TextStyle(color: secondary, fontSize: 12)),
                             ],
                           ),
-                          const SizedBox(height: 15),
+                          SizedBox(height: compact ? 6 : 10),
                           PlayerTransportControls(
                             playing: player.isPlaying,
                             compact: false,
@@ -213,7 +224,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                             onNext: song == null ? () {} : () => _command(() => ref.read(playerProvider.notifier).next()),
                             onPlayPause: song == null ? () {} : () => _command(() => ref.read(playerProvider.notifier).togglePlayPause()),
                           ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: compact ? 4 : 10),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -236,7 +247,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: compact ? 3 : 8),
                           Row(
                             children: [
                               const Icon(Icons.volume_down_rounded, color: secondary),
@@ -255,7 +266,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               const Icon(Icons.volume_up_rounded, color: secondary),
                             ],
                           ),
-                          const SizedBox(height: 20),
+                          SizedBox(height: compact ? 2 : 8),
                         ],
                       ),
                     ),
