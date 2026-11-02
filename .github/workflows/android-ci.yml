@@ -49,10 +49,10 @@ jobs:
       - name: Analyze desktop remote player and queue artwork integration
         run: |
           set -euo pipefail
-          for source in \\
-            lib/features/player/screens/desktop_remote_full_player.dart \\
-            lib/providers/player_provider.dart \\
-            lib/providers/lokal_remote_provider.dart \\
+          for source in \
+            lib/features/player/screens/desktop_remote_full_player.dart \
+            lib/providers/player_provider.dart \
+            lib/providers/lokal_remote_provider.dart \
             lib/models/lokal_remote_state.dart; do
             dart analyze --no-fatal-warnings "$source"
           done
