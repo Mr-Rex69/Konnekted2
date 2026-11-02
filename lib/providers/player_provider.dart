@@ -136,7 +136,7 @@ Song songFromDesktopRemoteTrack(
     // Android filesystem path.
     albumArt: artworkPath ?? (hasCoverSource ? 'lokal-cover://$id' : null),
     filePath: hasCoverSource
-        ? 'lokal://$artworkServerId/${Uri.encodeComponent(id)}'
+        ? 'lokal://$artworkServerId/${Uri.encodeComponent(id!)}'
         : null,
     duration: Duration(milliseconds: (track.duration * 1000).round()),
     fileType: track.fileType,
