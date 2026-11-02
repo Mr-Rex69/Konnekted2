@@ -64,6 +64,29 @@ final lokalRemoteControllerProvider =
       LokalRemoteController.new,
     );
 
+/// A passive paired socket may be suspended to conserve resources. An active
+/// remote-control session must not be treated as idle merely because the phone
+/// itself is not playing: the desktop owns playback in that mode.
+///
+/// Pure predicate shared by the link timer and its timeout regression tests.
+bool shouldSuspendIdleDesktopLink({
+  required Duration idleFor,
+  required bool controlsDesktop,
+  required bool desktopPlaying,
+  required bool phonePlaying,
+  required bool statsSyncBusy,
+  required bool fileCopyBusy,
+  required bool outboxBusy,
+}) {
+  return !controlsDesktop &&
+      !desktopPlaying &&
+      !phonePlaying &&
+      !statsSyncBusy &&
+      !fileCopyBusy &&
+      !outboxBusy &&
+      idleFor > const Duration(minutes: 3);
+}
+
 /// Owns one authenticated desktop connection, including polling and bounded
 /// reconnects. Paired desktop state is kept separate from the local engine.
 class LokalRemoteController extends Notifier<LokalRemoteControllerState>
@@ -735,11 +758,15 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
 
   void _tickLink() {
     if (_disposed || !state.socketConnected) return;
-    if (!state.syncProgress.busy &&
-        !state.fileCopyProgress.busy &&
-        !_downloadOutbox.busy &&
-        !PlayerService().isPlayingNotifier.value &&
-        DateTime.now().difference(_lastActivity) > const Duration(minutes: 3)) {
+    if (shouldSuspendIdleDesktopLink(
+      idleFor: DateTime.now().difference(_lastActivity),
+      controlsDesktop: state.controlsDesktop,
+      desktopPlaying: state.snapshot?.isPlaying == true,
+      phonePlaying: PlayerService().isPlayingNotifier.value,
+      statsSyncBusy: state.syncProgress.busy,
+      fileCopyBusy: state.fileCopyProgress.busy,
+      outboxBusy: _downloadOutbox.busy,
+    )) {
       disconnect();
       state = state.copyWith(
         error: 'Desktop link paused after 3 minutes without interaction. Reconnect when you need it.',
