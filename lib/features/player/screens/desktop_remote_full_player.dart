@@ -45,6 +45,16 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
   late final LokalQueueRevealMotion _queueMotion =
       LokalQueueRevealMotion(_queueController);
 
+  void _onQueueTargetChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _queueMotion.addListener(_onQueueTargetChanged);
+  }
+
   void _openQueue() {
     if (_showLyrics) setState(() => _showLyrics = false);
     _queueMotion.setOpen(true);
@@ -86,6 +96,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
   @override
   void dispose() {
     _contentScroll.dispose();
+    _queueMotion.removeListener(_onQueueTargetChanged);
     _queueMotion.dispose();
     _queueController.dispose();
     super.dispose();
