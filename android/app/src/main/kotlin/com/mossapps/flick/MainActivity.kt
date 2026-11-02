@@ -2436,13 +2436,24 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    private fun flacMetadataWithoutRetriever(uriString: String): Map<String, Any?> {
+        val tags = parseFlacVorbisTextTags(uriString)
+        return mapOf(
+            "uri" to uriString,
+            "title" to tags["TITLE"],
+            "artist" to tags["ARTIST"],
+            "album" to tags["ALBUM"],
+            "albumArtist" to tags["ALBUMARTIST"],
+        )
+    }
+
     private fun extractSingleMetadata(uriString: String): Map<String, Any?> {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(context, Uri.parse(uriString))
             readMetadataFields(retriever, uriString)
         } catch (e: Exception) {
-            mapOf("uri" to uriString)
+            flacMetadataWithoutRetriever(uriString)
         } finally {
             try { retriever.release() } catch (_: Exception) {}
         }
@@ -2459,7 +2470,7 @@ class MainActivity: FlutterActivity() {
                 retriever.setDataSource(context, Uri.parse(uriString))
                 results.add(readMetadataFields(retriever, uriString))
             } catch (e: Exception) {
-                results.add(mapOf("uri" to uriString))
+                results.add(flacMetadataWithoutRetriever(uriString))
             }
             perFileMs += System.currentTimeMillis() - t0
         }
@@ -3411,7 +3422,8 @@ class MainActivity: FlutterActivity() {
      * the authoritative release credit for the SZA/Kendrick multi-ARTIST file.
      */
     private fun parseFlacVorbisTextTags(audioUriString: String): Map<String, String> {
-        return openAudioInputStream(audioUriString)?.use { input ->
+        return try {
+            openAudioInputStream(audioUriString)?.use { input ->
             val signature = ByteArray(4)
             if (!readExact(input, signature) ||
                 !signature.contentEquals(byteArrayOf(0x66, 0x4c, 0x61, 0x43))) {
@@ -3427,7 +3439,7 @@ class MainActivity: FlutterActivity() {
                 val size = ((sizeBytes[0].toInt() and 0xff) shl 16) or
                     ((sizeBytes[1].toInt() and 0xff) shl 8) or
                     (sizeBytes[2].toInt() and 0xff)
-                if (flag and 0x7f == 4) {
+                if ((flag and 0x7f) == 4) {
                     // Guard against malformed metadata allocating huge buffers.
                     if (size > 8 * 1024 * 1024) break
                     val block = ByteArray(size)
@@ -3457,7 +3469,10 @@ class MainActivity: FlutterActivity() {
                 if (!skipFully(input, size.toLong())) break
             }
             emptyMap()
-        } ?: emptyMap()
+            } ?: emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
     }
 
     private fun parseFlacVorbisLyrics(audioUriString: String): String? {
