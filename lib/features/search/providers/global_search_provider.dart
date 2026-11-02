@@ -1,4 +1,4 @@
-import 'package:flick/services/link/library_song_identity.dart';
+import 'local_device_search.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/utils/string_sort_utils.dart';
 import 'package:flick/data/repositories/song_repository.dart';
@@ -21,7 +21,7 @@ final globalSearchResultsProvider =
   ref.watch(playlistsProvider);
   final repo = ref.watch(songRepositoryProvider);
   final loaded = ref.watch(songsProvider).value?.songs;
-  final allSongs = preferLocalLibrarySongs(loaded ?? await repo.getAllSongs());
+  final allSongs = phoneLocalSearchSongs(loaded ?? await repo.getAllSongs());
 
   // Playlists – via service provider.
   List<Playlist> allPlaylists = const [];
