@@ -12,6 +12,7 @@ import 'package:flick/providers/lokal_remote_provider.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
+import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 
 /// Full player for the *remote* desktop transport, mounted within the normal
@@ -113,13 +114,16 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                           ),
                           SizedBox(height: math.max(18, bounds.maxHeight * .035)),
                           if (song != null)
-                            SizedBox.square(
-                              dimension: artworkSize,
-                              child: PlayerArtworkImage(
-                                key: ValueKey('desktop-cover:${song.id}'),
-                                song: song,
-                                decodeWidth: 1024,
-                                radius: 24,
+                            LokalPlayerArtwork(
+                              expandedRadius: 24,
+                              child: SizedBox.square(
+                                dimension: artworkSize,
+                                child: PlayerArtworkImage(
+                                  key: ValueKey('desktop-cover:${song.id}'),
+                                  song: song,
+                                  decodeWidth: 1024,
+                                  radius: 24,
+                                ),
                               ),
                             )
                           else
