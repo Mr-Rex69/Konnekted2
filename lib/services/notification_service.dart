@@ -135,12 +135,17 @@ class NotificationService {
     MediaNotificationOwner owner, {
     required Duration position,
     required bool isPlaying,
+    Duration? duration,
   }) async {
     if (!identical(_owner, owner)) return;
     try {
       await _channel.invokeMethod('updateNotification', {
         'position': position.inMilliseconds,
         'isPlaying': isPlaying,
+        // Desktop playback state can publish the new track before its
+        // duration settles. Later progress updates must repair Android's
+        // MediaMetadata duration rather than retaining the previous song.
+        if (duration != null) 'duration': duration.inMilliseconds,
         if (_accentColor != null) 'color': _accentColor,
       });
     } on PlatformException {
