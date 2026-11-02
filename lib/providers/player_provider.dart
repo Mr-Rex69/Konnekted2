@@ -115,6 +115,24 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
   return PlayerService();
 });
 
+/// Convert a desktop snapshot without reading the phone audio engine. Only
+/// Android-private cached images are passed here, never PC filesystem paths.
+@visibleForTesting
+Song songFromDesktopRemoteTrack(
+  LokalRemoteTrack track, {
+  String? artworkPath,
+}) => Song(
+  id: 'desktop:${track.id}',
+  title: track.title,
+  artist: track.artist,
+  album: track.album,
+  albumArt: artworkPath,
+  duration: Duration(milliseconds: (track.duration * 1000).round()),
+  fileType: track.fileType,
+  sourceType: 'lokal',
+  remoteId: track.id,
+);
+
 /// Notifier that bridges PlayerService ValueNotifiers to Riverpod state.
 class PlayerNotifier extends Notifier<PlayerState> {
   late PlayerService _service;
@@ -289,20 +307,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
           );
           return;
         }
-        Song convert(LokalRemoteTrack track, {bool current = false}) => Song(
-          id: 'desktop:${track.id}',
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          // A desktop artwork_path is a PC filesystem path and cannot be
-          // rendered by Android. Use the paired, authenticated cover fetched
-          // into the phone's persistent artwork cache instead.
-          albumArt: current ? next.remoteArtworkPath : null,
-          duration: Duration(milliseconds: (track.duration * 1000).round()),
-          fileType: track.fileType,
-          sourceType: 'lokal',
-          remoteId: track.id,
-        );
+        Song convert(LokalRemoteTrack track, {bool current = false}) =>
+            songFromDesktopRemoteTrack(
+              track,
+              artworkPath: current ? next.remoteArtworkPath : null,
+            );
         state = state.copyWith(
           currentSong: remote.currentTrack == null
               ? null
