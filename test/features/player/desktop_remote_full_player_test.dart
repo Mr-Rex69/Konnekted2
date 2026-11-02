@@ -144,6 +144,56 @@ void main() {
     expect(paired.copyWith(clearArtworkServer: true).artworkServerId, isNull);
   });
 
+  testWidgets('scrolling follows rendered overflow and text scale', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    // A normal-size viewport can fit the full player at normal text size
+    // but overflow at accessibility scale; height alone is not sufficient.
+    tester.view
+      ..physicalSize = const Size(530, 840)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    Widget app(double scale) => ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(scale),
+            ),
+            child: DesktopRemoteFullPlayer(onClose: () {}),
+          ),
+        ),
+      ),
+    );
+
+    SingleChildScrollView scrollView() => tester.widget<SingleChildScrollView>(
+      find.byType(SingleChildScrollView).first,
+    );
+
+    await tester.pumpWidget(app(1));
+    await tester.pumpAndSettle();
+    expect(scrollView().controller!.position.maxScrollExtent, lessThanOrEqualTo(1));
+    expect(scrollView().physics, isA<NeverScrollableScrollPhysics>());
+
+    await tester.pumpWidget(app(2.8));
+    await tester.pumpAndSettle();
+    expect(scrollView().controller!.position.maxScrollExtent, greaterThan(1));
+    expect(scrollView().physics, isA<ClampingScrollPhysics>());
+
+    await tester.pumpWidget(app(1));
+    await tester.pumpAndSettle();
+    expect(scrollView().controller!.position.maxScrollExtent, lessThanOrEqualTo(1));
+    expect(scrollView().physics, isA<NeverScrollableScrollPhysics>());
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('swiping down on the remote cover dismisses the full player', (
     tester,
   ) async {
