@@ -1,6 +1,9 @@
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/player/screens/desktop_remote_full_player.dart';
+import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
+import 'package:flick/features/player/widgets/player_artwork_image.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
 import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/models/song.dart';
@@ -191,6 +194,72 @@ void main() {
     await tester.pumpAndSettle();
     expect(scrollView().controller!.position.maxScrollExtent, lessThanOrEqualTo(1));
     expect(scrollView().physics, isA<NeverScrollableScrollPhysics>());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('remote sleeve fills the regular full-player artwork width', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final cover = find.byKey(
+      const ValueKey('desktop-cover:desktop:desktop-id-123'),
+    );
+    expect(cover, findsOneWidget);
+    // Regular mode reserves 23 px horizontally per edge for the artwork
+    // stage. A height percentage must never shrink it on a tall phone.
+    expect(tester.getSize(cover).width, closeTo(342, 1));
+    expect(tester.getSize(cover).height, closeTo(342, 1));
+    expect(find.byType(FullBleedArtworkFrame), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('remote mode honors the shared fullscreen-cover preference', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        lokalInitialAppearanceProvider.overrideWithValue(
+          const LokalAppearance(fullscreenCover: true),
+        ),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byType(FullBleedArtworkFrame), findsOneWidget);
+    expect(find.byKey(const ValueKey('remote-full-cover-spacer')), findsOneWidget);
+    expect(find.byKey(
+      const ValueKey('remote-full-cover:desktop:desktop-id-123'),
+    ), findsOneWidget);
+    // Fullcover replaces the square sleeve, it doesn't render two covers.
+    expect(find.byKey(
+      const ValueKey('desktop-cover:desktop:desktop-id-123'),
+    ), findsNothing);
+    expect(find.text('Desktop Recording'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
