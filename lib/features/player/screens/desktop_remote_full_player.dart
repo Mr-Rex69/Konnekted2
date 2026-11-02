@@ -64,7 +64,6 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
 
   // When actual content overflows, downward overscroll at the top must still
   // transfer the gesture to the normal full-player dismissal spring.
-  // exact sheet dismiss spring used by the normal full player.
   LokalPlayerRoute<dynamic>? _overscrollRoute;
   double _overscrollDistance = 0;
 
@@ -150,14 +149,16 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                     return false;
                   },
                   child: NotificationListener<ScrollNotification>(
-                  onNotification: _contentOverflows ? _onCompactScroll : (_) => false,
-                  child: SingleChildScrollView(
-                    controller: _contentScroll,
-                    physics: _contentOverflows
-                        ? const ClampingScrollPhysics()
-                        : const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Center(
+                    onNotification: _contentOverflows
+                        ? _onCompactScroll
+                        : (_) => false,
+                    child: SingleChildScrollView(
+                      controller: _contentScroll,
+                      physics: _contentOverflows
+                          ? const ClampingScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 510),
                       child: Column(
@@ -338,8 +339,8 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                         ],
                       ),
                     ),
-                  ),
-                  ),
+                      ),
+                    ),
                   ),
                 );
               },
