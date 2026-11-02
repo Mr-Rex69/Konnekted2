@@ -23,6 +23,7 @@ class SongStageCarousel extends StatefulWidget {
     this.buttonDissolve = false,
     this.animateButtonDissolve = true,
     this.maskOutgoingOnDissolve = false,
+    this.allowUnresolvedSwipe = false,
     this.onDragStateChanged,
   });
   final Song currentSong;
@@ -38,6 +39,9 @@ class SongStageCarousel extends StatefulWidget {
   /// outgoing artwork with the inverse cloud so no rectangular remnant hangs
   /// around underneath the incoming banner until the animation completes.
   final bool maskOutgoingOnDissolve;
+  /// A remote transport can skip even when the paired desktop has not yet
+  /// published its adjacent queue thumbnails. Local playback stays strict.
+  final bool allowUnresolvedSwipe;
   final ValueChanged<bool>? onDragStateChanged;
 
   @override
@@ -244,17 +248,20 @@ class SongStageCarouselState extends State<SongStageCarousel>
   void _update(DragUpdateDetails details) {
     if (!_dragging || !widget.enabled) return;
     var delta = details.delta.dx;
-    if ((delta < 0 && _next == null) || (delta > 0 && _previous == null)) {
+    if (!widget.allowUnresolvedSwipe &&
+        ((delta < 0 && _next == null) || (delta > 0 && _previous == null))) {
       delta *= .32 * math.exp(-_offset.abs() / math.max(_width * .6, 1));
     }
     setState(() => _offset = (_offset + delta).clamp(-_width, _width));
   }
 
-  Future<void> _end(DragEndDetails details) async {
+  Future<void> _end(DragEndDetails details) =>
+      _finishDrag(details.primaryVelocity ?? 0);
+
+  Future<void> _finishDrag(double velocity) async {
     if (!_dragging) return;
     _dragging = false;
     widget.onDragStateChanged?.call(false);
-    final velocity = details.primaryVelocity ?? 0;
     final goNext =
         velocity <= -700 || (velocity.abs() < 700 && _offset < -_width * .25);
     final goPrevious =
@@ -263,6 +270,12 @@ class SongStageCarouselState extends State<SongStageCarousel>
       await _commit(true);
     } else if (goPrevious && _previous != null) {
       await _commit(false);
+    } else if (goNext && widget.allowUnresolvedSwipe) {
+      await widget.onNext();
+      await _moveTo(0);
+    } else if (goPrevious && widget.allowUnresolvedSwipe) {
+      await widget.onPrevious();
+      await _moveTo(0);
     } else {
       await _moveTo(0);
     }
@@ -274,6 +287,15 @@ class SongStageCarouselState extends State<SongStageCarousel>
     widget.onDragStateChanged?.call(false);
     _moveTo(0);
   }
+
+  /// A full-bleed player renders its cover behind the control chrome. Let a
+  /// hit-testable, transparent artwork slot in that chrome forward horizontal
+  /// drag deltas to the *same* carousel, preserving the normal slide physics.
+  void startExternalDrag() => _start(DragStartDetails());
+  void updateExternalDrag(double delta) =>
+      _update(DragUpdateDetails(delta: Offset(delta, 0), primaryDelta: delta));
+  Future<void> endExternalDrag(double velocity) => _finishDrag(velocity);
+  void cancelExternalDrag() => _cancel();
 
   @override
   void dispose() {

@@ -3,6 +3,8 @@ import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/player/screens/desktop_remote_full_player.dart';
 import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
+import 'package:flick/features/player/widgets/artwork_gradient_backdrop.dart';
+import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
 import 'package:flick/features/player/widgets/player_artwork_image.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
 import 'package:flick/features/player/widgets/song_stage_carousel.dart';
@@ -47,6 +49,9 @@ class _RemotePlayer extends PlayerNotifier {
       actions.add('previous');
 
   @override
+  Future<void> previousBySwipe() async => actions.add('previous-swipe');
+
+  @override
   Future<void> togglePlayPause() async => actions.add('toggle');
 
   @override
@@ -88,6 +93,35 @@ class _RemoteController extends LokalRemoteController {
         LokalRemoteTrack(id: 'desktop-next', title: 'Next',
           artist: 'Performer'),
       ],
+    ),
+  );
+}
+
+/// A paired desktop can expose transport controls before its queue snapshot
+/// arrives. Swipes must still issue next/previous commands in that case.
+class _RemoteWithoutQueue extends _RemoteController {
+  @override
+  LokalRemoteControllerState build() => LokalRemoteControllerState(
+    controlsDesktop: true,
+    status: LokalRemoteConnectionStatus.connected,
+    desktopName: 'ExpertBook',
+    snapshot: const LokalRemoteSnapshot(
+      connected: true,
+      isPlaying: true,
+      progress: 45,
+      duration: 240,
+      volume: .5,
+      repeat: 'none',
+      shuffle: false,
+      currentTrack: LokalRemoteTrack(
+        id: 'desktop-id-123',
+        title: 'Desktop Recording',
+        artist: 'Desktop Performer',
+        album: 'Desktop Album',
+      ),
+      updatedAt: 123,
+      queue: [],
+      currentIndex: -1,
     ),
   );
 }
@@ -349,9 +383,13 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.byType(FullBleedArtworkFrame), findsOneWidget);
-    expect(tester.widget<FullBleedArtworkFrame>(
-        find.byType(FullBleedArtworkFrame)).dimOnExpand, isFalse);
+    expect(find.byType(FullBleedArtworkFrame), findsWidgets);
+    final coverFrame = tester.widget<FullBleedArtworkFrame>(
+        find.byType(FullBleedArtworkFrame).first);
+    expect(coverFrame.dimOnExpand, isFalse);
+    expect(coverFrame.fadeOutCompletely, isTrue);
+    expect(find.byType(ArtworkGradientBackdrop), findsOneWidget);
+    expect(find.byType(ArtworkMeshBlurBackdrop), findsOneWidget);
     expect(find.byKey(const ValueKey('remote-full-cover-spacer')), findsOneWidget);
     expect(find.byKey(
       const ValueKey('remote-full-cover:desktop:desktop-id-123'),
@@ -361,6 +399,76 @@ void main() {
       const ValueKey('desktop-cover:desktop:desktop-id-123'),
     ), findsNothing);
     expect(find.text('Desktop Recording'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('fullscreen-cover swipe forwards through chrome to desktop',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final player = _RemotePlayer();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(() => player),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        lokalInitialAppearanceProvider.overrideWithValue(
+          const LokalAppearance(fullscreenCover: true),
+        ),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pump();
+    final swipeZone = find.byKey(
+      const ValueKey('remote-full-cover-spacer'),
+    );
+    expect(swipeZone, findsOneWidget);
+    expect(tester.widget<SongStageCarousel>(
+      find.byType(SongStageCarousel).first).allowUnresolvedSwipe, isTrue);
+    await tester.drag(swipeZone, const Offset(-280, 0));
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(player.actions, contains('next'));
+    await tester.drag(swipeZone, const Offset(280, 0));
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(player.actions, contains('previous-swipe'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('full-cover swipes work even before desktop queue arrives',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final player = _RemotePlayer();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(() => player),
+        lokalRemoteControllerProvider.overrideWith(_RemoteWithoutQueue.new),
+        lokalInitialAppearanceProvider.overrideWithValue(
+          const LokalAppearance(fullscreenCover: true),
+        ),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pump();
+    final cover = find.byKey(const ValueKey('remote-full-cover-spacer'));
+    expect(cover, findsOneWidget);
+    await tester.drag(cover, const Offset(-300, 0));
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(player.actions, contains('next'));
+    await tester.drag(cover, const Offset(300, 0));
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(player.actions, contains('previous-swipe'));
     expect(tester.takeException(), isNull);
   });
 

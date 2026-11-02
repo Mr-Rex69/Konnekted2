@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
+import 'package:flick/features/player/widgets/artwork_gradient_backdrop.dart';
+import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
 import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/features/player/widgets/player_artwork_image.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
@@ -14,6 +16,7 @@ import 'package:flick/features/queue/screens/queue_screen.dart';
 import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
+import 'package:flick/providers/album_color_provider.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
@@ -36,6 +39,7 @@ class DesktopRemoteFullPlayer extends ConsumerStatefulWidget {
 
 class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlayer>
     with SingleTickerProviderStateMixin {
+  final _coverCarouselKey = GlobalKey<SongStageCarouselState>();
   double? _seekDrag;
   double? _volumeDrag;
   bool _showLyrics = false;
@@ -157,6 +161,20 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
     final player = ref.watch(playerProvider);
     final song = player.currentSong;
     final currentTrack = remote.snapshot?.currentTrack;
+    // Use the same live album palette as FullPlayerScreen. The player
+    // provider already exposes the remote now-playing artwork; never tint the
+    // desktop player from the stale phone-only audio engine.
+    final palette = ref.watch(albumPaletteSyncProvider);
+    final dominant = ref.watch(albumDominantColorSyncProvider);
+    final colors = palette.length >= 2
+        ? palette
+        : [
+            dominant ?? const Color(0xFF3B3B44),
+            HSLColor.fromColor(dominant ?? const Color(0xFF3B3B44))
+                .withLightness(0.3)
+                .toColor(),
+            const Color(0xFF14141A),
+          ];
     // Match the local full player: remote control changes the transport,
     // not the listener's chosen artwork presentation.
     final fullCover = ref.watch(
@@ -209,22 +227,34 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
           child: Stack(
             fit: StackFit.expand,
             children: [
+              // Reuse the local full player's continuous artwork ambience.
+              ArtworkGradientBackdrop(colors: colors, vibrant: true),
+              if (song != null)
+                ArtworkMeshBlurBackdrop(
+                  song: song,
+                  preserveArtworkContrast: fullCover,
+                ),
               if (fullCover && song != null)
-                FullBleedArtworkFrame(
-                  canvas: false,
-                  dimOnExpand: false,
-                  child: SongStageCarousel(
-                    key: const ValueKey('desktop-cover-carousel-full'),
-                    currentSong: song,
-                    nextSong: nextTrack,
-                    prevSong: previousTrack,
-                    onNext: _remoteNext,
-                    onPrevious: _remotePrevious,
-                    buttonDissolve: true,
-                    stageBuilder: (track) => PlayerArtworkImage(
+                SongStageCarousel(
+                  key: _coverCarouselKey,
+                  currentSong: song,
+                  nextSong: nextTrack,
+                  prevSong: previousTrack,
+                  onNext: _remoteNext,
+                  onPrevious: _remotePrevious,
+                  buttonDissolve: true,
+                  maskOutgoingOnDissolve: true,
+                  allowUnresolvedSwipe: true,
+                  stageBuilder: (track) => FullBleedArtworkFrame(
+                    canvas: false,
+                    dimOnExpand: false,
+                    fadeOutCompletely: true,
+                    morphEnabled: track.id == song.id,
+                    child: PlayerArtworkImage(
                       key: ValueKey('remote-full-cover:${track.id}'),
                       song: track,
                       radius: 0,
+                      crossfade: false,
                       decodeWidth: 2048,
                     ),
                   ),
@@ -239,10 +269,10 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                         colors: [
                           Color(0x33000000),
                           Color(0x08000000),
-                          Color(0x20000000),
-                          Color(0xB0000000),
+                          Color(0x10000000),
+                          Color(0x40000000),
                         ],
-                        stops: [0, .28, .63, 1],
+                        stops: [0, .28, .66, 1],
                       ),
                     ),
                   ),
@@ -315,9 +345,23 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                           ),
                           SizedBox(height: compact ? 12 : 18),
                           if (fullCover && song != null)
-                            SizedBox(
-                              key: const ValueKey('remote-full-cover-spacer'),
-                              height: artworkSize,
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onHorizontalDragStart: (_) =>
+                                  _coverCarouselKey.currentState?.startExternalDrag(),
+                              onHorizontalDragUpdate: (details) =>
+                                  _coverCarouselKey.currentState
+                                      ?.updateExternalDrag(details.delta.dx),
+                              onHorizontalDragEnd: (details) {
+                                _coverCarouselKey.currentState
+                                    ?.endExternalDrag(details.primaryVelocity ?? 0);
+                              },
+                              onHorizontalDragCancel: () =>
+                                  _coverCarouselKey.currentState?.cancelExternalDrag(),
+                              child: SizedBox(
+                                key: const ValueKey('remote-full-cover-spacer'),
+                                height: artworkSize,
+                              ),
                             )
                           else if (song != null)
                             LokalPlayerArtwork(
@@ -332,6 +376,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                                   onNext: _remoteNext,
                                   onPrevious: _remotePrevious,
                                   buttonDissolve: true,
+                                  allowUnresolvedSwipe: true,
                                   stageBuilder: (track) => PlayerArtworkImage(
                                     key: ValueKey('desktop-cover:${track.id}'),
                                     song: track,

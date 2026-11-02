@@ -12,6 +12,7 @@ class FullBleedArtworkFrame extends StatelessWidget {
     this.morphEnabled = true,
     this.controlsOpacity = 1,
     this.dimOnExpand = true,
+    this.fadeOutCompletely = false,
   });
 
   final bool canvas;
@@ -19,6 +20,9 @@ class FullBleedArtworkFrame extends StatelessWidget {
   /// The remote player should not darken a settled cover at the end of the
   /// route lift. Local player retains its existing morph contrast policy.
   final bool dimOnExpand;
+  /// Keep the poster edge transparent when the mesh backdrop is continuous.
+  /// Independent of the route's cover-dimming treatment.
+  final bool fadeOutCompletely;
   final bool morphEnabled;
   final Widget child;
   final double? bannerBottom;
@@ -82,7 +86,9 @@ class FullBleedArtworkFrame extends StatelessWidget {
                     colors: [
                       Colors.white,
                       Colors.white,
-                      Colors.white.withValues(alpha: 1 - (dimOnExpand ? progress : .85)),
+                      Colors.white.withValues(alpha: fadeOutCompletely
+                          ? 0
+                          : 1 - (dimOnExpand ? progress : .85)),
                     ],
                     stops: [0, .68, 1],
                   ).createShader(rect),
