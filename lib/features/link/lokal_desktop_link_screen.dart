@@ -479,35 +479,62 @@ class _LokalDesktopLinkScreenState
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  // Keep connection management in one row on small phones.
+                  Row(
                     children: [
-                      FilledButton.tonal(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(controller.connect),
-                        child: Text(l10n.linkReconnect),
+                      Expanded(
+                        child: FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            minimumSize: const Size(0, 44),
+                          ),
+                          onPressed: _busy ? null : () => _run(controller.connect),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(l10n.linkReconnect, maxLines: 1),
+                          ),
+                        ),
                       ),
-                      TextButton(
-                        onPressed: _busy ? null : controller.disconnect,
-                        child: Text(l10n.linkDisconnect),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            minimumSize: const Size(0, 44),
+                          ),
+                          onPressed: _busy ? null : controller.disconnect,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(l10n.linkDisconnect, maxLines: 1),
+                          ),
+                        ),
                       ),
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(() async {
-                                final confirmed = await showLokalConfirmSheet(
-                                  context: context,
-                                  title: l10n.linkForget,
-                                  message: l10n.linkForgetDescription,
-                                  confirmLabel: l10n.linkForget,
-                                  destructive: true,
-                                );
-                                if (confirmed)
-                                  await controller.forgetConfiguration();
-                              }),
-                        child: Text(l10n.linkForget),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            minimumSize: const Size(0, 44),
+                          ),
+                          onPressed: _busy
+                              ? null
+                              : () => _run(() async {
+                                  final confirmed = await showLokalConfirmSheet(
+                                    context: context,
+                                    title: l10n.linkForget,
+                                    message: l10n.linkForgetDescription,
+                                    confirmLabel: l10n.linkForget,
+                                    destructive: true,
+                                  );
+                                  if (confirmed) {
+                                    await controller.forgetConfiguration();
+                                  }
+                                }),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(lokalText('Forget'), maxLines: 1),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -515,89 +542,6 @@ class _LokalDesktopLinkScreenState
               ),
             ),
           ),
-          if (link.reachable)
-            LokalSettingsBlock(
-              child: LokalSettingsCard(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.linkPlayback,
-                      style: TextStyle(
-                        color: t.text,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.linkControlDesktop),
-                      value: link.controlsDesktop,
-                      onChanged: _busy
-                          ? null
-                          : (value) =>
-                                _run(() => controller.setDesktopTarget(value)),
-                    ),
-                    if (link.snapshot?.currentTrack case final track?)
-                      Text(
-                        '${track.title} · ${track.artist}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: t.muted),
-                      ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final entry in [
-                          (Icons.skip_previous_rounded, LokalRemoteAction.prev),
-                          (
-                            link.snapshot?.isPlaying == true
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            LokalRemoteAction.togglePlay,
-                          ),
-                          (Icons.skip_next_rounded, LokalRemoteAction.next),
-                        ])
-                          IconButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(
-                                    () => controller.sendCommand(entry.$2),
-                                  ),
-                            icon: Icon(entry.$1),
-                          ),
-                      ],
-                    ),
-                    if (link.socketConnected)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton.tonal(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(controller.playOnDesktop),
-                            child: Text(l10n.linkPlayOnDesktop),
-                          ),
-                          FilledButton.tonal(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(controller.playOnPhone),
-                            child: Text(l10n.linkPlayOnPhone),
-                          ),
-                        ],
-                      ),
-                    if (!link.socketConnected)
-                      Text(
-                        l10n.linkUpdateDesktop,
-                        style: TextStyle(color: t.muted),
-                      ),
-                  ],
-                ),
-              ),
-            ),
           if (link.mergeApproved ||
               link.syncProgress.phase != LinkSyncPhase.idle)
             _mergeStatus(link),
