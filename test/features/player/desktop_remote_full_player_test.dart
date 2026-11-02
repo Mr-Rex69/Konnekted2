@@ -108,6 +108,71 @@ void main() {
     expect(cached.albumArt, isNot(track.artworkPath));
   });
 
+  test('every desktop queue item keeps its own authenticated artwork marker', () {
+    const first = LokalRemoteTrack(
+      id: 'recording-a',
+      title: 'First', artist: 'Artist', duration: 180,
+    );
+    const second = LokalRemoteTrack(
+      id: 'recording-b',
+      title: 'Second', artist: 'Artist', duration: 185,
+    );
+    final current = songFromDesktopRemoteTrack(
+      first, artworkServerId: 42,
+      artworkPath: '/data/user/0/lokal/cache/current.webp',
+    );
+    final queued = songFromDesktopRemoteTrack(
+      second, artworkServerId: 42,
+    );
+    expect(current.albumArt, '/data/user/0/lokal/cache/current.webp');
+    expect(current.filePath, 'lokal://42/recording-a');
+    expect(queued.albumArt, 'lokal-cover://recording-b');
+    expect(queued.filePath, 'lokal://42/recording-b');
+    expect(queued.remoteServerId, 42);
+    expect(queued.remoteId, 'recording-b');
+    expect(queued.albumArt, isNot(current.albumArt));
+    final beforePairing = songFromDesktopRemoteTrack(second);
+    expect(beforePairing.albumArt, isNull);
+    expect(beforePairing.filePath, isNull);
+  });
+
+  test('paired artwork server is invalidated on remote target changes', () {
+    const initial = LokalRemoteControllerState();
+    final paired = initial.copyWith(artworkServerId: 19);
+    expect(paired.artworkServerId, 19);
+    expect(paired.copyWith(remoteArtworkPath: '/cache/current.webp').artworkServerId, 19);
+    expect(paired.copyWith(clearArtworkServer: true).artworkServerId, isNull);
+  });
+
+  testWidgets('swiping down on the remote cover dismisses the full player', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var closes = 0;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () => closes++),
+      ),
+    ));
+    await tester.pump();
+    await tester.drag(
+      find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
+      const Offset(0, 300),
+    );
+    await tester.pumpAndSettle();
+    expect(closes, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('desktop full player displays remote track rather than the last mobile song',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
