@@ -165,7 +165,8 @@ class _ArtworkMeshBlurBackdropState
   void _syncMotion([AnimationStatus? status]) {
     final settled = _route == null ||
         _route!.status == AnimationStatus.completed;
-    if (_ultraPerformance || _reduceMotion || !TickerMode.of(context) || !settled) {
+    if (_ultraPerformance || _reduceMotion || _layers.isEmpty ||
+        !TickerMode.of(context) || !settled) {
       _drift.stop(canceled: false);
     } else if (!_drift.isAnimating) {
       _drift.repeat();
@@ -300,6 +301,7 @@ class _ArtworkMeshBlurBackdropState
       _fade.forward(from: 0);
     }
     if (mounted) {
+      _syncMotion();
       // A first image or Ultra-mode transition may never tick the fade.
       _driftPaint.notifyListeners();
       setState(() {});
