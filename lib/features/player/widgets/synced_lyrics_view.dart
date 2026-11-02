@@ -32,6 +32,9 @@ class SyncedLyricsView extends ConsumerStatefulWidget {
   /// carousel peek stages pass a static source so only the playing song's
   /// lyrics run.
   final ValueNotifier<Duration>? positionNotifier;
+  /// Remote transports can seek without touching the Android audio engine.
+  final Future<void> Function(Duration)? onSeek;
+  final ValueNotifier<bool>? playingNotifier;
 
   /// False for peek stages: renders statically without following playback.
   final bool active;
@@ -43,6 +46,8 @@ class SyncedLyricsView extends ConsumerStatefulWidget {
     required this.lyrics,
     this.albumColor,
     this.positionNotifier,
+    this.onSeek,
+    this.playingNotifier,
     this.active = true,
   });
 
@@ -159,12 +164,20 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   Future<void> _seekToLine(int index) async {
     if (index < 0 || index >= widget.lyrics.lines.length) return;
     final target = widget.lyrics.lines[index].timestamp;
-    widget.playerService.positionNotifier.value = target;
+    if (widget.onSeek == null) {
+      widget.playerService.positionNotifier.value = target;
+    } else {
+      _positionNotifier.value = target;
+    }
     _lastTickPosition = target;
     _resumeFollow(animateNow: false);
     _setActiveIndex(index);
     _animateToActiveLine();
-    await widget.playerService.seek(target);
+    if (widget.onSeek != null) {
+      await widget.onSeek!(target);
+    } else {
+      await widget.playerService.seek(target);
+    }
   }
 
   // --- geometry ---------------------------------------------------------
@@ -408,6 +421,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               sungColor: _sungColor,
               unsungColor: Colors.white.withValues(alpha: 0.30),
               positionNotifier: _positionNotifier,
+              playingNotifier: widget.playingNotifier,
               active: widget.active,
             ),
           )
@@ -465,6 +479,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                           sungColor: _sungColor.withValues(alpha: .86),
                           unsungColor: Colors.white.withValues(alpha: .35),
                           positionNotifier: _positionNotifier,
+                          playingNotifier: widget.playingNotifier,
                           active: widget.active,
                         )
                       : null,
