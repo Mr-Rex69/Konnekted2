@@ -275,11 +275,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
       if (next.controlsDesktop) {
         final remote = next.snapshot;
         if (remote == null) return;
-        Song convert(LokalRemoteTrack track) => Song(
+        Song convert(LokalRemoteTrack track, {bool current = false}) => Song(
           id: 'desktop:${track.id}',
           title: track.title,
           artist: track.artist,
           album: track.album,
+          // A desktop artwork_path is a PC filesystem path and cannot be
+          // rendered by Android. Use the paired, authenticated cover fetched
+          // into the phone's persistent artwork cache instead.
+          albumArt: current ? next.remoteArtworkPath : null,
           duration: Duration(milliseconds: (track.duration * 1000).round()),
           fileType: track.fileType,
           sourceType: 'lokal',
@@ -288,7 +292,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         state = state.copyWith(
           currentSong: remote.currentTrack == null
               ? null
-              : convert(remote.currentTrack!),
+              : convert(remote.currentTrack!, current: true),
           clearSong: remote.currentTrack == null,
           isPlaying: remote.isPlaying,
           position: Duration(milliseconds: (remote.progress * 1000).round()),
