@@ -8,6 +8,7 @@ import 'package:flick/l10n/l10n.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/lyrics_service.dart';
+import 'package:flick/services/online_lyrics_service.dart';
 import 'package:flick/services/player_service.dart';
 
 /// Desktop remote lyrics: online lookup for the *desktop* song, not the
@@ -64,6 +65,7 @@ class _DesktopRemoteLyricsPanelState
       });
     }
     try {
+      if (refresh) OnlineLyricsService.clearLookupCache();
       // Do not ask the Android file decoder to open a Windows/Linux song
       // path. Resolve the exact desktop track via Lokal's lyrics sources.
       final data = await _service.fetchOnlineLyrics(
