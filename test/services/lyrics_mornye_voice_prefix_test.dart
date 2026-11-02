@@ -4,6 +4,38 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final service = LyricsService();
 
+  test('actual FLAC layout: duplicated Vorbis lyrics tags and millisecond LRC', () {
+    // Captures the uploaded RAYE FLAC's metadata structure without copying
+    // the recording or its copyrighted lyrics into the repository.
+    const raw = '[ti:Call On Me]\n'
+        '[ar:RAYE]\n'
+        '[by:Mornye (source: lrc.red)]\n'
+        '\n'
+        '[00:02.916]v1:First test line\n'
+        '[00:06.811]v1:Next test line\n'
+        '[00:09.117]v1:Final test line';
+    // Both LYRICS and UNSYNCEDLYRICS hold this same LRC payload. Android's
+    // Vorbis reader selects either copy, then the Dart parser sanitizes it.
+    for (final field in ['LYRICS', 'UNSYNCEDLYRICS']) {
+      final parsed = service.parseLyricsText(raw, source: 'embedded:$field');
+      expect(parsed.isSynchronized, isTrue);
+      expect(parsed.lines.map((line) => line.text).toList(), [
+        'First test line',
+        'Next test line',
+        'Final test line',
+      ]);
+      expect(parsed.lines.map((line) => line.voice).toList(), [
+        'v1',
+        'v1',
+        'v1',
+      ]);
+      expect(parsed.lines[0].timestamp.inMilliseconds, 2916);
+      expect(parsed.lines[1].timestamp.inMilliseconds, 6811);
+      expect(parsed.lines[2].timestamp.inMilliseconds, 9117);
+      expect(parsed.lines.every((line) => line.words == null), isTrue);
+    }
+  });
+
   test('Mornye plain LRC voice labels are not displayed', () {
     final lyrics = service.parseLyricsText(
       '[00:01.00]v1: Hello\n[00:02.00]v2： World',
