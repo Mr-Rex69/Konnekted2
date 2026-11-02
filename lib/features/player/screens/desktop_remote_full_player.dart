@@ -13,6 +13,7 @@ import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
 import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
+import 'package:flick/widgets/lokal/lokal_player_route.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 
 /// Full player for the *remote* desktop transport, mounted within the normal
@@ -30,6 +31,68 @@ class DesktopRemoteFullPlayer extends ConsumerStatefulWidget {
 class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlayer> {
   double? _seekDrag;
   double? _volumeDrag;
+  final ScrollController _contentScroll = ScrollController();
+  bool _contentOverflows = false;
+  bool _overflowCheckQueued = false;
+
+  /// Measure the rendered extent after layout, including accessibility text
+  /// scaling, rather than guessing from a fixed viewport-height threshold.
+  void _checkContentOverflow() {
+    if (_overflowCheckQueued) return;
+    _overflowCheckQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _overflowCheckQueued = false;
+      if (!mounted || !_contentScroll.hasClients) return;
+      final overflows = _contentScroll.position.maxScrollExtent > 1;
+      if (overflows != _contentOverflows) {
+        setState(() => _contentOverflows = overflows);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkContentOverflow();
+  }
+
+  @override
+  void dispose() {
+    _contentScroll.dispose();
+    super.dispose();
+  }
+
+  // When actual content overflows, downward overscroll at the top must still
+  // transfer the gesture to the normal full-player dismissal spring.
+  LokalPlayerRoute<dynamic>? _overscrollRoute;
+  double _overscrollDistance = 0;
+
+  bool _onCompactScroll(ScrollNotification notification) {
+    if (notification is OverscrollNotification &&
+        notification.overscroll < 0 &&
+        notification.metrics.pixels <= notification.metrics.minScrollExtent) {
+      final route = LokalPlayerRoute.maybeOf(context);
+      if (route != null) {
+        if (_overscrollRoute == null) {
+          route.startDrag();
+          _overscrollRoute = route;
+        }
+        route.dragBy(-notification.overscroll);
+      } else {
+        _overscrollDistance += -notification.overscroll;
+      }
+    } else if (notification is ScrollEndNotification) {
+      final route = _overscrollRoute;
+      _overscrollRoute = null;
+      route?.endDrag(0);
+      if (route == null &&
+          _overscrollDistance > MediaQuery.sizeOf(context).height * .25) {
+        widget.onClose();
+      }
+      _overscrollDistance = 0;
+    }
+    return false; // Preserve ordinary scrolling and nested notifications.
+  }
 
   Future<void> _command(Future<void> Function() command) async {
     try {
@@ -73,12 +136,29 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
             child: LayoutBuilder(
               builder: (context, bounds) {
                 final artworkSize = math.min(
-                  math.max(180.0, bounds.maxWidth - 56),
-                  math.min(420.0, math.max(185.0, bounds.maxHeight * .46)),
+                  math.max(160.0, bounds.maxWidth - 56),
+                  math.min(420.0, math.max(160.0, bounds.maxHeight * .38)),
                 );
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Center(
+                final compact = bounds.maxHeight < 700;
+                // Only let the inner scroll view claim vertical swipes
+                // when the laid-out player is actually taller than the safe
+                // viewport. Re-measure on viewport/content dimension changes.
+                return NotificationListener<ScrollMetricsNotification>(
+                  onNotification: (_) {
+                    _checkContentOverflow();
+                    return false;
+                  },
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _contentOverflows
+                        ? _onCompactScroll
+                        : (_) => false,
+                    child: SingleChildScrollView(
+                      controller: _contentScroll,
+                      physics: _contentOverflows
+                          ? const ClampingScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 510),
                       child: Column(
@@ -112,7 +192,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               ),
                             ],
                           ),
-                          SizedBox(height: math.max(18, bounds.maxHeight * .035)),
+                          SizedBox(height: compact ? 12 : 18),
                           if (song != null)
                             LokalPlayerArtwork(
                               expandedRadius: 24,
@@ -134,7 +214,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                                 child: Icon(Icons.music_note_rounded, size: 84, color: secondary),
                               ),
                             ),
-                          const SizedBox(height: 32),
+                          SizedBox(height: compact ? 14 : 20),
                           Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
@@ -170,7 +250,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 18),
+                          SizedBox(height: compact ? 6 : 10),
                           SliderTheme(
                             data: SliderTheme.of(context).copyWith(
                               trackHeight: 3.5,
@@ -201,7 +281,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               Text(_clock(player.duration), style: const TextStyle(color: secondary, fontSize: 12)),
                             ],
                           ),
-                          const SizedBox(height: 15),
+                          SizedBox(height: compact ? 6 : 10),
                           PlayerTransportControls(
                             playing: player.isPlaying,
                             compact: false,
@@ -213,7 +293,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                             onNext: song == null ? () {} : () => _command(() => ref.read(playerProvider.notifier).next()),
                             onPlayPause: song == null ? () {} : () => _command(() => ref.read(playerProvider.notifier).togglePlayPause()),
                           ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: compact ? 4 : 10),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -236,7 +316,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: compact ? 3 : 8),
                           Row(
                             children: [
                               const Icon(Icons.volume_down_rounded, color: secondary),
@@ -255,8 +335,10 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               const Icon(Icons.volume_up_rounded, color: secondary),
                             ],
                           ),
-                          const SizedBox(height: 20),
+                          SizedBox(height: compact ? 2 : 8),
                         ],
+                      ),
+                    ),
                       ),
                     ),
                   ),

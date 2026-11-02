@@ -248,6 +248,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       socketConnected: false,
       controlsDesktop: false,
       clearRemoteArtwork: true,
+      clearArtworkServer: true,
     );
   }
 
@@ -495,7 +496,8 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     }
     if (_disposed) return;
     state = state.copyWith(controlsDesktop: value,
-      clearRemoteArtwork: !value);
+      clearRemoteArtwork: !value,
+      clearArtworkServer: !value);
     if (!value) {
       NotificationService().release(_notificationOwner);
       _notificationTrack = null;
@@ -504,6 +506,30 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       PlayerService().refreshNotificationState();
     } else {
       _updateRemoteNotification();
+      // The now-playing artwork fetch already registers the network-source
+      // row. Avoid two concurrent ensureServer writes during first pairing.
+      // Register separately only if there is no current PC track to fetch.
+      if (state.snapshot?.currentTrack?.id == null) {
+        unawaited(_registerRemoteArtworkSource());
+      }
+    }
+  }
+
+  /// Register the paired desktop as an artwork source even if it is paused or
+  /// its current song has no cover. Queue rows require a resolvable server ID.
+  Future<void> _registerRemoteArtworkSource() async {
+    final credentials = _credentials;
+    if (credentials == null || credentials.desktopId == null ||
+        !Database.isInitialized) return;
+    final generation = _generation;
+    try {
+      final server = await LokalDesktopSource.instance.ensureServer(credentials);
+      if (!_disposed && state.controlsDesktop && generation == _generation &&
+          identical(_credentials, credentials)) {
+        state = state.copyWith(artworkServerId: server.id);
+      }
+    } catch (_) {
+      // A missing or offline cover must never block remote playback controls.
     }
   }
 
@@ -1087,9 +1113,14 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       final server = await LokalDesktopSource.instance.ensureServer(
         credentials,
       );
+      if (_disposed || !state.controlsDesktop ||
+          _notificationArtworkKey != key) return;
+      if (state.artworkServerId != server.id) {
+        state = state.copyWith(artworkServerId: server.id);
+      }
       final path = await AlbumArtService.instance.resolveArtworkPath(
         existingPath: 'lokal-cover://$trackId',
-        audioSourcePath: 'lokal://${server.id}/$trackId',
+        audioSourcePath: 'lokal://${server.id}/${Uri.encodeComponent(trackId)}',
       );
       if (_disposed ||
           !state.controlsDesktop ||

@@ -121,17 +121,30 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
 Song songFromDesktopRemoteTrack(
   LokalRemoteTrack track, {
   String? artworkPath,
-}) => Song(
-  id: 'desktop:${track.id}',
-  title: track.title,
-  artist: track.artist,
-  album: track.album,
-  albumArt: artworkPath,
-  duration: Duration(milliseconds: (track.duration * 1000).round()),
-  fileType: track.fileType,
-  sourceType: 'lokal',
-  remoteId: track.id,
-);
+  int? artworkServerId,
+}) {
+  final id = track.id;
+  final hasCoverSource = artworkServerId != null && id != null && id.isNotEmpty;
+  return Song(
+    id: 'desktop:$id',
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    // The current track can reuse the already downloaded notification cover.
+    // Queue items resolve their own covers through the *same* paired, bounded
+    // Lokal artwork loader. Never interpret desktop artwork_path as an
+    // Android filesystem path.
+    albumArt: artworkPath ?? (hasCoverSource ? 'lokal-cover://$id' : null),
+    filePath: hasCoverSource
+        ? 'lokal://$artworkServerId/${Uri.encodeComponent(id!)}'
+        : null,
+    duration: Duration(milliseconds: (track.duration * 1000).round()),
+    fileType: track.fileType,
+    sourceType: 'lokal',
+    remoteId: id,
+    remoteServerId: artworkServerId,
+  );
+}
 
 /// Notifier that bridges PlayerService ValueNotifiers to Riverpod state.
 class PlayerNotifier extends Notifier<PlayerState> {
@@ -311,6 +324,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
             songFromDesktopRemoteTrack(
               track,
               artworkPath: current ? next.remoteArtworkPath : null,
+              artworkServerId: next.artworkServerId,
             );
         state = state.copyWith(
           currentSong: remote.currentTrack == null

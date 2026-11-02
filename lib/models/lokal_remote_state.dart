@@ -303,6 +303,7 @@ class LokalRemoteControllerState {
     this.socketConnected = false,
     this.controlsDesktop = false,
     this.remoteArtworkPath,
+    this.artworkServerId,
     this.desktopName = 'Lokal desktop',
     this.mergeApproved = false,
     this.syncPreview,
@@ -321,6 +322,9 @@ class LokalRemoteControllerState {
   /// The downloaded, app-private cover for the desktop's current recording.
   /// Never expose a PC filesystem path as an Android image file.
   final String? remoteArtworkPath;
+  /// Id of the authenticated Lokal network-source row backing desktop covers.
+  /// Queue thumbnails use it to resolve each track's own artwork on demand.
+  final int? artworkServerId;
   final String desktopName;
   final bool mergeApproved;
   final Map<String, dynamic>? syncPreview;
@@ -344,6 +348,8 @@ class LokalRemoteControllerState {
     bool? controlsDesktop,
     String? remoteArtworkPath,
     bool clearRemoteArtwork = false,
+    int? artworkServerId,
+    bool clearArtworkServer = false,
     String? desktopName,
     bool? mergeApproved,
     Map<String, dynamic>? syncPreview,
@@ -359,6 +365,7 @@ class LokalRemoteControllerState {
     socketConnected: socketConnected ?? this.socketConnected,
     controlsDesktop: controlsDesktop ?? this.controlsDesktop,
     remoteArtworkPath: clearRemoteArtwork ? null : remoteArtworkPath ?? this.remoteArtworkPath,
+    artworkServerId: clearArtworkServer ? null : artworkServerId ?? this.artworkServerId,
     desktopName: desktopName ?? this.desktopName,
     mergeApproved: mergeApproved ?? this.mergeApproved,
     syncPreview: syncPreview ?? this.syncPreview,
