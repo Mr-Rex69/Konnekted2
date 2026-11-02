@@ -87,6 +87,27 @@ void main() {
     expect(cover.copyWith(clearRemoteArtwork: true).remoteArtworkPath, isNull);
   });
 
+  test('desktop now-playing conversion uses the cached cover, never a PC path', () {
+    const track = LokalRemoteTrack(
+      id: 'recording-123',
+      title: 'From PC',
+      artist: 'Producer',
+      album: 'Album',
+      artworkPath: r'C:\\Users\\Desktop\\cover.jpg',
+      duration: 201,
+    );
+    final noCover = songFromDesktopRemoteTrack(track);
+    expect(noCover.albumArt, isNull);
+    expect(noCover.id, 'desktop:recording-123');
+    expect(noCover.remoteId, 'recording-123');
+    expect(noCover.duration, const Duration(seconds: 201));
+    final cached = songFromDesktopRemoteTrack(
+      track, artworkPath: '/data/user/0/lokal/cache/art.webp',
+    );
+    expect(cached.albumArt, '/data/user/0/lokal/cache/art.webp');
+    expect(cached.albumArt, isNot(track.artworkPath));
+  });
+
   testWidgets('desktop full player displays remote track rather than the last mobile song',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
