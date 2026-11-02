@@ -506,7 +506,12 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       PlayerService().refreshNotificationState();
     } else {
       _updateRemoteNotification();
-      unawaited(_registerRemoteArtworkSource());
+      // The now-playing artwork fetch already registers the network-source
+      // row. Avoid two concurrent ensureServer writes during first pairing.
+      // Register separately only if there is no current PC track to fetch.
+      if (state.snapshot?.currentTrack?.id == null) {
+        unawaited(_registerRemoteArtworkSource());
+      }
     }
   }
 
@@ -1115,7 +1120,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       }
       final path = await AlbumArtService.instance.resolveArtworkPath(
         existingPath: 'lokal-cover://$trackId',
-        audioSourcePath: 'lokal://${server.id}/$trackId',
+        audioSourcePath: 'lokal://${server.id}/${Uri.encodeComponent(trackId)}',
       );
       if (_disposed ||
           !state.controlsDesktop ||
