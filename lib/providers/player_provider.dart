@@ -197,12 +197,48 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _desktopLibrarySnapshot = library;
       _desktopLibraryIndex = preferredLibrarySongIndex(library.songs);
     }
-    final result = desktopLibrarySelection(
+    var result = desktopLibrarySelection(
       selected: selected,
       playlist: playlist,
       index: _desktopLibraryIndex!,
       desktopServerId: serverId,
     );
+
+    // Older catalogue merges deliberately skipped importing a separate PC
+    // row when the song already existed on Android. #429's reverse index
+    // cannot find a remote ID that was never stored. Resolve that selected
+    // recording from the desktop's bounded library search instead, without
+    // another whole-library sync or title-only handoff.
+    if (result == null &&
+        selected.sourceType == null &&
+        selected.filePath?.isNotEmpty == true &&
+        selected.duration > Duration.zero) {
+      final candidates = await ref
+          .read(lokalRemoteServiceProvider)
+          .findDesktopTrackCandidates(credentials, selected.title);
+      final trackId = matchedDesktopIdFromCandidates(
+        selected: selected,
+        candidates: candidates,
+        desktopServerId: serverId,
+      );
+      if (trackId != null) {
+        final ids = <String>[];
+        final seen = <String>{};
+        for (final song in playlist ?? <Song>[selected]) {
+          final id = song.id == selected.id
+              ? trackId
+              : desktopLibrarySelection(
+                  selected: song,
+                  playlist: null,
+                  index: _desktopLibraryIndex!,
+                  desktopServerId: serverId,
+                )?.trackId;
+          if (id != null && seen.add(id)) ids.add(id);
+        }
+        if (seen.add(trackId)) ids.insert(0, trackId);
+        result = DesktopLibrarySelection(trackId: trackId, trackIds: ids);
+      }
+    }
     // Async library/credential reads cannot dispatch an obsolete selection
     // after the listener switches back to the phone or a different desktop.
     final latest = ref.read(lokalRemoteControllerProvider);

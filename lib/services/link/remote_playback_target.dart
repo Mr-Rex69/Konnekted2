@@ -54,6 +54,47 @@ DesktopLibrarySelection? desktopLibrarySelection({
 }
 
 
+/// Resolve older overlapping libraries that were imported without saving a
+/// second desktop Song row. Query candidates come from the paired desktop's
+/// existing /api/remote/library/tracks endpoint. Only the same recording-level
+/// match used for library deduplication may authorize an exact desktop ID.
+String? matchedDesktopIdFromCandidates({
+  required Song selected,
+  required List<Map<String, dynamic>> candidates,
+  required int desktopServerId,
+}) {
+  if (selected.sourceType != null ||
+      selected.filePath?.isNotEmpty != true ||
+      selected.duration <= Duration.zero) return null;
+
+  final remoteSongs = <Song>[];
+  final seen = <String>{};
+  for (final row in candidates) {
+    final id = row['id']?.toString();
+    final seconds = row['duration'];
+    if (id == null || id.isEmpty || !seen.add(id) ||
+        seconds is! num || !seconds.isFinite || seconds <= 0) continue;
+    remoteSongs.add(Song(
+      id: 'desktop-candidate:$id',
+      title: row['title']?.toString() ?? '',
+      artist: row['artist']?.toString() ?? '',
+      album: row['album']?.toString(),
+      albumArtist: row['album_artist']?.toString(),
+      duration: Duration(milliseconds: (seconds * 1000).round()),
+      fileType: row['fileType']?.toString() ?? 'unknown',
+      filePath: 'lokal://$desktopServerId/${Uri.encodeComponent(id)}',
+      sourceType: 'lokal',
+      remoteId: id,
+      remoteServerId: desktopServerId,
+    ));
+  }
+  final indexed = preferredLibrarySongIndex([selected, ...remoteSongs]);
+  final copies = indexed.desktopCopiesByPhoneId[selected.id] ?? const <Song>[];
+  // Zero matches and multiple matching desktop recordings are both unsafe.
+  return copies.length == 1 ? copies.single.remoteId : null;
+}
+
+
 /// The UI can drive a target without claiming it is the local native engine.
 abstract interface class RemotePlaybackTarget {
   String get outputName;

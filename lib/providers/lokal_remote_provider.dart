@@ -578,6 +578,23 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       });
       return;
     }
+    // A connected desktop can remain reachable over HTTP after the paired
+    // socket closes. Preserve exact recording IDs and queue payloads instead
+    // of discarding them through the scalar-only transport action enum.
+    if (action == 'playLibraryTrack' || action == 'queueTracks') {
+      final credentials = _credentials;
+      if (credentials == null || value is! Map) {
+        throw const LokalRemoteProtocolException(
+          'The paired desktop library command is unavailable.',
+        );
+      }
+      await ref.read(lokalRemoteServiceProvider).sendLibraryCommand(
+        credentials,
+        action,
+        Map<String, dynamic>.from(value),
+      );
+      return;
+    }
     final actions = LokalRemoteAction.values.where(
       (item) => item.wireName == action,
     );
