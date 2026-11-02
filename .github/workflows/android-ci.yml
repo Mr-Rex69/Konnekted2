@@ -46,17 +46,21 @@ jobs:
             lib/features/discovery/youtube_music_playlist_cache.dart; do
             dart analyze --no-fatal-warnings "$source"
           done
-      - name: Analyze desktop remote player and queue artwork integration
+      - name: Analyze desktop remote player, lyrics and queue integration
         run: |
           set -euo pipefail
           for source in \
             lib/features/player/screens/desktop_remote_full_player.dart \
+            lib/features/player/screens/desktop_remote_lyrics_panel.dart \
+            lib/features/player/widgets/full_bleed_artwork_frame.dart \
+            lib/features/player/widgets/synced_lyrics_view.dart \
+            lib/features/player/widgets/karaoke_lyric_line.dart \
             lib/providers/player_provider.dart \
             lib/providers/lokal_remote_provider.dart \
             lib/models/lokal_remote_state.dart; do
             dart analyze --no-fatal-warnings "$source"
           done
-      - name: Verify desktop remote gesture and queue covers
+      - name: Verify desktop remote cover swipes, lyrics and queue animation
         run: flutter test --no-pub test/features/player/desktop_remote_full_player_test.dart
       - name: Focused suites from docs/BUILD.md, including share and picker
         run: >-

@@ -5,6 +5,9 @@ import 'package:flick/features/player/screens/desktop_remote_full_player.dart';
 import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
 import 'package:flick/features/player/widgets/player_artwork_image.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
+import 'package:flick/features/player/widgets/song_stage_carousel.dart';
+import 'package:flick/features/player/screens/desktop_remote_lyrics_panel.dart';
+import 'package:flick/features/queue/screens/queue_screen.dart';
 import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
@@ -76,6 +79,15 @@ class _RemoteController extends LokalRemoteController {
         album: 'Desktop Album',
       ),
       updatedAt: 123,
+      currentIndex: 1,
+      queue: const [
+        LokalRemoteTrack(id: 'desktop-previous', title: 'Previous',
+          artist: 'Performer'),
+        LokalRemoteTrack(id: 'desktop-id-123', title: 'Desktop Recording',
+          artist: 'Desktop Performer', album: 'Desktop Album'),
+        LokalRemoteTrack(id: 'desktop-next', title: 'Next',
+          artist: 'Performer'),
+      ],
     ),
   );
 }
@@ -197,6 +209,93 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('horizontal cover swipes issue remote next, not phone playback',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final player = _RemotePlayer();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(() => player),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pump();
+    expect(find.byType(SongStageCarousel), findsOneWidget);
+    await tester.drag(
+      find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
+      const Offset(-300, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(player.actions, contains('next'));
+  });
+
+  testWidgets('desktop queue enters with an in-place animated reveal', (
+      tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Queue'));
+    await tester.pump();
+    expect(find.byType(QueueScreen), findsNothing);
+    expect(find.byType(QueueList), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 100));
+    final opacity = tester.widgetList<Opacity>(find.byType(Opacity))
+        .map((w) => w.opacity);
+    expect(opacity.any((v) => v > 0 && v < 1), isTrue);
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(find.text('UP NEXT'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back to player').first);
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(find.byType(QueueList), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('remote lyrics opens for current desktop song', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () {}),
+      ),
+    ));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Lyrics'));
+    await tester.pump();
+    expect(find.byType(DesktopRemoteLyricsPanel), findsOneWidget);
+    await tester.tap(find.byTooltip('Back to player').first);
+    await tester.pump();
+    expect(find.byType(DesktopRemoteLyricsPanel), findsNothing);
+  });
+
   testWidgets('remote sleeve fills the regular full-player artwork width', (
     tester,
   ) async {
@@ -251,6 +350,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.byType(FullBleedArtworkFrame), findsOneWidget);
+    expect(tester.widget<FullBleedArtworkFrame>(
+        find.byType(FullBleedArtworkFrame)).dimOnExpand, isFalse);
     expect(find.byKey(const ValueKey('remote-full-cover-spacer')), findsOneWidget);
     expect(find.byKey(
       const ValueKey('remote-full-cover:desktop:desktop-id-123'),

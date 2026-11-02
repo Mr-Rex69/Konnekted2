@@ -8,7 +8,10 @@ import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
 import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/features/player/widgets/player_artwork_image.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
+import 'package:flick/features/player/widgets/song_stage_carousel.dart';
+import 'package:flick/features/player/screens/desktop_remote_lyrics_panel.dart';
 import 'package:flick/features/queue/screens/queue_screen.dart';
+import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
 import 'package:flick/providers/player_provider.dart';
@@ -17,6 +20,7 @@ import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
 import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flick/widgets/lokal/lokal_player_route.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
+import 'package:flick/widgets/lokal/lokal_queue_reveal.dart';
 
 /// Full player for the *remote* desktop transport, mounted within the normal
 /// FullPlayerScreen route. Never reads PlayerService.currentSongNotifier:
@@ -30,9 +34,40 @@ class DesktopRemoteFullPlayer extends ConsumerStatefulWidget {
   ConsumerState<DesktopRemoteFullPlayer> createState() => _DesktopRemoteFullPlayerState();
 }
 
-class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlayer> {
+class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlayer>
+    with SingleTickerProviderStateMixin {
   double? _seekDrag;
   double? _volumeDrag;
+  bool _showLyrics = false;
+  late final AnimationController _queueController = AnimationController(
+    vsync: this, duration: const Duration(milliseconds: 350),
+  );
+  late final LokalQueueRevealMotion _queueMotion =
+      LokalQueueRevealMotion(_queueController);
+
+  void _onQueueTargetChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _queueMotion.addListener(_onQueueTargetChanged);
+  }
+
+  void _openQueue() {
+    if (_showLyrics) setState(() => _showLyrics = false);
+    _queueMotion.setOpen(true);
+  }
+
+  void _closeQueue() => _queueMotion.setOpen(false);
+
+  Future<void> _remoteNext() =>
+      ref.read(playerProvider.notifier).next();
+
+  Future<void> _remotePrevious() =>
+      ref.read(playerProvider.notifier).previousBySwipe();
+
   final ScrollController _contentScroll = ScrollController();
   bool _contentOverflows = false;
   bool _overflowCheckQueued = false;
@@ -61,6 +96,9 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
   @override
   void dispose() {
     _contentScroll.dispose();
+    _queueMotion.removeListener(_onQueueTargetChanged);
+    _queueMotion.dispose();
+    _queueController.dispose();
     super.dispose();
   }
 
@@ -124,11 +162,40 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
     final fullCover = ref.watch(
       lokalAppearanceProvider.select((look) => look.fullscreenCover),
     );
+    final playlist = remote.snapshot?.queue ?? const <LokalRemoteTrack>[];
+    final reportedIndex = remote.snapshot?.currentIndex ?? -1;
+    // Reject stale shuffle/queue indices after a desktop reorder and locate
+    // the actual playing recording before allowing adjacent-cover swipes.
+    final currentIndex = reportedIndex >= 0 &&
+            reportedIndex < playlist.length &&
+            playlist[reportedIndex].id == currentTrack?.id
+        ? reportedIndex
+        : playlist.indexWhere((track) =>
+            track.id != null && track.id == currentTrack?.id);
+    final nextTrack = currentIndex >= 0 && currentIndex + 1 < playlist.length
+        ? songFromDesktopRemoteTrack(playlist[currentIndex + 1],
+            artworkServerId: remote.artworkServerId)
+        : null;
+    final previousTrack = currentIndex > 0 && currentIndex < playlist.length
+        ? songFromDesktopRemoteTrack(playlist[currentIndex - 1],
+            artworkServerId: remote.artworkServerId)
+        : null;
     const ink = FullPlayerVisuals.primaryText;
     const secondary = FullPlayerVisuals.secondaryText;
 
-    return LokalPullToDismiss(
+    _queueMotion.travel = MediaQuery.sizeOf(context).height * .7;
+    return PopScope(
+      canPop: !_queueMotion.isOpen && !_showLyrics,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_queueMotion.isOpen) _closeQueue();
+        else if (_showLyrics) setState(() => _showLyrics = false);
+      },
+      child: LokalPullToDismiss(
       onDismiss: widget.onClose,
+      isBlocked: () => _queueMotion.isOpen || _showLyrics,
+      onPullUpUpdate: _queueMotion.dragBy,
+      onPullUpEnd: (velocity) => _queueMotion.release(velocity),
       child: Scaffold(
         backgroundColor: const Color(0xFF0C0C0F),
         body: DecoratedBox(
@@ -145,11 +212,21 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
               if (fullCover && song != null)
                 FullBleedArtworkFrame(
                   canvas: false,
-                  child: PlayerArtworkImage(
-                    key: ValueKey('remote-full-cover:${song.id}'),
-                    song: song,
-                    radius: 0,
-                    decodeWidth: 2048,
+                  dimOnExpand: false,
+                  child: SongStageCarousel(
+                    key: const ValueKey('desktop-cover-carousel-full'),
+                    currentSong: song,
+                    nextSong: nextTrack,
+                    prevSong: previousTrack,
+                    onNext: _remoteNext,
+                    onPrevious: _remotePrevious,
+                    buttonDissolve: true,
+                    stageBuilder: (track) => PlayerArtworkImage(
+                      key: ValueKey('remote-full-cover:${track.id}'),
+                      song: track,
+                      radius: 0,
+                      decodeWidth: 2048,
+                    ),
                   ),
                 ),
               if (fullCover)
@@ -231,9 +308,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               const Spacer(),
                               IconButton(
                                 tooltip: lokalText('Queue'),
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(builder: (_) => const QueueScreen()),
-                                ),
+                                onPressed: _openQueue,
                                 icon: const Icon(Icons.queue_music_rounded, color: ink),
                               ),
                             ],
@@ -249,11 +324,20 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               expandedRadius: 24,
                               child: SizedBox.square(
                                 dimension: artworkSize,
-                                child: PlayerArtworkImage(
-                                  key: ValueKey('desktop-cover:${song.id}'),
-                                  song: song,
-                                  decodeWidth: 1024,
-                                  radius: 24,
+                                child: SongStageCarousel(
+                                  key: const ValueKey('desktop-cover-carousel'),
+                                  currentSong: song,
+                                  nextSong: nextTrack,
+                                  prevSong: previousTrack,
+                                  onNext: _remoteNext,
+                                  onPrevious: _remotePrevious,
+                                  buttonDissolve: true,
+                                  stageBuilder: (track) => PlayerArtworkImage(
+                                    key: ValueKey('desktop-cover:${track.id}'),
+                                    song: track,
+                                    decodeWidth: 1024,
+                                    radius: 24,
+                                  ),
                                 ),
                               ),
                             )
@@ -356,6 +440,15 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               ),
                               const SizedBox(width: 24),
                               IconButton(
+                                tooltip: lokalText('Lyrics'),
+                                onPressed: song == null ? null : () {
+                                  _closeQueue();
+                                  setState(() => _showLyrics = true);
+                                },
+                                icon: const Icon(Icons.lyrics_outlined, color: ink),
+                              ),
+                              const SizedBox(width: 24),
+                              IconButton(
                                 tooltip: lokalText('Repeat'),
                                 onPressed: () {
                                   if (remote.controlsDesktop) ref.read(playerProvider.notifier).toggleLoopMode();
@@ -398,9 +491,112 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
             ),
                 ),
               ),
+              AnimatedBuilder(
+                animation: _queueController,
+                builder: (context, _) {
+                  final t = _queueController.value.clamp(0.0, 1.0).toDouble();
+                  if (t == 0 && !_queueMotion.isOpen) {
+                    return const SizedBox.shrink();
+                  }
+                  final reveal = Curves.easeOutCubic.transform(t);
+                  return IgnorePointer(
+                    ignoring: !_queueMotion.isOpen,
+                    child: Opacity(
+                      opacity: t,
+                      child: Transform.translate(
+                        offset: Offset(0,
+                            MediaQuery.sizeOf(context).height * .3 * (1 - reveal)),
+                        child: ColoredBox(
+                          color: const Color(0xFF111115),
+                          child: SafeArea(
+                            child: Column(
+                              children: [
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _closeQueue,
+                                  onVerticalDragUpdate: (details) =>
+                                      _queueMotion.dragBy(-details.delta.dy),
+                                  onVerticalDragEnd: (details) =>
+                                      _queueMotion.release(
+                                        -(details.primaryVelocity ?? 0)),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        18, 12, 18, 12),
+                                    child: Row(
+                                      children: [
+                                        if (song != null)
+                                          SizedBox.square(
+                                            dimension: 52,
+                                            child: PlayerArtworkImage(
+                                              song: song,
+                                              decodeWidth: 160,
+                                              radius: 9,
+                                            ),
+                                          ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                song?.title ?? remote.desktopName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600),
+                                              ),
+                                              const Text('UP NEXT',
+                                                style: TextStyle(
+                                                    color: Colors.white60,
+                                                    fontSize: 12)),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: lokalText('Back to player'),
+                                          onPressed: _closeQueue,
+                                          icon: const Icon(
+                                              Icons.keyboard_arrow_down_rounded,
+                                              color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: QueueList(
+                                    embedded: true,
+                                    onOpenPlayer: _closeQueue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (_showLyrics && song != null)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: const Color(0xFF111115),
+                    child: SafeArea(
+                      child: DesktopRemoteLyricsPanel(
+                        key: ValueKey('remote-lyrics:${song.id}'),
+                        song: song,
+                        onClose: () => setState(() => _showLyrics = false),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
+      ),
       ),
     );
   }

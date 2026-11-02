@@ -30,6 +30,8 @@ class KaraokeLyricLine extends StatefulWidget {
   /// Position source to sweep against. Defaults to the player's own position;
   /// carousel peek stages pass a static source so their sweep stays put.
   final ValueNotifier<Duration>? positionNotifier;
+  /// Optional external playback status, e.g. a paired desktop transport.
+  final ValueNotifier<bool>? playingNotifier;
 
   /// False for peek stages: no ticker, no sweep.
   final bool active;
@@ -46,6 +48,7 @@ class KaraokeLyricLine extends StatefulWidget {
     required this.unsungColor,
     this.sublineText,
     this.positionNotifier,
+    this.playingNotifier,
     this.active = true,
   });
 
@@ -71,13 +74,16 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
   ValueNotifier<Duration> get _positionNotifier =>
       widget.positionNotifier ?? widget.playerService.positionNotifier;
 
+  ValueNotifier<bool> get _playingNotifier =>
+      widget.playingNotifier ?? widget.playerService.isPlayingNotifier;
+
   @override
   void initState() {
     super.initState();
     _basePosition = _positionNotifier.value;
-    _isPlaying = widget.playerService.isPlayingNotifier.value;
+    _isPlaying = _playingNotifier.value;
     _positionNotifier.addListener(_onPositionTick);
-    widget.playerService.isPlayingNotifier.addListener(_onPlayingChanged);
+    _playingNotifier.addListener(_onPlayingChanged);
     _resolveWords();
     _updateTicker();
   }
@@ -99,6 +105,15 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
       _resolveWords();
       _onPositionTick();
       return;
+    }
+    if (!identical(
+      oldWidget.playingNotifier ?? oldWidget.playerService.isPlayingNotifier,
+      _playingNotifier,
+    )) {
+      (oldWidget.playingNotifier ?? oldWidget.playerService.isPlayingNotifier)
+          .removeListener(_onPlayingChanged);
+      _playingNotifier.addListener(_onPlayingChanged);
+      _isPlaying = _playingNotifier.value;
     }
     if (oldWidget.active != widget.active) {
       _onPositionTick();
@@ -134,7 +149,7 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
     // pausing does not jump the fill forward.
     _basePosition = _predictedPosition();
     _baseTickerElapsed = _tickerElapsed;
-    _isPlaying = widget.playerService.isPlayingNotifier.value;
+    _isPlaying = _playingNotifier.value;
     _updateTicker();
   }
 
@@ -205,7 +220,7 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
   void dispose() {
     _ticker?.dispose();
     _positionNotifier.removeListener(_onPositionTick);
-    widget.playerService.isPlayingNotifier.removeListener(_onPlayingChanged);
+    _playingNotifier.removeListener(_onPlayingChanged);
     super.dispose();
   }
 
