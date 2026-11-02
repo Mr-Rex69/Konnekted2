@@ -49,6 +49,33 @@ class _LokalDevicesCardState extends ConsumerState<LokalDevicesCard> {
     }
   }
 
+  /// Keep the queue-handoff actions accessible after retiring the playback
+  /// settings card. They are secondary to the direct on/off switch.
+  Future<void> _handoffPlayback(bool toDesktop) async {
+    if (_switching) return;
+    setState(() => _switching = true);
+    try {
+      final controller = ref.read(lokalRemoteControllerProvider.notifier);
+      if (toDesktop) {
+        await controller.playOnDesktop();
+      } else {
+        await controller.playOnPhone();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final message = switch (error) {
+        LokalRemoteException e => e.message,
+        StateError e => e.message.toString(),
+        _ => l10n.linkActionFailed,
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _switching = false);
+    }
+  }
+
   void _openDesktopLink() => Navigator.of(context).push<void>(
         MaterialPageRoute(builder: (_) => const LokalDesktopLinkScreen()),
       );
@@ -87,7 +114,30 @@ class _LokalDevicesCardState extends ConsumerState<LokalDevicesCard> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: t.muted),
               ),
-              trailing: Icon(Icons.chevron_right_rounded, color: t.muted),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (link.socketConnected)
+                    PopupMenuButton<bool>(
+                      key: const ValueKey('you-devices-handoff-menu'),
+                      tooltip: l10n.linkPlayback,
+                      enabled: !_switching,
+                      icon: Icon(Icons.more_horiz_rounded, color: t.muted),
+                      onSelected: _handoffPlayback,
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          value: true,
+                          child: Text(l10n.linkPlayOnDesktop),
+                        ),
+                        PopupMenuItem(
+                          value: false,
+                          child: Text(l10n.linkPlayOnPhone),
+                        ),
+                      ],
+                    ),
+                  Icon(Icons.chevron_right_rounded, color: t.muted),
+                ],
+              ),
               onTap: _openDesktopLink,
             ),
             if (link.configured) ...[
