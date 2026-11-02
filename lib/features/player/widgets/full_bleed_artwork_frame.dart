@@ -11,10 +11,14 @@ class FullBleedArtworkFrame extends StatelessWidget {
     this.bannerBottom,
     this.morphEnabled = true,
     this.controlsOpacity = 1,
+    this.dimOnExpand = true,
   });
 
   final bool canvas;
   final double controlsOpacity;
+  /// The remote player should not darken a settled cover at the end of the
+  /// route lift. Local player retains its existing morph contrast policy.
+  final bool dimOnExpand;
   final bool morphEnabled;
   final Widget child;
   final double? bannerBottom;
@@ -28,7 +32,7 @@ class FullBleedArtworkFrame extends StatelessWidget {
       child: CustomPaint(
         foregroundPainter: _ArtworkContrast(
           viewportHeight,
-          progress * controlsOpacity,
+          dimOnExpand ? progress * controlsOpacity : 0,
         ),
         child: child,
       ),
@@ -78,7 +82,7 @@ class FullBleedArtworkFrame extends StatelessWidget {
                     colors: [
                       Colors.white,
                       Colors.white,
-                      Colors.white.withValues(alpha: 1 - progress),
+                      Colors.white.withValues(alpha: 1 - (dimOnExpand ? progress : .85)),
                     ],
                     stops: [0, .68, 1],
                   ).createShader(rect),
