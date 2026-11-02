@@ -16,6 +16,7 @@ import 'package:flick/features/queue/screens/queue_screen.dart';
 import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
+import 'package:flick/providers/album_color_provider.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
@@ -160,6 +161,20 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
     final player = ref.watch(playerProvider);
     final song = player.currentSong;
     final currentTrack = remote.snapshot?.currentTrack;
+    // Use the same live album palette as FullPlayerScreen. The player
+    // provider already exposes the remote now-playing artwork; never tint the
+    // desktop player from the stale phone-only audio engine.
+    final palette = ref.watch(albumPaletteSyncProvider);
+    final dominant = ref.watch(albumDominantColorSyncProvider);
+    final colors = palette.length >= 2
+        ? palette
+        : [
+            dominant ?? const Color(0xFF3B3B44),
+            HSLColor.fromColor(dominant ?? const Color(0xFF3B3B44))
+                .withLightness(0.3)
+                .toColor(),
+            const Color(0xFF14141A),
+          ];
     // Match the local full player: remote control changes the transport,
     // not the listener's chosen artwork presentation.
     final fullCover = ref.watch(
@@ -213,14 +228,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
             fit: StackFit.expand,
             children: [
               // Reuse the local full player's continuous artwork ambience.
-              const ArtworkGradientBackdrop(
-                colors: [
-                  Color(0xFF3B3B44),
-                  Color(0xFF262630),
-                  Color(0xFF14141A),
-                ],
-                vibrant: true,
-              ),
+              ArtworkGradientBackdrop(colors: colors, vibrant: true),
               if (song != null)
                 ArtworkMeshBlurBackdrop(
                   song: song,
