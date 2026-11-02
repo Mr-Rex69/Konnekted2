@@ -108,7 +108,7 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
     // ARTIST value as the local lead, desktop exposes the album owner SZA.
     final title = desktop.title.toLowerCase();
     final featured = RegExp(
-      r'\\b(?:with|feat\\.?|ft\\.?|featuring)\\s+([^)]*)',
+      r'\b(?:with|feat\.?|ft\.?|featuring)\s+([^)]*)',
       caseSensitive: false,
     ).firstMatch(title)?.group(1);
     if (featured == null || featured.trim().isEmpty) return false;
