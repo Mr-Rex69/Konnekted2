@@ -274,7 +274,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
     ref.listen(lokalRemoteControllerProvider, (previous, next) {
       if (next.controlsDesktop) {
         final remote = next.snapshot;
-        if (remote == null) return;
+        if (remote == null) {
+          // The PC target takes ownership immediately, even if its first
+          // state snapshot is still connecting. Never flash the last mobile
+          // recording in either player during this handoff.
+          state = state.copyWith(
+            clearSong: true,
+            isPlaying: false,
+            position: Duration.zero,
+            duration: Duration.zero,
+            queue: const [],
+            playlist: const [],
+            currentIndex: -1,
+          );
+          return;
+        }
         Song convert(LokalRemoteTrack track, {bool current = false}) => Song(
           id: 'desktop:${track.id}',
           title: track.title,
