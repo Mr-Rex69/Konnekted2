@@ -55,9 +55,19 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
       byId: {for (final song in visible) song.id: song},
     );
   }
+  // Display ownership and recording identity are different. Do not make
+  // inferred album ownership merge two unrelated artists in playlists.
   String? recordingKey(Song song) {
     if (song.duration <= Duration.zero) return null;
-    final artist = recommendationKey(creditedLeadArtist(song));
+    final rawArtist = song.artist.trim();
+    final owner = song.albumArtist?.trim() ?? '';
+    final matchingOwner = owner.isNotEmpty &&
+        splitArtistCredits(rawArtist).any(
+          (credit) => recommendationKey(credit) == recommendationKey(owner),
+        );
+    final artist = recommendationKey(
+      matchingOwner ? leadArtist(owner) : leadArtist(rawArtist),
+    );
     final title = titleKey(song.title);
     if (artist.isEmpty || title.isEmpty) return null;
     return '$artist\u0000$title';
