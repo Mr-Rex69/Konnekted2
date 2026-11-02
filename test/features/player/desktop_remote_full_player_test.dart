@@ -173,6 +173,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('compact player can dismiss by pulling down at scroll top', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 580)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var closes = 0;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerProvider.overrideWith(_RemotePlayer.new),
+        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+        home: DesktopRemoteFullPlayer(onClose: () => closes++),
+      ),
+    ));
+    await tester.pump();
+    await tester.drag(
+      find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
+      const Offset(0, 270),
+    );
+    await tester.pumpAndSettle();
+    expect(closes, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('desktop full player displays remote track rather than the last mobile song',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
