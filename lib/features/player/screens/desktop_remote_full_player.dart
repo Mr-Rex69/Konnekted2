@@ -11,6 +11,7 @@ import 'package:flick/features/player/widgets/player_transport_controls.dart';
 import 'package:flick/features/player/widgets/song_stage_carousel.dart';
 import 'package:flick/features/player/screens/desktop_remote_lyrics_panel.dart';
 import 'package:flick/features/queue/screens/queue_screen.dart';
+import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
 import 'package:flick/providers/player_provider.dart';
@@ -471,9 +472,112 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
             ),
                 ),
               ),
+              AnimatedBuilder(
+                animation: _queueController,
+                builder: (context, _) {
+                  final t = _queueController.value.clamp(0.0, 1.0);
+                  if (t == 0 && !_queueMotion.isOpen) {
+                    return const SizedBox.shrink();
+                  }
+                  final reveal = Curves.easeOutCubic.transform(t);
+                  return IgnorePointer(
+                    ignoring: !_queueMotion.isOpen,
+                    child: Opacity(
+                      opacity: t,
+                      child: Transform.translate(
+                        offset: Offset(0,
+                            MediaQuery.sizeOf(context).height * .3 * (1 - reveal)),
+                        child: ColoredBox(
+                          color: const Color(0xFF111115),
+                          child: SafeArea(
+                            child: Column(
+                              children: [
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _closeQueue,
+                                  onVerticalDragUpdate: (details) =>
+                                      _queueMotion.dragBy(-details.delta.dy),
+                                  onVerticalDragEnd: (details) =>
+                                      _queueMotion.release(
+                                        -(details.primaryVelocity ?? 0)),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        18, 12, 18, 12),
+                                    child: Row(
+                                      children: [
+                                        if (song != null)
+                                          SizedBox.square(
+                                            dimension: 52,
+                                            child: PlayerArtworkImage(
+                                              song: song,
+                                              decodeWidth: 160,
+                                              radius: 9,
+                                            ),
+                                          ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                song?.title ?? remote.desktopName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600),
+                                              ),
+                                              const Text('UP NEXT',
+                                                style: TextStyle(
+                                                    color: Colors.white60,
+                                                    fontSize: 12)),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: lokalText('Back to player'),
+                                          onPressed: _closeQueue,
+                                          icon: const Icon(
+                                              Icons.keyboard_arrow_down_rounded,
+                                              color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: QueueList(
+                                    embedded: true,
+                                    onOpenPlayer: _closeQueue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (_showLyrics && song != null)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: const Color(0xFF111115),
+                    child: SafeArea(
+                      child: DesktopRemoteLyricsPanel(
+                        key: ValueKey('remote-lyrics:${song.id}'),
+                        song: song,
+                        onClose: () => setState(() => _showLyrics = false),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
+      ),
       ),
     );
   }
