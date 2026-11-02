@@ -9,9 +9,14 @@ import 'package:flick/core/utils/artist_credits.dart' show splitArtistCredits;
 String creditedLeadArtist(Song song) {
   final artist = song.artist.trim();
   final owner = song.albumArtist?.trim() ?? '';
+  // Album ownership is the display lead, even if Android exposes only the
+  // second repeated Vorbis ARTIST value (e.g. Kendrick instead of SZA).
+  // Compilations and absent/placeholder album artists keep track credits.
+  final generic = owner.toLowerCase();
   if (owner.isNotEmpty &&
-      splitArtistCredits(artist).any(
-        (credit) => recommendationKey(credit) == recommendationKey(owner))) {
+      generic != 'unknown artist' &&
+      generic != 'various artists' &&
+      generic != 'va') {
     return leadArtist(owner);
   }
   return leadArtist(artist);
