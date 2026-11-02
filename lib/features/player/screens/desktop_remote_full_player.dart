@@ -139,7 +139,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               key: const ValueKey('desktop-full-player-title'),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: ink, fontSize: 23, fontWeight: FontWeight.w750),
+                              style: const TextStyle(color: ink, fontSize: 23, fontWeight: FontWeight.w700),
                             ),
                           ),
                           const SizedBox(height: 5),
@@ -177,7 +177,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               overlayShape: SliderComponentShape.noOverlay,
                             ),
                             child: Slider(
-                              value: (_seekDrag ?? player.progress).clamp(0.0, 1.0),
+                              value: (_seekDrag ?? player.progress).clamp(0.0, 1.0).toDouble(),
                               onChangeStart: song == null ? null : (value) => setState(() => _seekDrag = value),
                               onChanged: song == null ? null : (value) => setState(() => _seekDrag = value),
                               onChangeEnd: song == null ? null : (value) {
@@ -239,7 +239,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                               const Icon(Icons.volume_down_rounded, color: secondary),
                               Expanded(
                                 child: Slider(
-                                  value: (_volumeDrag ?? remote.snapshot?.volume ?? 0.8).clamp(0.0, 1.0),
+                                  value: (_volumeDrag ?? remote.snapshot?.volume ?? 0.8).clamp(0.0, 1.0).toDouble(),
                                   activeColor: ink,
                                   inactiveColor: Colors.white24,
                                   onChanged: (v) => setState(() => _volumeDrag = v),
