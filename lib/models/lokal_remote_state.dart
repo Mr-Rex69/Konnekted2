@@ -302,6 +302,7 @@ class LokalRemoteControllerState {
     this.commandInFlight = false,
     this.socketConnected = false,
     this.controlsDesktop = false,
+    this.remoteArtworkPath,
     this.desktopName = 'Lokal desktop',
     this.mergeApproved = false,
     this.syncPreview,
@@ -317,6 +318,9 @@ class LokalRemoteControllerState {
   final bool commandInFlight;
   final bool socketConnected;
   final bool controlsDesktop;
+  /// The downloaded, app-private cover for the desktop's current recording.
+  /// Never expose a PC filesystem path as an Android image file.
+  final String? remoteArtworkPath;
   final String desktopName;
   final bool mergeApproved;
   final Map<String, dynamic>? syncPreview;
@@ -338,6 +342,8 @@ class LokalRemoteControllerState {
     bool? commandInFlight,
     bool? socketConnected,
     bool? controlsDesktop,
+    String? remoteArtworkPath,
+    bool clearRemoteArtwork = false,
     String? desktopName,
     bool? mergeApproved,
     Map<String, dynamic>? syncPreview,
@@ -352,6 +358,7 @@ class LokalRemoteControllerState {
     commandInFlight: commandInFlight ?? this.commandInFlight,
     socketConnected: socketConnected ?? this.socketConnected,
     controlsDesktop: controlsDesktop ?? this.controlsDesktop,
+    remoteArtworkPath: clearRemoteArtwork ? null : remoteArtworkPath ?? this.remoteArtworkPath,
     desktopName: desktopName ?? this.desktopName,
     mergeApproved: mergeApproved ?? this.mergeApproved,
     syncPreview: syncPreview ?? this.syncPreview,
