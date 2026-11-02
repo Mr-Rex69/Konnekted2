@@ -1,4 +1,6 @@
 import 'package:flick/core/theme/lokal_performance_scope.dart';
+import 'desktop_remote_full_player.dart';
+import 'package:flick/providers/lokal_remote_provider.dart';
 import 'dart:io';
 import 'package:flick/features/music_videos/media3_music_video_surface.dart';
 import 'package:flick/features/music_videos/video_quality_settings.dart';
@@ -273,6 +275,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (!mounted || _initialEntryReady) return;
     _initialEntryReady = true;
     _initialRouteAnimation?.removeStatusListener(_onInitialRouteStatus);
+    if (ref.read(lokalRemoteControllerProvider).controlsDesktop) return;
     unawaited(_refreshFavorite());
     _discoverVideo(_player.currentSongNotifier.value);
     unawaited(_loadLyrics());
@@ -905,6 +908,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    // The Android engine retains its previous phone song while a paired PC
+    // owns the transport. Render a remote-aware player instead of that stale
+    // phone state; both branches remain in the same fullscreen route.
+    if (widget.videoSong == null &&
+        ref.watch(lokalRemoteControllerProvider.select((s) => s.controlsDesktop))) {
+      return DesktopRemoteFullPlayer(onClose: _close);
+    }
     final palette = ref.watch(albumPaletteSyncProvider);
     final dominant = ref.watch(albumDominantColorSyncProvider);
     final isCasting = ref.watch(isCastingProvider);
