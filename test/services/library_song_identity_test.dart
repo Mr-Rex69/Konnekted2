@@ -24,6 +24,47 @@ Song song(
 );
 
 void main() {
+  test('Mornye FLAC split ARTIST values do not duplicate linked song', () {
+    // Uploaded FLAC: ARTIST=SZA, ARTIST=Kendrick Lamar,
+    // ALBUMARTIST=SZA, DISPLAY ARTIST=SZA; Kendrick Lamar.
+    // Android can expose the second ARTIST value while desktop uses SZA.
+    final phone = song(
+      'phone-30', '30 For 30 (with Kendrick Lamar)',
+      '/storage/Music/SZA - 30 For 30 (with Kendrick Lamar).flac',
+      artist: 'Kendrick Lamar', album: 'SOS Deluxe: LANA',
+      duration: const Duration(milliseconds: 278277),
+    );
+    final desktop = song(
+      'pc-30', '30 For 30 (with Kendrick Lamar)',
+      'lokal://desktop/30', artist: 'SZA', albumArtist: 'SZA',
+      album: 'SOS Deluxe: LANA', source: 'lokal',
+      duration: const Duration(milliseconds: 278000),
+    );
+    for (final entries in [[desktop, phone], [phone, desktop]]) {
+      final index = preferredLibrarySongIndex(entries);
+      expect(index.visible.map((s) => s.id).toList(), ['phone-30']);
+      expect(index.byId['pc-30'], same(phone));
+      expect(index.byId['phone-30'], same(phone));
+    }
+  });
+
+  test('different artists without named featured credit remain independent', () {
+    final phone = song('phone', 'Duet', '/music/duet.flac',
+        artist: 'Kendrick Lamar', album: 'SOS Deluxe: LANA');
+    final pc = song('pc', 'Duet', 'lokal://desktop/duet',
+        artist: 'SZA', albumArtist: 'SZA', album: 'SOS Deluxe: LANA',
+        source: 'lokal');
+    expect(preferLocalLibrarySongs([phone, pc]), [phone, pc]);
+    final otherAlbum = song('pc2', 'Duet (with Kendrick Lamar)',
+        'lokal://desktop/duet2', artist: 'SZA', albumArtist: 'SZA',
+        album: 'Different Album', source: 'lokal');
+    final phoneWithTitle = song('phone2', 'Duet (with Kendrick Lamar)',
+        '/music/other.flac', artist: 'Kendrick Lamar',
+        album: 'SOS Deluxe: LANA');
+    expect(preferLocalLibrarySongs([phoneWithTitle, otherAlbum]),
+        [phoneWithTitle, otherAlbum]);
+  });
+
   test('album owner remains the lead when the full credit lists multiple artists', () {
     final phone = song('phone', 'All the Stars', '/music/stars.flac',
       artist: 'SZA', albumArtist: 'SZA');
