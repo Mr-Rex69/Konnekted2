@@ -59,6 +59,10 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
   }
 
   final locallyAvailable = <String, List<Song>>{};
+  // A multi-value Vorbis ARTIST tag may be reduced to the featured singer by
+  // Android while desktop retains the album's lead artist. Index by title as
+  // well so the unusually strong credit/album match below can reconcile them.
+  final localByTitle = <String, List<Song>>{};
   for (final song in songs) {
     if (song.isNetworkSource ||
         song.isPending ||
@@ -67,7 +71,51 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
       continue;
     }
     final key = recordingKey(song);
-    if (key != null) (locallyAvailable[key] ??= []).add(song);
+    if (key != null) {
+      (locallyAvailable[key] ??= []).add(song);
+      (localByTitle[titleKey(song.title)] ??= []).add(song);
+    }
+  }
+
+  // Require an explicit featured credit IN THE TRACK TITLE before accepting
+  // different lead artists. Equal titles and durations alone are not evidence
+  // that two unrelated recordings are identical.
+  bool matchesSplitCredit(Song desktop, Song phone) {
+    final owner = recommendationKey(desktop.albumArtist);
+    final phoneArtist = recommendationKey(creditedLeadArtist(phone));
+    final pcArtist = recommendationKey(creditedLeadArtist(desktop));
+    if (owner.isEmpty || owner != pcArtist || phoneArtist == pcArtist) {
+      return false;
+    }
+    final localAlbum = recommendationKey(phone.album);
+    final pcAlbum = recommendationKey(desktop.album);
+    if (localAlbum.isEmpty || pcAlbum.isEmpty || localAlbum != pcAlbum) {
+      return false;
+    }
+    if ((phone.duration - desktop.duration).abs() >
+        const Duration(seconds: 1)) {
+      return false;
+    }
+    if (phone.trackNumber != null && desktop.trackNumber != null &&
+        phone.trackNumber != desktop.trackNumber) {
+      return false;
+    }
+    if (phone.discNumber != null && desktop.discNumber != null &&
+        phone.discNumber != desktop.discNumber) {
+      return false;
+    }
+    // e.g. "30 For 30 (with Kendrick Lamar)": Android exposes the second
+    // ARTIST value as the local lead, desktop exposes the album owner SZA.
+    final title = desktop.title.toLowerCase();
+    final featured = RegExp(
+      r'\\b(?:with|feat\\.?|ft\\.?|featuring)\\s+([^)]*)',
+      caseSensitive: false,
+    ).firstMatch(title)?.group(1);
+    if (featured == null || featured.trim().isEmpty) return false;
+    final featuredCredits = splitArtistCredits(featured);
+    return featuredCredits.any(
+      (credit) => recommendationKey(credit) == phoneArtist,
+    );
   }
 
   Song? matchingPhoneCopy(Song desktop) {
@@ -87,6 +135,12 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
           localAlbum == desktopAlbum) {
         return phone;
       }
+    }
+    // Avoid this secondary scan on the normal matching path. Only songs with
+    // matching normalized titles are checked, not the entire phone library.
+    for (final phone in localByTitle[titleKey(desktop.title)] ??
+        const <Song>[]) {
+      if (matchesSplitCredit(desktop, phone)) return phone;
     }
     return null;
   }
