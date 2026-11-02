@@ -499,6 +499,8 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     if (!value) {
       NotificationService().release(_notificationOwner);
       _notificationTrack = null;
+      _notificationArtworkKey = null;
+      _notificationArtwork = null;
       PlayerService().refreshNotificationState();
     } else {
       _updateRemoteNotification();
