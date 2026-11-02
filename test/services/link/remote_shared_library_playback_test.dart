@@ -93,6 +93,34 @@ void main() {
     ), isNull);
   });
 
+  test('copied PC originals retain their desktop ID after becoming local files', () {
+    final copied = Song(
+      id: 'downloaded-14',
+      title: 'Renamed locally',
+      artist: 'Artist',
+      duration: const Duration(minutes: 4),
+      fileType: 'FLAC',
+      filePath: '/storage/Music/renamed.flac',
+      remoteId: 'pc-original-14',
+      remoteServerId: 7,
+    );
+    final index = preferredLibrarySongIndex([copied]);
+    final play = desktopLibrarySelection(
+      selected: copied,
+      playlist: [copied],
+      index: index,
+      desktopServerId: 7,
+    );
+    expect(play?.trackId, 'pc-original-14');
+    expect(play?.trackIds, ['pc-original-14']);
+    expect(desktopLibrarySelection(
+      selected: copied,
+      playlist: null,
+      index: index,
+      desktopServerId: 8,
+    ), isNull);
+  });
+
   test('play original PC-only songs and never use another paired desktop', () {
     final source = desktop('pc-original', 'Original', server: 7);
     final otherSource = desktop('another-pc', 'Other', server: 8);
