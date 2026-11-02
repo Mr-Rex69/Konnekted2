@@ -163,7 +163,15 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
       lokalAppearanceProvider.select((look) => look.fullscreenCover),
     );
     final playlist = remote.snapshot?.queue ?? const <LokalRemoteTrack>[];
-    final currentIndex = remote.snapshot?.currentIndex ?? -1;
+    final reportedIndex = remote.snapshot?.currentIndex ?? -1;
+    // Reject stale shuffle/queue indices after a desktop reorder and locate
+    // the actual playing recording before allowing adjacent-cover swipes.
+    final currentIndex = reportedIndex >= 0 &&
+            reportedIndex < playlist.length &&
+            playlist[reportedIndex].id == currentTrack?.id
+        ? reportedIndex
+        : playlist.indexWhere((track) =>
+            track.id != null && track.id == currentTrack?.id);
     final nextTrack = currentIndex >= 0 && currentIndex + 1 < playlist.length
         ? songFromDesktopRemoteTrack(playlist[currentIndex + 1],
             artworkServerId: remote.artworkServerId)
