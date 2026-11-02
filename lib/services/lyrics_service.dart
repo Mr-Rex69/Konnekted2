@@ -795,6 +795,7 @@ class LyricsService {
           text: line.text,
           words: resolveWords(lyrics, i),
           translation: line.translation,
+          voice: line.voice,
         ),
       );
     }
