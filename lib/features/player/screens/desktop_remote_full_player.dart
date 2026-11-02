@@ -494,7 +494,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
               AnimatedBuilder(
                 animation: _queueController,
                 builder: (context, _) {
-                  final t = _queueController.value.clamp(0.0, 1.0);
+                  final t = _queueController.value.clamp(0.0, 1.0).toDouble();
                   if (t == 0 && !_queueMotion.isOpen) {
                     return const SizedBox.shrink();
                   }
