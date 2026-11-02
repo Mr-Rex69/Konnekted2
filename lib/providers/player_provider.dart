@@ -115,6 +115,24 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
   return PlayerService();
 });
 
+/// Convert a desktop snapshot without reading the phone audio engine. Only
+/// Android-private cached images are passed here, never PC filesystem paths.
+@visibleForTesting
+Song songFromDesktopRemoteTrack(
+  LokalRemoteTrack track, {
+  String? artworkPath,
+}) => Song(
+  id: 'desktop:${track.id}',
+  title: track.title,
+  artist: track.artist,
+  album: track.album,
+  albumArt: artworkPath,
+  duration: Duration(milliseconds: (track.duration * 1000).round()),
+  fileType: track.fileType,
+  sourceType: 'lokal',
+  remoteId: track.id,
+);
+
 /// Notifier that bridges PlayerService ValueNotifiers to Riverpod state.
 class PlayerNotifier extends Notifier<PlayerState> {
   late PlayerService _service;
@@ -274,21 +292,30 @@ class PlayerNotifier extends Notifier<PlayerState> {
     ref.listen(lokalRemoteControllerProvider, (previous, next) {
       if (next.controlsDesktop) {
         final remote = next.snapshot;
-        if (remote == null) return;
-        Song convert(LokalRemoteTrack track) => Song(
-          id: 'desktop:${track.id}',
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration: Duration(milliseconds: (track.duration * 1000).round()),
-          fileType: track.fileType,
-          sourceType: 'lokal',
-          remoteId: track.id,
-        );
+        if (remote == null) {
+          // The PC target takes ownership immediately, even if its first
+          // state snapshot is still connecting. Never flash the last mobile
+          // recording in either player during this handoff.
+          state = state.copyWith(
+            clearSong: true,
+            isPlaying: false,
+            position: Duration.zero,
+            duration: Duration.zero,
+            queue: const [],
+            playlist: const [],
+            currentIndex: -1,
+          );
+          return;
+        }
+        Song convert(LokalRemoteTrack track, {bool current = false}) =>
+            songFromDesktopRemoteTrack(
+              track,
+              artworkPath: current ? next.remoteArtworkPath : null,
+            );
         state = state.copyWith(
           currentSong: remote.currentTrack == null
               ? null
-              : convert(remote.currentTrack!),
+              : convert(remote.currentTrack!, current: true),
           clearSong: remote.currentTrack == null,
           isPlaying: remote.isPlaying,
           position: Duration(milliseconds: (remote.progress * 1000).round()),

@@ -247,6 +247,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       commandInFlight: false,
       socketConnected: false,
       controlsDesktop: false,
+      clearRemoteArtwork: true,
     );
   }
 
@@ -493,10 +494,13 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       await PlayerService().pause();
     }
     if (_disposed) return;
-    state = state.copyWith(controlsDesktop: value);
+    state = state.copyWith(controlsDesktop: value,
+      clearRemoteArtwork: !value);
     if (!value) {
       NotificationService().release(_notificationOwner);
       _notificationTrack = null;
+      _notificationArtworkKey = null;
+      _notificationArtwork = null;
       PlayerService().refreshNotificationState();
     } else {
       _updateRemoteNotification();
@@ -1026,6 +1030,11 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     if (_notificationArtworkKey != artworkKey) {
       _notificationArtworkKey = artworkKey;
       _notificationArtwork = null;
+      // Don't flash the previous desktop recording's cover when the queue
+      // advances; replace it only after the new image has been resolved.
+      if (state.remoteArtworkPath != null) {
+        state = state.copyWith(clearRemoteArtwork: true);
+      }
       unawaited(_loadNotificationArtwork(artworkKey, track.id));
     }
     final position = Duration(milliseconds: (snapshot.progress * 1000).round());
@@ -1087,7 +1096,12 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           _notificationArtworkKey != key ||
           path == null)
         return;
+      if (state.snapshot?.currentTrack?.id != trackId) return;
       _notificationArtwork = path;
+      // The same cached file drives Android media metadata, the miniplayer,
+      // and the desktop-controlled full player. The image is never loaded
+      // from an inaccessible Windows/Linux filesystem path.
+      state = state.copyWith(remoteArtworkPath: path);
       _notificationTrack = null; // Publish the local image to Android metadata.
       _updateRemoteNotification();
     } catch (_) {
