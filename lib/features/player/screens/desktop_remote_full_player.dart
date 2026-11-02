@@ -13,6 +13,7 @@ import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
 import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
+import 'package:flick/widgets/lokal/lokal_player_route.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 
 /// Full player for the *remote* desktop transport, mounted within the normal
@@ -30,6 +31,39 @@ class DesktopRemoteFullPlayer extends ConsumerStatefulWidget {
 class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlayer> {
   double? _seekDrag;
   double? _volumeDrag;
+
+  // Very short screens and enlarged accessibility text must remain scrollable.
+  // When the scroll is already at its top, transfer downward overscroll to the
+  // exact sheet dismiss spring used by the normal full player.
+  LokalPlayerRoute<dynamic>? _overscrollRoute;
+  double _overscrollDistance = 0;
+
+  bool _onCompactScroll(ScrollNotification notification) {
+    if (notification is OverscrollNotification &&
+        notification.overscroll < 0 &&
+        notification.metrics.pixels <= notification.metrics.minScrollExtent) {
+      final route = LokalPlayerRoute.maybeOf(context);
+      if (route != null) {
+        if (_overscrollRoute == null) {
+          route.startDrag();
+          _overscrollRoute = route;
+        }
+        route.dragBy(-notification.overscroll);
+      } else {
+        _overscrollDistance += -notification.overscroll;
+      }
+    } else if (notification is ScrollEndNotification) {
+      final route = _overscrollRoute;
+      _overscrollRoute = null;
+      route?.endDrag(0);
+      if (route == null &&
+          _overscrollDistance > MediaQuery.sizeOf(context).height * .25) {
+        widget.onClose();
+      }
+      _overscrollDistance = 0;
+    }
+    return false; // Preserve ordinary scrolling and nested notifications.
+  }
 
   Future<void> _command(Future<void> Function() command) async {
     try {
@@ -84,11 +118,13 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                 // Very short/large-text viewports keep accessible scrolling.
                 final needsScroll = bounds.maxHeight < 620 ||
                     MediaQuery.textScalerOf(context).scale(16) > 23;
-                return SingleChildScrollView(
-                  physics: needsScroll
-                      ? const ClampingScrollPhysics()
-                      : const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                return NotificationListener<ScrollNotification>(
+                  onNotification: needsScroll ? _onCompactScroll : (_) => false,
+                  child: SingleChildScrollView(
+                    physics: needsScroll
+                        ? const ClampingScrollPhysics()
+                        : const NeverScrollableScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 510),
@@ -270,6 +306,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                         ],
                       ),
                     ),
+                  ),
                   ),
                 );
               },
