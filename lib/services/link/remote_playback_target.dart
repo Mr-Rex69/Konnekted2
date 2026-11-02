@@ -19,7 +19,10 @@ DesktopLibrarySelection? desktopLibrarySelection({
   required int desktopServerId,
 }) {
   String? desktopId(Song song) {
-    if (song.sourceType == 'lokal') {
+    if (song.sourceType == 'lokal' ||
+        (song.sourceType == null && song.remoteId != null)) {
+      // A downloaded/reorganized PC original retains its desktop ID even
+      // after its local audio path and sourceType become phone-owned.
       if (song.remoteServerId != desktopServerId ||
           song.remoteId?.isNotEmpty != true ||
           song.filePath?.startsWith('ghost://') == true) return null;
