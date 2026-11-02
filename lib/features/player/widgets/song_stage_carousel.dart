@@ -255,11 +255,13 @@ class SongStageCarouselState extends State<SongStageCarousel>
     setState(() => _offset = (_offset + delta).clamp(-_width, _width));
   }
 
-  Future<void> _end(DragEndDetails details) async {
+  Future<void> _end(DragEndDetails details) =>
+      _finishDrag(details.primaryVelocity ?? 0);
+
+  Future<void> _finishDrag(double velocity) async {
     if (!_dragging) return;
     _dragging = false;
     widget.onDragStateChanged?.call(false);
-    final velocity = details.primaryVelocity ?? 0;
     final goNext =
         velocity <= -700 || (velocity.abs() < 700 && _offset < -_width * .25);
     final goPrevious =
@@ -292,8 +294,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
   void startExternalDrag() => _start(DragStartDetails());
   void updateExternalDrag(double delta) =>
       _update(DragUpdateDetails(delta: Offset(delta, 0), primaryDelta: delta));
-  Future<void> endExternalDrag(double velocity) =>
-      _end(DragEndDetails(primaryVelocity: velocity));
+  Future<void> endExternalDrag(double velocity) => _finishDrag(velocity);
   void cancelExternalDrag() => _cancel();
 
   @override
