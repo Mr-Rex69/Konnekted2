@@ -73,6 +73,45 @@ ProviderContainer _container(_Store store, _Service service) =>
     );
 
 void main() {
+  test('Android notification takes the new desktop recording duration, not stale player duration', () {
+    const oldRecording = LokalRemoteTrack(
+      id: 'one', title: 'One', artist: 'Artist', duration: 237,
+    );
+    const newRecording = LokalRemoteTrack(
+      id: 'two', title: 'Two', artist: 'Artist', duration: 174,
+    );
+    LokalRemoteSnapshot state(LokalRemoteTrack track, double duration) =>
+        LokalRemoteSnapshot(
+          connected: true,
+          isPlaying: true,
+          progress: 0,
+          duration: duration,
+          volume: 1,
+          repeat: 'none',
+          shuffle: false,
+          currentTrack: track,
+          updatedAt: 20,
+        );
+
+    expect(desktopNotificationDuration(state(oldRecording, 237)),
+        const Duration(seconds: 237));
+    // Mobile next can deliver new title before desktop top-level duration
+    // updates. Its currentTrack metadata already knows the recording length.
+    expect(desktopNotificationDuration(state(newRecording, 237)),
+        const Duration(seconds: 174));
+    expect(desktopNotificationDuration(state(newRecording, 174)),
+        const Duration(seconds: 174));
+    // Older/online desktop tracks may omit metadata duration; later player
+    // duration snapshots must still be able to correct the notification.
+    const missingDuration = LokalRemoteTrack(
+      id: 'three', title: 'Three', artist: 'Artist',
+    );
+    expect(desktopNotificationDuration(state(missingDuration, 237)),
+        const Duration(seconds: 237));
+    expect(desktopNotificationDuration(state(missingDuration, 189)),
+        const Duration(seconds: 189));
+  });
+
   bool idleLink({
     Duration idleFor = const Duration(minutes: 4),
     bool controlsDesktop = false,
