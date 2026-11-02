@@ -746,7 +746,9 @@ class LibraryScannerService {
           existing == null ||
           existing.sampleRate == null ||
           existing.bitDepth == null ||
-          existing.discNumber == null;
+          existing.discNumber == null ||
+          existing.artist == l10n.unknownArtist ||
+          existing.album == l10n.unknownAlbum;
 
       final artist = (file.artist?.trim().isNotEmpty ?? false)
           ? file.artist!.trim()
@@ -991,10 +993,8 @@ class LibraryScannerService {
           // after their audio properties were marked complete. Replace only
           // unedited placeholders with real embedded tags, not custom titles.
           if ((existing.title.trim().isEmpty ||
-                  existing.artist == l10n.unknownArtist &&
-                      existing.title == _extractTitleFromFilename(
-                        existing.filePath.split('/').last,
-                      )) &&
+                  (existing.artist == l10n.unknownArtist &&
+                      existing.album == l10n.unknownAlbum)) &&
               (meta.title?.trim().isNotEmpty ?? false)) {
             existing.title = meta.title!.trim();
           }
