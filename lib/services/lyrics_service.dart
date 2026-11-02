@@ -37,6 +37,9 @@ class LyricsLine {
   final String text;
   final List<LyricsWord>? words;
 
+  /// Optional voice label carried by Mornye/lrc.red LRC (not sung text).
+  final String? voice;
+
   /// The line in another language, shown under it: in an LRC, the unstamped
   /// line right under a stamped one (desktop Lokal v9.2's rule).
   final String? translation;
@@ -46,6 +49,7 @@ class LyricsLine {
     required this.text,
     this.words,
     this.translation,
+    this.voice,
   });
 
   LyricsLine withTranslation(String? translation) => LyricsLine(
@@ -53,6 +57,7 @@ class LyricsLine {
     text: text,
     words: words,
     translation: translation,
+    voice: voice,
   );
 }
 
@@ -102,6 +107,56 @@ class LyricsService {
   static final RegExp _wordTimestampPattern = RegExp(
     r'<(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d{1,3})?)>',
   );
+  static final RegExp _voicePrefixPattern = RegExp(
+    r'^\s*(v\d{1,4})\s*[:：]\s*',
+    caseSensitive: false,
+  );
+
+  // Mornye/lrc.red sometimes embeds speaker identifiers in the actual
+  // LRC text. Remove those identifiers from both the display line and any
+  // karaoke units, retaining timing and voice identity.
+  static (String, List<LyricsWord>?, String?) _stripVoicePrefix(
+    String text,
+    List<LyricsWord>? words,
+  ) {
+    final match = _voicePrefixPattern.firstMatch(text);
+    if (match == null) return (text, words, null);
+    final cleanedText = text.substring(match.end).trimLeft();
+    if (cleanedText.isEmpty) return (text, words, null);
+    final voice = match.group(1)!.toLowerCase();
+    if (words == null || words.isEmpty) {
+      return (cleanedText, words, voice);
+    }
+
+    final timedMarker = _voicePrefixPattern.firstMatch(
+      words.map((word) => word.text).join(),
+    );
+    if (timedMarker == null) {
+      // An unmatched timed prefix must not reappear from the karaoke painter.
+      return (cleanedText, null, voice);
+    }
+    var remaining = timedMarker.end;
+    final cleanedWords = <LyricsWord>[];
+    for (final word in words) {
+      if (remaining >= word.text.length) {
+        remaining -= word.text.length;
+        continue;
+      }
+      final suffix = word.text.substring(remaining);
+      remaining = 0;
+      final visible = cleanedWords.isEmpty ? suffix.trimLeft() : suffix;
+      if (visible.isNotEmpty) {
+        cleanedWords.add(
+          LyricsWord(start: word.start, end: word.end, text: visible),
+        );
+      }
+    }
+    return (
+      cleanedText,
+      remaining == 0 && cleanedWords.isNotEmpty ? cleanedWords : null,
+      voice,
+    );
+  }
 
   LyricsService({this.online});
 
@@ -417,12 +472,17 @@ class LyricsService {
       }
       final text = row['text']?.toString() ?? '';
       if (text.trim().isEmpty) continue;
+      final (cleanText, cleanWords, voice) = _stripVoicePrefix(
+        text,
+        words.isEmpty ? null : words,
+      );
       final translation = row['translation'];
       lines.add(
         LyricsLine(
           timestamp: seconds(row['time']),
-          text: text,
-          words: words.isEmpty ? null : words,
+          text: cleanText,
+          words: cleanWords,
+          voice: voice ?? row['agent']?.toString(),
           translation: translation is Map
               ? translation['text']?.toString()
               : translation?.toString(),
@@ -1079,8 +1139,9 @@ class LyricsService {
       if (matches.isNotEmpty) {
         hasTimestamps = true;
         final body = line.replaceAll(timestampPattern, '');
-        final words = _extractWords(body, offsetMs);
-        final lyricText = body.replaceAll(_wordTimestampPattern, '').trim();
+        final rawWords = _extractWords(body, offsetMs);
+        final rawText = body.replaceAll(_wordTimestampPattern, '').trim();
+        final (lyricText, words, voice) = _stripVoicePrefix(rawText, rawWords);
         previous = [];
         final target = taggedSourceIndex;
         taggedSourceIndex = null;
@@ -1110,7 +1171,12 @@ class LyricsService {
           if (lyricText.isEmpty) continue;
           previous.add(parsedLines.length);
           parsedLines.add(
-            LyricsLine(timestamp: clamped, text: lyricText, words: words),
+            LyricsLine(
+              timestamp: clamped,
+              text: lyricText,
+              words: words,
+              voice: voice,
+            ),
           );
         }
         continue;
@@ -1121,10 +1187,13 @@ class LyricsService {
         continue;
       }
 
-      final text = line.trim().replaceAll(RegExp(r'\s+'), ' ');
+      final original = line.trim().replaceAll(RegExp(r'\s+'), ' ');
+      final (text, _, voice) = _stripVoicePrefix(original, null);
       if (previous.isNotEmpty) translations.add((previous, text));
       previous = [];
-      plainLines.add(LyricsLine(timestamp: Duration.zero, text: line.trim()));
+      plainLines.add(
+        LyricsLine(timestamp: Duration.zero, text: text, voice: voice),
+      );
     }
 
     if (hasTimestamps) {
@@ -1150,6 +1219,8 @@ class LyricsService {
           end++;
         }
         if (end == i + 2 &&
+            parsedLines[i].voice == null &&
+            parsedLines[i + 1].voice == null &&
             parsedLines[i].translation == null &&
             parsedLines[i + 1].translation == null &&
             parsedLines[i + 1].words == null &&
@@ -1216,10 +1287,11 @@ class LyricsService {
       final plain = <LyricsLine>[];
       for (final paragraph in paragraphs) {
         final start = time(paragraph.getAttribute('begin'));
-        final text = paragraph.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
-        if (text.isEmpty) continue;
+        final rawText = paragraph.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (rawText.isEmpty) continue;
         if (start == null) {
-          plain.add(LyricsLine(timestamp: Duration.zero, text: text));
+          final (text, _, voice) = _stripVoicePrefix(rawText, null);
+          plain.add(LyricsLine(timestamp: Duration.zero, text: text, voice: voice));
           continue;
         }
         final words = <LyricsWord>[];
@@ -1249,11 +1321,16 @@ class LyricsService {
             ),
           );
         }
+        final (text, cleanedWords, voice) = _stripVoicePrefix(
+          rawText,
+          words.isEmpty ? null : words,
+        );
         lines.add(
           LyricsLine(
             timestamp: start,
             text: text,
-            words: words.isEmpty ? null : words,
+            words: cleanedWords,
+            voice: voice,
           ),
         );
       }
@@ -1291,12 +1368,14 @@ class LyricsService {
       for (final match in linePattern.allMatches(xml)) {
         hasTimestamps = true;
         final ms = int.tryParse(match.group(1) ?? '') ?? 0;
-        final text = match.group(2)?.trim() ?? '';
+        final original = match.group(2)?.trim() ?? '';
+        final (text, _, voice) = _stripVoicePrefix(original, null);
         if (text.isNotEmpty) {
           lines.add(
             LyricsLine(
               timestamp: Duration(milliseconds: ms),
               text: text,
+              voice: voice,
             ),
           );
         }
@@ -1309,12 +1388,14 @@ class LyricsService {
           final seconds = int.tryParse(match.group(2) ?? '0') ?? 0;
           final centis = int.tryParse(match.group(3) ?? '0') ?? 0;
           final ms = (minutes * 60 + seconds) * 1000 + centis * 10;
-          final text = match.group(4)?.trim() ?? '';
+          final original = match.group(4)?.trim() ?? '';
+          final (text, _, voice) = _stripVoicePrefix(original, null);
           if (text.isNotEmpty) {
             lines.add(
               LyricsLine(
                 timestamp: Duration(milliseconds: ms),
                 text: text,
+                voice: voice,
               ),
             );
           }
