@@ -2509,6 +2509,28 @@ class MainActivity: FlutterActivity() {
             metadata["duration"] = durationStr.toLongOrNull()
         }
 
+        // Do not trust Android's truncated multi-artist Vorbis credit as the
+        // release lead, or accept a successful codec probe as proof that tags
+        // were read. The source FLAC's ALBUMARTIST takes precedence.
+        val mime = metadata["mimeType"]?.toString()?.lowercase() ?: ""
+        val likelyFlac = mime.contains("flac") ||
+            uriString.substringBefore('?').lowercase().endsWith(".flac")
+        val missingText = listOf("title", "artist", "album", "albumArtist")
+            .any { metadata[it]?.toString().isNullOrBlank() }
+        if (likelyFlac || (missingText && uriString.startsWith("content://"))) {
+            val nativeTags = parseFlacVorbisTextTags(uriString)
+            val nativeFields = mapOf(
+                "TITLE" to "title",
+                "ARTIST" to "artist",
+                "ALBUM" to "album",
+                "ALBUMARTIST" to "albumArtist",
+            )
+            for ((tag, field) in nativeFields) {
+                val value = nativeTags[tag]
+                if (!value.isNullOrBlank()) metadata[field] = value
+            }
+        }
+
         return metadata
     }
 
@@ -3380,6 +3402,62 @@ class MainActivity: FlutterActivity() {
 
         if (lines.isEmpty()) return null
         return lines.joinToString(separator = "\n")
+    }
+
+    /**
+     * Android's MediaMetadataRetriever can omit ALBUMARTIST and sometimes all
+     * textual tags of a valid FLAC. Read only the FLAC header's Vorbis comments
+     * (never the audio stream) as a deterministic fallback. The album artist is
+     * the authoritative release credit for the SZA/Kendrick multi-ARTIST file.
+     */
+    private fun parseFlacVorbisTextTags(audioUriString: String): Map<String, String> {
+        return openAudioInputStream(audioUriString)?.use { input ->
+            val signature = ByteArray(4)
+            if (!readExact(input, signature) ||
+                !signature.contentEquals(byteArrayOf(0x66, 0x4c, 0x61, 0x43))) {
+                return@use emptyMap()
+            }
+            var last = false
+            while (!last) {
+                val flag = input.read()
+                if (flag < 0) break
+                last = (flag and 0x80) != 0
+                val sizeBytes = ByteArray(3)
+                if (!readExact(input, sizeBytes)) break
+                val size = ((sizeBytes[0].toInt() and 0xff) shl 16) or
+                    ((sizeBytes[1].toInt() and 0xff) shl 8) or
+                    (sizeBytes[2].toInt() and 0xff)
+                if (flag and 0x7f == 4) {
+                    // Guard against malformed metadata allocating huge buffers.
+                    if (size > 8 * 1024 * 1024) break
+                    val block = ByteArray(size)
+                    if (!readExact(input, block)) break
+                    val buf = ByteBuffer.wrap(block).order(ByteOrder.LITTLE_ENDIAN)
+                    val vendor = readLeIntSafe(buf) ?: break
+                    if (vendor < 0 || vendor > buf.remaining()) break
+                    buf.position(buf.position() + vendor)
+                    val count = readLeIntSafe(buf) ?: break
+                    if (count < 0 || count > 65536) break
+                    val fields = mutableMapOf<String, String>()
+                    for (index in 0 until count) {
+                        val length = readLeIntSafe(buf) ?: break
+                        if (length < 0 || length > buf.remaining()) break
+                        val bytes = ByteArray(length)
+                        buf.get(bytes)
+                        val item = bytes.toString(Charsets.UTF_8)
+                        val separator = item.indexOf('=')
+                        if (separator <= 0) continue
+                        val key = item.substring(0, separator).trim()
+                            .replace(" ", "").replace("_", "").uppercase()
+                        val value = item.substring(separator + 1).trim()
+                        if (value.isNotEmpty()) fields.putIfAbsent(key, value)
+                    }
+                    return@use fields
+                }
+                if (!skipFully(input, size.toLong())) break
+            }
+            emptyMap()
+        } ?: emptyMap()
     }
 
     private fun parseFlacVorbisLyrics(audioUriString: String): String? {
