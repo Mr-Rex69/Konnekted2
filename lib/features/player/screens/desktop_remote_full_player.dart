@@ -31,9 +31,39 @@ class DesktopRemoteFullPlayer extends ConsumerStatefulWidget {
 class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlayer> {
   double? _seekDrag;
   double? _volumeDrag;
+  final ScrollController _contentScroll = ScrollController();
+  bool _contentOverflows = false;
+  bool _overflowCheckQueued = false;
 
-  // Very short screens and enlarged accessibility text must remain scrollable.
-  // When the scroll is already at its top, transfer downward overscroll to the
+  /// Measure the rendered extent after layout, including accessibility text
+  /// scaling, rather than guessing from a fixed viewport-height threshold.
+  void _checkContentOverflow() {
+    if (_overflowCheckQueued) return;
+    _overflowCheckQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _overflowCheckQueued = false;
+      if (!mounted || !_contentScroll.hasClients) return;
+      final overflows = _contentScroll.position.maxScrollExtent > 1;
+      if (overflows != _contentOverflows) {
+        setState(() => _contentOverflows = overflows);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkContentOverflow();
+  }
+
+  @override
+  void dispose() {
+    _contentScroll.dispose();
+    super.dispose();
+  }
+
+  // When actual content overflows, downward overscroll at the top must still
+  // transfer the gesture to the normal full-player dismissal spring.
   // exact sheet dismiss spring used by the normal full player.
   LokalPlayerRoute<dynamic>? _overscrollRoute;
   double _overscrollDistance = 0;
@@ -111,17 +141,19 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                   math.min(420.0, math.max(160.0, bounds.maxHeight * .38)),
                 );
                 final compact = bounds.maxHeight < 700;
-                // A scrollable descendant wins Flutter's vertical-drag arena
-                // over LokalPullToDismiss, making the full player impossible
-                // to swipe down. On normal phone heights, the player fits in
-                // the viewport and must let the parent route own the gesture.
-                // Very short/large-text viewports keep accessible scrolling.
-                final needsScroll = bounds.maxHeight < 620 ||
-                    MediaQuery.textScalerOf(context).scale(16) > 23;
-                return NotificationListener<ScrollNotification>(
-                  onNotification: needsScroll ? _onCompactScroll : (_) => false,
+                // Only let the inner scroll view claim vertical swipes
+                // when the laid-out player is actually taller than the safe
+                // viewport. Re-measure on viewport/content dimension changes.
+                return NotificationListener<ScrollMetricsNotification>(
+                  onNotification: (_) {
+                    _checkContentOverflow();
+                    return false;
+                  },
+                  child: NotificationListener<ScrollNotification>(
+                  onNotification: _contentOverflows ? _onCompactScroll : (_) => false,
                   child: SingleChildScrollView(
-                    physics: needsScroll
+                    controller: _contentScroll,
+                    physics: _contentOverflows
                         ? const ClampingScrollPhysics()
                         : const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -306,6 +338,7 @@ class _DesktopRemoteFullPlayerState extends ConsumerState<DesktopRemoteFullPlaye
                         ],
                       ),
                     ),
+                  ),
                   ),
                   ),
                 );
