@@ -161,6 +161,60 @@ class LokalRemoteService {
     }
   }
 
+
+  /// Look up a shared phone recording without requiring the user to resync
+  /// their whole library. The desktop already exposes an authenticated,
+  /// paginated title search; never download or transfer audio here.
+  ///
+  /// If the result would be incomplete, fail closed rather than choosing a
+  /// plausible track from only the first page.
+  Future<List<Map<String, dynamic>>> findDesktopTrackCandidates(
+    LokalRemoteCredentials credentials,
+    String title,
+  ) async {
+    if (title.trim().isEmpty) return const [];
+    const pageSize = 250;
+    const maxPages = 4;
+    final candidates = <Map<String, dynamic>>[];
+    for (var page = 0; page < maxPages; page++) {
+      final uri = _endpoint(credentials.origin, 'library/tracks').replace(
+        queryParameters: {
+          'q': title.trim(),
+          'limit': '$pageSize',
+          'offset': '${page * pageSize}',
+        },
+      );
+      final response = await _request(
+        () => _client.get(uri, headers: _headers(credentials))
+            .timeout(requestTimeout),
+      );
+      Map<String, dynamic> payload;
+      try {
+        payload = Map<String, dynamic>.from(
+          jsonDecode(response.body) as Map,
+        );
+      } on Object {
+        throw const LokalRemoteProtocolException(
+          'Lokal returned invalid desktop library search results.',
+        );
+      }
+      final items = payload['items'];
+      if (items is! List) {
+        throw const LokalRemoteProtocolException(
+          'Lokal returned invalid desktop library search results.',
+        );
+      }
+      for (final item in items) {
+        if (item is Map) {
+          candidates.add(Map<String, dynamic>.from(item));
+        }
+      }
+      if (payload['hasMore'] != true) return candidates;
+      if (items.isEmpty) break;
+    }
+    return const [];
+  }
+
   Uri _endpoint(Uri origin, String resource) => origin.replace(
     path: '/api/remote/$resource',
     query: null,
