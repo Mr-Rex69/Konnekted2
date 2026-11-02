@@ -8,6 +8,10 @@ import 'lokal_remote_provider.dart';
 import 'package:flick/features/link/lokal_ghost_availability.dart';
 import '../models/lokal_remote_state.dart';
 import '../services/link/remote_playback_target.dart';
+import '../services/link/library_song_identity.dart';
+import '../services/link/lokal_desktop_source.dart';
+import '../services/lokal_remote_service.dart';
+import 'songs_provider.dart';
 import 'listenbrainz_provider.dart';
 import '../models/playback_context.dart';
 import '../models/shuffle_mode.dart';
@@ -159,6 +163,61 @@ class PlayerNotifier extends Notifier<PlayerState> {
                 .sendRawCommand(action, value),
           )
         : null;
+  }
+
+  SongsState? _desktopLibrarySnapshot;
+  PreferredLibrarySongIndex? _desktopLibraryIndex;
+
+  /// Resolve a phone-library selection to real desktop IDs using the *same*
+  /// recording matches that suppress duplicated desktop rows in Mobile.
+  /// Never send mobile-only IDs/files to the PC or use a title-only guess.
+  Future<DesktopLibrarySelection> _resolveDesktopSelection(
+    Song selected, {
+    List<Song>? playlist,
+  }) async {
+    final connection = ref.read(lokalRemoteControllerProvider);
+    if (!connection.controlsDesktop || !connection.reachable) {
+      throw const LokalRemoteNetworkException(
+        'Connect to the desktop before selecting a remote song.',
+      );
+    }
+    final credentials =
+        await ref.read(lokalRemoteCredentialsStoreProvider).read();
+    if (credentials == null || credentials.desktopId == null ||
+        credentials.origin != connection.config?.origin) {
+      throw const LokalRemoteProtocolException(
+        'Pair this desktop and sync its library before playing shared songs.',
+      );
+    }
+    final serverId = connection.artworkServerId ??
+        (await LokalDesktopSource.instance.ensureServer(credentials)).id;
+
+    final library = await ref.read(songsProvider.future);
+    if (!identical(_desktopLibrarySnapshot, library)) {
+      _desktopLibrarySnapshot = library;
+      _desktopLibraryIndex = preferredLibrarySongIndex(library.songs);
+    }
+    final result = desktopLibrarySelection(
+      selected: selected,
+      playlist: playlist,
+      index: _desktopLibraryIndex!,
+      desktopServerId: serverId,
+    );
+    // Async library/credential reads cannot dispatch an obsolete selection
+    // after the listener switches back to the phone or a different desktop.
+    final latest = ref.read(lokalRemoteControllerProvider);
+    if (!latest.controlsDesktop || !latest.reachable ||
+        latest.config?.origin != connection.config?.origin) {
+      throw const LokalRemoteNetworkException(
+        'The selected desktop changed during playback.',
+      );
+    }
+    if (result == null) {
+      throw const LokalRemoteProtocolException(
+        'This recording has no unique, available copy on the selected desktop.',
+      );
+    }
+    return result;
   }
 
   Song? _lastTrackedSong;
@@ -465,7 +524,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }) async {
     final desktop = _desktop;
     if (desktop != null) {
-      await desktop.play(song, queue: playlist);
+      final selection = await _resolveDesktopSelection(
+        song, playlist: playlist,
+      );
+      await desktop.playLibrarySelection(selection);
       return;
     }
     await _service.play(song, playlist: playlist, context: context);
@@ -554,7 +616,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<int> addToQueue(Song song) async {
     final desktop = _desktop;
     if (desktop != null) {
-      await desktop.addToQueue(song);
+      final selection = await _resolveDesktopSelection(song);
+      await desktop.queueDesktopTrack(selection.trackId);
       return state.queue.length;
     }
     return _service.addToQueue(song);
