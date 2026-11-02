@@ -7,7 +7,7 @@ import '../core/utils/string_sort_utils.dart';
 import '../core/utils/uri_display_utils.dart';
 import '../models/song.dart';
 import '../data/repositories/song_repository.dart';
-import '../services/link/library_song_identity.dart' show preferLocalLibrarySongs;
+import '../features/search/providers/local_device_search.dart';
 
 import 'package:flick/l10n/l10n.dart';
 
@@ -771,5 +771,5 @@ final searchResultsProvider = FutureProvider.autoDispose<List<Song>>((
   if (query.isEmpty) return [];
 
   final repository = ref.watch(songRepositoryProvider);
-  return preferLocalLibrarySongs(await repository.searchSongs(query));
+  return phoneLocalSearchSongs(await repository.searchSongs(query));
 });
