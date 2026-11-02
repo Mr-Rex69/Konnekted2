@@ -73,6 +73,46 @@ ProviderContainer _container(_Store store, _Service service) =>
     );
 
 void main() {
+  bool idleLink({
+    Duration idleFor = const Duration(minutes: 4),
+    bool controlsDesktop = false,
+    bool desktopPlaying = false,
+    bool phonePlaying = false,
+    bool statsSyncBusy = false,
+    bool fileCopyBusy = false,
+    bool outboxBusy = false,
+  }) => shouldSuspendIdleDesktopLink(
+    idleFor: idleFor,
+    controlsDesktop: controlsDesktop,
+    desktopPlaying: desktopPlaying,
+    phonePlaying: phonePlaying,
+    statsSyncBusy: statsSyncBusy,
+    fileCopyBusy: fileCopyBusy,
+    outboxBusy: outboxBusy,
+  );
+
+  test('desktop remote control stays connected past three minutes of no phone playback', () {
+    expect(idleLink(controlsDesktop: true), isFalse);
+    expect(idleLink(
+      controlsDesktop: true,
+      idleFor: const Duration(hours: 2),
+    ), isFalse);
+    // Remote control remains active even if the desktop is paused.
+    expect(idleLink(controlsDesktop: true, desktopPlaying: false), isFalse);
+    // A desktop playing music must not be mistaken for an idle phone link.
+    expect(idleLink(desktopPlaying: true), isFalse);
+  });
+
+  test('passive desktop link still suspends after three minutes', () {
+    expect(idleLink(idleFor: const Duration(minutes: 2)), isFalse);
+    expect(idleLink(idleFor: const Duration(minutes: 3)), isFalse);
+    expect(idleLink(idleFor: const Duration(minutes: 4)), isTrue);
+    expect(idleLink(phonePlaying: true), isFalse);
+    expect(idleLink(statsSyncBusy: true), isFalse);
+    expect(idleLink(fileCopyBusy: true), isFalse);
+    expect(idleLink(outboxBusy: true), isFalse);
+  });
+
   test(
     'reconnect keeps the last good state through a transient failure',
     () async {
