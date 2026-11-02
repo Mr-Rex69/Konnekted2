@@ -15,6 +15,7 @@ class _PairedRemote extends LokalRemoteController {
   final bool failConnect;
   int reconnects = 0;
   final List<bool> targetChanges = [];
+  final List<String> handoffs = [];
 
   @override
   LokalRemoteControllerState build() => LokalRemoteControllerState(
@@ -31,6 +32,7 @@ class _PairedRemote extends LokalRemoteController {
             : LokalRemoteConnectionStatus.disconnected)
         : LokalRemoteConnectionStatus.unconfigured,
     desktopName: 'ExpertBook',
+    socketConnected: paired && online,
   );
 
   @override
@@ -38,8 +40,17 @@ class _PairedRemote extends LokalRemoteController {
     reconnects++;
     if (failConnect) throw StateError('Desktop unavailable');
     online = true;
-    state = state.copyWith(status: LokalRemoteConnectionStatus.connected);
+    state = state.copyWith(
+      status: LokalRemoteConnectionStatus.connected,
+      socketConnected: true,
+    );
   }
+
+  @override
+  Future<void> playOnDesktop() async => handoffs.add('desktop');
+
+  @override
+  Future<void> playOnPhone() async => handoffs.add('phone');
 
   @override
   Future<void> setDesktopTarget(bool enabled) async {
@@ -117,6 +128,26 @@ void main() {
     expect(tester.widget<Switch>(find.byKey(
       const ValueKey('you-control-desktop-switch'),
     )).value, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('paired Devices overflow preserves both playback handoffs',
+      (tester) async {
+    final remote = _PairedRemote();
+    await _pumpCard(tester, remote);
+    final menu = find.byKey(const ValueKey('you-devices-handoff-menu'));
+    expect(menu, findsOneWidget);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play on desktop'));
+    await tester.pumpAndSettle();
+    expect(remote.handoffs, ['desktop']);
+
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play on this phone'));
+    await tester.pumpAndSettle();
+    expect(remote.handoffs, ['desktop', 'phone']);
     expect(tester.takeException(), isNull);
   });
 
