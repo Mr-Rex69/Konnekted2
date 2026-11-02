@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/lokal_tokens.dart';
 import '../../l10n/l10n.dart';
-import '../../models/lokal_remote_state.dart';
 import '../../providers/lokal_remote_provider.dart';
 import '../../services/lokal_remote_service.dart';
 import 'lokal_desktop_link_screen.dart';
