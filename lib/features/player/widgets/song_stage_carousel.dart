@@ -245,9 +245,15 @@ class SongStageCarouselState extends State<SongStageCarousel>
     widget.onDragStateChanged?.call(true);
   }
 
-  void _update(DragUpdateDetails details) {
+  void _update(DragUpdateDetails details) =>
+      _updateDelta(details.delta.dx);
+
+  // Both the inline cover gesture and the full-bleed chrome gesture use the
+  // same horizontal delta. Do not fabricate DragUpdateDetails: newer Flutter
+  // SDKs require positional fields even for synthetic gesture details.
+  void _updateDelta(double horizontalDelta) {
     if (!_dragging || !widget.enabled) return;
-    var delta = details.delta.dx;
+    var delta = horizontalDelta;
     if (!widget.allowUnresolvedSwipe &&
         ((delta < 0 && _next == null) || (delta > 0 && _previous == null))) {
       delta *= .32 * math.exp(-_offset.abs() / math.max(_width * .6, 1));
@@ -292,8 +298,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
   /// hit-testable, transparent artwork slot in that chrome forward horizontal
   /// drag deltas to the *same* carousel, preserving the normal slide physics.
   void startExternalDrag() => _start(DragStartDetails());
-  void updateExternalDrag(double delta) =>
-      _update(DragUpdateDetails(delta: Offset(delta, 0), primaryDelta: delta));
+  void updateExternalDrag(double delta) => _updateDelta(delta);
   Future<void> endExternalDrag(double velocity) => _finishDrag(velocity);
   void cancelExternalDrag() => _cancel();
 
