@@ -15,6 +15,7 @@ import 'package:just_audio/just_audio.dart' as ja;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'radio_catalog.dart';
+import 'station_metadata.dart';
 
 const _urlKey = 'lokal_radio_catalog_url';
 const _catalogKey = 'lokal_radio_catalog';
@@ -279,6 +280,7 @@ class RadioPlayback {
     this.loading = false,
     this.error,
     this.nowPlaying,
+    this.trackMetadata,
   });
 
   final RadioStation? station;
@@ -286,6 +288,7 @@ class RadioPlayback {
   final bool loading;
   final String? error;
   final String? nowPlaying;
+  final StationLiveMetadata? trackMetadata;
 }
 
 /// Plays a station's live stream.
@@ -304,6 +307,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   int _playRequest = 0;
   int? _failingPlayRequest;
   Timer? _bufferingTimer;
+  Timer? _metadataTimer;
   StreamSubscription<ja.PlayerState>? _states;
   StreamSubscription<ja.IcyMetadata?>? _icyMetadata;
   String? _notified;
@@ -325,6 +329,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     });
     ref.onDispose(() {
       _bufferingTimer?.cancel();
+      _metadataTimer?.cancel();
       NotificationService().release(_notificationOwner);
       unawaited(_states?.cancel());
       unawaited(_icyMetadata?.cancel());
@@ -367,6 +372,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         loading: loading,
         error: state.error,
         nowPlaying: state.nowPlaying,
+        trackMetadata: state.trackMetadata,
       );
       _syncNotification();
     });
@@ -381,6 +387,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         loading: state.loading,
         error: state.error,
         nowPlaying: title,
+        trackMetadata: state.trackMetadata,
       );
       _syncNotification();
     });
@@ -392,14 +399,16 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   void _syncNotification() {
     final station = state.station;
     if (station == null) return;
-    final icon = _iconFiles[station.icon ?? ''];
+    final artUrl = state.trackMetadata?.cover ?? station.icon;
+    final icon = _iconFiles[artUrl ?? ''];
     final key = '${station.id}|${state.playing}|$icon|${state.nowPlaying ?? ''}';
     if (key == _notified) return;
     _notified = key;
     final song = Song(
       id: 'radio:${station.id}',
-      title: state.nowPlaying ?? station.title,
-      artist: station.title,
+      title: state.trackMetadata?.title ?? state.nowPlaying ?? station.title,
+      artist: state.trackMetadata?.artist.isNotEmpty == true
+          ? state.trackMetadata!.artist : station.title,
       albumArt: icon,
       duration: Duration.zero,
       fileType: 'Stream',
@@ -411,20 +420,20 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         isPlaying: state.playing,
       ),
     );
-    if (icon == null) unawaited(_fetchIcon(station));
+    if (icon == null) unawaited(_fetchIcon(station, artUrl));
   }
 
   /// The notification reads its picture from a file: cache the station's
   /// icon and show it once it is there.
-  Future<void> _fetchIcon(RadioStation station) async {
-    final url = station.icon;
+  Future<void> _fetchIcon(RadioStation station, String? url) async {
     if (url == null || _iconFiles.containsKey(url)) return;
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != 'https') return;
     try {
       final file = await DefaultCacheManager().getSingleFile(url);
       _iconFiles[url] = file.path;
-      if (ref.mounted && state.station?.id == station.id) _syncNotification();
+      if (ref.mounted && state.station?.id == station.id &&
+          (state.trackMetadata?.cover ?? station.icon) == url) _syncNotification();
     } catch (_) {
       // No icon: the notification shows the station without a picture.
     }
@@ -470,16 +479,42 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     if (_failingPlayRequest == request) _failingPlayRequest = null;
   }
 
+  /// Playback-owned metadata polling survives leaving the Stations page.
+  /// The shared cache deduplicates these requests with visible station rows.
+  void _pollStationMetadata(RadioStation station, int request) {
+    Future<void> refresh() async {
+      final info = await StationMetadataLookup.lookup(station);
+      if (!_isCurrentPlay(request, station) || info == null) return;
+      final current = state;
+      if (current.trackMetadata?.label == info.label &&
+          current.trackMetadata?.cover == info.cover) return;
+      state = RadioPlayback(
+        station: station,
+        playing: current.playing,
+        loading: current.loading,
+        error: current.error,
+        nowPlaying: info.label,
+        trackMetadata: info,
+      );
+      _syncNotification();
+    }
+    unawaited(refresh());
+    _metadataTimer = Timer.periodic(const Duration(seconds: 30),
+        (_) => unawaited(refresh()));
+  }
+
   Future<void> play(RadioStation station) async {
     if (!ref.read(internetRadioEnabledProvider)) return;
     final request = ++_playRequest;
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
+    _metadataTimer?.cancel();
     _failingPlayRequest = null;
     // Set loading before awaiting session/player setup so every failure path
     // is visible and can also be cleared by stop().
     state = RadioPlayback(station: station, loading: true);
     _syncNotification();
+    _pollStationMetadata(station, request);
     try {
       final player = _ensurePlayer();
       if (ref.read(isPlayingProvider)) {
@@ -543,7 +578,8 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
       if (!_isCurrentPlay(request, station)) return;
       // The state stream usually delivered this already; set it explicitly so
       // the initial load cannot remain visible if that event was missed.
-      state = RadioPlayback(station: station, playing: true, nowPlaying: state.nowPlaying);
+      state = RadioPlayback(station: station, playing: true,
+          nowPlaying: state.nowPlaying, trackMetadata: state.trackMetadata);
       _syncNotification();
     } catch (_) {
       await _failPlay(request, station);
@@ -570,6 +606,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     _playRequest++;
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
+    _metadataTimer?.cancel();
     _failingPlayRequest = null;
     final wasOn = state.station != null;
     state = const RadioPlayback();
