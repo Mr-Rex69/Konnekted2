@@ -5852,10 +5852,12 @@ class MainActivity: FlutterActivity() {
                 // (e.g. re-pin from speaker to the 3.5mm jack when headphones
                 // are plugged in mid-playback).
                 priorityAnchorService.updateRouteDevice()
+                audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
             }
 
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 priorityAnchorService.updateRouteDevice()
+                audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
             }
         }
         try {
