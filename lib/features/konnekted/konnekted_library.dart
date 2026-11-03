@@ -159,12 +159,13 @@ class KonnektedLibrary extends ConsumerWidget {
           SliverToBoxAdapter(child: _MoreRows(onNavigate: onNavigate)),
           SliverToBoxAdapter(
             child: KonnektedSongShelf(
-              title: lokalText('Recently played'),
-              songs: ref.watch(konnektedRecentSongsProvider),
-              emptyTitle: 'Nothing played yet',
-              emptyMessage: 'Songs you play show up here.',
-              onSeeAll: () => onNavigate(KonnektedDestination.recentlyPlayed),
-              onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
+              title: lokalText('Library'),
+              songs: library,
+              showTotalDuration: true,
+              emptyTitle: 'Your library is empty',
+              emptyMessage: 'Add a music folder to see your collection here.',
+              onSeeAll: () => onNavigate(KonnektedDestination.songs),
+              onRetry: () => ref.invalidate(songsProvider),
               onPlay: (song, queue) =>
                   lokalPlay(context, ref, queue, start: song),
             ),

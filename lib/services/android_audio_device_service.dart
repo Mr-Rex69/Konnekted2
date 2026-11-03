@@ -107,9 +107,16 @@ class AndroidAudioDeviceService {
   final ValueNotifier<AndroidPlaybackDeviceInfo> deviceInfoNotifier =
       ValueNotifier(AndroidPlaybackDeviceInfo.unknown);
 
+  /// Media route (speaker/Bluetooth/USB) queried by actual USAGE_MEDIA
+  /// attributes on Android 13+. Separate from the song engine's device
+  /// inventory, which may prefer a connected device that isn't active.
+  final ValueNotifier<AndroidPlaybackDeviceInfo> mediaOutputInfoNotifier =
+      ValueNotifier(AndroidPlaybackDeviceInfo.unknown);
+
   bool _channelConfigured = false;
   Future<void>? _initializeInFlight;
   Future<AndroidPlaybackDeviceInfo>? _refreshInFlight;
+  Future<AndroidPlaybackDeviceInfo>? _mediaRefreshInFlight;
 
   /// Android owns Bluetooth/speaker media routing; opening its chooser avoids
   /// pretending that a communication-device API can route media/USB audio.
@@ -159,6 +166,39 @@ class AndroidAudioDeviceService {
     }
   }
 
+  Future<AndroidPlaybackDeviceInfo> refreshMediaOutput() async {
+    if (!Platform.isAndroid) return mediaOutputInfoNotifier.value;
+    final inFlight = _mediaRefreshInFlight;
+    if (inFlight != null) return inFlight;
+    final pending = _refreshMediaOutputInternal();
+    _mediaRefreshInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (identical(_mediaRefreshInFlight, pending)) {
+        _mediaRefreshInFlight = null;
+      }
+    }
+  }
+
+  Future<AndroidPlaybackDeviceInfo> _refreshMediaOutputInternal() async {
+    try {
+      final raw = await _channel.invokeMapMethod<Object?, Object?>(
+        'getMediaOutputDeviceInfo',
+      );
+      if (raw == null) return mediaOutputInfoNotifier.value;
+      final route = AndroidPlaybackDeviceInfo.fromMap(raw);
+      if (!sameAndroidPlaybackDeviceSnapshot(
+        mediaOutputInfoNotifier.value, route,
+      )) {
+        mediaOutputInfoNotifier.value = route;
+      }
+    } catch (error) {
+      devLog('AndroidAudioDeviceService.mediaRoute failed: $error');
+    }
+    return mediaOutputInfoNotifier.value;
+  }
+
   Future<void> _initializeInternal() async {
     if (!_channelConfigured) {
       _channelConfigured = true;
@@ -169,11 +209,13 @@ class AndroidAudioDeviceService {
             return;
           }
           await refresh();
+          await refreshMediaOutput();
         }
       });
     }
 
     await refresh();
+    await refreshMediaOutput();
   }
 
   Future<AndroidPlaybackDeviceInfo> _refreshInternal() async {

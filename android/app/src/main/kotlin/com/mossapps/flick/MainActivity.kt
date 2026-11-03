@@ -1204,6 +1204,7 @@ class MainActivity: FlutterActivity() {
         audioDeviceChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getPlaybackDeviceInfo" -> result.success(getPlaybackDeviceInfo())
+                "getMediaOutputDeviceInfo" -> result.success(getMediaOutputDeviceInfo())
                 "showOutputSwitcher" -> {
                     try {
                         if (Build.VERSION.SDK_INT >= 34) {
@@ -4915,6 +4916,51 @@ class MainActivity: FlutterActivity() {
         )
     }
 
+    /**
+     * The radio uses Android media routing, not the independent Lokal song
+     * engine's last-known output. On Android 13+ ask the system which device
+     * USAGE_MEDIA would actually route through, rather than taking the
+     * highest-priority connected device from GET_DEVICES_OUTPUTS. The latter
+     * incorrectly reports Bluetooth/USB while the user chose phone speaker.
+     */
+    private fun getMediaOutputDeviceInfo(): Map<String, Any?> {
+        val manager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val routed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val attributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+                manager?.getAudioDevicesForAttributes(attributes)?.firstOrNull()
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+        val route = if (routed != null) {
+            val type = routeTypeForAudioDevice(routed.type)
+            mapOf(
+                "routeType" to type,
+                "routeLabel" to (routed.productName?.toString()
+                    ?.takeIf { it.isNotBlank() } ?: defaultRouteLabel(type)),
+            )
+        } else {
+            // API < 33 does not expose media routing by AudioAttributes.
+            // Preserve the existing supported-device heuristic as fallback.
+            describeCurrentOutputRoute(manager)
+        }
+        return mapOf(
+            "hasUsbDac" to (routed?.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                routed?.type == AudioDeviceInfo.TYPE_USB_HEADSET),
+            "hasAttachedUac2Device" to false,
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
+            "routeType" to route["routeType"],
+            "routeLabel" to route["routeLabel"],
+        )
+    }
+
     private fun getPlaybackDeviceInfo(): Map<String, Any?> {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val outputs = if (audioManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -5806,10 +5852,12 @@ class MainActivity: FlutterActivity() {
                 // (e.g. re-pin from speaker to the 3.5mm jack when headphones
                 // are plugged in mid-playback).
                 priorityAnchorService.updateRouteDevice()
+                audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
             }
 
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 priorityAnchorService.updateRouteDevice()
+                audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
             }
         }
         try {

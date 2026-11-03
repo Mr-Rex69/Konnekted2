@@ -123,14 +123,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   Rect? _spaceCoverRect;
   bool _spaceCanvasMode = false;
   bool _spaceFullCover = false;
-  final GlobalKey _spaceArtworkKey =
-      GlobalKey(debugLabel: 'space-player-artwork');
+  bool _spaceWaitingForQueue = false;
   final GlobalKey _spacePanelKey =
       GlobalKey(debugLabel: 'space-player-panel');
   bool _spacePanelCompact = false;
 
-  /// Capture the sleeve's on-screen bounds once, rather than measuring or
-  /// reflowing playback surfaces during each transition frame.
+  /// Resolve the current artwork bounds without reparenting media surfaces.
   Rect? _spaceArtworkBounds(bool fullCover) {
     final player = _playerBoundsKey.currentContext?.findRenderObject();
     if (player is! RenderBox || !player.attached || !player.hasSize) {
@@ -143,29 +141,43 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           .toDouble();
       return Rect.fromLTWH(0, 0, player.size.width, bannerHeight);
     }
-    // If Space opens from the Lyrics tab, the panel is still animating its
-    // 52px thumbnail back into the big cover. Compute the FINAL full-size
-    // cover rect with the panel's own layout formula, rather than capturing
-    // that temporary thumbnail or substituting a guessed centre square.
-    if (_lyricsProgress.value < .005) {
-      final art = _spaceArtworkKey.currentContext?.findRenderObject();
-      if (art is RenderBox && art.attached && art.hasSize) {
-        final origin = player.globalToLocal(art.localToGlobal(Offset.zero));
-        return origin & art.size;
-      }
-    }
+    // The panel delegate and the mask use the very same size/offset
+    // calculation, avoiding a GlobalKey on individual carousel stages (which
+    // can be duplicated when a queue contains the same recording twice).
     final panel = _spacePanelKey.currentContext?.findRenderObject();
     if (panel is RenderBox && panel.attached && panel.hasSize) {
-      final local = playerPanelRestArtworkRect(
+      final local = playerPanelArtworkRect(
         panel.size,
         artGap: _spacePanelCompact ? 10 : 17,
         infoReserve: MediaQuery.textScalerOf(context).scale(72),
+        queue: _queueProgress.value,
+        lyrics: _lyricsProgress.value,
       );
       final origin = player.globalToLocal(panel.localToGlobal(Offset.zero));
       return local.shift(origin);
     }
     return null;
   }
+
+  double _spaceArtworkCornerRadius() {
+    if (_spaceFullCover || _spaceCanvasMode) return 0;
+    final lyrics = _lyricsProgress.value;
+    final compact = (_queueProgress.value * (1 - lyrics) + lyrics)
+        .clamp(0.0, 1.0);
+    return lerpDouble(20, 12, compact)!;
+  }
+
+  void _resumeSpaceAfterQueue(AnimationStatus status) {
+    if (status != AnimationStatus.dismissed || !_spaceWaitingForQueue) return;
+    _spaceWaitingForQueue = false;
+    _queueProgress.removeStatusListener(_resumeSpaceAfterQueue);
+    if (mounted) _toggleImmersiveLyrics();
+  }
+
+  late final Listenable _spaceCoverMotion = Listenable.merge([
+    _lyricsProgress,
+    _queueProgress,
+  ]);
 
   late final AnimationController _spaceProgress = AnimationController(
     vsync: this,
@@ -369,6 +381,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     LokalPerformanceAdvisor.exitPlayerSurface('modern-full-player');
     _volumeControl.dispose();
     _queue.dispose();
+    _queueProgress.removeStatusListener(_resumeSpaceAfterQueue);
     _queueProgress.dispose();
     _lyricsProgress.dispose();
     _spaceProgress.dispose();
@@ -490,6 +503,18 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   void _toggleImmersiveLyrics() {
+    // Wait for the compact queue cover to return to the poster before
+    // revealing Space in Fullcover mode.
+    if (!_immersiveLyrics &&
+        !_spaceWaitingForQueue &&
+        _animate &&
+        ref.read(lokalAppearanceProvider).fullscreenCover &&
+        _queueProgress.value > .005) {
+      _spaceWaitingForQueue = true;
+      _queueProgress.addStatusListener(_resumeSpaceAfterQueue);
+      _queue.setOpen(false, animate: true);
+      return;
+    }
     if (_immersiveLyrics) {
       // The painter, aperture and subtitles reverse in place. Unmount only
       // when the reverse animation is fully dismissed.
@@ -506,7 +531,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
     _restoreCanvasControls();
     if (_showLyrics) _moveLyrics(false);
-    _queue.setOpen(false, animate: false);
+    // Keep the queue thumbnail -> full-size cover morph. Resetting the
+    // queue without animation caused the artwork to pop into Space.
+    _queue.setOpen(false, animate: _animate);
     HapticFeedback.selectionClick();
     final active = _videoOverrideSong ??
         widget.videoSong ?? _player.currentSongNotifier.value;
@@ -939,6 +966,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             Positioned.fill(
               child: SpaceCoverBloomReveal(
                 coverRect: _spaceCoverRect,
+                 coverRectResolver: () => _spaceArtworkBounds(_spaceFullCover),
+                 coverMotion: _spaceCoverMotion,
+                  coverCornerRadiusResolver: _spaceArtworkCornerRadius,
                 canvasMode: _spaceCanvasMode,
                 coverCornerRadius: _spaceFullCover ? 0 : 20,
                 surfaceColor: const Color(0xFF171820),
@@ -1262,6 +1292,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   Positioned.fill(
                     child: SpaceCoverBloomReveal(
                       coverRect: _spaceCoverRect,
+                 coverRectResolver: () => _spaceArtworkBounds(_spaceFullCover),
+                 coverMotion: _spaceCoverMotion,
+                  coverCornerRadiusResolver: _spaceArtworkCornerRadius,
                       canvasMode: _spaceCanvasMode,
                       coverCornerRadius: _spaceFullCover ? 0 : 20,
                       surfaceColor: colors.last,
@@ -1886,7 +1919,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         // endpoint produced a visible corner snap when the portal released it.
         expandedRadius: lerpDouble(20, 12, progress)!,
         child: SizedBox(
-          key: current && progress == 0 ? _spaceArtworkKey : null,
           width: side,
           height: side,
           child: Stack(
