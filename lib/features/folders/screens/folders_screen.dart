@@ -1023,7 +1023,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                 : _buildTreeContent(treeNode))
           : subfolders.isEmpty && songs.isEmpty
           ? _buildEmptyState(context)
-          : _buildContent(context, subfolders, songs),
+          : _buildContent(context, subfolders, songs, unfilteredSubfolderSongs),
     );
   }
 
@@ -1160,6 +1160,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     BuildContext context,
     List<FolderGroup> subfolders,
     List<Song> songs,
+    Map<String, List<Song>> unfilteredSubfolderSongs,
   ) {
     return NotificationListener<ScrollNotification>(
       onNotification: (_) => true,
