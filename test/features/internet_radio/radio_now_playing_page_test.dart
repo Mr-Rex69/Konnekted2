@@ -232,12 +232,15 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('radio-player-more')));
     await tester.pumpAndSettle();
-    expect(find.text('Open current album'), findsOneWidget);
-    expect(find.text('Open artist'), findsOneWidget);
+    expect(find.text('Open current album'), findsNothing);
+    expect(find.text('Open artist'), findsNothing);
+    expect(find.text('Audio output'), findsNothing);
+    expect(find.text('Browse stations'), findsNothing);
     expect(find.text('Find current song'), findsOneWidget);
     expect(find.text('Find artist'), findsOneWidget);
     expect(find.text('Share station'), findsOneWidget);
-    expect(find.text('Audio output'), findsOneWidget);
+    expect(find.text('Copy current song'), findsOneWidget);
+    expect(find.text('Copy station URL'), findsOneWidget);
   });
 
   testWidgets('Full Cover uses the same appearance flag and artwork anchor',
