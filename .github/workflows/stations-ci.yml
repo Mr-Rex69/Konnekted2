@@ -70,4 +70,4 @@ jobs:
           test/konnekted/library_recently_played_shelf_test.dart
           test/widgets/lokal/lokal_player_route_test.dart
       - name: Compile Android route integration
-        run: flutter build apk --debug --no-pub
+        run: flutter build apk --debug --flavor full --target-platform android-arm64 --no-pub
