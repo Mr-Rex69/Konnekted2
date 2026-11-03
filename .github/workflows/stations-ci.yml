@@ -1,0 +1,38 @@
+name: Stations high-quality browser
+
+on:
+  pull_request:
+    paths:
+      - 'lib/features/internet_radio/**'
+      - 'test/features/internet_radio/**'
+      - 'lib/features/settings/lokal/**'
+      - '.github/workflows/stations-ci.yml'
+  push:
+    branches:
+      - feat/stations-radio-browser-hq-256
+
+permissions:
+  contents: read
+
+jobs:
+  stations-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/android-toolchain
+      - name: Analyze Stations and radio playback
+        run: |
+          dart analyze --no-fatal-warnings \
+            lib/features/internet_radio/radio_browser.dart \
+            lib/features/internet_radio/station_metadata.dart \
+            lib/features/internet_radio/station_favorites.dart \
+            lib/features/internet_radio/internet_radio_page.dart \
+            lib/features/internet_radio/radio_providers.dart
+      - name: Run station quality, metadata and existing radio regression tests
+        run: >-
+          flutter test --no-pub
+          test/features/internet_radio/radio_browser_test.dart
+          test/features/internet_radio/radio_timeout_test.dart
