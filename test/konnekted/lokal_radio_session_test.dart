@@ -11,6 +11,13 @@ Song track(String title, String artist, {String? id}) => Song(
 );
 
 void main() {
+  test('radio release preserves Flow autoplay and handles missing source ID', () {
+    expect(radioMayRestorePreviousAutoplay(null), isTrue);
+    expect(radioMayRestorePreviousAutoplay('konnekted:radio:123'), isTrue);
+    expect(radioMayRestorePreviousAutoplay('konnekted:flow:123'), isFalse);
+    expect(radioMayRestorePreviousAutoplay(''), isTrue);
+  });
+
   test('radio prefers online discoveries instead of filling local queue', () {
     final seed = track('Seed', 'Original');
     final online = [

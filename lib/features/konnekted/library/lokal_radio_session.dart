@@ -53,6 +53,12 @@ List<Song> selectLokalRadioAdditions({
   return selected;
 }
 
+/// Flow must keep ownership of the autoplay flag, including when the radio
+/// session is released before a playback source has been assigned.
+@visibleForTesting
+bool radioMayRestorePreviousAutoplay(String? sourceId) =>
+    sourceId?.startsWith('konnekted:flow:') != true;
+
 /// A radio keeps its own queue context after the menu and source page close.
 final lokalRadioSessionProvider = Provider<LokalRadioSession>((ref) {
   final session = LokalRadioSession(ref);
@@ -97,7 +103,7 @@ class LokalRadioSession {
     final previous = _previousAutoplay;
     // Flow also owns the runtime autoplay flag; don't overwrite its choice.
     if (previous != null &&
-        !_service.playbackContext.sourceId.startsWith('konnekted:flow:') &&
+        radioMayRestorePreviousAutoplay(_service.playbackContext.sourceId) &&
         !_service.autoplayOnQueueEndNotifier.value) {
       _service.setAutoplayOnQueueEnd(previous);
     }
