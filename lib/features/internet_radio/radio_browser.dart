@@ -161,23 +161,34 @@ class RadioBrowserClient {
         // The main 256+ kbps list remains usable if lossless lookup fails.
       }
     }
-    final seenIds = <String>{};
-    final seenUrls = <String>{};
-    final stations = <RadioStation>[];
+    final candidates = <RadioStation>[];
     for (final row in [...flac, ...primary]) {
       if (row is! Map) continue;
       final data = Map<String, dynamic>.from(row);
-      if (!qualifiesRadioBrowserStation(data)) continue;
-      final station = stationFromRadioBrowser(data);
-      if (!seenIds.add(station.id)) continue;
-      if (!seenUrls.add(station.url.trim().toLowerCase())) continue;
-      stations.add(station);
+      if (qualifiesRadioBrowserStation(data)) {
+        candidates.add(stationFromRadioBrowser(data));
+      }
     }
-    stations.sort((a, b) {
+    candidates.sort((a, b) {
       final losslessOrder = (b.lossless ? 1 : 0) - (a.lossless ? 1 : 0);
       return losslessOrder != 0 ? losslessOrder :
           b.bitrate.compareTo(a.bitrate);
     });
+    final seenIds = <String>{};
+    final seenUrls = <String>{};
+    final seenNames = <String>{};
+    final stations = <RadioStation>[];
+    for (final station in candidates) {
+      final urlKey = station.url.trim().toLowerCase();
+      final nameKey = station.countryCode.toUpperCase() + ':' +
+          station.title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      if (seenIds.contains(station.id) ||
+          seenUrls.contains(urlKey) || seenNames.contains(nameKey)) continue;
+      seenIds.add(station.id);
+      seenUrls.add(urlKey);
+      seenNames.add(nameKey);
+      stations.add(station);
+    }
     return RadioBrowseResult(
       stations: stations,
       nextOffset: safeOffset + primary.length,
