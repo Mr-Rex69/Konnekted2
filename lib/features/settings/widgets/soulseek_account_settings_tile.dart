@@ -104,7 +104,7 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
         ? '${_service.sharingStatus} Large libraries may take a while.'
         : signed && _service.shareEnabled
             ? 'Sharing ${_service.sharedFiles} files on Soulseek.'
-            : 'Optional. All files in this folder become visible to other users, including covers and lyrics.';
+            : 'Optional. Other users can download every file in your music folder, including artwork, lyrics and documents.';
     final supportingStyle = TextStyle(
       fontFamily: LokalTheme.sans, color: t.muted, fontSize: 12.5,
       height: 1.35,
