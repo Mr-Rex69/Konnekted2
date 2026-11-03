@@ -604,13 +604,35 @@ class LokalSongListPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final songs = source(ref);
     final list = songs.value;
+    final metadata = list == null
+        ? null
+        : '${lokalSongCount(list.length)} · ${lokalRunningTime(list)}';
     return LokalLibraryPage(
       title: title,
-      subtitle: list == null
+      // Recently Played uses a full-size metadata row: never hide its
+      // running time in the small uppercase section-label treatment.
+      subtitle: showTotalDuration
           ? null
-          : showTotalDuration
-              ? '${lokalSongCount(list.length)} · ${lokalRunningTime(list)}'
-              : lokalSongCount(list.length),
+          : (list == null ? null : lokalSongCount(list.length)),
+      header: showTotalDuration
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LokalLargeTitle(title: title),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                  child: Text(
+                    metadata ?? '${lokalSongCount(0)} · 0 min',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : null,
       slivers: [
         if (list != null && list.isNotEmpty)
           LokalSongBrowser(
