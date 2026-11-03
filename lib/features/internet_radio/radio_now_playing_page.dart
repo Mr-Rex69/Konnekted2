@@ -75,20 +75,22 @@ GlobalCatalogueSong? radioMatchingCatalogueAlbum(
 /// stale diagnostics while a separate radio stream is playing.
 @visibleForTesting
 String radioOutputRouteLabel(AndroidPlaybackDeviceInfo route) {
+  // Android may use the handset model as a fallback port name.
+  final raw = route.routeLabel?.trim() ?? '';
+  final label = raw.toLowerCase() == route.model.trim().toLowerCase()
+      ? '' : raw;
   switch ((route.routeType ?? '').toLowerCase()) {
     case 'internal':
     case 'speaker':
       return 'Speaker';
     case 'wired':
-      return route.routeLabel?.trim().isNotEmpty == true
-          ? route.routeLabel!.trim() : 'Wired headphones';
+      return label.isNotEmpty ? label : 'Wired headphones';
     case 'bluetooth':
       return route.routeLabel?.trim().isNotEmpty == true
           ? route.routeLabel!.trim() : 'Bluetooth audio';
     case 'usb':
     case 'dock':
-      return route.routeLabel?.trim().isNotEmpty == true
-          ? route.routeLabel!.trim() : 'USB audio';
+      return label.isNotEmpty ? label : 'USB audio';
     default:
       return route.routeLabel?.trim().isNotEmpty == true
           ? route.routeLabel!.trim() : 'Audio output';
@@ -241,9 +243,16 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
 
   Future<void> _chooseOutput() async {
     await openAndroidOutputChooser(context);
-    // Android's route-change callback normally refreshes this as soon as
-    // the user selects a device; also request an explicit snapshot.
-    await AndroidAudioDeviceService.instance.refreshMediaOutput();
+    // The system chooser returns when it opens, before a route is selected.
+    // Sample for a short window after dismissal so speaker ↔ an already
+    // connected Bluetooth device updates even without a device add/remove.
+    for (final delay in const [0, 500, 1000, 1500]) {
+      if (delay != 0) {
+        await Future<void>.delayed(Duration(milliseconds: delay));
+      }
+      if (!mounted) return;
+      await AndroidAudioDeviceService.instance.refreshMediaOutput();
+    }
   }
 
   void _copy(String value) {
