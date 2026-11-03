@@ -312,11 +312,10 @@ class _YoutubePlaylistDetailState
         ? const Center(child: CircularProgressIndicator())
         : _error != null && _tracks.isEmpty
             ? Center(child: Text(_error!))
-            : _tracks.isEmpty
-                ? const Center(child: Text('No accessible tracks in this playlist.'))
-                : ProviderPlaylistTrackBrowser(
+            : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
                     header: ProviderPlaylistHeader(
+                      playlistId: 'youtube:${widget.accountId}:${widget.playlist.id}',
                       title: widget.playlist.title,
                       coverUrl: widget.playlist.artworkUrl,
                       owner: widget.playlist.author.isEmpty
