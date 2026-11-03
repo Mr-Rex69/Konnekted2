@@ -15,6 +15,8 @@ class SpaceCoverBloomReveal extends StatelessWidget {
     required this.progress,
     required this.child,
     this.coverRect,
+    this.coverRectResolver,
+    this.coverMotion,
     this.coverCornerRadius = 20,
     this.canvasMode = false,
     this.surfaceColor = const Color(0xFF15141C),
@@ -23,6 +25,12 @@ class SpaceCoverBloomReveal extends StatelessWidget {
   final Animation<double> progress;
   final Widget child;
   final Rect? coverRect;
+  /// Read the artwork's *current* bounds during the lyrics/queue morph.
+  /// The original fixed rectangle only matched the final resting cover and
+  /// could blur the moving sleeve while leaving pixels outside it untreated.
+  final Rect? Function()? coverRectResolver;
+  /// Notifies the frost clip and glint while the artwork itself animates.
+  final Listenable? coverMotion;
   final double coverCornerRadius;
   final bool canvasMode;
   final Color surfaceColor;
@@ -39,11 +47,14 @@ class SpaceCoverBloomReveal extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
           final viewport = Size(constraints.maxWidth, constraints.maxHeight);
-          final cover = spaceCoverRevealAnchor(
-            viewport,
-            coverRect: coverRect,
-            canvasMode: canvasMode,
-          );
+          Rect coverAt(Size size) => spaceCoverRevealAnchor(
+                size,
+                coverRect: coverRectResolver?.call() ?? coverRect,
+                canvasMode: canvasMode,
+              );
+          final changes = coverMotion == null
+              ? progress
+              : Listenable.merge([progress, coverMotion!]);
           final radius = canvasMode ? 0.0 : coverCornerRadius;
 
           // A neutral, extremely translucent lift rather than a black
@@ -58,7 +69,8 @@ class SpaceCoverBloomReveal extends StatelessWidget {
                 child: ClipPath(
                   clipper: _SpaceBloomFrostClipper(
                     progress: progress,
-                    cover: cover,
+                    coverAt: coverAt,
+                    changes: changes,
                     cornerRadius: radius,
                   ),
                   child: BackdropFilter(
@@ -72,7 +84,8 @@ class SpaceCoverBloomReveal extends StatelessWidget {
                   child: CustomPaint(
                     painter: _SpaceBloomGlint(
                       progress: progress,
-                      cover: cover,
+                      coverAt: coverAt,
+                      changes: changes,
                       cornerRadius: radius,
                     ),
                   ),
@@ -80,7 +93,11 @@ class SpaceCoverBloomReveal extends StatelessWidget {
               ),
               IgnorePointer(
                 child: ClipPath(
-                  clipper: _SpaceBloomLyricsClipper(progress, cover),
+                  clipper: _SpaceBloomLyricsClipper(
+                    progress,
+                    coverAt,
+                    changes,
+                  ),
                   child: FadeTransition(
                     opacity: CurvedAnimation(
                       parent: progress,
@@ -177,18 +194,20 @@ Path spaceCoverBloomFrostClip(
 class _SpaceBloomFrostClipper extends CustomClipper<Path> {
   _SpaceBloomFrostClipper({
     required this.progress,
-    required this.cover,
+    required this.coverAt,
+    required this.changes,
     required this.cornerRadius,
-  }) : super(reclip: progress);
+  }) : super(reclip: changes);
 
   final Animation<double> progress;
-  final Rect cover;
+  final Rect Function(Size size) coverAt;
+  final Listenable changes;
   final double cornerRadius;
 
   @override
   Path getClip(Size size) => spaceCoverBloomFrostClip(
         size,
-        cover,
+        coverAt(size),
         progress.value,
         cornerRadius: cornerRadius,
       );
@@ -196,30 +215,34 @@ class _SpaceBloomFrostClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant _SpaceBloomFrostClipper old) =>
       old.progress != progress ||
-      old.cover != cover ||
+      old.coverAt != coverAt ||
+      old.changes != changes ||
       old.cornerRadius != cornerRadius;
 }
 
 class _SpaceBloomLyricsClipper extends CustomClipper<Path> {
-  _SpaceBloomLyricsClipper(this.progress, this.cover)
-      : super(reclip: progress);
+  _SpaceBloomLyricsClipper(this.progress, this.coverAt, this.changes)
+      : super(reclip: changes);
 
   final Animation<double> progress;
-  final Rect cover;
+  final Rect Function(Size size) coverAt;
+  final Listenable changes;
 
   @override
   Path getClip(Size size) {
     final p = progress.value.clamp(0.0, 1.0);
     return Path()
       ..addRRect(RRect.fromRectAndRadius(
-        spaceCoverBloomBounds(size, cover, p),
+        spaceCoverBloomBounds(size, coverAt(size), p),
         Radius.circular(20 * (1 - p)),
       ));
   }
 
   @override
   bool shouldReclip(covariant _SpaceBloomLyricsClipper old) =>
-      old.progress != progress || old.cover != cover;
+      old.progress != progress ||
+      old.coverAt != coverAt ||
+      old.changes != changes;
 }
 
 /// A faint outline only while the reveal grows, not a persistent rim or a
@@ -227,12 +250,14 @@ class _SpaceBloomLyricsClipper extends CustomClipper<Path> {
 class _SpaceBloomGlint extends CustomPainter {
   _SpaceBloomGlint({
     required this.progress,
-    required this.cover,
+    required this.coverAt,
+    required this.changes,
     required this.cornerRadius,
-  }) : super(repaint: progress);
+  }) : super(repaint: changes);
 
   final Animation<double> progress;
-  final Rect cover;
+  final Rect Function(Size size) coverAt;
+  final Listenable changes;
   final double cornerRadius;
 
   @override
@@ -242,7 +267,7 @@ class _SpaceBloomGlint extends CustomPainter {
     if (p <= .005 || p >= .75) return;
     final envelope = math.sin(math.pi * (p / .75));
     if (envelope <= .001) return;
-    final bounds = spaceCoverBloomBounds(size, cover, p);
+    final bounds = spaceCoverBloomBounds(size, coverAt(size), p);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         bounds,
@@ -258,6 +283,7 @@ class _SpaceBloomGlint extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SpaceBloomGlint old) =>
       old.progress != progress ||
-      old.cover != cover ||
+      old.coverAt != coverAt ||
+      old.changes != changes ||
       old.cornerRadius != cornerRadius;
 }
