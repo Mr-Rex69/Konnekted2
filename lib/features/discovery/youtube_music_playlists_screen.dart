@@ -299,7 +299,7 @@ class _YoutubePlaylistDetailState
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.playlist.title),
+      // The large scrollable hero owns the playlist title.
       actions: [
         IconButton(
           tooltip: 'Update playlist', onPressed: _updating ? null : () => unawaited(_refresh()),
