@@ -7,6 +7,8 @@ import 'package:flick/features/internet_radio/radio_catalog.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/internet_radio/station_favorites.dart';
 import 'package:flick/features/player/widgets/artwork_gradient_backdrop.dart';
+import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
+import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
 import 'package:flick/features/player/widgets/android_output_chooser.dart';
 import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
@@ -277,7 +279,17 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
       maskOutgoingOnDissolve: fullCover,
       onNext: ref.read(radioPlayerProvider.notifier).nextStation,
       onPrevious: ref.read(radioPlayerProvider.notifier).previousStation,
-      stageBuilder: (entry) => _art(entry, selected, fullCover: fullCover),
+      stageBuilder: (entry) {
+        final art = _art(entry, selected, fullCover: fullCover);
+        // Exactly the still-art path used by FullPlayerScreen: a partial
+        // banner with a feathered edge, never a viewport-stretched cover.
+        if (!fullCover) return art;
+        return FullBleedArtworkFrame(
+          canvas: false,
+          morphEnabled: entry.id == song.id,
+          child: art,
+        );
+      },
     );
   }
 
@@ -478,25 +490,38 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
           backgroundColor: const Color(0xFF141318),
           body: Stack(fit: StackFit.expand, children: [
             ArtworkGradientBackdrop(colors: colors, vibrant: true),
-            if (fullCover) Positioned.fill(
-              child: LokalPlayerArtwork(
-                expandedRadius: 0,
-                child: _carousel(station, stationQueue, song,
-                  fullCover: true),
-              ),
-            ),
             if (fullCover)
-              const IgnorePointer(child: DecoratedBox(
-                decoration: BoxDecoration(gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0x66000000), Color(0x16000000),
-                    Color(0x40000000), Color(0xB0000000),
-                  ],
-                  stops: [0, .3, .67, 1],
-                )),
-              )),
+              ArtworkMeshBlurBackdrop(
+                song: song,
+                preserveArtworkContrast: true,
+              ),
+            // Use the regular player's restrained control contrast, not the
+            // opaque dark overlay that exposed a horizontal cover boundary.
+            if (fullCover)
+              const IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x33000000),
+                        Color(0x08000000),
+                        Color(0x10000000),
+                        Color(0x40000000),
+                      ],
+                      stops: [0, .28, .66, 1],
+                    ),
+                  ),
+                ),
+              ),
+            if (fullCover)
+              Positioned.fill(
+                child: _carousel(
+                  station, stationQueue, song,
+                  fullCover: true,
+                ),
+              ),
             LokalPlayerChrome(
               enabled: fullCover,
               child: SafeArea(
