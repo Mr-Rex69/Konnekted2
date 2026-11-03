@@ -273,6 +273,7 @@ class MainActivity: FlutterActivity() {
         LokalHaptics.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
         LokalAtmos.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
         FileCopyService.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
+        SoulseekForegroundService.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
         LokalDesktopDiscovery.register(flutterEngine.dartExecutor.binaryMessenger, this)
         YoutubeNativeResolver.initialize(applicationContext)
         flutterEngine.platformViewsController.registry.registerViewFactory(

@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/search_category.dart';
 
-enum SearchScope { all, library, online }
+enum SearchScope { all, library, online, soulseek }
 
 const visibleSearchCategories = [
   SearchCategory.songs, SearchCategory.artists,
@@ -40,7 +40,7 @@ class SearchScopeNotifier extends Notifier<SearchScope> {
 
   void select(SearchScope scope) {
     _changed = true;
-    if (scope == SearchScope.online &&
+    if ((scope == SearchScope.online || scope == SearchScope.soulseek) &&
         !supportsOnlineCategory(ref.read(searchFilterProvider).singleOrNull)) {
       ref.read(searchFilterProvider.notifier).select(SearchCategory.songs);
     }

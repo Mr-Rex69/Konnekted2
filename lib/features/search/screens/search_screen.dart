@@ -5,6 +5,7 @@ import '../widgets/artist_search_portrait.dart';
 import 'package:flick/features/library_jobs/artist_metadata.dart';
 import '../widgets/global_catalogue_search_section.dart';
 import '../widgets/recent_search_grid.dart';
+import '../widgets/soulseek_search_section.dart';
 
 import 'dart:async';
 
@@ -159,7 +160,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final repoQuery = _debouncedQuery;
     final hasInput = _controller.text.trim().isNotEmpty;
     final hasQuery = repoQuery.isNotEmpty;
-    final resultsAsync = hasQuery && scope != SearchScope.online &&
+    final resultsAsync = hasQuery && scope != SearchScope.online && scope != SearchScope.soulseek &&
         enabled.singleOrNull != SearchCategory.lyrics
         ? ref.watch(globalSearchResultsProvider(repoQuery))
         : null;
@@ -225,7 +226,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
             Expanded(
-              child: !hasInput
+              child: scope == SearchScope.soulseek
+                  ? SoulseekSearchSection(query: repoQuery)
+                  : !hasInput
                   ? _buildEmptyState(context)
                   : scope != SearchScope.online &&
                           enabled.singleOrNull == SearchCategory.lyrics && hasQuery

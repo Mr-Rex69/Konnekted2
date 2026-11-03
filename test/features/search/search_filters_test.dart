@@ -31,6 +31,16 @@ void main() {
     expect(second.read(searchScopeProvider), SearchScope.all);
   });
 
+  test('Soulseek is a separate persisted scope, never mixed into local search', () async {
+    final c = ProviderContainer();
+    addTearDown(c.dispose);
+    c.read(searchScopeProvider.notifier).select(SearchScope.soulseek);
+    expect(c.read(searchScopeProvider), SearchScope.soulseek);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect((await SharedPreferences.getInstance())
+        .getString('search_selected_scope_v1'), 'soulseek');
+  });
+
   test(
     'a category isolates immediately, and retired All maps to Songs',
     () async {
@@ -142,9 +152,23 @@ void main() {
       expect(find.text('Album Artists'), findsNothing);
       expect(find.text('Playlists'), findsNothing);
       expect(c.read(searchFilterProvider), {SearchCategory.albums});
+      // On a narrow display, Lyrics is in the horizontal filter scroller.
+      // Scroll it into view instead of tapping an off-screen element.
+      await tester.ensureVisible(find.text('Lyrics'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Lyrics'));
       await tester.pumpAndSettle();
       expect(c.read(searchFilterProvider), {SearchCategory.lyrics});
+      // The fourth source is also horizontally scrollable and should be
+      // reachable without changing the selected result type.
+      await tester.ensureVisible(find.text('Soulseek'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Soulseek'));
+      await tester.pumpAndSettle();
+      expect(c.read(searchScopeProvider), SearchScope.soulseek);
+      expect(find.byType(ChoiceChip), findsNothing);
+      await tester.ensureVisible(find.text('All'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('All'));
       await tester.pumpAndSettle();
       expect(c.read(searchScopeProvider), SearchScope.all);

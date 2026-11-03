@@ -33,7 +33,9 @@ class SearchFilterChips extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SegmentedButton<SearchScope>(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<SearchScope>(
             showSelectedIcon: false,
             style: SegmentedButton.styleFrom(
               textStyle: Theme.of(context).textTheme.labelLarge
@@ -53,6 +55,10 @@ class SearchFilterChips extends StatelessWidget {
                 value: SearchScope.online,
                 label: Text(lokalText('Online')),
               ),
+              ButtonSegment(
+                value: SearchScope.soulseek,
+                label: Text('Soulseek'),
+              ),
             ],
             selected: {scope},
             onSelectionChanged: (value) {
@@ -60,9 +66,10 @@ class SearchFilterChips extends StatelessWidget {
               onScopeChanged(value.single);
             },
           ),
+          ),
         ),
         const SizedBox(height: 8),
-        SizedBox(
+        if (scope != SearchScope.soulseek) SizedBox(
           height: 44,
           child: ListView(
             scrollDirection: Axis.horizontal,

@@ -11,6 +11,7 @@ import '../lokal_settings_group.dart';
 import 'package:flick/features/settings/widgets/discord_presence_settings_tile.dart';
 import 'package:flick/features/settings/widgets/youtube_music_settings_tile.dart';
 import 'package:flick/features/settings/widgets/spotify_account_settings_tile.dart';
+import 'package:flick/features/settings/widgets/soulseek_account_settings_tile.dart';
 import 'package:flick/features/settings/widgets/lastfm_settings_tile.dart';
 import 'package:flick/features/settings/widgets/listenbrainz_settings_tile.dart';
 
@@ -95,6 +96,11 @@ List<LokalSettingsSection> dataSettings(
   LokalSettingsSection(
     title: LokalDataSections.accounts,
     children: [
+      LokalSettingCustom(
+        label: lokalText('Soulseek'),
+        description: lokalText('Search, download and optionally share your main music folder.'),
+        child: const SoulseekAccountSettingsTile(),
+      ),
       // Keep Spotify sign-in and likes sync together as the first Data control.
       LokalSettingCustom(
         label: lokalText('Spotify'),
