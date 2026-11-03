@@ -102,8 +102,8 @@ class RadioBrowserClient {
       'limit': '$limit',
       'offset': '$offset',
       if (lossless) 'codec': 'FLAC',
-      if (query.trim().isNotEmpty) 'name': query.trim().substring(
-        0, query.trim().length.clamp(0, 80)),
+      if (query.trim().isNotEmpty) 'name': query.trim().length > 80
+          ? query.trim().substring(0, 80) : query.trim(),
       if (country.isNotEmpty) 'countrycode': country,
       if (tag.isNotEmpty) 'tag': tag,
     };
@@ -139,8 +139,8 @@ class RadioBrowserClient {
     int offset = 0,
     int limit = 60,
   }) async {
-    final count = limit.clamp(1, 80);
-    final safeOffset = offset.clamp(0, 20000);
+    final count = limit.clamp(1, 80).toInt();
+    final safeOffset = offset.clamp(0, 20000).toInt();
     final primary = await _request(
       query: query, country: country, tag: tag,
       offset: safeOffset, limit: count, lossless: false,
