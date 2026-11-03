@@ -304,6 +304,35 @@ class RadioPlayback {
 /// going in the background), and hands it back to the library when it stops.
 class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   ja.AudioPlayer? _player;
+  bool _showQueueOnPlayerOpen = false;
+  void requestStationQueue() => _showQueueOnPlayerOpen = true;
+  bool consumeStationQueueRequest() {
+    final requested = _showQueueOnPlayerOpen;
+    _showQueueOnPlayerOpen = false;
+    return requested;
+  }
+  List<RadioStation> _stationQueue = const [];
+  List<RadioStation> get stationQueue => List.unmodifiable(_stationQueue);
+  int get stationIndex => _stationQueue.indexWhere((item) => item.id == state.station?.id);
+  final ValueNotifier<double> volume = ValueNotifier<double>(1.0);
+
+  Future<void> setVolume(double value) async {
+    volume.value = value.clamp(0.0, 1.0).toDouble();
+    await _ensurePlayer().setVolume(volume.value);
+  }
+
+  Future<void> nextStation() async {
+    if (_stationQueue.length < 2) return;
+    final index = stationIndex;
+    await play(_stationQueue[(index + 1) % _stationQueue.length]);
+  }
+
+  Future<void> previousStation() async {
+    if (_stationQueue.length < 2) return;
+    final index = stationIndex;
+    await play(_stationQueue[index <= 0 ? _stationQueue.length - 1 : index - 1]);
+  }
+
   int _playRequest = 0;
   int? _failingPlayRequest;
   Timer? _bufferingTimer;
@@ -330,6 +359,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     ref.onDispose(() {
       _bufferingTimer?.cancel();
       _metadataTimer?.cancel();
+      volume.dispose();
       NotificationService().release(_notificationOwner);
       unawaited(_states?.cancel());
       unawaited(_icyMetadata?.cancel());
@@ -511,8 +541,16 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         (_) => unawaited(refresh()));
   }
 
-  Future<void> play(RadioStation station) async {
+  Future<void> play(RadioStation station, {List<RadioStation>? queue}) async {
     if (!ref.read(internetRadioEnabledProvider)) return;
+    if (queue != null) {
+      final seen = <String>{};
+      _stationQueue = [for (final item in queue)
+        if (seen.add(item.id)) item];
+    }
+    if (!_stationQueue.any((item) => item.id == station.id)) {
+      _stationQueue = [..._stationQueue, station];
+    }
     final request = ++_playRequest;
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
@@ -615,6 +653,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
     _metadataTimer?.cancel();
+    _stationQueue = const [];
     _failingPlayRequest = null;
     final wasOn = state.station != null;
     state = const RadioPlayback();

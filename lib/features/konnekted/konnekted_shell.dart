@@ -15,7 +15,6 @@ import 'package:flick/core/utils/app_haptics.dart';
 import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/features/flow/flow_screen.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
-import 'package:flick/features/internet_radio/radio_now_playing_page.dart';
 import 'package:flick/features/folders/screens/folders_screen.dart';
 import 'package:flick/features/playlist_links/linked_playlists_screen.dart';
 import 'package:flick/features/spotify/spotify_playlists_screen.dart';
@@ -227,12 +226,6 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   static const _playerHero = 'konnekted-player-art';
 
   Future<void> _openPlayer({double? from}) async {
-    if (ref.read(radioPlayerProvider).station != null) {
-      await Navigator.of(context).push<void>(MaterialPageRoute(
-        builder: (_) => const RadioNowPlayingPage(),
-      ));
-      return;
-    }
     if (from == null && _pull != null) {
       _pull!.open();
       return;
@@ -446,6 +439,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                                     key: _miniPlayerKey,
                                     artworkKey: _miniArtworkKey,
                                     onOpen: () => unawaited(_openPlayer()),
+                                    onQueue: () {
+                                      ref.read(radioPlayerProvider.notifier)
+                                          .requestStationQueue();
+                                      unawaited(_openPlayer());
+                                    },
+                                    onPullUpStart: _pullPlayerStart,
+                                    onPullUpUpdate: (dy) => _pull?.dragBy(dy),
+                                    onPullUpEnd: _pullPlayerEnd,
                                   )
                                 : KonnektedMiniPlayer(
                               key: _miniPlayerKey,

@@ -6,6 +6,8 @@ on:
       - 'lib/features/internet_radio/**'
       - 'lib/features/konnekted/konnekted_dock.dart'
       - 'lib/features/konnekted/konnekted_shell.dart'
+      - 'lib/features/player/screens/full_player_screen.dart'
+      - 'lib/features/search/screens/search_screen.dart'
       - 'test/features/internet_radio/**'
       - 'lib/features/settings/lokal/**'
       - '.github/workflows/stations-ci.yml'
@@ -37,7 +39,9 @@ jobs:
             lib/features/internet_radio/radio_providers.dart \
             lib/features/internet_radio/radio_now_playing_page.dart \
             lib/features/konnekted/konnekted_dock.dart \
-            lib/features/konnekted/konnekted_shell.dart; do
+            lib/features/konnekted/konnekted_shell.dart \
+            lib/features/player/screens/full_player_screen.dart \
+            lib/features/search/screens/search_screen.dart; do
             dart analyze --no-fatal-warnings "$source"
           done
       - name: Run station quality, metadata and existing radio regression tests
@@ -45,3 +49,5 @@ jobs:
           flutter test --no-pub
           test/features/internet_radio/radio_browser_test.dart
           test/features/internet_radio/radio_timeout_test.dart
+          test/features/internet_radio/radio_now_playing_page_test.dart
+          test/widgets/lokal/lokal_player_route_test.dart

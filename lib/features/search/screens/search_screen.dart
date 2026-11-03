@@ -41,23 +41,25 @@ import 'package:flick/widgets/lokal/lokal_quality.dart';
 import 'package:flick/services/link/library_song_identity.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key, this.footerFocusRequests});
+  const SearchScreen({super.key, this.footerFocusRequests, this.initialQuery});
 
   /// Supplied only by the bottom-bar Search destination. An explicit tap
   /// requests the keyboard even if the optional generic auto-focus preference
   /// is disabled. Other Search entry points keep their existing behavior.
   final ValueListenable<int>? footerFocusRequests;
+  /// Optional prefilled search opened from a live radio song or artist.
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
-  final _controller = TextEditingController();
+  late final _controller = TextEditingController(text: widget.initialQuery);
   final _focusNode = FocusNode();
   SongRepository get _songRepository => ref.read(songRepositoryProvider);
   Timer? _debounce;
-  String _debouncedQuery = '';
+  late String _debouncedQuery = widget.initialQuery?.trim() ?? '';
   final Map<SearchCategory, bool> _expanded = {};
 
   static const int _previewLimit = 4;
@@ -66,6 +68,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void initState() {
     super.initState();
     widget.footerFocusRequests?.addListener(_onFooterSearchTap);
+    if (widget.initialQuery?.trim().isNotEmpty == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.unfocus();
+      });
+    }
     // The footer may have been tapped before this lazily mounted screen
     // exists. Focus after the TextField attaches to the element tree.
     if (widget.footerFocusRequests != null) _focusAfterNavigation();

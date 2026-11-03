@@ -3,6 +3,8 @@ import 'desktop_remote_full_player.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
 import 'dart:io';
 import 'package:flick/features/music_videos/media3_music_video_surface.dart';
+import 'package:flick/features/internet_radio/radio_providers.dart';
+import 'package:flick/features/internet_radio/radio_now_playing_page.dart';
 import 'package:flick/features/music_videos/video_quality_settings.dart';
 import 'package:flick/features/music_videos/music_video_providers.dart';
 import 'package:flick/providers/opt_in_source_provider.dart';
@@ -914,6 +916,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (widget.videoSong == null &&
         ref.watch(lokalRemoteControllerProvider.select((s) => s.controlsDesktop))) {
       return DesktopRemoteFullPlayer(onClose: _close);
+    }
+    // Stations share this exact spring-driven player route with local music
+    // and desktop remote playback. The radio transport owns its own session,
+    // but chrome, dismissal and artwork morph are not separate architectures.
+    if (widget.videoSong == null &&
+        ref.watch(radioPlayerProvider.select((s) => s.station != null))) {
+      return RadioNowPlayingPage(onClose: _close);
     }
     final palette = ref.watch(albumPaletteSyncProvider);
     final dominant = ref.watch(albumDominantColorSyncProvider);
