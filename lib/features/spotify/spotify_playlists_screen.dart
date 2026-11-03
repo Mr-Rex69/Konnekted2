@@ -423,6 +423,12 @@ class _SpotifyPlaylistDetailState
                 ? const Center(child: Text('No playable tracks in this playlist.'))
                 : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
+                    header: ProviderPlaylistHeader(
+                      title: widget.playlist.name,
+                      coverUrl: widget.playlist.imageUrl,
+                      owner: widget.playlist.owner,
+                      tracks: _tracks,
+                    ),
                     source: PlaylistLinkSource.spotify,
                     playlistId: widget.playlist.id,
                     accountId: widget.accountId,
