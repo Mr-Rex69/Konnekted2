@@ -5,6 +5,7 @@ import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'radio_browse_selection.dart';
 import 'radio_browser.dart';
 import 'radio_catalog.dart';
 import 'radio_providers.dart';
@@ -55,6 +56,8 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
   String _genre = '';
   bool _favoritesOnly = false;
   bool _losslessOnly = false;
+  bool _filtersTouched = false;
+  Future<void> _selectionWrite = Future<void>.value();
   bool _loading = false;
   bool _moreLoading = false;
   bool _hasMore = false;
@@ -67,8 +70,37 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_load(reset: true));
+      if (mounted) unawaited(_restoreFiltersAndLoad());
     });
+  }
+
+  Future<void> _restoreFiltersAndLoad() async {
+    final saved = await RadioBrowseSelection.load();
+    if (!mounted) return;
+    if (!_filtersTouched) {
+      setState(() {
+        _favoritesOnly = saved.favoritesOnly;
+        _losslessOnly = saved.losslessOnly;
+        _country = _countries.containsKey(saved.country) ? saved.country : '';
+        _genre = _genres.contains(saved.genre) ? saved.genre : '';
+      });
+    }
+    // Restore the query before first browsing; don't briefly load Worldwide.
+    await _load(reset: true);
+  }
+
+  void _persistFilters() {
+    _filtersTouched = true;
+    final selection = RadioBrowseSelection(
+      favoritesOnly: _favoritesOnly,
+      losslessOnly: _losslessOnly,
+      country: _country,
+      genre: _genre,
+    );
+    // Serialize saves: rapid taps cannot finish out of order.
+    _selectionWrite = _selectionWrite
+        .then((_) => selection.save())
+        .catchError((Object _) {});
   }
 
   @override
@@ -187,18 +219,29 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
                   label: 'Explore',
                   icon: Icons.public_rounded,
                   selected: !_favoritesOnly,
-                  onTap: () => setState(() => _favoritesOnly = false),
+                  onTap: () {
+                     if (!_favoritesOnly) return;
+                     setState(() => _favoritesOnly = false);
+                     _persistFilters();
+                   },
                 ),
                 _FilterChip(
                   label: 'Favorites',
                   icon: Icons.favorite_rounded,
                   selected: _favoritesOnly,
-                  onTap: () => setState(() => _favoritesOnly = true),
+                  onTap: () {
+                     if (_favoritesOnly) return;
+                     setState(() => _favoritesOnly = true);
+                     _persistFilters();
+                   },
                 ),
                 _FilterChip(
                   label: 'Lossless',
                   selected: _losslessOnly,
-                  onTap: () => setState(() => _losslessOnly = !_losslessOnly),
+                  onTap: () {
+                     setState(() => _losslessOnly = !_losslessOnly);
+                     _persistFilters();
+                   },
                 ),
               ],
             ),
@@ -223,6 +266,7 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
               onChanged: (value) {
                 if (value == null || value == _country) return;
                 setState(() => _country = value);
+                _persistFilters();
                 unawaited(_load(reset: true));
               },
             ),
@@ -242,6 +286,7 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
                     onTap: () {
                       if (_genre == genre) return;
                       setState(() => _genre = genre);
+                      _persistFilters();
                       unawaited(_load(reset: true));
                     },
                   ),
