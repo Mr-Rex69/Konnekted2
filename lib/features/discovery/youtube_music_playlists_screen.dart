@@ -10,6 +10,8 @@ import 'package:flick/features/spotify/provider_playlist_track_browser.dart';
 import 'package:flick/features/playlist_links/playlist_link_models.dart';
 import 'package:flick/models/song.dart';
 import 'package:flutter/material.dart';
+import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Saved YouTube Music playlists, independent of Discovery recommendations.
@@ -298,17 +300,13 @@ class _YoutubePlaylistDetailState
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      // The large scrollable hero owns the playlist title.
-      actions: [
-        IconButton(
-          tooltip: 'Update playlist', onPressed: _updating ? null : () => unawaited(_refresh()),
-          icon: const Icon(Icons.refresh_rounded),
-        ),
-
-      ],
-    ),
-    body: _loading && _tracks.isEmpty
+    backgroundColor: context.lokal.bg,
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        // Artwork and its fade begin at y=0, underneath Android status icons.
+        Positioned.fill(
+          child: _loading && _tracks.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : _error != null && _tracks.isEmpty
             ? Center(child: Text(_error!))
@@ -328,6 +326,23 @@ class _YoutubePlaylistDetailState
                     artworkBuilder: (track) => _YoutubePlaylistArtwork(url: track.artworkUrl),
                     onPlay: _playOrdered,
                     onSongActions: _songActions,
-                  ),
+                  ),,
+        ),
+        Positioned(
+          top: MediaQuery.paddingOf(context).top,
+          left: 0,
+          right: 0,
+          child: LokalPageBar(
+            actions: [
+              LokalRoundAction(
+              icon: Icons.refresh_rounded,
+              label: 'Update playlist',
+              onPressed: _updating ? null : () => unawaited(_refresh()),
+            ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
