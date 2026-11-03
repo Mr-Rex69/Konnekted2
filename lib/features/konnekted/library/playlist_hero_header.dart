@@ -19,6 +19,11 @@ class PlaylistHeroCover {
 /// selection; force-closing and relaunching changes the artwork arrangement.
 final int _playlistHeroSessionSeed = math.Random().nextInt(0x7fffffff);
 
+/// Sized against display height, not screen width, so the artwork never
+/// dominates more than roughly a third of a phone's vertical viewport.
+double playlistHeroHeightForScreen(double height) =>
+    math.min(height * .34, 370.0);
+
 List<PlaylistHeroCover> playlistHeroCoversForSession(
   String playlistId,
   Iterable<PlaylistHeroCover> candidates, {
@@ -69,7 +74,9 @@ class PlaylistHeroHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.lokal;
     final width = MediaQuery.sizeOf(context).width;
-    final height = (width * 1.04).clamp(310.0, 520.0);
+    // The hero occupies at most ~34% of the screen, including the status
+    // bar. Its image extends behind system chrome rather than starting below it.
+    final height = playlistHeroHeightForScreen(MediaQuery.sizeOf(context).height);
     final sampled = playlistHeroCoversForSession(playlistId, covers);
     final fallback = PlaylistDiagonalCollage(
       key: ValueKey('playlist-art:$playlistId'),
@@ -114,11 +121,12 @@ class PlaylistHeroHeader extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  stops: const [0.0, .38, .72, 1.0],
+                  stops: const [0.0, .16, .43, .74, 1.0],
                   colors: [
-                    theme.bg.withValues(alpha: .05),
-                    theme.bg.withValues(alpha: .12),
-                    theme.bg.withValues(alpha: .80),
+                    Colors.black.withValues(alpha: .38),
+                    Colors.black.withValues(alpha: .08),
+                    Colors.transparent,
+                    theme.bg.withValues(alpha: .73),
                     theme.bg,
                   ],
                 ),
@@ -176,53 +184,23 @@ class PlaylistHeroHeader extends StatelessWidget {
   }
 }
 
-/// Four staggered columns rotating as one composited layer. Only the outer
-/// transform changes per frame; album thumbnails are cached and static.
-class PlaylistDiagonalCollage extends StatefulWidget {
+/// A static, session-varied diagonal collage. Rounded thumbnails are
+/// clipped once and remain stationary; no AnimationController or per-frame
+/// widget builds. The sample changes on next process launch, not mid-session.
+class PlaylistDiagonalCollage extends StatelessWidget {
   const PlaylistDiagonalCollage({super.key, required this.covers});
 
   final List<PlaylistHeroCover> covers;
 
   @override
-  State<PlaylistDiagonalCollage> createState() =>
-      _PlaylistDiagonalCollageState();
-}
-
-class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _drift = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 34),
-    value: .5,
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _drift.stop();
-      _drift.value = .5;
-    } else if (!_drift.isAnimating) {
-      _drift.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _drift.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final covers = widget.covers;
     if (covers.isEmpty) {
       return ColoredBox(
         color: context.lokal.surface2,
         child: Center(
           child: Icon(
             Icons.queue_music_rounded,
-            size: 84,
+            size: 72,
             color: context.lokal.muted,
           ),
         ),
@@ -232,32 +210,10 @@ class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage>
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final tile = (width * .48).clamp(120.0, 230.0);
+        // Smaller squares show more artwork without crowding the shortened hero.
+        final tile = (width * .34).clamp(105.0, 190.0);
         const gap = 14.0;
         final side = tile * 4 + gap * 3;
-        final tiles = <Widget>[
-          for (var index = 0; index < 16; index++)
-            SizedBox.square(
-              dimension: tile,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: CachedImageWidget(
-                  key: ValueKey('playlist-collage-slot-$index'),
-                  imagePath: covers[index % covers.length].imagePath,
-                  audioSourcePath:
-                      covers[index % covers.length].audioSourcePath,
-                  width: tile,
-                  height: tile,
-                  useThumbnail: true,
-                  thumbnailWidth: 320,
-                  thumbnailHeight: 320,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-        ];
-        // The collage is larger than the viewport in both directions; slow
-        // motion therefore never reveals a blank edge.
         final raster = RepaintBoundary(
           child: Transform.rotate(
             angle: -.26,
@@ -271,7 +227,26 @@ class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage>
                       children: [
                         for (var col = 0; col < 4; col++) ...[
                           if (col != 0) const SizedBox(width: gap),
-                          tiles[row * 4 + col],
+                          SizedBox.square(
+                            dimension: tile,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: CachedImageWidget(
+                                key: ValueKey('playlist-collage-slot-${row * 4 + col}'),
+                                imagePath:
+                                    covers[(row * 4 + col) % covers.length].imagePath,
+                                audioSourcePath:
+                                    covers[(row * 4 + col) % covers.length]
+                                        .audioSourcePath,
+                                width: tile,
+                                height: tile,
+                                useThumbnail: true,
+                                thumbnailWidth: 320,
+                                thumbnailHeight: 320,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
                         ],
                       ],
                     ),
@@ -285,24 +260,12 @@ class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage>
           child: ColoredBox(
             color: context.lokal.surface2,
             child: Center(
-              // Center alone would constrain the 4x4 canvas to the viewport,
-              // overflowing its rows. Let the raster extend beyond the clip.
               child: OverflowBox(
                 minWidth: side,
                 maxWidth: side,
                 minHeight: side,
                 maxHeight: side,
-                child: AnimatedBuilder(
-                  animation: _drift,
-                  child: raster,
-                  builder: (context, child) => Transform.translate(
-                    offset: Offset(
-                      (_drift.value - .5) * 50,
-                      (_drift.value - .5) * 66,
-                    ),
-                    child: child,
-                  ),
-                ),
+                child: raster,
               ),
             ),
           ),

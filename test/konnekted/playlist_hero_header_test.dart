@@ -2,6 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/konnekted/library/playlist_hero_header.dart';
 
 void main() {
+  test('hero stays below 35 percent of phone height', () {
+    expect(playlistHeroHeightForScreen(640), closeTo(217.6, .01));
+    expect(playlistHeroHeightForScreen(900), closeTo(306, .01));
+    expect(playlistHeroHeightForScreen(1200), 370);
+    expect(playlistHeroHeightForScreen(1200), lessThan(1200 * .35));
+  });
+
   test('playlist collage keeps its chosen covers during a session', () {
     final candidates = [
       for (var i = 0; i < 24; i++)

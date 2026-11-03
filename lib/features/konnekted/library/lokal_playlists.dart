@@ -516,7 +516,7 @@ class LokalPlaylistPage extends ConsumerWidget {
     final coverId = playlist.coverArt?.trim();
     final serverId = playlist.networkServerId;
     // Network playlist covers require the authenticated server artwork API.
-    // No cover (or an offline server) falls back to the animated collage.
+    // No cover (or an offline server) falls back to the static collage.
     final coverBytes = serverId != null &&
             coverId != null &&
             coverId.isNotEmpty
@@ -526,6 +526,7 @@ class LokalPlaylistPage extends ConsumerWidget {
         : null;
     return LokalLibraryPage(
       title: playlist.name,
+      edgeToEdgeHeader: true,
       actions: [
         LokalRoundAction(
           icon: Icons.more_horiz_rounded,
