@@ -3,10 +3,9 @@ import 'package:flick/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:flick/features/internet_radio/radio_providers.dart';
+import 'package:flick/features/internet_radio/internet_radio_page.dart';
 import 'package:flick/features/settings/screens/network_sources_screen.dart';
 import 'package:flick/features/settings/widgets/http_addons_settings_panel.dart';
 import 'package:flick/features/settings/widgets/playback_source_priority_panel.dart';
@@ -71,54 +70,11 @@ List<LokalSettingsSection> onlineSourcesSettings(
     title: LokalOnlineSections.radioVideos,
     children: [
       LokalSettingLink(
-        label: lokalText('Station list'),
-        description: ref.watch(radioCatalogUrlProvider),
-        onTap: () => unawaited(_editCatalogUrl(context, ref)),
+        label: lokalText('Stations'),
+        description: lokalText('Worldwide stations · 256 kbps+ and lossless'),
+        onTap: () => _push(context, const InternetRadioPage()),
       ),
     ],
   ),
 ];
 
-/// Desktop's "station list link": any https JSON in its radios.json format.
-/// Empty goes back to Lokal's own list.
-Future<void> _editCatalogUrl(BuildContext context, WidgetRef ref) async {
-  final controller = TextEditingController(
-    text: ref.read(radioCatalogUrlProvider),
-  );
-  final url = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(lokalText('Station list')),
-      content: TextField(
-        controller: controller,
-        keyboardType: TextInputType.url,
-        autocorrect: false,
-        decoration: const InputDecoration(
-          hintText: 'https://…/radios.json',
-          helperText: 'Leave empty for Lokal’s own list.',
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(lokalText('Cancel')),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, controller.text),
-          child: Text(lokalText('Save')),
-        ),
-      ],
-    ),
-  );
-  controller.dispose();
-  if (url == null) return;
-  final uri = Uri.tryParse(url.trim());
-  if (url.trim().isNotEmpty && (uri == null || uri.scheme != 'https')) {
-    if (!context.mounted) return;
-    LokalToast.fromSnackBar(context, 
-      SnackBar(content: Text(lokalText('Use an https link to a JSON file.'))),
-    );
-    return;
-  }
-  await ref.read(radioCatalogUrlProvider.notifier).set(url);
-}
