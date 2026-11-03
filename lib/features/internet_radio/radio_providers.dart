@@ -380,14 +380,22 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     // no background audio connections are opened for list rows.
     _icyMetadata = player.icyMetadataStream.listen((metadata) {
       final title = metadata?.info?.title?.trim();
-      if (title == null || title.isEmpty || state.station == null || state.error != null || title == state.nowPlaying) return;
+      if (title == null || title.isEmpty || state.station == null ||
+          state.error != null || title == state.nowPlaying) return;
+      // Stream metadata can advance before a broadcaster API's cached feed.
+      // Never keep the old song artwork on a newly announced recording.
+      final normalize = (String value) => value.toLowerCase()
+          .replaceAll(RegExp(r'\s*[-—–]\s*'), ' - ').trim();
+      final stillCurrent = state.trackMetadata != null &&
+          normalize(state.trackMetadata!.artist + ' - ' +
+              state.trackMetadata!.title) == normalize(title);
       state = RadioPlayback(
         station: state.station,
         playing: state.playing,
         loading: state.loading,
         error: state.error,
         nowPlaying: title,
-        trackMetadata: state.trackMetadata,
+        trackMetadata: stillCurrent ? state.trackMetadata : null,
       );
       _syncNotification();
     });
