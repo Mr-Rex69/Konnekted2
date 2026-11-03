@@ -113,7 +113,7 @@ Future<ChangelogEntry?> loadLokalMinorRelease(
   try {
     final uri = Uri.https(
       'api.github.com',
-      '/repos/lokal-music/lokal-mobile/releases/tags/v$minor.0',
+      '/repos/lokal-music/Mobile/releases/tags/v$minor.0',
     );
     final response = await requestClient.get(
       uri,
