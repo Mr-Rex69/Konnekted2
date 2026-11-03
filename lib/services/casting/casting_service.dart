@@ -98,6 +98,12 @@ class CastingService {
     await disconnect(resumeLocal: false);
     _wasPlayingBeforeCast = wasPlaying;
 
+    // Pause while the local transport still owns playback. Once _activeDevice
+    // is set, PlayerService.pause() delegates to the cast receiver instead,
+    // leaving the phone's audio engine playing during the handoff (#434).
+    // Do this even if the UI reports paused: it also settles a stale engine.
+    await ps.pause();
+
     _activeDevice = device;
     activeDeviceNotifier.value = device;
     isActiveNotifier.value = true;
@@ -109,12 +115,6 @@ class CastingService {
       if (v != null && v >= 0) remoteVolumeNotifier.value = v.clamp(0.0, 1.0);
     } else {
       _selectDlnaRoute(device);
-    }
-
-    // ponytail: local engine must yield the moment a cast target takes over —
-    // otherwise phone + TV play simultaneously.
-    if (ps.isPlayingNotifier.value) {
-      await ps.pause();
     }
 
     if (wasPlaying && resumeSong != null) {
