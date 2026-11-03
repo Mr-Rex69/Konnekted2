@@ -320,7 +320,7 @@ class _MoreRows extends StatelessWidget {
       ),
       LokalNavRow(
         icon: Icons.radio_rounded,
-        label: lokalText('Radio'),
+        label: lokalText('Stations'),
         onTap: () => pushLokal(context, const InternetRadioPage()),
       ),
     ],
