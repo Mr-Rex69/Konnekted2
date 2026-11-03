@@ -5,7 +5,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY = "Lokal-music/lokal-mobile"
+REPOSITORY = "lokal-music/Mobile"
 WORKFLOWS = (
     ".github/workflows/android-release.yml",
     ".github/workflows/android-nightly.yml",
