@@ -1533,6 +1533,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       ref.watch(appPreferencesProvider).animationsEnabled &&
                       !LokalPerformanceScope.of(context),
                   enabled: atRest,
+                  // Match the reference: a slim gutter separates neighbouring
+                  // covers while the regular (non-Fullcover) artwork is swiped.
+                  // The fullscreen poster carousel keeps its edge-to-edge slide.
+                  coverGap: 16,
                   onDragStateChanged: (v) => _carouselDragging = v,
                   onNext: _player.next,
                   onPrevious: _player.previousBySwipe,
