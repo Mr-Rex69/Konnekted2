@@ -47,11 +47,11 @@ void main() {
   });
 
   test('Nova Danse uses shared official broadcaster metadata including artwork', () {
-    final station = stationFromRadioBrowser({
+    final novaStation = stationFromRadioBrowser({
       ...station('nova-dance', 'AAC', 256),
       'url_resolved': 'https://nova-dance.ice.infomaniak.ch/nova-dance-256.aac',
     });
-    expect(StationMetadataLookup.novaCodeForStation(station), 'nova-danse');
+    expect(StationMetadataLookup.novaCodeForStation(novaStation), 'nova-danse');
     final record = StationMetadataLookup.parseNovaForTest([
       {'radio': {'code': 'radio-nova'},
        'currentTrack': {'artist': 'Other', 'title': 'Wrong'}},
