@@ -160,6 +160,48 @@ class StationMetadataLookup {
     }
   }
 
+  // Cover lookups are made only for visible rows with a known artist/title.
+  // Exact artist and title matching prevents assigning another song's cover.
+  static final _artwork = <String, Future<String?>>{};
+
+  static String _normalize(String text) => text.toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+
+  static Future<String?> _artworkFor(StationLiveMetadata track) {
+    if (track.artist.trim().isEmpty || track.title.trim().isEmpty) {
+      return Future<String?>.value(null);
+    }
+    final key = _normalize(track.artist) + '|' + _normalize(track.title);
+    final cached = _artwork[key];
+    if (cached != null) return cached;
+    final pending = _withSlot<String?>(() async {
+      final url = Uri.https('itunes.apple.com', '/search', {
+        'term': track.artist + ' ' + track.title,
+        'media': 'music',
+        'entity': 'song',
+        'limit': '5',
+      });
+      final data = await _fetch(url);
+      if (data is! Map || data['results'] is! List) return null;
+      for (final result in data['results'] as List) {
+        if (result is! Map) continue;
+        final artist = _normalize((result['artistName'] ?? '').toString());
+        final title = _normalize((result['trackName'] ?? '').toString());
+        if (artist != _normalize(track.artist) ||
+            title != _normalize(track.title)) continue;
+        final image = (result['artworkUrl100'] ?? '').toString();
+        final uri = Uri.tryParse(image);
+        if (uri == null || uri.scheme != 'https') continue;
+        return image.replaceFirst(RegExp(r'/\d+x\d+bb\.'),
+          '/600x600bb.');
+      }
+      return null;
+    });
+    _artwork[key] = pending;
+    if (_artwork.length > 200) _artwork.remove(_artwork.keys.first);
+    return pending;
+  }
+
   static Future<StationLiveMetadata?> lookup(RadioStation station) async {
     final novaCode = novaCodeForStation(station);
     final uri = novaCode == null ? _statusUri(station) : Uri.parse(novaUrl);
@@ -179,6 +221,12 @@ class StationMetadataLookup {
       if (_cache.length > 150) _cache.remove(_cache.keys.first);
     }
     final data = await entry.pending;
-    return novaCode == null ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
+    final info = novaCode == null
+        ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
+    if (info == null || info.cover != null) return info;
+    final artwork = await _artworkFor(info);
+    return artwork == null ? info : StationLiveMetadata(
+      artist: info.artist, title: info.title, cover: artwork,
+    );
   }
 }
