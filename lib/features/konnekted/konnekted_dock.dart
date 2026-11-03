@@ -576,10 +576,16 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
     super.key,
     required this.onOpen,
     this.artworkKey,
+    this.onPullUpStart,
+    this.onPullUpUpdate,
+    this.onPullUpEnd,
   });
 
   final VoidCallback onOpen;
   final Key? artworkKey;
+  final VoidCallback? onPullUpStart;
+  final ValueChanged<double>? onPullUpUpdate;
+  final ValueChanged<double>? onPullUpEnd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -593,11 +599,7 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
         ? radio.trackMetadata!.artist : station.title;
     final image = radio.trackMetadata?.cover ?? station.icon;
     final collapsed = KonnektedMiniPlayerScope.collapsedOf(context);
-    return GestureDetector(
-      onVerticalDragEnd: (details) {
-        if ((details.primaryVelocity ?? 0) < -150) onOpen();
-      },
-      child: InkWell(
+    final body = InkWell(
         onTap: onOpen,
         customBorder: const StadiumBorder(),
         child: Padding(
@@ -652,7 +654,17 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
             ],
           ),
         ),
-      ),
+      );
+    if (onPullUpStart == null) return body;
+    return _PullUp(
+      onStart: onPullUpStart!,
+      onUpdate: onPullUpUpdate,
+      onEnd: onPullUpEnd,
+      onPrevious: () => unawaited(
+        ref.read(radioPlayerProvider.notifier).previousStation()),
+      onNext: () => unawaited(
+        ref.read(radioPlayerProvider.notifier).nextStation()),
+      child: body,
     );
   }
 }
