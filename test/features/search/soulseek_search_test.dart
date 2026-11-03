@@ -31,19 +31,19 @@ void main() {
 
   test('album downloads never combine different peer directories', () {
     final first = SoulseekFile.fromMap({
-      'username': 'peer', 'filename': r'Music\${artist}\Greatest Hits\${track}',
+      'username': 'peer', 'filename': r'Music\Artist A\Greatest Hits\01.flac',
       'size': 1024, 'extension': 'FLAC',
     });
     final otherArtist = SoulseekFile.fromMap({
-      'username': 'peer', 'filename': r'Music\${artist}\Greatest Hits\${track}',
+      'username': 'peer', 'filename': r'Music\Artist B\Greatest Hits\02.flac',
       'size': 1024, 'extension': 'FLAC',
     });
     final nextTrack = SoulseekFile.fromMap({
-      'username': 'peer', 'filename': r'Music\${artist}\Greatest Hits\${track}',
+      'username': 'peer', 'filename': r'Music\Artist A\Greatest Hits\03.flac',
       'size': 1024, 'extension': 'FLAC',
     });
     final otherPeer = SoulseekFile.fromMap({
-      'username': 'another', 'filename': r'Music\${artist}\Greatest Hits\${track}',
+      'username': 'another', 'filename': r'Music\Artist A\Greatest Hits\01.flac',
       'size': 1024, 'extension': 'FLAC',
     });
     expect(first.folder, 'Greatest Hits');
