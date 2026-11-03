@@ -77,6 +77,18 @@ void main() {
   });
 
 
+  test('search snapshots and lossless preference survive scope switches', () {
+    final service = _FakeSoulseekService()..connected = true;
+    const song = SoulseekFile(
+        username: 'peer', filename: 'Artist/Album/song.flac',
+        extension: 'FLAC', size: 2048);
+    service.rememberSearch('artist', [song]);
+    expect(service.cachedSearch('artist'), [song]);
+    expect(service.cachedSearch('another query'), isNull);
+    service.setLosslessOnly(true);
+    expect(service.losslessOnly, isTrue);
+  });
+
   test('album queueing is capped and skips already queued files', () async {
     final service = _FakeSoulseekService()..connected = true;
     final files = List.generate(70, (index) => SoulseekFile(
@@ -116,6 +128,36 @@ void main() {
     expect(find.text('new.flac'), findsOneWidget);
     expect(find.text('old.flac'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('peer search remains visible after leaving and reentering scope',
+      (tester) async {
+    final service = _FakeSoulseekService()..connected = true;
+    Widget app() => MaterialApp(
+      theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+      home: Scaffold(body: SoulseekSearchSection(query: 'artist', service: service)),
+    );
+    await tester.pumpWidget(app());
+    await tester.pump(const Duration(milliseconds: 700));
+    service.requests['artist']!.complete([
+      const SoulseekFile(username: 'peer', filename: 'Artist/Album/song.flac',
+          extension: 'FLAC', size: 100),
+    ]);
+    await tester.pump();
+    expect(find.text('song.flac'), findsOneWidget);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(
+        body: Center(child: Text('Other search scope')))));
+    await tester.pumpWidget(app());
+    await tester.pump();
+    expect(find.text('song.flac'), findsOneWidget);
+    expect(service.requests.length, 1);
+    // A second mount must keep the same lossless choice as well.
+    service.setLosslessOnly(true);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(
+        body: Center(child: Text('Online')))));
+    await tester.pumpWidget(app());
+    await tester.pump();
+    expect(tester.widget<FilterChip>(find.byType(FilterChip)).selected, isTrue);
   });
 
   testWidgets('download states expose labels and transfer actions', (tester) async {
@@ -163,6 +205,30 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     expect(service.actions, ['pause']);
+  });
+
+  testWidgets('sharing selected before login does not delay connection',
+      (tester) async {
+    final service = _DelayedShareSoulseekService();
+    await tester.pumpWidget(MaterialApp(
+      theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+      home: Scaffold(body: SingleChildScrollView(
+          child: SoulseekAccountSettingsTile(service: service))),
+    ));
+    await tester.pump();
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, 'test-account');
+    await tester.enterText(find.byType(TextField).last, 'password');
+    await tester.tap(find.text('Sign in'));
+    await tester.pump();
+    expect(service.connected, isTrue);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.textContaining('Indexing music files'), findsWidgets);
+    expect(service.shareEnabled, isFalse);
+    service.completeSharing();
+    await tester.pump();
+    expect(service.shareEnabled, isTrue);
   });
 
   testWidgets('Soulseek account controls sign in and update sharing', (tester) async {
@@ -244,4 +310,32 @@ class _FakeSoulseekService extends SoulseekService {
     shareEnabled = share;
     notifyListeners();
   }
+}
+
+class _DelayedShareSoulseekService extends _FakeSoulseekService {
+  final _sharing = Completer<void>();
+
+  @override
+  Future<void> signIn(String user, String password, {required bool share}) async {
+    connected = true;
+    username = user;
+    notifyListeners();
+    if (share) {
+      sharingBusy = true;
+      sharingStatus = 'Indexing music files for sharing…';
+      notifyListeners();
+      unawaited(setSharing(true));
+    }
+  }
+
+  @override
+  Future<void> setSharing(bool value) async {
+    await _sharing.future;
+    shareEnabled = value;
+    sharingBusy = false;
+    sharingStatus = '';
+    notifyListeners();
+  }
+
+  void completeSharing() => _sharing.complete();
 }
