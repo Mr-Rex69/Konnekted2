@@ -109,6 +109,30 @@ class PlayerPanelStage extends StatelessWidget {
   );
 }
 
+/// The full-size artwork target used by both the player panel layout and
+/// Space's reveal. Matching these calculations prevents the rounded Space
+/// cutout drifting from the cover when Space opens directly from Lyrics.
+@visibleForTesting
+Rect playerPanelRestArtworkRect(
+  Size size, {
+  required double artGap,
+  required double infoReserve,
+}) {
+  final width = size.width;
+  final height = size.height;
+  final room = math.max(
+    0.0,
+    height - artGap - math.min(height, infoReserve) - 6,
+  );
+  final side = math.min(width, room);
+  return Rect.fromLTWH(
+    (width - side) / 2,
+    (room - side) / 2,
+    side,
+    side,
+  );
+}
+
 enum _Part { art, info, queue, lyrics, header }
 
 class _PanelLayout extends MultiChildLayoutDelegate {
@@ -135,9 +159,14 @@ class _PanelLayout extends MultiChildLayoutDelegate {
     );
     // Hold sleeve geometry steady across fallback fonts with different
     // ascent/descent metrics (e.g. Japanese, Chinese, Latin).
-    final room = math.max(0.0, h - artGap - math.min(h, infoReserve) - 6);
-    final fullSide = math.min(w, room);
-    final top = (room - fullSide) / 2;
+    final restArtwork = playerPanelRestArtworkRect(
+      size,
+      artGap: artGap,
+      infoReserve: infoReserve,
+    );
+    final fullSide = restArtwork.width;
+    final room = restArtwork.top * 2 + fullSide;
+    final top = restArtwork.top;
     final headerHeight = math.max(math.min(thumb, h), infoReserve);
     final artCentering = (headerHeight - math.min(thumb, h)) / 2;
     final lyricsTop = math.max(0.0, h - headerHeight - 8);
