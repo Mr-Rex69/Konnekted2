@@ -398,7 +398,7 @@ class _SpotifyPlaylistDetailState
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.playlist.name),
+      // The large scrollable hero owns the playlist title.
       actions: [
         IconButton(
           tooltip: 'Refresh playlist',
