@@ -316,6 +316,13 @@ class _YoutubePlaylistDetailState
                 ? const Center(child: Text('No accessible tracks in this playlist.'))
                 : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
+                    header: ProviderPlaylistHeader(
+                      title: widget.playlist.title,
+                      coverUrl: widget.playlist.artworkUrl,
+                      owner: widget.playlist.author.isEmpty
+                          ? null : widget.playlist.author,
+                      tracks: _tracks,
+                    ),
                     source: PlaylistLinkSource.youtube,
                     playlistId: widget.playlist.id,
                     accountId: widget.accountId,
