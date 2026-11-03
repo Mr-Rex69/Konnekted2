@@ -122,6 +122,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   bool _spaceLayerMounted = false;
   Rect? _spaceCoverRect;
   bool _spaceCanvasMode = false;
+  bool _spaceFullCover = false;
   final GlobalKey _spaceArtworkKey =
       GlobalKey(debugLabel: 'space-player-artwork');
 
@@ -491,6 +492,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final active = _videoOverrideSong ??
         widget.videoSong ?? _player.currentSongNotifier.value;
     final fullCover = ref.read(lokalAppearanceProvider).fullscreenCover;
+    _spaceFullCover = fullCover;
     // Canvas fills the art plane, so the wave leaves its centre clear.
     _spaceCanvasMode = _videoFullscreen ||
         (fullCover && active != null &&
@@ -919,6 +921,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               child: SpaceCoverBloomReveal(
                 coverRect: _spaceCoverRect,
                 canvasMode: _spaceCanvasMode,
+                coverCornerRadius: _spaceFullCover ? 0 : 20,
                 surfaceColor: const Color(0xFF171820),
                 progress: _spaceProgress,
                 child: Stack(
@@ -1238,6 +1241,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                     child: SpaceCoverBloomReveal(
                       coverRect: _spaceCoverRect,
                       canvasMode: _spaceCanvasMode,
+                      coverCornerRadius: _spaceFullCover ? 0 : 20,
                       surfaceColor: colors.last,
                       progress: _spaceProgress,
                       child: Stack(
