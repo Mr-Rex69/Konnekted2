@@ -7,6 +7,11 @@ on:
       - 'lib/features/konnekted/konnekted_dock.dart'
       - 'lib/features/konnekted/konnekted_shell.dart'
       - 'lib/features/player/screens/full_player_screen.dart'
+      - 'lib/features/player/widgets/player_panel_stage.dart'
+      - 'lib/features/player/widgets/space_cover_bloom_reveal.dart'
+      - 'lib/services/android_audio_device_service.dart'
+      - 'android/app/src/main/kotlin/com/mossapps/flick/MainActivity.kt'
+      - 'test/player/space_cover_bloom_reveal_test.dart'
       - 'lib/features/search/screens/search_screen.dart'
       - 'test/features/internet_radio/**'
       - 'lib/features/settings/lokal/**'
@@ -54,3 +59,5 @@ jobs:
           test/features/internet_radio/radio_now_playing_page_test.dart
           test/player/space_cover_bloom_reveal_test.dart
           test/widgets/lokal/lokal_player_route_test.dart
+      - name: Compile Android route integration
+        run: flutter build apk --debug --no-pub
