@@ -87,6 +87,7 @@ class SearchFilterChips extends StatelessWidget {
                   ),
             ],
           ),
+        ),
         ],
         if (scope == SearchScope.library)
           Padding(
