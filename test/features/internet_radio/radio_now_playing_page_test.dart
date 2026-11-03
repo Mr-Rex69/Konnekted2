@@ -6,6 +6,8 @@ import 'package:flick/features/internet_radio/radio_now_playing_page.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/internet_radio/station_metadata.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
+import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
+import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
 import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flick/widgets/lokal/lokal_pull_to_dismiss.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +127,20 @@ void main() {
         find.byType(LokalPlayerArtwork)).toList();
     expect(anchors, isNotEmpty);
     expect(anchors.any((anchor) => anchor.expandedRadius == 0), isTrue);
+    // Radio now uses the same partial banner and blurred ambient surface as
+    // the ordinary Fullcover player, not a stretched full-screen image.
+    final poster = tester.widgetList<FullBleedArtworkFrame>(
+      find.byType(FullBleedArtworkFrame),
+    ).toList();
+    expect(poster, isNotEmpty);
+    expect(poster.every((frame) => !frame.canvas), isTrue);
+    expect(find.byType(ArtworkMeshBlurBackdrop), findsOneWidget);
+    final mask = find.descendant(
+      of: find.byType(FullBleedArtworkFrame).first,
+      matching: find.byType(ShaderMask),
+    );
+    expect(mask, findsOneWidget);
+    expect(tester.getSize(mask).height, lessThan(600));
     expect(find.byKey(const ValueKey('radio-player-back')), findsOneWidget);
     expect(find.byKey(const ValueKey('radio-player-queue')), findsOneWidget);
   });
