@@ -197,7 +197,7 @@ void main() {
     expect(find.byIcon(Icons.north_east_rounded), findsNothing);
 
     // Radio shows the actual Android route, not a hard-coded placeholder.
-    final deviceInfo = AndroidAudioDeviceService.instance.deviceInfoNotifier;
+    final deviceInfo = AndroidAudioDeviceService.instance.mediaOutputInfoNotifier;
     final previousRoute = deviceInfo.value;
     addTearDown(() => deviceInfo.value = previousRoute);
     deviceInfo.value = const AndroidPlaybackDeviceInfo(
