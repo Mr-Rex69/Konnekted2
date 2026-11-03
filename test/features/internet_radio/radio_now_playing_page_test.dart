@@ -113,6 +113,23 @@ void main() {
       routeType: 'wired',
     );
     expect(radioOutputRouteLabel(wired), 'Wired headphones');
+    const unnamedWired = AndroidPlaybackDeviceInfo(
+      hasUsbDac: false,
+      hasAttachedUac2Device: false,
+      manufacturer: 'Google',
+      model: 'Pixel 7',
+      routeType: 'wired',
+      routeLabel: 'Pixel 7',
+    );
+    expect(radioOutputRouteLabel(unnamedWired), 'Wired headphones');
+    expect(radioOutputRouteLabel(const AndroidPlaybackDeviceInfo(
+      hasUsbDac: true,
+      hasAttachedUac2Device: false,
+      manufacturer: 'Google',
+      model: 'Pixel 7',
+      routeType: 'usb',
+      routeLabel: 'Pixel 7',
+    )), 'USB audio');
   });
 
   test('radio album navigation requires exact artist, title and release', () {
