@@ -106,6 +106,8 @@ class LokalRadioSession {
     _artist = null;
     _artistLookupPending = false;
     _lastAttempt = null;
+    _starting = false;
+    _fetching = false;
     _planned = [];
     _loadLocalFallback = null;
   }
@@ -132,7 +134,9 @@ class LokalRadioSession {
       _previousAutoplay = _service.autoplayOnQueueEndNotifier.value;
       _service.setAutoplayOnQueueEnd(false);
       await ref.read(playerProvider.notifier).setShuffleMode(ShuffleMode.off);
+      if (!ref.mounted || _activeGeneration != generation) return;
       await ref.read(playerProvider.notifier).setLoopMode(LoopMode.off);
+      if (!ref.mounted || _activeGeneration != generation) return;
       await ref.read(playerProvider.notifier).play(
         first,
         playlist: [first],
@@ -241,11 +245,10 @@ class LokalRadioSession {
     } catch (_) {
       // Don't break the current recording when a queue append fails.
     } finally {
-      _fetching = false;
-      // When a small batch still leaves <=4 upcoming, schedule another refill
-      // after the append completes (never overlap two lookup requests).
-      if (added > 0 && ref.mounted && _activeGeneration == generation) {
-        unawaited(Future<void>.microtask(_topUp));
+      // An older lookup must never clear the in-flight flag of a newer radio.
+      if (ref.mounted && _activeGeneration == generation) {
+        _fetching = false;
+        if (added > 0) unawaited(Future<void>.microtask(_topUp));
       }
     }
   }
