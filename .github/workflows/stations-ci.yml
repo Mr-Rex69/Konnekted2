@@ -25,12 +25,15 @@ jobs:
       - uses: ./.github/actions/android-toolchain
       - name: Analyze Stations and radio playback
         run: |
-          dart analyze --no-fatal-warnings \
+          set -euo pipefail
+          for source in \
             lib/features/internet_radio/radio_browser.dart \
             lib/features/internet_radio/station_metadata.dart \
             lib/features/internet_radio/station_favorites.dart \
             lib/features/internet_radio/internet_radio_page.dart \
-            lib/features/internet_radio/radio_providers.dart
+            lib/features/internet_radio/radio_providers.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
       - name: Run station quality, metadata and existing radio regression tests
         run: >-
           flutter test --no-pub
