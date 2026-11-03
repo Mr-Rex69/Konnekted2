@@ -10,6 +10,7 @@ import 'package:flick/features/spotify/provider_playlist_track_browser.dart';
 import 'package:flick/features/playlist_links/playlist_link_models.dart';
 import 'package:flick/models/song.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -299,9 +300,15 @@ class _YoutubePlaylistDetailState
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: context.lokal.bg,
-    body: Stack(
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+    ),
+    child: Scaffold(
+      backgroundColor: context.lokal.bg,
+      body: Stack(
       fit: StackFit.expand,
       children: [
         // Artwork and its fade begin at y=0, underneath Android status icons.
@@ -326,7 +333,7 @@ class _YoutubePlaylistDetailState
                     artworkBuilder: (track) => _YoutubePlaylistArtwork(url: track.artworkUrl),
                     onPlay: _playOrdered,
                     onSongActions: _songActions,
-                  ),,
+                  ),
         ),
         Positioned(
           top: MediaQuery.paddingOf(context).top,
@@ -344,5 +351,6 @@ class _YoutubePlaylistDetailState
         ),
       ],
     ),
+  ),
   );
 }
