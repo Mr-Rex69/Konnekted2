@@ -34,3 +34,32 @@ jobs:
       - name: Protect canonical signing workflow guards and release URLs
         run: |
           python3 -B -m unittest tool/ci_workflow_repository_test.py tool/ci_repository_urls_test.py -v
+
+  updater-regressions:
+    name: Canonical Mobile release API and APK update checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/android-toolchain
+      - name: Analyze update and broadcaster URL sources
+        run: |
+          set -euo pipefail
+          for source in \
+            lib/features/updates/github_update_service.dart \
+            lib/features/whats_new/data/lokal_minor_release_notes.dart \
+            lib/features/settings/lokal/groups/about_group.dart \
+            lib/features/internet_radio/radio_catalog.dart \
+            lib/features/internet_radio/radio_providers.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
+      - name: Test GitHub updates, What's New, legacy catalogue and safe update UI
+        run: >-
+          flutter test --no-pub
+          test/features/updates/github_update_service_test.dart
+          test/features/updates/lokal_update_sheet_test.dart
+          test/features/whats_new/lokal_minor_release_notes_test.dart
+          test/features/internet_radio/radio_timeout_test.dart
+          test/services/online_lyrics_service_test.dart
