@@ -1,0 +1,36 @@
+name: Repository rename release guards
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/android-release.yml'
+      - '.github/workflows/android-nightly.yml'
+      - '.github/workflows/android-signed-build.yml'
+      - '.github/workflows/repository-rename-ci.yml'
+      - 'lib/features/updates/**'
+      - 'android/app/src/main/kotlin/com/mossapps/flick/LokalAppUpdater.kt'
+      - 'tool/ci_workflow_repository_test.py'
+      - 'tool/ci_repository_urls_test.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-release.yml'
+      - '.github/workflows/android-nightly.yml'
+      - '.github/workflows/android-signed-build.yml'
+      - '.github/workflows/repository-rename-ci.yml'
+      - 'tool/ci_repository_urls_test.py'
+
+permissions:
+  contents: read
+
+jobs:
+  rename-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Protect canonical signing workflow guards and release URLs
+        run: |
+          python3 -B -m unittest tool/ci_workflow_repository_test.py tool/ci_repository_urls_test.py -v
