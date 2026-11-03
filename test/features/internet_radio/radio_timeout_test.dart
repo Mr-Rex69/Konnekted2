@@ -46,7 +46,7 @@ void main() {
   test('uses the same station catalogue URL as desktop Lokal', () {
     expect(
       defaultRadioCatalogUrl,
-      'https://raw.githubusercontent.com/sipbuu/lokal/refs/heads/main/radios.json',
+      'https://raw.githubusercontent.com/lokal-music/Desktop/refs/heads/main/radios.json',
     );
   });
 
@@ -82,7 +82,7 @@ void main() {
     final source = Uri.parse(defaultRadioCatalogUrl);
     final apiUrl = Uri.https(
       'api.github.com',
-      '/repos/sipbuu/lokal/contents/radios.json',
+      '/repos/lokal-music/Desktop/contents/radios.json',
       {'ref': 'main'},
     );
     final catalogJson = jsonEncode({

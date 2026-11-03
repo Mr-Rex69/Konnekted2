@@ -107,7 +107,7 @@ class OnlineLyricsService {
   // LRCLIB requires an identifiable app/version/project User-Agent.
   static const Map<String, String> _headers = {
     'Accept': 'application/json',
-    'User-Agent': 'Lokal-Mobile/$kAppVersion (https://github.com/lokal-music/lokal-mobile)',
+    'User-Agent': 'Lokal-Mobile/$kAppVersion (https://github.com/lokal-music/Mobile)',
   };
 
   // Static so state survives per-sheet instance recreation — same singleton

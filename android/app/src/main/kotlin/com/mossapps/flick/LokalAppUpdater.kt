@@ -19,7 +19,7 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 /** Validate the real GitHub release path, never an arbitrary URL prefix.
- * GitHub canonicalizes the repository owner from Lokal-Konnekt to lokal-music.
+ * GitHub redirects previous repository aliases to lokal-music/Mobile.
  */
 internal fun isTrustedLokalReleaseApkUrl(url: String): Boolean {
     val uri = try { URI(url) } catch (_: java.net.URISyntaxException) { return false }
@@ -32,8 +32,11 @@ internal fun isTrustedLokalReleaseApkUrl(url: String): Boolean {
     ) return false
     val parts = (uri.rawPath ?: return false).removePrefix("/").split("/")
     return parts.size == 6 &&
-        parts[0] in setOf("lokal-music", "Lokal-Konnekt") &&
-        parts[1] == "lokal-mobile" &&
+        "${parts[0].lowercase()}/${parts[1].lowercase()}" in setOf(
+            "lokal-music/mobile",
+            "lokal-music/lokal-mobile",
+            "lokal-konnekt/lokal-mobile"
+        ) &&
         parts[2] == "releases" &&
         parts[3] == "download" &&
         parts[4].isNotBlank() &&

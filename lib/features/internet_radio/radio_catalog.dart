@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 /// The station list everyone starts with (Lokal's own radios.json), used
 /// until another link is set.
 const defaultRadioCatalogUrl =
-    'https://raw.githubusercontent.com/sipbuu/lokal/refs/heads/main/radios.json';
+    'https://raw.githubusercontent.com/lokal-music/Desktop/refs/heads/main/radios.json';
 
 @immutable
 class RadioStation {
