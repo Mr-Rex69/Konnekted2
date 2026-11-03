@@ -558,11 +558,14 @@ class KonnektedSongShelf extends StatelessWidget {
     required this.onRetry,
     required this.onPlay,
     this.showTotalDuration = false,
+    this.summarySongs,
   });
 
   final String title;
   final AsyncValue<List<Song>> songs;
   final bool showTotalDuration;
+  /// Optional full list for metadata when the shelf displays only 12 tracks.
+  final AsyncValue<List<Song>>? summarySongs;
   final String emptyTitle;
   final String emptyMessage;
   final VoidCallback onSeeAll;
@@ -576,8 +579,8 @@ class KonnektedSongShelf extends StatelessWidget {
       KonnektedSectionHeading(
         title: title,
         onSeeAll: onSeeAll,
-        subtitle: showTotalDuration && songs.value != null
-            ? '${lokalSongCount(songs.value!.length)} · ${lokalRunningTime(songs.value!)}'
+        subtitle: showTotalDuration && (summarySongs ?? songs).value != null
+            ? '${lokalSongCount((summarySongs ?? songs).value!.length)} · ${lokalRunningTime((summarySongs ?? songs).value!)}'
             : null,
       ),
       songs.when(
