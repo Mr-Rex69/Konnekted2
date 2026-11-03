@@ -497,12 +497,12 @@ class _StationRowState extends ConsumerState<_StationRow> {
                     ),
                   ),
                   Text((now != null && now.isNotEmpty) ? now :
-                      [station.country, station.genre].whereType<String>()
-                          .where((part) => part.isNotEmpty).join(' · '),
+                      'Current track unavailable',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: t.muted),
                   ),
-                  Text(quality, maxLines: 1,
+                  Text([quality, station.country].where((v) => v.isNotEmpty)
+                      .join(' · '), maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: t.muted),
                   ),
