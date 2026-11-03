@@ -155,9 +155,13 @@ void main() {
     await tester.pump();
     expect(find.byTooltip('Download queued'), findsOneWidget);
     await tester.tap(find.byTooltip('Transfer actions'));
-    await tester.pumpAndSettle();
+    // The queued transfer has an indeterminate progress animation; it must
+    // not make this widget test wait for an impossible settled frame.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(find.text('Pause').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
     expect(service.actions, ['pause']);
   });
 
