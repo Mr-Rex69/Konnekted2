@@ -2,16 +2,43 @@ import 'dart:async';
 
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
-import 'package:flick/providers/opt_in_source_provider.dart';
-import 'package:flick/widgets/lokal/lokal_opt_in_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'radio_browser.dart';
 import 'radio_catalog.dart';
 import 'radio_providers.dart';
+import 'station_favorites.dart';
 
-/// Desktop's Online Radio: the catalogue's stations with a search, genre
-/// chips and favourites first. Off until internet radio is turned on.
+const _countries = <String, String>{
+  '': 'Worldwide',
+  'FR': 'France',
+  'US': 'United States',
+  'GB': 'United Kingdom',
+  'DE': 'Germany',
+  'CA': 'Canada',
+  'NL': 'Netherlands',
+  'IT': 'Italy',
+  'ES': 'Spain',
+  'JP': 'Japan',
+  'AU': 'Australia',
+  'BR': 'Brazil',
+  'BE': 'Belgium',
+  'CH': 'Switzerland',
+};
+const _genres = [
+  '', 'jazz', 'electronic', 'rock', 'classical',
+  'hip hop', 'ambient', 'soul', 'pop', 'world',
+];
+
+bool _qualifies(RadioStation station) =>
+    station.lossless ||
+    (station.bitrate >= stationMinimumBitrate &&
+        const {'MP3', 'AAC', 'AAC+', 'HE-AAC', 'OPUS', 'OGG', 'VORBIS'}
+            .contains(station.codec.toUpperCase()));
+
+/// Global, high-quality radio discovery with local favorites and one-tap play.
+/// Only the selected stream is connected; the list does not probe audio URLs.
 class InternetRadioPage extends ConsumerStatefulWidget {
   const InternetRadioPage({super.key});
 
@@ -21,149 +48,273 @@ class InternetRadioPage extends ConsumerStatefulWidget {
 
 class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
   final _search = TextEditingController();
+  Timer? _debounce;
   String _query = '';
-  String? _genre;
+  String _country = '';
+  String _genre = '';
   bool _favoritesOnly = false;
+  bool _losslessOnly = false;
+  bool _loading = false;
+  bool _moreLoading = false;
+  bool _hasMore = false;
+  String? _error;
+  int _nextOffset = 0;
+  int _generation = 0;
+  List<RadioStation> _stations = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_load(reset: true));
+    });
+  }
 
   @override
   void dispose() {
+    _generation++;
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
 
+  Future<void> _load({required bool reset}) async {
+    if (!reset && (_loading || _moreLoading || !_hasMore)) return;
+    final generation = ++_generation;
+    setState(() {
+      if (reset) {
+        _stations = const [];
+        _nextOffset = 0;
+        _loading = true;
+      } else {
+        _moreLoading = true;
+      }
+      _error = null;
+    });
+    final client = RadioBrowserClient();
+    try {
+      final result = await client.browse(
+        query: _query,
+        country: _country,
+        tag: _genre,
+        offset: reset ? 0 : _nextOffset,
+      );
+      if (!mounted || generation != _generation) return;
+      final seen = <String>{for (final s in reset ? const <RadioStation>[] : _stations) s.id};
+      setState(() {
+        _stations = [
+          if (!reset) ..._stations,
+          for (final station in result.stations)
+            if (_qualifies(station) && seen.add(station.id)) station,
+        ];
+        _nextOffset = result.nextOffset;
+        _hasMore = result.hasMore;
+      });
+    } catch (error) {
+      if (mounted && generation == _generation) {
+        setState(() => _error = 'Could not load stations. Check your connection.');
+      }
+    } finally {
+      client.close();
+      if (mounted && generation == _generation) {
+        setState(() {
+          _loading = false;
+          _moreLoading = false;
+        });
+      }
+    }
+  }
+
+  void _updateSearch(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 320), () {
+      if (!mounted) return;
+      _query = value.trim();
+      unawaited(_load(reset: true));
+    });
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    final enabled = ref.watch(internetRadioEnabledProvider);
-    if (!enabled) {
-      return LokalLibraryPage(
-        title: 'Radio',
-        slivers: [
-          SliverToBoxAdapter(
-            child: LokalOptInCard(
-              icon: Icons.radio_rounded,
-              title: 'Turn on internet radio',
-              message:
-                  'Listen to live stations from a station list online. '
-                  'Lokal downloads the list from GitHub and plays each '
-                  'station’s stream from its broadcaster.',
-              actionLabel: 'Turn on internet radio',
-              onTurnOn: () =>
-                  ref.read(internetRadioEnabledProvider.notifier).set(true),
-            ),
-          ),
-        ],
-      );
-    }
-    final catalog = ref.watch(radioCatalogProvider);
-    final favorites = ref.watch(radioFavoritesProvider);
-    final stations = catalog.value?.stations ?? const <RadioStation>[];
-    final filtered = filterStations(
-      stations,
-      query: _query,
-      genre: _genre,
-    ).where((s) => !_favoritesOnly || favorites.contains(s.id)).toList();
-    // Favourites first, then the catalogue's order.
-    filtered.sort(
-      (a, b) =>
-          (favorites.contains(b.id) ? 1 : 0) -
-          (favorites.contains(a.id) ? 1 : 0),
-    );
-    final genres = catalog.value?.genres ?? const <String>[];
-    final title = catalog.value?.title;
+    final favorites = ref.watch(stationFavoritesProvider);
+    final filtered = (_favoritesOnly
+            ? favorites.values.toList(growable: false)
+            : _stations)
+        .where(_qualifies)
+        .where((s) => !_losslessOnly || s.lossless)
+        .where((s) => !_favoritesOnly ||
+            (_country.isEmpty || s.countryCode == _country) &&
+            (_genre.isEmpty ||
+                (s.genre ?? '').toLowerCase().contains(_genre)) &&
+            (_search.text.trim().isEmpty ||
+                (s.title + ' ' + s.country + ' ' + (s.genre ?? ''))
+                    .toLowerCase().contains(_search.text.trim().toLowerCase())))
+        .toList(growable: false);
+    final t = context.lokal;
     return LokalLibraryPage(
-      title: 'Radio',
-      subtitle: title == null || title.isEmpty ? null : title,
+      title: 'Stations',
+      subtitle: 'Worldwide · 256 kbps+ or lossless · Radio Browser',
       actions: [
         LokalRoundAction(
           icon: Icons.refresh_rounded,
-          label: 'Reload the station list',
-          onPressed: () => ref.invalidate(radioCatalogProvider),
+          label: 'Refresh stations',
+          onPressed: () => unawaited(_load(reset: true)),
         ),
       ],
       slivers: [
         const SliverToBoxAdapter(child: _NowPlayingStation()),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
             child: LokalSearchField(
               controller: _search,
-              hint: 'Search stations',
-              onChanged: (value) => setState(() => _query = value),
+              hint: 'Search stations worldwide',
+              onChanged: _updateSearch,
             ),
           ),
         ),
         SliverToBoxAdapter(
           child: SizedBox(
-            height: 44,
+            height: 46,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
-                _Chip(
-                  label: 'Favourites',
+                _FilterChip(
+                  label: 'Explore',
+                  icon: Icons.public_rounded,
+                  selected: !_favoritesOnly,
+                  onTap: () => setState(() => _favoritesOnly = false),
+                ),
+                _FilterChip(
+                  label: 'Favorites',
                   icon: Icons.favorite_rounded,
                   selected: _favoritesOnly,
-                  onTap: () => setState(() => _favoritesOnly = !_favoritesOnly),
+                  onTap: () => setState(() => _favoritesOnly = true),
                 ),
-                for (final genre in genres)
-                  _Chip(
-                    label: genre,
+                _FilterChip(
+                  label: 'Lossless',
+                  selected: _losslessOnly,
+                  onTap: () => setState(() => _losslessOnly = !_losslessOnly),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+            child: DropdownButton<String>(
+              value: _country,
+              isExpanded: true,
+              underline: const SizedBox.shrink(),
+              icon: Icon(Icons.expand_more_rounded, color: t.muted),
+              items: [
+                for (final country in _countries.entries)
+                  DropdownMenuItem(
+                    value: country.key,
+                    child: Text(country.value,
+                        style: TextStyle(color: t.text, fontSize: 14)),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value == null || value == _country) return;
+                setState(() => _country = value);
+                unawaited(_load(reset: true));
+              },
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              children: [
+                for (final genre in _genres)
+                  _FilterChip(
+                    label: genre.isEmpty ? 'All genres' : genre,
                     selected: _genre == genre,
-                    onTap: () =>
-                        setState(() => _genre = _genre == genre ? null : genre),
+                    onTap: () {
+                      if (_genre == genre) return;
+                      setState(() => _genre = genre);
+                      unawaited(_load(reset: true));
+                    },
                   ),
               ],
             ),
           ),
         ),
-        if (catalog.isLoading && stations.isEmpty)
+        if (!_favoritesOnly && _loading)
           const SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.all(40),
+              padding: EdgeInsets.all(48),
               child: Center(child: CircularProgressIndicator()),
-            ),
-          )
-        else if (catalog.hasError && stations.isEmpty)
-          SliverToBoxAdapter(
-            child: LokalEmptyState(
-              icon: Icons.wifi_off_rounded,
-              title: 'No stations',
-              message: '${catalog.error}',
-              actionLabel: 'Try again',
-              onAction: () => ref.invalidate(radioCatalogProvider),
             ),
           )
         else if (filtered.isEmpty)
           SliverToBoxAdapter(
             child: LokalEmptyState(
-              icon: Icons.radio_rounded,
-              title: _favoritesOnly ? 'No favourites yet' : 'No stations found',
-              message: _favoritesOnly
-                  ? 'Tap the heart on a station to keep it here.'
-                  : 'Try another search or genre.',
+              icon: _favoritesOnly
+                  ? Icons.favorite_border_rounded : Icons.radio_rounded,
+              title: _favoritesOnly ? 'No favorite stations' : 'No stations found',
+              message: _error ??
+                  (_favoritesOnly
+                      ? 'Tap a heart to save a station here.'
+                      : 'Only lossless and 256+ kbps stations are shown.'),
+              actionLabel: !_favoritesOnly && _error != null ? 'Retry' : null,
+              onAction: !_favoritesOnly && _error != null
+                  ? () => unawaited(_load(reset: true)) : null,
             ),
           )
         else
           SliverList.builder(
             itemCount: filtered.length,
-            itemBuilder: (context, i) => _StationRow(
-              station: filtered[i],
-              favorite: favorites.contains(filtered[i].id),
+            itemBuilder: (context, index) => _StationRow(
+              key: ValueKey(filtered[index].id),
+              station: filtered[index],
+              favorite: favorites.containsKey(filtered[index].id),
             ),
           ),
+        if (!_favoritesOnly && _hasMore && !_loading)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(
+                child: TextButton(
+                  onPressed: _moreLoading ? null : () =>
+                      unawaited(_load(reset: false)),
+                  child: _moreLoading
+                      ? const CircularProgressIndicator()
+                      : const Text('Show more stations'),
+                ),
+              ),
+            ),
+          ),
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, 30),
+            child: Text(
+              'Quality is reported by Radio Browser and may differ from the actual stream. '
+              'Track titles appear when the broadcaster supplies metadata.',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
     required this.label,
     required this.selected,
     required this.onTap,
     this.icon,
   });
-
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -176,26 +327,24 @@ class _Chip extends StatelessWidget {
       padding: const EdgeInsets.only(right: 8, top: 4, bottom: 4),
       child: Material(
         color: selected ? t.accent : t.surface2,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 13),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (icon != null) ...[
-                  Icon(icon, size: 16, color: selected ? t.bg : t.accent),
+                  Icon(icon, size: 15, color: selected ? t.bg : t.accent),
                   const SizedBox(width: 6),
                 ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? t.bg : t.text,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(label, style: TextStyle(
+                  color: selected ? t.bg : t.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                )),
               ],
             ),
           ),
@@ -205,98 +354,93 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _StationIcon extends StatelessWidget {
-  const _StationIcon({required this.station, this.size = 52});
-
-  final RadioStation station;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.lokal;
-    final fallback = ColoredBox(
-      color: t.surface2,
-      child: Icon(Icons.radio_rounded, color: t.muted, size: size * .5),
-    );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox.square(
-        dimension: size,
-        child: station.icon == null
-            ? fallback
-            : Image.network(
-                station.icon!,
-                fit: BoxFit.cover,
-                cacheWidth: (size * 3).round(),
-                errorBuilder: (_, _, _) => fallback,
-              ),
-      ),
-    );
-  }
-}
-
 class _StationRow extends ConsumerWidget {
-  const _StationRow({required this.station, required this.favorite});
-
+  const _StationRow({super.key, required this.station, required this.favorite});
   final RadioStation station;
   final bool favorite;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.lokal;
-    final playback = ref.watch(radioPlayerProvider);
-    final current = playback.station?.id == station.id;
-    final detail = [
-      if (station.genre != null) station.genre!,
-      if (station.description != null) station.description!,
-    ].join(' · ');
+    // Each lazy row selects only its own playback status; no list-wide ticker.
+    final selected = ref.watch(radioPlayerProvider.select(
+      (state) => state.station?.id == station.id,
+    ));
+    final playing = ref.watch(radioPlayerProvider.select(
+      (state) => state.station?.id == station.id && state.playing,
+    ));
+    final now = ref.watch(radioPlayerProvider.select(
+      (state) => state.station?.id == station.id
+          ? state.nowPlaying : null,
+    ));
+    final fallback = ColoredBox(
+      color: t.surface2,
+      child: Icon(Icons.radio_rounded, color: t.muted, size: 22),
+    );
+    final quality = station.lossless
+        ? station.codec + ' · Lossless'
+        : station.codec + ' · ' + station.bitrate.toString() + ' kbps';
     return InkWell(
-      onTap: () => current
-          ? ref.read(radioPlayerProvider.notifier).toggle()
-          : ref.read(radioPlayerProvider.notifier).play(station),
+      onTap: () {
+        final player = ref.read(radioPlayerProvider.notifier);
+        if (selected) {
+          unawaited(player.toggle());
+        } else {
+          unawaited(player.play(station));
+        }
+      },
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+        padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
         child: Row(
           children: [
-            _StationIcon(station: station),
-            const SizedBox(width: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox.square(
+                dimension: 52,
+                child: station.icon == null ? fallback : Image.network(
+                  station.icon!,
+                  fit: BoxFit.cover,
+                  cacheWidth: 156,
+                  errorBuilder: (_, _, _) => fallback,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    station.title,
-                    maxLines: 1,
+                  Text(station.title, maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: current ? t.accent : t.text,
+                      color: selected ? t.accent : t.text,
                     ),
                   ),
-                  if (detail.isNotEmpty)
-                    Text(
-                      detail,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: t.muted, fontSize: 13),
-                    ),
+                  Text((now != null && now.isNotEmpty) ? now :
+                      [station.country, station.genre].whereType<String>()
+                          .where((part) => part.isNotEmpty).join(' · '),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: t.muted),
+                  ),
+                  Text(quality, maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: t.muted),
+                  ),
                 ],
               ),
             ),
             IconButton(
-              tooltip: favorite
-                  ? 'Remove from favourites'
-                  : 'Add to favourites',
-              onPressed: () =>
-                  ref.read(radioFavoritesProvider.notifier).toggle(station.id),
-              icon: Icon(
-                favorite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                color: favorite ? t.accent : t.muted,
+              tooltip: favorite ? 'Remove from favorites' : 'Add to favorites',
+              onPressed: () => unawaited(
+                ref.read(stationFavoritesProvider.notifier).toggle(station),
               ),
+              icon: Icon(favorite ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+                color: favorite ? t.accent : t.muted),
             ),
+            Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              color: selected ? t.accent : t.muted, size: 26),
           ],
         ),
       ),
@@ -304,19 +448,17 @@ class _StationRow extends ConsumerWidget {
   }
 }
 
-/// The station playing now, with play/pause and stop.
 class _NowPlayingStation extends ConsumerWidget {
   const _NowPlayingStation();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.lokal;
-    final playback = ref.watch(radioPlayerProvider);
-    final station = playback.station;
+    final player = ref.watch(radioPlayerProvider);
+    final station = player.station;
     if (station == null) return const SizedBox.shrink();
-    final notifier = ref.read(radioPlayerProvider.notifier);
+    final t = context.lokal;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -326,59 +468,38 @@ class _NowPlayingStation extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            _StationIcon(station: station, size: 48),
+            Icon(Icons.graphic_eq_rounded, color: t.accent),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    station.title,
-                    maxLines: 1,
+                  Text(station.title, maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: t.text,
-                    ),
-                  ),
-                  Text(
-                    playback.error ??
-                        (playback.loading
-                            ? 'Tuning in…'
-                            : playback.playing
-                            ? 'Live'
-                            : 'Paused'),
-                    style: TextStyle(
-                      color: playback.error != null ? t.red : t.muted,
-                      fontSize: 13,
-                    ),
-                  ),
+                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+                  Text(player.error ?? (player.loading ? 'Tuning in…' :
+                    player.nowPlaying ?? (player.playing ? 'Live' : 'Paused')),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: player.error == null ? t.muted : t.red,
+                      fontSize: 12)),
                 ],
               ),
             ),
-            if (playback.loading)
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
+            if (player.loading)
+              const Padding(padding: EdgeInsets.all(10),
+                child: SizedBox.square(dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)))
             else
               IconButton(
-                tooltip: playback.playing ? 'Pause' : 'Play',
-                onPressed: () => unawaited(notifier.toggle()),
-                icon: Icon(
-                  playback.playing
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                  color: t.accent,
-                  size: 30,
-                ),
+                tooltip: player.playing ? 'Pause' : 'Play',
+                onPressed: () => unawaited(
+                  ref.read(radioPlayerProvider.notifier).toggle()),
+                icon: Icon(player.playing ? Icons.pause_rounded :
+                  Icons.play_arrow_rounded, color: t.accent),
               ),
             IconButton(
-              tooltip: 'Stop',
-              onPressed: () => unawaited(notifier.stop()),
+              tooltip: 'Stop station',
+              onPressed: () => unawaited(
+                ref.read(radioPlayerProvider.notifier).stop()),
               icon: Icon(Icons.stop_rounded, color: t.muted),
             ),
           ],
