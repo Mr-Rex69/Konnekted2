@@ -31,9 +31,13 @@ Future<void> _showFolderActions(
   BuildContext context, {
   required String title,
   required List<Song> songs,
+  List<Song>? playlistSongs,
   required Future<void> Function(List<Song>) onPlay,
 }) async {
   if (songs.isEmpty) return;
+  // Playback follows the visible filter, but adding a folder must include
+  // every song in that folder (including nested subfolders).
+  final songsToAdd = playlistSongs ?? songs;
   final action = await showLokalChoiceSheet<String>(
     context: context,
     title: title,
@@ -44,12 +48,12 @@ Future<void> _showFolderActions(
         value: 'shuffle', label: 'Shuffle folder', icon: Icons.shuffle_rounded),
       LokalChoice(
         value: 'playlist', label: 'Add to a playlist',
-        description: '${songs.length} songs', icon: Icons.playlist_add_rounded),
+                  description: '${songsToAdd.length} songs', icon: Icons.playlist_add_rounded),
     ],
   );
   if (!context.mounted || action == null) return;
   if (action == 'playlist') {
-    await AddToPlaylistSheet.showSongs(context, songs);
+    await AddToPlaylistSheet.showSongs(context, songsToAdd);
   } else {
     final ordered = List<Song>.of(songs);
     if (action == 'shuffle') ordered.shuffle(Random());
@@ -956,6 +960,11 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       folderUri: widget.folderUri,
       prefix: widget.prefix,
     );
+    // Keep the original subfolder contents for playlist actions. The display
+    // filter below replaces FolderGroup.songs with a filtered copy.
+    final unfilteredSubfolderSongs = {
+      for (final folder in grouped.subfolders) folder.key: folder.songs,
+    };
     var subfolders = grouped.subfolders;
     var songs = grouped.songs;
 
@@ -1185,6 +1194,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                       context,
                       title: folder.name,
                       songs: folder.songs,
+                      playlistSongs: unfilteredSubfolderSongs[folder.key],
                       onPlay: (ordered) =>
                           _playSong(ordered.first, ordered, const []),
                     ),
