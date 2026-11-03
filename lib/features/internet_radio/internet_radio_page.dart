@@ -277,6 +277,7 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
             itemBuilder: (context, index) => _StationRow(
               key: ValueKey(filtered[index].id),
               station: filtered[index],
+              queue: filtered,
               favorite: favorites.containsKey(filtered[index].id),
             ),
           ),
@@ -357,8 +358,9 @@ class _FilterChip extends StatelessWidget {
 }
 
 class _StationRow extends ConsumerStatefulWidget {
-  const _StationRow({super.key, required this.station, required this.favorite});
+  const _StationRow({super.key, required this.station, required this.favorite, required this.queue});
   final RadioStation station;
+  final List<RadioStation> queue;
   final bool favorite;
 
   @override
@@ -442,7 +444,7 @@ class _StationRowState extends ConsumerState<_StationRow> {
         if (selected) {
           unawaited(player.toggle());
         } else {
-          unawaited(player.play(station));
+          unawaited(player.play(station, queue: widget.queue));
         }
       },
       child: Padding(
