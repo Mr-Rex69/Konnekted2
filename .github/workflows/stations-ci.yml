@@ -67,6 +67,7 @@ jobs:
           test/features/internet_radio/radio_browser_test.dart
           test/features/internet_radio/radio_timeout_test.dart
           test/features/internet_radio/radio_now_playing_page_test.dart
+          test/features/internet_radio/radio_browse_selection_test.dart
           test/player/space_cover_bloom_reveal_test.dart
           test/konnekted/library_recently_played_shelf_test.dart
           test/widgets/lokal/lokal_player_route_test.dart
