@@ -50,6 +50,28 @@ class StationFavoritesNotifier extends Notifier<Map<String, RadioStation>> {
     }
   }
 
+  /// Import legacy stream-URL favorites when a matching qualifying Radio
+  /// Browser station is discovered. Low-quality favorites remain saved in
+  /// their original preference key, but are not exposed as playable stations.
+  Future<void> adoptLegacy(List<RadioStation> discovered) async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = prefs.getStringList('lokal_radio_favorites')?.toSet() ?? <String>{};
+    if (legacy.isEmpty) return;
+    final next = Map<String, RadioStation>.of(state);
+    var changed = false;
+    for (final station in discovered) {
+      if (legacy.contains(station.url) && !next.containsKey(station.id)) {
+        next[station.id] = station;
+        changed = true;
+      }
+    }
+    if (!changed || !ref.mounted) return;
+    state = next;
+    await prefs.setString(_key, jsonEncode({
+      for (final entry in next.entries) entry.key: entry.value.toJson(),
+    }));
+  }
+
   Future<void> toggle(RadioStation station) async {
     final next = Map<String, RadioStation>.of(state);
     if (next.containsKey(station.id)) {
