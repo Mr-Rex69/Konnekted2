@@ -52,6 +52,7 @@ class PlaylistHeroHeader extends StatelessWidget {
     required this.covers,
     this.owner,
     this.coverUrl,
+    this.coverPath,
     this.coverBytes,
   });
 
@@ -60,6 +61,7 @@ class PlaylistHeroHeader extends StatelessWidget {
   final String metadata;
   final String? owner;
   final String? coverUrl;
+  final String? coverPath;
   final Uint8List? coverBytes;
   final List<PlaylistHeroCover> covers;
 
@@ -74,6 +76,7 @@ class PlaylistHeroHeader extends StatelessWidget {
       covers: sampled,
     );
     final cover = coverUrl?.trim();
+    final localCover = coverPath?.trim();
     final image = coverBytes != null && coverBytes!.isNotEmpty
         ? Image.memory(
             coverBytes!,
@@ -81,14 +84,21 @@ class PlaylistHeroHeader extends StatelessWidget {
             gaplessPlayback: true,
             errorBuilder: (_, _, _) => fallback,
           )
-        : cover != null && cover.startsWith('https://')
-            ? Image.network(
-                cover,
+        : localCover != null && localCover.isNotEmpty
+            ? CachedImageWidget(
+                imagePath: localCover,
                 fit: BoxFit.cover,
-                gaplessPlayback: true,
-                errorBuilder: (_, _, _) => fallback,
+                placeholder: ColoredBox(color: theme.surface2),
+                errorWidget: fallback,
               )
-            : fallback;
+            : cover != null && cover.startsWith('https://')
+                ? Image.network(
+                    cover,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => fallback,
+                  )
+                : fallback;
 
     return SizedBox(
       height: height,
