@@ -1,4 +1,5 @@
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
+import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/providers/app_preferences_provider.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
 import 'package:flick/l10n/l10n.dart';
@@ -567,6 +568,94 @@ class _SearchCircle extends StatelessWidget {
 
 /// Only the transport adapter subscribes to playback. Position ticks rebuild a
 /// three-pixel progress strip, not the home shelves or the navigator.
+/// The station mini player uses radio state rather than the local-song
+/// provider. It remains visible when navigating away from Stations.
+class KonnektedRadioMiniPlayer extends ConsumerWidget {
+  const KonnektedRadioMiniPlayer({
+    super.key,
+    required this.onOpen,
+    this.artworkKey,
+  });
+
+  final VoidCallback onOpen;
+  final Key? artworkKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final radio = ref.watch(radioPlayerProvider);
+    final station = radio.station;
+    if (station == null) return const SizedBox.shrink();
+    final t = context.lokal;
+    final title = radio.trackMetadata?.title ??
+        radio.nowPlaying ?? station.title;
+    final artist = radio.trackMetadata?.artist.isNotEmpty == true
+        ? radio.trackMetadata!.artist : station.title;
+    final image = radio.trackMetadata?.cover ?? station.icon;
+    final collapsed = KonnektedMiniPlayerScope.collapsedOf(context);
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) < -150) onOpen();
+      },
+      child: InkWell(
+        onTap: onOpen,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(7, 5, 7, 5),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: SizedBox.square(
+                  key: artworkKey,
+                  dimension: 42,
+                  child: image == null
+                      ? Icon(Icons.radio_rounded, color: t.accent)
+                      : Image.network(image, fit: BoxFit.cover,
+                          cacheWidth: 128,
+                          errorBuilder: (_, _, _) =>
+                              Icon(Icons.radio_rounded, color: t.accent)),
+                ),
+              ),
+              if (!collapsed) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13,
+                          fontWeight: FontWeight.w600, color: t.text)),
+                      Text(
+                        artist + ' · ' +
+                            (station.lossless ? 'Lossless' :
+                              station.bitrate.toString() + ' kbps'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: t.muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else
+                const Spacer(),
+              IconButton(
+                tooltip: radio.playing ? 'Pause station' : 'Play station',
+                onPressed: () => unawaited(
+                    ref.read(radioPlayerProvider.notifier).toggle()),
+                icon: radio.loading
+                    ? const SizedBox.square(dimension: 19,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(radio.playing ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded, color: t.text),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class KonnektedMiniPlayer extends ConsumerWidget {
   const KonnektedMiniPlayer({
     super.key,
