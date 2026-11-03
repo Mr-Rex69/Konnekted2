@@ -342,10 +342,10 @@ class _YoutubePlaylistDetailState
           child: LokalPageBar(
             actions: [
               LokalRoundAction(
-              icon: Icons.refresh_rounded,
-              label: 'Update playlist',
-              onPressed: _updating ? null : () => unawaited(_refresh()),
-            ),
+                icon: Icons.refresh_rounded,
+                label: 'Update playlist',
+                onPressed: _updating ? null : () => unawaited(_refresh()),
+              ),
             ],
           ),
         ),
