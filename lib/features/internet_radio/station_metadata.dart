@@ -202,7 +202,17 @@ class StationMetadataLookup {
     return pending;
   }
 
-  static Future<StationLiveMetadata?> lookup(RadioStation station) async {
+
+  static Uri? _metadataEndpoint(RadioStation station, String path, [Map<String, String>? query]) {
+    final original = _statusUri(station);
+    if (original == null) return null;
+    return original.replace(path: path, queryParameters: query);
+  }
+
+  static Uri? _shoutcastEndpoint(RadioStation station) {
+    final stream = Uri.tryParse(station.url);
+    if (stream == null) return null;
+    final match = RegExp(r'^/stream/(\d+)/?
     final novaCode = novaCodeForStation(station);
     final uri = novaCode == null ? _statusUri(station) : Uri.parse(novaUrl);
     if (uri == null) return null;
@@ -223,6 +233,216 @@ class StationMetadataLookup {
     final data = await entry.pending;
     final info = novaCode == null
         ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
+    if (info == null || info.cover != null) return info;
+    final artwork = await _artworkFor(info);
+    return artwork == null ? info : StationLiveMetadata(
+      artist: info.artist, title: info.title, cover: artwork,
+    );
+  }
+}
+).firstMatch(stream.path);
+    final sid = stream.queryParameters['sid'] ?? match?.group(1) ?? '1';
+    if (!RegExp(r'^[1-9]\d{0,3}
+    final novaCode = novaCodeForStation(station);
+    final uri = novaCode == null ? _statusUri(station) : Uri.parse(novaUrl);
+    if (uri == null) return null;
+    final key = uri.toString();
+    final now = DateTime.now();
+    var entry = _cache[key];
+    if (entry == null || now.isAfter(entry.expires)) {
+      final pending = _withSlot(() => _fetch(uri));
+      entry = _CachedStatus(pending, now.add(_successTtl));
+      _cache[key] = entry;
+      final captured = entry;
+      pending.then((value) {
+        captured.expires = DateTime.now()
+            .add(value == null ? _failureTtl : _successTtl);
+      });
+      if (_cache.length > 150) _cache.remove(_cache.keys.first);
+    }
+    final data = await entry.pending;
+    final info = novaCode == null
+        ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
+    if (info == null || info.cover != null) return info;
+    final artwork = await _artworkFor(info);
+    return artwork == null ? info : StationLiveMetadata(
+      artist: info.artist, title: info.title, cover: artwork,
+    );
+  }
+}
+).hasMatch(sid)) return null;
+    return _metadataEndpoint(station, '/stats', {'sid': sid, 'json': '1'});
+  }
+
+  static StationLiveMetadata? _splitTitle(Object? raw) {
+    final text = (raw ?? '').toString().trim();
+    if (text.isEmpty || text.length > 300 ||
+        {'unknown', 'offline', 'n/a'}.contains(text.toLowerCase())) {
+      return null;
+    }
+    final at = text.indexOf(' - ');
+    return at < 1 ? StationLiveMetadata(artist: '', title: text) :
+        StationLiveMetadata(
+          artist: text.substring(0, at),
+          title: text.substring(at + 3),
+        );
+  }
+
+  static StationLiveMetadata? parseShoutcastForTest(Object? data) {
+    if (data is! Map || !data.containsKey('songtitle') ||
+        (data['streamstatus'] != null &&
+         num.tryParse((data['streamstatus'] ?? '').toString()) == 0)) return null;
+    return _splitTitle(data['songtitle']);
+  }
+
+  static bool _sameStreamUrl(String? a, String b) {
+    if (a == null) return false;
+    final left = Uri.tryParse(a), right = Uri.tryParse(b);
+    if (left == null || right == null) return false;
+    final pathA = left.path.replaceFirst(RegExp(r'/+
+    final novaCode = novaCodeForStation(station);
+    final uri = novaCode == null ? _statusUri(station) : Uri.parse(novaUrl);
+    if (uri == null) return null;
+    final key = uri.toString();
+    final now = DateTime.now();
+    var entry = _cache[key];
+    if (entry == null || now.isAfter(entry.expires)) {
+      final pending = _withSlot(() => _fetch(uri));
+      entry = _CachedStatus(pending, now.add(_successTtl));
+      _cache[key] = entry;
+      final captured = entry;
+      pending.then((value) {
+        captured.expires = DateTime.now()
+            .add(value == null ? _failureTtl : _successTtl);
+      });
+      if (_cache.length > 150) _cache.remove(_cache.keys.first);
+    }
+    final data = await entry.pending;
+    final info = novaCode == null
+        ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
+    if (info == null || info.cover != null) return info;
+    final artwork = await _artworkFor(info);
+    return artwork == null ? info : StationLiveMetadata(
+      artist: info.artist, title: info.title, cover: artwork,
+    );
+  }
+}
+), '');
+    final pathB = right.path.replaceFirst(RegExp(r'/+
+    final novaCode = novaCodeForStation(station);
+    final uri = novaCode == null ? _statusUri(station) : Uri.parse(novaUrl);
+    if (uri == null) return null;
+    final key = uri.toString();
+    final now = DateTime.now();
+    var entry = _cache[key];
+    if (entry == null || now.isAfter(entry.expires)) {
+      final pending = _withSlot(() => _fetch(uri));
+      entry = _CachedStatus(pending, now.add(_successTtl));
+      _cache[key] = entry;
+      final captured = entry;
+      pending.then((value) {
+        captured.expires = DateTime.now()
+            .add(value == null ? _failureTtl : _successTtl);
+      });
+      if (_cache.length > 150) _cache.remove(_cache.keys.first);
+    }
+    final data = await entry.pending;
+    final info = novaCode == null
+        ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
+    if (info == null || info.cover != null) return info;
+    final artwork = await _artworkFor(info);
+    return artwork == null ? info : StationLiveMetadata(
+      artist: info.artist, title: info.title, cover: artwork,
+    );
+  }
+}
+), '');
+    return left.scheme == right.scheme &&
+        left.host.toLowerCase() == right.host.toLowerCase() &&
+        left.port == right.port && pathA == pathB;
+  }
+
+  static StationLiveMetadata? parseAzuraCastForTest(Object? data, String streamUrl) {
+    final entries = data is List ? data : data is Map && data['now_playing'] is Map ? [data] : const [];
+    for (final row in entries) {
+      if (row is! Map || row['station'] is! Map) continue;
+      final station = row['station'] as Map;
+      final links = <String?>[station['listen_url']?.toString()];
+      for (final field in ['mounts', 'remotes']) {
+        final list = station[field];
+        if (list is List) {
+          for (final mount in list) {
+            if (mount is Map) {
+              links.add((mount['url'] ?? mount['listen_url'])?.toString());
+            }
+          }
+        }
+      }
+      if (!links.any((link) => _sameStreamUrl(link, streamUrl))) continue;
+      final playing = row['now_playing'];
+      if (playing is! Map || playing['song'] is! Map) continue;
+      final song = playing['song'] as Map;
+      final fallback = _splitTitle(song['text']);
+      final title = (song['title'] ?? fallback?.title ?? '').toString().trim();
+      if (title.isEmpty) continue;
+      final artist = (song['artist'] ?? fallback?.artist ?? '').toString().trim();
+      final image = (song['art'] ?? '').toString().trim();
+      final uri = Uri.tryParse(image);
+      return StationLiveMetadata(
+        artist: artist,
+        title: title,
+        cover: uri != null && (uri.scheme == 'https' || uri.scheme == 'http')
+            ? image : null,
+      );
+    }
+    return null;
+  }
+
+  static Future<Object?> _cachedJson(Uri uri) {
+    final key = uri.toString();
+    final now = DateTime.now();
+    var entry = _cache[key];
+    if (entry == null || now.isAfter(entry.expires)) {
+      final pending = _withSlot(() => _fetch(uri));
+      entry = _CachedStatus(pending, now.add(_successTtl));
+      _cache[key] = entry;
+      final captured = entry;
+      pending.then((value) {
+        captured.expires = DateTime.now()
+            .add(value == null ? _failureTtl : _successTtl);
+      });
+      if (_cache.length > 150) _cache.remove(_cache.keys.first);
+    }
+    return entry.pending;
+  }
+
+  static Future<StationLiveMetadata?> lookup(RadioStation station) async {
+    StationLiveMetadata? info;
+    final novaCode = novaCodeForStation(station);
+    if (novaCode != null) {
+      info = parseNovaForTest(
+        await _cachedJson(Uri.parse(novaUrl)), novaCode);
+    } else {
+      // Only status APIs are polled; the actual audio stream is opened solely
+      // by the playback engine for the currently selected station.
+      final icecast = _statusUri(station);
+      if (icecast != null) {
+        info = _parse(await _cachedJson(icecast), station.url);
+      }
+      if (info == null) {
+        final azura = _metadataEndpoint(station, '/api/nowplaying');
+        if (azura != null) {
+          info = parseAzuraCastForTest(
+            await _cachedJson(azura), station.url);
+        }
+      }
+      if (info == null) {
+        final shoutcast = _shoutcastEndpoint(station);
+        if (shoutcast != null) {
+          info = parseShoutcastForTest(await _cachedJson(shoutcast));
+        }
+      }
+    }
     if (info == null || info.cover != null) return info;
     final artwork = await _artworkFor(info);
     return artwork == null ? info : StationLiveMetadata(
