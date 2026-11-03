@@ -38,7 +38,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.repository == 'Lokal-music/lokal-mobile'
+    if: github.repository == 'lokal-music/Mobile'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
