@@ -125,6 +125,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   bool _spaceFullCover = false;
   final GlobalKey _spaceArtworkKey =
       GlobalKey(debugLabel: 'space-player-artwork');
+  final GlobalKey _spacePanelKey =
+      GlobalKey(debugLabel: 'space-player-panel');
+  bool _spacePanelCompact = false;
 
   /// Capture the sleeve's on-screen bounds once, rather than measuring or
   /// reflowing playback surfaces during each transition frame.
@@ -140,10 +143,26 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           .toDouble();
       return Rect.fromLTWH(0, 0, player.size.width, bannerHeight);
     }
-    final art = _spaceArtworkKey.currentContext?.findRenderObject();
-    if (art is RenderBox && art.attached && art.hasSize) {
-      final origin = player.globalToLocal(art.localToGlobal(Offset.zero));
-      return origin & art.size;
+    // If Space opens from the Lyrics tab, the panel is still animating its
+    // 52px thumbnail back into the big cover. Compute the FINAL full-size
+    // cover rect with the panel's own layout formula, rather than capturing
+    // that temporary thumbnail or substituting a guessed centre square.
+    if (_lyricsProgress.value < .005) {
+      final art = _spaceArtworkKey.currentContext?.findRenderObject();
+      if (art is RenderBox && art.attached && art.hasSize) {
+        final origin = player.globalToLocal(art.localToGlobal(Offset.zero));
+        return origin & art.size;
+      }
+    }
+    final panel = _spacePanelKey.currentContext?.findRenderObject();
+    if (panel is RenderBox && panel.attached && panel.hasSize) {
+      final local = playerPanelRestArtworkRect(
+        panel.size,
+        artGap: _spacePanelCompact ? 10 : 17,
+        infoReserve: MediaQuery.textScalerOf(context).scale(72),
+      );
+      final origin = player.globalToLocal(panel.localToGlobal(Offset.zero));
+      return local.shift(origin);
     }
     return null;
   }
@@ -1182,10 +1201,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                         ),
                                       ),
                                       Expanded(
-                                        child: _panelStage(
-                                          song,
-                                          compact,
-                                          fullCover: fullCover,
+                                        child: SizedBox.expand(
+                                          key: _spacePanelKey,
+                                          child: _panelStage(
+                                            song,
+                                            compact,
+                                            fullCover: fullCover,
+                                          ),
                                         ),
                                       ),
                                       // Keep the timeline anchor painted in Space mode.
@@ -1607,6 +1629,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   Widget _panelStage(Song song, bool compact, {bool fullCover = false}) {
+    _spacePanelCompact = compact;
     final titleSize = compact ? 25.0 : 29.0;
     return LayoutBuilder(
       builder: (context, c) {
