@@ -447,10 +447,10 @@ class _SpotifyPlaylistDetailState
           child: LokalPageBar(
             actions: [
               LokalRoundAction(
-              icon: Icons.refresh_rounded,
-              label: 'Refresh playlist',
-              onPressed: _loading ? null : () => unawaited(_refresh()),
-            ),
+                icon: Icons.refresh_rounded,
+                label: 'Refresh playlist',
+                onPressed: _loading ? null : () => unawaited(_refresh()),
+              ),
             ],
           ),
         ),
