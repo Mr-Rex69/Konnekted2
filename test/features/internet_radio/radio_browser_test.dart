@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flick/features/internet_radio/radio_browser.dart';
+import 'package:flick/features/internet_radio/station_metadata.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +58,35 @@ void main() {
     expect(urls.last.queryParameters['bitrateMin'], '0');
     expect(urls.last.queryParameters['codec'], 'FLAC');
     expect(urls.every((url) => url.queryParameters['name'] == 'Nova'), isTrue);
+  });
+
+  test('uses original stream URL when a resolved URL is empty', () {
+    final record = {
+      ...station('fallback', 'MP3', 320),
+      'url_resolved': '',
+      'url': 'https://streams.example.test/fallback',
+    };
+    expect(qualifiesRadioBrowserStation(record), isTrue);
+    expect(stationFromRadioBrowser(record).url,
+        'https://streams.example.test/fallback');
+  });
+
+  test('Icecast metadata uses the correct mount, never another station', () {
+    final data = {
+      'icestats': {
+        'source': [
+          {'listenurl': 'https://stream.example.test/other',
+           'title': 'Wrong - Track'},
+          {'listenurl': 'https://stream.example.test/live',
+           'title': 'Correct - Song'},
+        ],
+      },
+    };
+    final match = StationMetadataLookup.parseIcecastStatusForTest(
+        data, 'https://stream.example.test/live');
+    expect(match?.label, 'Correct — Song');
+    expect(StationMetadataLookup.parseIcecastStatusForTest(
+        data, 'https://stream.example.test/missing'), isNull);
   });
 
   test('paginates without re-fetching lossless on later pages', () async {
