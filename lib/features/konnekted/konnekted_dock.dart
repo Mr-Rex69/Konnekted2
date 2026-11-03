@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/providers/app_preferences_provider.dart';
