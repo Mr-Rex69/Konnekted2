@@ -143,10 +143,12 @@ class KonnektedLibrary extends ConsumerWidget {
           if (songs != null && songs.isNotEmpty)
             SliverToBoxAdapter(
               child: KonnektedSongShelf(
-                title: lokalText('Recently added'),
+                title: lokalText('Library'),
                 songs: ref.watch(konnektedRecentlyAddedProvider),
-                emptyTitle: 'Nothing new yet',
-                emptyMessage: 'New songs show up here.',
+                summarySongs: library,
+                showTotalDuration: true,
+                emptyTitle: 'Your library is empty',
+                emptyMessage: 'Add music to see it here.',
                 onSeeAll: () => onNavigate(KonnektedDestination.recentlyAdded),
                 onRetry: () => ref.invalidate(songsProvider),
                 onPlay: (song, queue) =>
@@ -159,13 +161,12 @@ class KonnektedLibrary extends ConsumerWidget {
           SliverToBoxAdapter(child: _MoreRows(onNavigate: onNavigate)),
           SliverToBoxAdapter(
             child: KonnektedSongShelf(
-              title: lokalText('Library'),
-              songs: library,
-              showTotalDuration: true,
-              emptyTitle: 'Your library is empty',
-              emptyMessage: 'Add a music folder to see your collection here.',
-              onSeeAll: () => onNavigate(KonnektedDestination.songs),
-              onRetry: () => ref.invalidate(songsProvider),
+              title: lokalText('Recently played'),
+              songs: ref.watch(konnektedRecentSongsProvider),
+              emptyTitle: 'Nothing played yet',
+              emptyMessage: 'Songs you play show up here.',
+              onSeeAll: () => onNavigate(KonnektedDestination.recentlyPlayed),
+              onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
               onPlay: (song, queue) =>
                   lokalPlay(context, ref, queue, start: song),
             ),
