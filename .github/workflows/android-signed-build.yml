@@ -19,7 +19,7 @@ permissions:
 jobs:
   build:
     name: Signed ${{ matrix.flavor }} APK
-    if: github.repository == 'Lokal-music/lokal-mobile'
+    if: github.repository == 'lokal-music/Mobile'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
