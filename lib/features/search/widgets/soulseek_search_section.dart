@@ -57,6 +57,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
       return;
     }
     _loading = true;
+    _results = const [];
     _error = '';
     _debounce = Timer(const Duration(milliseconds: 650),
         () => unawaited(_search(generation, widget.query.trim())));
@@ -87,7 +88,8 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   }
 
   Future<void> _queueAlbum(List<SoulseekFile> files) async {
-    for (final file in files) {
+    // Prevent a maliciously large peer folder from flooding transfer slots.
+    for (final file in files.take(60)) {
       if (!_service.queued(file)) await _queue(file);
     }
   }

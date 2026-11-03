@@ -31,6 +31,16 @@ void main() {
     expect(second.read(searchScopeProvider), SearchScope.all);
   });
 
+  test('Soulseek is a separate persisted scope, never mixed into local search', () async {
+    final c = ProviderContainer();
+    addTearDown(c.dispose);
+    c.read(searchScopeProvider.notifier).select(SearchScope.soulseek);
+    expect(c.read(searchScopeProvider), SearchScope.soulseek);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect((await SharedPreferences.getInstance())
+        .getString('search_selected_scope_v1'), 'soulseek');
+  });
+
   test(
     'a category isolates immediately, and retired All maps to Songs',
     () async {

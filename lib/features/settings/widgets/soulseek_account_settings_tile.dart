@@ -110,6 +110,7 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
           const SizedBox(height: 12),
           TextField(
             controller: _user, enabled: !working, autocorrect: false,
+            onChanged: (_) => setState(() {}),
             textCapitalization: TextCapitalization.none,
             decoration: const InputDecoration(
                 labelText: 'Username', isDense: true, border: OutlineInputBorder()),
@@ -133,7 +134,7 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
               style: TextStyle(fontSize: 13, color: t.text)),
           subtitle: Text(signed
               ? 'Visible on Soulseek · ' + _service.sharedFiles.toString() + ' audio files'
-              : 'Off by default. Other users can browse and download your audio.',
+              : 'Off by default. Other users can browse and download ALL files in the selected folder, including covers, lyrics and other documents.',
               style: TextStyle(fontSize: 11, color: t.muted)),
           value: signed ? _service.shareEnabled : _share,
           onChanged: working ? null : (value) {
@@ -155,6 +156,10 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
           ),
         ],
         const SizedBox(height: 6),
+        Text('Sharing stays on while the foreground notification is active. '
+            'Android may limit long-running background sharing.',
+            style: TextStyle(color: t.muted, fontSize: 11)),
+        const SizedBox(height: 5),
         Text('Native Soulseek engine 20.0.0 · Updated with Lokal releases.',
             style: TextStyle(color: t.muted, fontSize: 11)),
         if (_problem.isNotEmpty || _service.error.isNotEmpty) Padding(

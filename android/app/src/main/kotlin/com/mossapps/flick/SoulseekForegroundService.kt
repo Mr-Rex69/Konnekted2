@@ -99,13 +99,27 @@ class SoulseekForegroundService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
+        closeNativeSession()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // A deliberate task dismissal should not leave the phone sharing.
+        // A dismissed task must not keep uploading via a Rust P2P thread even
+        // when playback or another foreground service keeps this process alive.
+        closeNativeSession()
         stopSelf()
+    }
+
+    private fun closeNativeSession() {
+        try {
+            System.loadLibrary("rust_lib_flick_player")
+            stopSoulseekNative()
+        } catch (_: UnsatisfiedLinkError) {
+            // If the native library wasn't loaded, there is no session to end.
+        } catch (_: Exception) {
+            // Service teardown must still release wake/Wi-Fi locks.
+        }
     }
 
     override fun onDestroy() {
@@ -117,6 +131,7 @@ class SoulseekForegroundService : Service() {
     }
 
     companion object {
+        @JvmStatic private external fun stopSoulseekNative()
         private const val CHANNEL = "lokal_soulseek"
         private const val ID = 1061
 

@@ -213,6 +213,18 @@ fn execute(input: Value) -> Result<Value, String> {
         _ => Err("Unknown Soulseek action".into()),
     }
 }
+// Android can stop peer uploads even when Flutter's activity has gone away.
+// Invoked by the foreground service on task dismissal / Android timeout.
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_mossapps_flick_SoulseekForegroundService_stopSoulseekNative(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    let old = session().lock().ok().and_then(|mut slot| slot.take());
+    drop(old);
+}
+
 /// Caller owns the returned NUL-terminated JSON. Free with lokal_soulseek_free.
 #[no_mangle]
 pub unsafe extern "C" fn lokal_soulseek_invoke(request: *const c_char) -> *mut c_char {

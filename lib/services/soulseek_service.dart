@@ -173,6 +173,15 @@ class SoulseekService extends ChangeNotifier {
     // folders, connected disks or the entire device.
     final volume = await MusicFolderService().resolveStorageInfo(folders.first.uri);
     final root = volume.fsPath;
+    final normalized = root == null ? '' : p.normalize(root);
+    const unsafeRoots = {
+      '/', '/sdcard', '/storage/emulated/0', '/storage/self/primary',
+      '/storage/emulated', '/storage', '/mnt', '/data',
+    };
+    if (unsafeRoots.contains(normalized)) {
+      throw StateError('Select a dedicated music folder, not an entire storage volume. '
+          'Soulseek exposes every file in the selected folder.');
+    }
     if (root == null || !await Directory(root).exists()) {
       throw StateError('The main music folder has no readable filesystem path. '
         'Disable sharing or grant filesystem access in Library settings.');
@@ -411,7 +420,13 @@ class SoulseekService extends ChangeNotifier {
       if (!await audio.exists() || await audio.length() != file.size) {
         throw StateError('Downloaded file is incomplete.');
       }
-      final metadata = (await MusicFolderService().fetchMetadata([source])).firstOrNull;
+      AudioFileInfo? metadata;
+      try {
+        metadata = (await MusicFolderService().fetchMetadata([source])).firstOrNull;
+      } catch (_) {
+        // Some Android extractors cannot read a peer's audio format. Import
+        // the original bytes regardless, using path-derived fallback labels.
+      }
       final parts = file.filename.replaceAll('\\', '/').split('/');
       final artist = parts.length >= 3 ? parts[parts.length - 3] : 'Unknown Artist';
       final album = parts.length >= 2 ? parts[parts.length - 2] : 'Unknown Album';
