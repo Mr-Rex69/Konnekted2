@@ -69,7 +69,7 @@ void main() {
       180,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.byType(LokalNavRow), findsNWidgets(4));
+    expect(find.byType(LokalNavRow), findsNWidgets(6));
     expect(find.byIcon(Icons.history_rounded), findsNothing);
 
     final libraryShelf = find.byWidgetPredicate(
@@ -87,8 +87,14 @@ void main() {
       of: libraryShelf,
       matching: find.text('Library'),
     ), findsOneWidget);
-    expect(find.text('Track library'), findsOneWidget);
-    expect(find.text('Track library2'), findsOneWidget);
+    expect(find.descendant(
+      of: libraryShelf,
+      matching: find.text('Track library'),
+    ), findsOneWidget);
+    expect(find.descendant(
+      of: libraryShelf,
+      matching: find.text('Track library2'),
+    ), findsOneWidget);
     expect(find.text('Track r1'), findsNothing);
     expect(find.text('2 songs · 1 hr 10 min'), findsOneWidget);
     final horizontalList = tester.widget<ListView>(
