@@ -78,6 +78,12 @@ jobs:
           test/features/player/full_player_overflow_actions_test.dart
           test/features/link/lokal_ghost_availability_test.dart
           test/features/konnekted/library_fallback_selection_test.dart
+      - name: Verify GitHub release discovery and repo-rename compatibility
+        run: >-
+          flutter test --no-pub
+          test/features/updates/github_update_service_test.dart
+          test/features/whats_new/lokal_minor_release_notes_test.dart
+          test/features/internet_radio/radio_timeout_test.dart
       - name: Check dependency locks remained unchanged
         run: git diff --exit-code -- pubspec.lock rust/Cargo.lock
 
@@ -115,6 +121,7 @@ jobs:
         run: >-
           bash android/gradlew -p android :app:testFullDebugUnitTest
           --tests com.mossapps.flick.widgets.WidgetPreferenceValueTest
+          --tests com.mossapps.flick.LokalReleaseUrlTest
           --console=plain --no-daemon
       - name: Check dependency locks remained unchanged
         run: git diff --exit-code -- pubspec.lock rust/Cargo.lock
