@@ -5,6 +5,8 @@ import 'package:flick/features/konnekted/konnekted_destination.dart';
 import 'package:flick/features/konnekted/konnekted_home.dart';
 import 'package:flick/features/konnekted/konnekted_library.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
+import 'package:flick/features/konnekted/library/lokal_library_pages.dart';
+import 'package:flick/features/konnekted/library/lokal_song_browser.dart';
 import 'package:flick/models/song.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +21,16 @@ Song _song(String id) => Song(
 );
 
 void main() {
+  test('Full Library browser is labelled Library and shows total duration', () {
+    final page = lokalLibraryPage('songs') as LokalSongListPage;
+    expect(page.title, 'Library');
+    expect(page.showTotalDuration, isTrue);
+    expect(page.preferencesKey, 'lokal.library.songs.song_browser_view.v1');
+    // The You tab's history navigation retains a distinct, truthful page.
+    final history = lokalLibraryPage('recentlyPlayed') as LokalSongListPage;
+    expect(history.title, 'Recently played');
+  });
+
   testWidgets('Library shows full collection, subtitle and route below More', (
     tester,
   ) async {
@@ -68,7 +80,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Library'), findsNWidgets(2));
+    expect(find.descendant(
+      of: libraryShelf,
+      matching: find.text('Library'),
+    ), findsOneWidget);
     expect(find.text('Track library'), findsOneWidget);
     expect(find.text('Track library2'), findsOneWidget);
     expect(find.text('Track r1'), findsNothing);
