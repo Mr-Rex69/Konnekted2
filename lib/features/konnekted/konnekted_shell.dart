@@ -14,6 +14,8 @@ import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/core/utils/app_haptics.dart';
 import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/features/flow/flow_screen.dart';
+import 'package:flick/features/internet_radio/radio_providers.dart';
+import 'package:flick/features/internet_radio/radio_now_playing_page.dart';
 import 'package:flick/features/folders/screens/folders_screen.dart';
 import 'package:flick/features/playlist_links/linked_playlists_screen.dart';
 import 'package:flick/features/spotify/spotify_playlists_screen.dart';
@@ -225,6 +227,12 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   static const _playerHero = 'konnekted-player-art';
 
   Future<void> _openPlayer({double? from}) async {
+    if (ref.read(radioPlayerProvider).station != null) {
+      await Navigator.of(context).push<void>(MaterialPageRoute(
+        builder: (_) => const RadioNowPlayingPage(),
+      ));
+      return;
+    }
     if (from == null && _pull != null) {
       _pull!.open();
       return;
@@ -358,7 +366,10 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
               // refract; pages get its height as bottom padding instead.
               child: Consumer(
                 builder: (context, ref, _) {
-                  final hasSong = ref.watch(
+                  final hasRadio = ref.watch(radioPlayerProvider.select(
+                    (state) => state.station != null,
+                  ));
+                  final hasSong = hasRadio || ref.watch(
                     currentSongProvider.select((song) => song != null),
                   );
                   final media = MediaQuery.of(context);
@@ -430,7 +441,13 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                             hasMiniPlayer: hasSong,
                             collapsed: _dockCollapsed.value,
                             onExpand: () => _dockCollapsed.value = false,
-                            miniPlayer: KonnektedMiniPlayer(
+                            miniPlayer: hasRadio
+                                ? KonnektedRadioMiniPlayer(
+                                    key: _miniPlayerKey,
+                                    artworkKey: _miniArtworkKey,
+                                    onOpen: () => unawaited(_openPlayer()),
+                                  )
+                                : KonnektedMiniPlayer(
                               key: _miniPlayerKey,
                               artworkKey: _miniArtworkKey,
                               onOpen: _openPlayer,
