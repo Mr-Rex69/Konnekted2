@@ -208,7 +208,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             // Poweramp-style horizontal chip shelf.
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.only(
+                  bottom: scope == SearchScope.soulseek ? 0 : 8),
               child: Builder(
                 builder: (context) {
                   final counts = resultsAsync?.value?.counts;

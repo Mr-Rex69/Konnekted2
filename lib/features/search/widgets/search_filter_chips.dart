@@ -33,14 +33,13 @@ class SearchFilterChips extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SegmentedButton<SearchScope>(
+          child: SegmentedButton<SearchScope>(
+            expandedInsets: EdgeInsets.zero,
             showSelectedIcon: false,
             style: SegmentedButton.styleFrom(
               textStyle: Theme.of(context).textTheme.labelLarge
                   ?.copyWith(fontSize: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             ),
             segments: [
               ButtonSegment(
@@ -66,10 +65,10 @@ class SearchFilterChips extends StatelessWidget {
               onScopeChanged(value.single);
             },
           ),
-          ),
         ),
+        if (scope != SearchScope.soulseek) ...[
         const SizedBox(height: 8),
-        if (scope != SearchScope.soulseek) SizedBox(
+        SizedBox(
           height: 44,
           child: ListView(
             scrollDirection: Axis.horizontal,
@@ -89,6 +88,7 @@ class SearchFilterChips extends StatelessWidget {
             ],
           ),
         ),
+        ],
         if (scope == SearchScope.library)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 2, 16, 0),

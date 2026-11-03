@@ -178,6 +178,11 @@ class SoulseekService extends ChangeNotifier {
   }
   bool _checking = false, _loaded = false;
   bool connected = false, busy = false, shareEnabled = false;
+  bool sharePreference = false, sharingBusy = false, losslessOnly = false;
+  String sharingStatus = '';
+  int _sessionEpoch = 0;
+  final _searchCache = <String, List<SoulseekFile>>{};
+  final _searchRequests = <String, Future<List<SoulseekFile>>>{};
   String username = '', error = '';
   int sharedFiles = 0;
   List<SoulseekTransfer> transfers = const [];
@@ -189,10 +194,35 @@ class SoulseekService extends ChangeNotifier {
     return Isolate.run(() => _soulseekNative(request));
   }
 
+  /// Saved opt-in is not proof that files are shared on the network yet.
   Future<void> loadAccount() async {
     username = await _secure.read(key: _userKey) ?? '';
-    shareEnabled = (await SharedPreferences.getInstance()).getBool(_shareKey) ?? false;
+    sharePreference = (await SharedPreferences.getInstance()).getBool(_shareKey) ?? false;
     notifyListeners();
+  }
+
+  List<SoulseekFile>? cachedSearch(String query) => _searchCache[query.trim()];
+
+  void rememberSearch(String query, List<SoulseekFile> files) {
+    final key = query.trim();
+    if (key.length < 2 || !connected) return;
+    _searchCache.remove(key);
+    _searchCache[key] = List.unmodifiable(files);
+    if (_searchCache.length > 6) _searchCache.remove(_searchCache.keys.first);
+  }
+
+  void setLosslessOnly(bool value) {
+    if (losslessOnly == value) return;
+    losslessOnly = value;
+    notifyListeners();
+  }
+
+  Future<void> _enableShares() async {
+    try {
+      await setSharing(true);
+    } catch (_) {
+      // The account UI shows sharing errors. Login remains usable.
+    }
   }
 
   Future<String> _mainFolder() async {
@@ -226,8 +256,10 @@ class SoulseekService extends ChangeNotifier {
     final password = await _secure.read(key: _passwordKey);
     if (user == null || user.isEmpty || password == null || password.isEmpty) return false;
     try {
-      await _login(user, password,
-          (await SharedPreferences.getInstance()).getBool(_shareKey) ?? false);
+      await _login(user, password);
+      sharePreference =
+          (await SharedPreferences.getInstance()).getBool(_shareKey) ?? false;
+      if (sharePreference) unawaited(_enableShares());
       return true;
     } catch (e) {
       error = '$e';
@@ -238,7 +270,8 @@ class SoulseekService extends ChangeNotifier {
 
   Future<void> signIn(String user, String password, {required bool share}) async {
     if (user.trim().isEmpty || password.isEmpty) throw StateError('Enter username and password.');
-    await _login(user.trim(), password, share);
+    // Authenticate before any potentially expensive folder indexing.
+    await _login(user.trim(), password);
     try {
       await _secure.write(key: _userKey, value: user.trim());
       await _secure.write(key: _passwordKey, value: password);
@@ -249,12 +282,14 @@ class SoulseekService extends ChangeNotifier {
       await signOut();
       rethrow;
     }
-    shareEnabled = share;
+    sharePreference = share;
     notifyListeners();
+    if (share) unawaited(_enableShares());
   }
 
-  Future<void> _login(String user, String password, bool share) async {
+  Future<void> _login(String user, String password) async {
     if (busy) throw StateError('Soulseek is already connecting.');
+    ++_sessionEpoch;
     busy = true;
     error = '';
     var loginAttempted = false;
@@ -263,11 +298,15 @@ class SoulseekService extends ChangeNotifier {
       loginAttempted = true;
       final data = await _call('login', {
         'username': user, 'password': password,
-        'share': share ? await _mainFolder() : '',
+        'share': '',
       });
       if (data['loggedIn'] != true) throw StateError('Soulseek login was rejected.');
       connected = true;
-      shareEnabled = share;
+      shareEnabled = false;
+      if (username != user) {
+        _searchCache.clear();
+        _searchRequests.clear();
+      }
       username = user;
       sharedFiles = (data['sharedFiles'] as num?)?.toInt() ?? 0;
       _ticker?.cancel();
@@ -296,9 +335,14 @@ class SoulseekService extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    ++_sessionEpoch;
     _ticker?.cancel();
     try { await _call('logout'); } finally {
       connected = false;
+      shareEnabled = false;
+      sharePreference = false;
+      _searchCache.clear();
+      _searchRequests.clear();
       username = '';
       transfers = const [];
       uploads = const [];
@@ -312,24 +356,67 @@ class SoulseekService extends ChangeNotifier {
   }
 
   Future<void> setSharing(bool value) async {
-    final folder = value ? await _mainFolder() : '';
-    if (connected) {
-      final status = await _call('shares', {'folder': folder});
-      sharedFiles = (status['sharedFiles'] as num?)?.toInt() ?? 0;
-    }
-    await (await SharedPreferences.getInstance()).setBool(_shareKey, value);
-    shareEnabled = value;
-    await _background();
+    if (!connected) throw StateError('Sign in before changing sharing.');
+    if (sharingBusy) throw StateError('Folder sharing is still being updated.');
+    final epoch = _sessionEpoch;
+    sharingBusy = true;
+    sharingStatus = value ? 'Checking folder access…' : 'Stopping sharing…';
+    error = '';
     notifyListeners();
+    try {
+      final folder = value ? await _mainFolder() : '';
+      if (!connected || epoch != _sessionEpoch) return;
+      if (value) {
+        sharingStatus = 'Indexing music files for sharing…';
+        notifyListeners();
+      }
+      // Rust scans on a worker isolate: it must not block the UI or sign-in.
+      final status = await _call('shares', {'folder': folder});
+      if (!connected || epoch != _sessionEpoch) return;
+      await (await SharedPreferences.getInstance()).setBool(_shareKey, value);
+      sharedFiles = (status['sharedFiles'] as num?)?.toInt() ?? 0;
+      shareEnabled = value;
+      sharePreference = value;
+      await _background();
+      notifyListeners();
+    } catch (e) {
+      if (epoch == _sessionEpoch) {
+        error = 'Folder sharing could not be updated: $e';
+        notifyListeners();
+      }
+      rethrow;
+    } finally {
+      sharingBusy = false;
+      sharingStatus = '';
+      notifyListeners();
+    }
   }
 
   Future<List<SoulseekFile>> search(String text) async {
+    final query = text.trim();
+    final cached = _searchCache[query];
+    if (cached != null) return cached;
+    final pending = _searchRequests[query];
+    if (pending != null) return pending;
+    final request = _searchNetwork(query);
+    _searchRequests[query] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_searchRequests[query], request)) _searchRequests.remove(query);
+    }
+  }
+
+  Future<List<SoulseekFile>> _searchNetwork(String query) async {
     if (!await ensureConnected()) {
       throw StateError(error.isEmpty ? 'Sign in under Data → Accounts → Soulseek.' : error);
     }
-    final result = await _call('search', {'query': text});
-    return (result['results'] as List? ?? []).whereType<Map>()
+    final epoch = _sessionEpoch;
+    final result = await _call('search', {'query': query});
+    final files = (result['results'] as List? ?? []).whereType<Map>()
         .map((x) => SoulseekFile.fromMap(Map<String, dynamic>.from(x))).toList();
+    if (epoch == _sessionEpoch) rememberSearch(query, files);
+    return files;
   }
 
   Future<String> _staging() async {

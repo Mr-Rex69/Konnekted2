@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/services/soulseek_service.dart';
 
 /// Data > Accounts, first provider. The user only needs a network username
@@ -33,7 +34,7 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
       await _service.loadAccount();
       if (!mounted) return;
       _user.text = _service.username;
-      setState(() => _share = _service.shareEnabled);
+      setState(() => _share = _service.sharePreference);
       if (_service.username.isNotEmpty) {
         await _service.ensureConnected();
         if (mounted) setState(() {});
@@ -72,15 +73,14 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
   }
 
   Future<void> _changeShare(bool enabled) async {
-    if (_working) return;
-    setState(() { _working = true; _problem = ''; });
+    if (_working || _service.sharingBusy) return;
+    setState(() => _problem = '');
     try {
       await _service.setSharing(enabled);
       if (mounted) setState(() => _share = enabled);
     } catch (e) {
-      if (mounted) setState(() => _problem = e.toString());
-    } finally {
-      if (mounted) setState(() => _working = false);
+      if (mounted) setState(() =>
+          _problem = e is StateError ? e.message : '$e');
     }
   }
 
@@ -98,21 +98,33 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
     final working = _working || _service.busy;
     final signed = _service.connected;
     final description = signed
-        ? 'Connected as ' + _service.username
-        : 'Sign in with a Soulseek username and password.';
+        ? 'Connected as ${_service.username}'
+        : 'Search and download music from Soulseek.';
+    final shareDescription = _service.sharingBusy
+        ? '${_service.sharingStatus} Large libraries may take a while.'
+        : signed && _service.shareEnabled
+            ? 'Sharing ${_service.sharedFiles} files on Soulseek.'
+            : 'Optional. All files in this folder become visible to other users, including covers and lyrics.';
+    final supportingStyle = TextStyle(
+      fontFamily: LokalTheme.sans, color: t.muted, fontSize: 12.5,
+      height: 1.35,
+    );
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Icon(Icons.hub_outlined, size: 20, color: t.accent),
           const SizedBox(width: 10),
           Expanded(child: Text('Soulseek',
-              style: TextStyle(fontWeight: FontWeight.w600, color: t.text))),
+              style: TextStyle(
+                fontFamily: LokalTheme.sans, fontSize: 15,
+                fontWeight: FontWeight.w600, color: t.text,
+              ))),
           if (signed) TextButton(onPressed: working ? null : _logout,
               child: const Text('Sign out')),
         ]),
         const SizedBox(height: 5),
-        Text(description, style: TextStyle(color: t.muted, fontSize: 12)),
+        Text(description, style: supportingStyle),
         if (!signed) ...[
           const SizedBox(height: 12),
           TextField(
@@ -130,21 +142,22 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
                 labelText: 'Password', isDense: true, border: OutlineInputBorder()),
           ),
           const SizedBox(height: 8),
-          Text('New username? Soulseek creates it on first sign-in if available. '
-              'Use a different account if desktop Soulseek is signed in simultaneously.',
-              style: TextStyle(color: t.muted, fontSize: 11)),
+          Text('Use a separate account if Soulseek is already open on desktop.',
+              style: supportingStyle),
         ],
+        const SizedBox(height: 10),
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           dense: true,
-          title: Text('Share my main Lokal music folder',
-              style: TextStyle(fontSize: 13, color: t.text)),
-          subtitle: Text(signed && _service.shareEnabled
-              ? 'Sharing ${_service.sharedFiles} files, including non-audio files. Other users can browse and download them.'
-              : 'Sharing is off. If enabled, other users can download ALL files in the selected folder, including covers, lyrics and documents.',
-              style: TextStyle(fontSize: 11, color: t.muted)),
-          value: signed ? _service.shareEnabled : _share,
-          onChanged: working ? null : (value) {
+          title: Text('Share main music folder',
+              style: TextStyle(
+                fontFamily: LokalTheme.sans, fontSize: 14,
+                fontWeight: FontWeight.w600, color: t.text,
+              )),
+          subtitle: Text(shareDescription, style: supportingStyle),
+          value: signed && !_service.sharingBusy
+              ? _service.shareEnabled : _share,
+          onChanged: working || _service.sharingBusy ? null : (value) {
             if (signed) {
               unawaited(_changeShare(value));
             } else {
@@ -152,6 +165,18 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
             }
           },
         ),
+        if (_service.sharingBusy)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 8),
+            child: Row(children: [
+              SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: t.accent)),
+              const SizedBox(width: 10),
+              Expanded(child: Text(_service.sharingStatus,
+                  style: supportingStyle)),
+            ]),
+          ),
         if (!signed) ...[
           const SizedBox(height: 5),
           FilledButton.tonalIcon(
@@ -170,13 +195,9 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
                   .length.toString() + ' active',
               style: TextStyle(color: t.muted, fontSize: 11)),
         ),
-        const SizedBox(height: 6),
-        Text('Sharing stays on while the foreground notification is active. '
-            'Android may limit long-running background sharing.',
-            style: TextStyle(color: t.muted, fontSize: 11)),
-        const SizedBox(height: 5),
-        Text('Native Soulseek engine 20.0.0 · Updated with Lokal releases.',
-            style: TextStyle(color: t.muted, fontSize: 11)),
+        const SizedBox(height: 8),
+        Text('Background sharing may be limited by Android. The Soulseek engine updates with Lokal.',
+            style: supportingStyle),
         if (_problem.isNotEmpty || _service.error.isNotEmpty) Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(_problem.isNotEmpty ? _problem : _service.error,

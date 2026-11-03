@@ -163,8 +163,12 @@ void main() {
       // reachable without changing the selected result type.
       await tester.ensureVisible(find.text('Soulseek'));
       await tester.pumpAndSettle();
+      final allLeftBefore = tester.getTopLeft(find.text('All')).dx;
       await tester.tap(find.text('Soulseek'));
       await tester.pumpAndSettle();
+      // Switching tabs cannot re-center or slide the entire source pill row.
+      expect(tester.getTopLeft(find.text('All')).dx,
+          closeTo(allLeftBefore, 1.0));
       expect(c.read(searchScopeProvider), SearchScope.soulseek);
       expect(find.byType(ChoiceChip), findsNothing);
       await tester.ensureVisible(find.text('All'));

@@ -34,6 +34,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   void initState() {
     super.initState();
     _service = widget.service ?? SoulseekService.instance;
+    _lossless = _service.losslessOnly;
     _service.addListener(_changed);
     unawaited(_initialize());
     _schedule();
@@ -58,9 +59,18 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   void _schedule() {
     _debounce?.cancel();
     final generation = ++_generation;
-    if (widget.query.trim().length < 2) {
+    final query = widget.query.trim();
+    if (query.length < 2) {
       _results = const [];
       _loading = false;
+      _error = '';
+      return;
+    }
+    final cached = _service.cachedSearch(query);
+    if (cached != null) {
+      _results = cached;
+      _loading = false;
+      _error = '';
       return;
     }
     _loading = true;
@@ -71,8 +81,11 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   }
 
   Future<void> _search(int generation, String query) async {
+    final account = _service.username;
     try {
       final files = await _service.search(query);
+      // Retain results across source switches, but not across account changes.
+      if (_service.username == account) _service.rememberSearch(query, files);
       if (!mounted || generation != _generation) return;
       setState(() { _results = files; _loading = false; });
     } catch (e) {
@@ -233,7 +246,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
     final transfers = _service.transfers.reversed.take(25).toList();
     return ListView(
       key: const PageStorageKey('soulseek-search'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 160),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 160),
       children: [
         if (!_service.connected)
           Container(
@@ -310,7 +323,10 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
             FilterChip(
               label: const Text('Lossless only'),
               selected: _lossless,
-              onSelected: (value) => setState(() => _lossless = value),
+              onSelected: (value) {
+                _service.setLosslessOnly(value);
+                setState(() => _lossless = value);
+              },
             ),
             const Spacer(),
             if (_loading) const SizedBox(width: 16, height: 16,
