@@ -285,15 +285,23 @@ class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage>
           child: ColoredBox(
             color: context.lokal.surface2,
             child: Center(
-              child: AnimatedBuilder(
-                animation: _drift,
-                child: raster,
-                builder: (context, child) => Transform.translate(
-                  offset: Offset(
-                    (_drift.value - .5) * 50,
-                    (_drift.value - .5) * 66,
+              // Center alone would constrain the 4x4 canvas to the viewport,
+              // overflowing its rows. Let the raster extend beyond the clip.
+              child: OverflowBox(
+                minWidth: side,
+                maxWidth: side,
+                minHeight: side,
+                maxHeight: side,
+                child: AnimatedBuilder(
+                  animation: _drift,
+                  child: raster,
+                  builder: (context, child) => Transform.translate(
+                    offset: Offset(
+                      (_drift.value - .5) * 50,
+                      (_drift.value - .5) * 66,
+                    ),
+                    child: child,
                   ),
-                  child: child,
                 ),
               ),
             ),
