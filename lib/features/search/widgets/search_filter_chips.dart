@@ -27,7 +27,6 @@ class SearchFilterChips extends StatelessWidget {
   final String query;
   @override
   Widget build(BuildContext context) {
-    final t = context.lokal;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -67,38 +66,30 @@ class SearchFilterChips extends StatelessWidget {
           ),
         ),
         if (scope != SearchScope.soulseek) ...[
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              for (final category in visibleSearchCategories)
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                for (final category in visibleSearchCategories)
                   _chip(
                     context,
                     category.label,
                     enabled.contains(category),
                     () => onToggle(category),
-                    count:
-                        scope != SearchScope.online && query.trim().isNotEmpty
+                    count: scope != SearchScope.online && query.trim().isNotEmpty
                         ? (counts ?? const <SearchCategory, int>{})[category]
                         : null,
                   ),
-            ],
-          ),
-        ),
-        ],
-        if (scope == SearchScope.library)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 2, 16, 0),
-            child: Text(
-              !supportsOnlineCategory(enabled.singleOrNull)
-                  ? lokalText('This category searches your library')
-                  : lokalText('Choose a result type'),
-              style: TextStyle(color: t.muted, fontSize: 11),
+              ],
             ),
           ),
+        ],
+        // The content begins at the same distance below the last control in
+        // every scope, including Soulseek's single-row selector.
+        const SizedBox(height: 16),
       ],
     );
   }
