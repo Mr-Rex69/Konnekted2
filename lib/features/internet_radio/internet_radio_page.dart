@@ -368,6 +368,7 @@ class _StationRow extends ConsumerStatefulWidget {
 class _StationRowState extends ConsumerState<_StationRow> {
   Timer? _metadataTimer;
   String? _broadcastTrack;
+  String? _broadcastCover;
 
   @override
   void initState() {
@@ -385,6 +386,7 @@ class _StationRowState extends ConsumerState<_StationRow> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.station.id != widget.station.id) {
       _broadcastTrack = null;
+      _broadcastCover = null;
       unawaited(_refreshMetadata());
     }
   }
@@ -393,8 +395,11 @@ class _StationRowState extends ConsumerState<_StationRow> {
     final id = widget.station.id;
     final info = await StationMetadataLookup.lookup(widget.station);
     if (!mounted || id != widget.station.id || info == null ||
-        info.label == _broadcastTrack) return;
-    setState(() => _broadcastTrack = info.label);
+        (info.label == _broadcastTrack && info.cover == _broadcastCover)) return;
+    setState(() {
+      _broadcastTrack = info.label;
+      _broadcastCover = info.cover;
+    });
   }
 
   @override
@@ -420,6 +425,10 @@ class _StationRowState extends ConsumerState<_StationRow> {
           ? state.nowPlaying : null,
     ));
     final now = activeNow ?? _broadcastTrack;
+    final activeCover = ref.watch(radioPlayerProvider.select(
+      (state) => state.station?.id == station.id ? state.trackMetadata?.cover : null,
+    ));
+    final songCover = activeCover ?? _broadcastCover;
     final fallback = ColoredBox(
       color: t.surface2,
       child: Icon(Icons.radio_rounded, color: t.muted, size: 22),
@@ -444,11 +453,34 @@ class _StationRowState extends ConsumerState<_StationRow> {
               borderRadius: BorderRadius.circular(12),
               child: SizedBox.square(
                 dimension: 52,
-                child: station.icon == null ? fallback : Image.network(
-                  station.icon!,
-                  fit: BoxFit.cover,
-                  cacheWidth: 156,
-                  errorBuilder: (_, _, _) => fallback,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (songCover != null || station.icon != null)
+                      Image.network(
+                        songCover ?? station.icon!,
+                        fit: BoxFit.cover,
+                        cacheWidth: 156,
+                        errorBuilder: (_, _, _) => station.icon != null &&
+                            songCover != null
+                            ? Image.network(station.icon!, fit: BoxFit.cover,
+                                cacheWidth: 156,
+                                errorBuilder: (_, _, _) => fallback)
+                            : fallback,
+                      )
+                    else
+                      fallback,
+                    if (songCover != null && station.icon != null)
+                      Positioned(
+                        right: 0, bottom: 0,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(station.icon!, width: 17,
+                            height: 17, fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -504,6 +536,7 @@ class _NowPlayingStation extends ConsumerWidget {
     final station = player.station;
     if (station == null) return const SizedBox.shrink();
     final t = context.lokal;
+    final activeArt = player.trackMetadata?.cover ?? station.icon;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
       child: Container(
@@ -515,7 +548,14 @@ class _NowPlayingStation extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.graphic_eq_rounded, color: t.accent),
+            if (activeArt != null)
+              ClipRRect(borderRadius: BorderRadius.circular(8),
+                child: Image.network(activeArt, width: 44, height: 44,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Icon(Icons.graphic_eq_rounded,
+                    color: t.accent)))
+            else
+              Icon(Icons.graphic_eq_rounded, color: t.accent),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,10 +564,14 @@ class _NowPlayingStation extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
                   Text(player.error ?? (player.loading ? 'Tuning in…' :
-                    player.nowPlaying ?? (player.playing ? 'Live' : 'Paused')),
+                    player.trackMetadata?.label ?? player.nowPlaying ??
+                    (player.playing ? 'Live' : 'Paused')),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: player.error == null ? t.muted : t.red,
                       fontSize: 12)),
+                  Text(station.lossless ? '${station.codec} · Lossless' :
+                    '${station.codec} · ${station.bitrate} kbps',
+                    style: TextStyle(fontSize: 11, color: t.muted)),
                 ],
               ),
             ),
