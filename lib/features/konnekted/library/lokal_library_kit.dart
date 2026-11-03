@@ -19,6 +19,7 @@ import 'package:flick/providers/player_provider.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
 import 'replayable_stream_songs.dart';
@@ -148,6 +149,7 @@ class LokalLibraryPage extends StatelessWidget {
     this.actions = const [],
     this.header,
     this.showBack = true,
+    this.edgeToEdgeHeader = false,
   });
 
   final String title;
@@ -159,8 +161,51 @@ class LokalLibraryPage extends StatelessWidget {
   final Widget? header;
   final bool showBack;
 
+  /// Place playlist artwork behind the status bar, with back/menu buttons
+  /// floating above it. Default library pages keep their current SafeArea.
+  final bool edgeToEdgeHeader;
+
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    if (edgeToEdgeHeader && header != null) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          backgroundColor: context.lokal.bg,
+          body: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Stack(
+                  children: [
+                    header!,
+                    Positioned(
+                      top: MediaQuery.paddingOf(context).top,
+                      left: 0,
+                      right: 0,
+                      child: LokalPageBar(
+                        showBack: showBack,
+                        actions: actions,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...slivers,
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 150 + MediaQuery.paddingOf(context).bottom,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Scaffold(
     backgroundColor: context.lokal.bg,
     body: SafeArea(
       bottom: false,
@@ -180,6 +225,7 @@ class LokalLibraryPage extends StatelessWidget {
       ),
     ),
   );
+  }
 }
 
 /// The row of round glass buttons at the top of a page.
