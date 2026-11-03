@@ -23,10 +23,9 @@ final _featuring = RegExp(r'\s+(feat\.?|ft\.?|featuring|&|,|x)\s+.*$');
 String _artistKey(String artist) =>
     lokalGenreKey(artist.toLowerCase().replaceFirst(_featuring, ''));
 
-/// Song or artist radio from your own library, offline.
+/// Offline fallback when YouTube Music / Last.fm cannot build a radio.
 ///
-/// Desktop builds its radio from YouTube Music and Last.fm; this keeps to the
-/// songs you have: the seed's artist, then songs sharing its genres and era,
+/// Rank playable local recordings by the seed's artist, then songs sharing its genres and era,
 /// liked songs a little ahead. At most [lokalRadioMax] songs, the seed first,
 /// no more than six by one artist and three from one album, shuffled within
 /// how well they match so two radios from one seed differ.
@@ -145,8 +144,13 @@ Future<void> startLokalRadio(
           container.read(konnektedFavoritesProvider).value ?? const <Song>[])
         song.id,
     };
+    final playable = library.where((song) =>
+        !song.isPending &&
+        !song.isNetworkSource &&
+        song.filePath?.isNotEmpty == true &&
+        !(song.filePath?.startsWith('ghost://') ?? false)).toList();
     return buildLokalRadio(
-      library: library,
+      library: playable,
       seed: seed,
       artist: artist,
       liked: liked,
