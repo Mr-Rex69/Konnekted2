@@ -622,9 +622,9 @@ class LokalSongListPage extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
                   child: Text(
-                    metadata ?? '${lokalSongCount(0)} · 0 min',
+                    metadata ?? lokalText('Loading history…'),
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: context.lokal.muted,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
