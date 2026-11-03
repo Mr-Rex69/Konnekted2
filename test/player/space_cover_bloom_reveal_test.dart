@@ -37,6 +37,68 @@ void main() {
     }
   });
 
+  test('queue and lyrics cover geometry follows the real panel morph', () {
+    const panel = Size(384, 560);
+    final resting = playerPanelArtworkRect(
+      panel, artGap: 17, infoReserve: 72, queue: 0, lyrics: 0,
+    );
+    final midQueue = playerPanelArtworkRect(
+      panel, artGap: 17, infoReserve: 72, queue: .5, lyrics: 0,
+    );
+    final queueThumbnail = playerPanelArtworkRect(
+      panel, artGap: 17, infoReserve: 72, queue: 1, lyrics: 0,
+    );
+    final midLyrics = playerPanelArtworkRect(
+      panel, artGap: 17, infoReserve: 72, queue: 0, lyrics: .5,
+    );
+    final lyricsThumbnail = playerPanelArtworkRect(
+      panel, artGap: 17, infoReserve: 72, queue: 0, lyrics: 1,
+    );
+    expect(resting.width, 384);
+    expect(queueThumbnail.width, 52);
+    expect(lyricsThumbnail.width, 52);
+    expect(midQueue.width, inInclusiveRange(52, 384));
+    expect(midLyrics.width, inInclusiveRange(52, 384));
+    expect(midQueue.width, greaterThan(queueThumbnail.width));
+    expect(midLyrics.top, lessThan(lyricsThumbnail.top));
+    expect(midLyrics.top, greaterThan(resting.top));
+  });
+
+  testWidgets('Space blur follows moving artwork during queue/lyrics exit', (
+    tester,
+  ) async {
+    tester.view.physicalSize = viewport;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AnimationController(
+      vsync: tester, value: 1,
+      duration: const Duration(milliseconds: 620),
+    );
+    final movingCover = ValueNotifier<Rect>(
+      const Rect.fromLTWH(30, 150, 250, 250),
+    );
+    addTearDown(controller.dispose);
+    addTearDown(movingCover.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SpaceCoverBloomReveal(
+          progress: controller,
+          coverRectResolver: () => movingCover.value,
+          coverMotion: movingCover,
+          child: const Center(child: Text('Lyrics')),
+        ),
+      ),
+    ));
+    final clip = tester.widget<ClipPath>(find.byType(ClipPath).first);
+    const position = Offset(160, 180);
+    expect(clip.clipper!.getClip(viewport).contains(position), isFalse);
+    movingCover.value = const Rect.fromLTWH(90, 250, 250, 250);
+    await tester.pump();
+    expect(clip.clipper!.getClip(viewport).contains(position), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   test('Space uses the full-size panel layout when entered from Lyrics', () {
     final expanded = playerPanelRestArtworkRect(
       const Size(384, 560),
