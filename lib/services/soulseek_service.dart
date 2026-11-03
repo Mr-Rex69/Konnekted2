@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -122,6 +123,31 @@ class SoulseekService extends ChangeNotifier {
   final _importing = <String>{};
   Future<bool>? _connecting;
   Timer? _ticker;
+  bool _foregroundActive = false;
+  DateTime _foregroundRenewed = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _backgroundChannel = MethodChannel('lokal/soulseek_background');
+
+  Future<void> _background() async {
+    if (!Platform.isAndroid) return;
+    final want = connected && (shareEnabled || transfers.any((row) => row.active));
+    final renewal = DateTime.now().difference(_foregroundRenewed) >
+        const Duration(minutes: 4);
+    if (want == _foregroundActive && (!want || !renewal)) return;
+    try {
+      await _backgroundChannel.invokeMethod<void>(
+        want ? (_foregroundActive ? 'update' : 'start') : 'stop',
+        {'sharing': shareEnabled},
+      );
+      _foregroundActive = want;
+      _foregroundRenewed = DateTime.now();
+    } catch (e) {
+      _foregroundActive = false;
+      if (want) {
+        error = 'Android could not keep Soulseek running in background. Keep Lokal open.';
+        notifyListeners();
+      }
+    }
+  }
   bool _checking = false, _loaded = false;
   bool connected = false, busy = false, shareEnabled = false;
   String username = '', error = '';
@@ -199,12 +225,14 @@ class SoulseekService extends ChangeNotifier {
       });
       if (data['loggedIn'] != true) throw StateError('Soulseek login was rejected.');
       connected = true;
+      shareEnabled = share;
       username = user;
       sharedFiles = (data['sharedFiles'] as num?)?.toInt() ?? 0;
       _ticker?.cancel();
       _ticker = Timer.periodic(const Duration(seconds: 2),
           (_) => unawaited(refresh()));
       await _resumePending();
+      await _background();
       unawaited(refresh());
     } catch (e) {
       connected = false;
@@ -222,6 +250,7 @@ class SoulseekService extends ChangeNotifier {
       connected = false;
       username = '';
       transfers = const [];
+      await _background();
       sharedFiles = 0;
       error = '';
       await _secure.delete(key: _userKey);
@@ -238,6 +267,7 @@ class SoulseekService extends ChangeNotifier {
     }
     await (await SharedPreferences.getInstance()).setBool(_shareKey, value);
     shareEnabled = value;
+    await _background();
     notifyListeners();
   }
 
@@ -338,6 +368,7 @@ class SoulseekService extends ChangeNotifier {
         connected = false;
         error = status['error'] as String? ?? 'Soulseek disconnected.';
         _ticker?.cancel();
+        await _background();
         notifyListeners();
         return;
       }
@@ -365,6 +396,7 @@ class SoulseekService extends ChangeNotifier {
         }
       }
       transfers = rows;
+      await _background();
       notifyListeners();
     } catch (e) {
       error = 'Transfer monitoring failed: $e';
