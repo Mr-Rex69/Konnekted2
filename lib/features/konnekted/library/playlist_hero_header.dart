@@ -232,10 +232,7 @@ class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage>
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(18),
                 child: CachedImageWidget(
-                  key: ValueKey(
-                    'playlist-collage-${covers[index % covers.length].imagePath}-'
-                    '${covers[index % covers.length].audioSourcePath}',
-                  ),
+                  key: ValueKey('playlist-collage-slot-$index'),
                   imagePath: covers[index % covers.length].imagePath,
                   audioSourcePath:
                       covers[index % covers.length].audioSourcePath,
