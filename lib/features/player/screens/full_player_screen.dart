@@ -35,7 +35,7 @@ import '../widgets/lyric_motion_line.dart';
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
 import '../widgets/immersive_lyrics_stage.dart';
-import '../widgets/space_stardust_reveal.dart';
+import '../widgets/space_cover_bloom_reveal.dart';
 import '../widgets/material_player_thumb.dart';
 
 import 'dart:async';
@@ -120,6 +120,33 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   bool _immersiveLyrics = false;
   // Keep the subtitle layer alive until the exit reveal finishes.
   bool _spaceLayerMounted = false;
+  Rect? _spaceCoverRect;
+  bool _spaceCanvasMode = false;
+  final GlobalKey _spaceArtworkKey =
+      GlobalKey(debugLabel: 'space-player-artwork');
+
+  /// Capture the sleeve's on-screen bounds once, rather than measuring or
+  /// reflowing playback surfaces during each transition frame.
+  Rect? _spaceArtworkBounds(bool fullCover) {
+    final player = _playerBoundsKey.currentContext?.findRenderObject();
+    if (player is! RenderBox || !player.attached || !player.hasSize) {
+      return null;
+    }
+    if (fullCover) {
+      final bannerHeight = (_posterBottom ??
+          player.size.width + MediaQuery.paddingOf(context).top + 56)
+          .clamp(1.0, player.size.height)
+          .toDouble();
+      return Rect.fromLTWH(0, 0, player.size.width, bannerHeight);
+    }
+    final art = _spaceArtworkKey.currentContext?.findRenderObject();
+    if (art is RenderBox && art.attached && art.hasSize) {
+      final origin = player.globalToLocal(art.localToGlobal(Offset.zero));
+      return origin & art.size;
+    }
+    return null;
+  }
+
   late final AnimationController _spaceProgress = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 620),
@@ -461,6 +488,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (_showLyrics) _moveLyrics(false);
     _queue.setOpen(false, animate: false);
     HapticFeedback.selectionClick();
+    final active = _videoOverrideSong ??
+        widget.videoSong ?? _player.currentSongNotifier.value;
+    final fullCover = ref.read(lokalAppearanceProvider).fullscreenCover;
+    // Canvas fills the art plane, so the wave leaves its centre clear.
+    _spaceCanvasMode = _videoFullscreen ||
+        (fullCover && active != null &&
+         _canvasReadyForSong == active.id);
+    _spaceCoverRect = _spaceArtworkBounds(fullCover);
     setState(() {
       _immersiveLyrics = true;
       _spaceLayerMounted = true;
@@ -881,7 +916,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             ),
           if (_spaceLayerMounted)
             Positioned.fill(
-              child: SpaceStardustReveal(
+              child: SpaceCoverBloomReveal(
+                coverRect: _spaceCoverRect,
+                canvasMode: _spaceCanvasMode,
+                surfaceColor: const Color(0xFF171820),
                 progress: _spaceProgress,
                 child: Stack(
                   fit: StackFit.expand,
@@ -1197,7 +1235,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 ),
                 if (_spaceLayerMounted)
                   Positioned.fill(
-                    child: SpaceStardustReveal(
+                    child: SpaceCoverBloomReveal(
+                      coverRect: _spaceCoverRect,
+                      canvasMode: _spaceCanvasMode,
+                      surfaceColor: colors.last,
                       progress: _spaceProgress,
                       child: Stack(
                         fit: StackFit.expand,
@@ -1818,6 +1859,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         // endpoint produced a visible corner snap when the portal released it.
         expandedRadius: lerpDouble(20, 12, progress)!,
         child: SizedBox(
+          key: current && progress == 0 ? _spaceArtworkKey : null,
           width: side,
           height: side,
           child: Stack(
