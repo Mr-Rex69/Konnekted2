@@ -123,8 +123,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   Rect? _spaceCoverRect;
   bool _spaceCanvasMode = false;
   bool _spaceFullCover = false;
-  final GlobalKey _spaceArtworkKey =
-      GlobalKey(debugLabel: 'space-player-artwork');
   final GlobalKey _spacePanelKey =
       GlobalKey(debugLabel: 'space-player-panel');
   bool _spacePanelCompact = false;
@@ -143,14 +141,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           .toDouble();
       return Rect.fromLTWH(0, 0, player.size.width, bannerHeight);
     }
-    // Track the ACTUAL morphing cover on every frame, not the final target
-    // captured at the moment Space opens. Otherwise its four corners drift
-    // away from the frost cutout during queue/lyrics transitions.
-    final art = _spaceArtworkKey.currentContext?.findRenderObject();
-    if (art is RenderBox && art.attached && art.hasSize) {
-      final origin = player.globalToLocal(art.localToGlobal(Offset.zero));
-      return origin & art.size;
-    }
+    // The panel delegate and the mask use the very same size/offset
+    // calculation, avoiding a GlobalKey on individual carousel stages (which
+    // can be duplicated when a queue contains the same recording twice).
     final panel = _spacePanelKey.currentContext?.findRenderObject();
     if (panel is RenderBox && panel.attached && panel.hasSize) {
       final local = playerPanelArtworkRect(
@@ -1896,7 +1889,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         // endpoint produced a visible corner snap when the portal released it.
         expandedRadius: lerpDouble(20, 12, progress)!,
         child: SizedBox(
-          key: current ? _spaceArtworkKey : null,
           width: side,
           height: side,
           child: Stack(
