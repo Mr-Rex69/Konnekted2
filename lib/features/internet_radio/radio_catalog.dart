@@ -17,6 +17,11 @@ class RadioStation {
     this.genre,
     this.description,
     this.icon,
+    this.codec = '',
+    this.bitrate = 0,
+    this.lossless = false,
+    this.country = '',
+    this.countryCode = '',
   });
 
   /// The stream link: stable across catalogue updates, so favourites use it.
@@ -26,6 +31,11 @@ class RadioStation {
   final String? genre;
   final String? description;
   final String? icon;
+  final String codec;
+  final int bitrate;
+  final bool lossless;
+  final String country;
+  final String countryCode;
 
   Map<String, Object?> toJson() => {
     'title': title,
@@ -33,6 +43,12 @@ class RadioStation {
     if (genre != null) 'genre': genre,
     if (description != null) 'description': description,
     if (icon != null) 'icon': icon,
+    'id': id,
+    'codec': codec,
+    'bitrate': bitrate,
+    'lossless': lossless,
+    'country': country,
+    'countrycode': countryCode,
   };
 
   /// Each genre of "House, Deep house / Lounge", trimmed.

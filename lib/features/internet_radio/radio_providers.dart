@@ -278,12 +278,14 @@ class RadioPlayback {
     this.playing = false,
     this.loading = false,
     this.error,
+    this.nowPlaying,
   });
 
   final RadioStation? station;
   final bool playing;
   final bool loading;
   final String? error;
+  final String? nowPlaying;
 }
 
 /// Plays a station's live stream.
@@ -303,6 +305,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   int? _failingPlayRequest;
   Timer? _bufferingTimer;
   StreamSubscription<ja.PlayerState>? _states;
+  StreamSubscription<ja.IcyMetadata?>? _icyMetadata;
   String? _notified;
   final Map<String, String> _iconFiles = {};
 
@@ -324,6 +327,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
       _bufferingTimer?.cancel();
       NotificationService().release(_notificationOwner);
       unawaited(_states?.cancel());
+      unawaited(_icyMetadata?.cancel());
       unawaited(_player?.dispose());
     });
     return const RadioPlayback();
@@ -362,6 +366,21 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         playing: s.playing && s.processingState != ja.ProcessingState.completed,
         loading: loading,
         error: state.error,
+        nowPlaying: state.nowPlaying,
+      );
+      _syncNotification();
+    });
+    // Only the selected station's own stream provides ICY metadata;
+    // no background audio connections are opened for list rows.
+    _icyMetadata = player.icyMetadataStream.listen((metadata) {
+      final title = metadata?.info?.title?.trim();
+      if (title == null || title.isEmpty || state.station == null || state.error != null || title == state.nowPlaying) return;
+      state = RadioPlayback(
+        station: state.station,
+        playing: state.playing,
+        loading: state.loading,
+        error: state.error,
+        nowPlaying: title,
       );
       _syncNotification();
     });
@@ -374,13 +393,13 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     final station = state.station;
     if (station == null) return;
     final icon = _iconFiles[station.icon ?? ''];
-    final key = '${station.id}|${state.playing}|$icon';
+    final key = '${station.id}|${state.playing}|$icon|${state.nowPlaying ?? ''}';
     if (key == _notified) return;
     _notified = key;
     final song = Song(
       id: 'radio:${station.id}',
-      title: station.title,
-      artist: station.genre ?? station.description ?? 'Internet radio',
+      title: state.nowPlaying ?? station.title,
+      artist: station.title,
       albumArt: icon,
       duration: Duration.zero,
       fileType: 'Stream',
@@ -524,7 +543,7 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
       if (!_isCurrentPlay(request, station)) return;
       // The state stream usually delivered this already; set it explicitly so
       // the initial load cannot remain visible if that event was missed.
-      state = RadioPlayback(station: station, playing: true);
+      state = RadioPlayback(station: station, playing: true, nowPlaying: state.nowPlaying);
       _syncNotification();
     } catch (_) {
       await _failPlay(request, station);
