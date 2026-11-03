@@ -38,6 +38,8 @@ jobs:
             lib/features/internet_radio/internet_radio_page.dart \
             lib/features/internet_radio/radio_providers.dart \
             lib/features/internet_radio/radio_now_playing_page.dart \
+            lib/features/player/widgets/player_panel_stage.dart \
+            lib/features/player/widgets/space_cover_bloom_reveal.dart \
             lib/features/konnekted/konnekted_dock.dart \
             lib/features/konnekted/konnekted_shell.dart \
             lib/features/player/screens/full_player_screen.dart \
@@ -50,4 +52,5 @@ jobs:
           test/features/internet_radio/radio_browser_test.dart
           test/features/internet_radio/radio_timeout_test.dart
           test/features/internet_radio/radio_now_playing_page_test.dart
+          test/player/space_cover_bloom_reveal_test.dart
           test/widgets/lokal/lokal_player_route_test.dart
