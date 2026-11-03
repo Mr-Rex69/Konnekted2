@@ -19,6 +19,57 @@ Map<String, Object?> station(String id, String codec, int bitrate) => {
 };
 
 void main() {
+
+  test('AzuraCast matches the correct mount and returns artwork', () {
+    final result = StationMetadataLookup.parseAzuraCastForTest([
+      {'station': {'listen_url': 'https://radio.example.org/other'},
+        'now_playing': {'song': {'artist': 'Wrong', 'title': 'Wrong'}}},
+      {'station': {'listen_url': 'https://radio.example.org/main',
+          'mounts': [{'url': 'https://radio.example.org/live-256.mp3'}]},
+        'now_playing': {'song': {'artist': 'Correct Artist',
+          'title': 'Correct Track', 'art': 'https://covers.example.org/right.jpg'}}},
+    ], 'https://radio.example.org/live-256.mp3');
+    expect(result?.artist, 'Correct Artist');
+    expect(result?.title, 'Correct Track');
+    expect(result?.cover, 'https://covers.example.org/right.jpg');
+    expect(StationMetadataLookup.parseAzuraCastForTest([
+      {'station': {'listen_url': 'https://radio.example.org/other'},
+        'now_playing': {'song': {'artist': 'Wrong', 'title': 'Wrong'}}},
+    ], 'https://radio.example.org/not-this-stream'), isNull);
+  });
+
+  test('SHOUTcast parses titles only when server reports a live stream', () {
+    final title = StationMetadataLookup.parseShoutcastForTest(
+      {'songtitle': 'Artist - Song', 'streamstatus': 1});
+    expect(title?.label, 'Artist — Song');
+    expect(StationMetadataLookup.parseShoutcastForTest(
+      {'songtitle': 'Artist - Song', 'streamstatus': 0}), isNull);
+  });
+
+  test('Nova Danse uses shared official broadcaster metadata including artwork', () {
+    final station = stationFromRadioBrowser({
+      ...station('nova-dance', 'AAC', 256),
+      'url_resolved': 'https://nova-dance.ice.infomaniak.ch/nova-dance-256.aac',
+    });
+    expect(StationMetadataLookup.novaCodeForStation(station), 'nova-danse');
+    final record = StationMetadataLookup.parseNovaForTest([
+      {'radio': {'code': 'radio-nova'},
+       'currentTrack': {'artist': 'Other', 'title': 'Wrong'}},
+      {'radio': {'code': 'nova-danse'},
+       'currentTrack': {
+         'artist': 'Dance Artist',
+         'title': 'Dance Track',
+         'image': 'https://www.nova.fr/artwork/cover.jpg',
+       }},
+    ], 'nova-danse');
+    expect(record?.artist, 'Dance Artist');
+    expect(record?.title, 'Dance Track');
+    expect(record?.cover, 'https://www.nova.fr/artwork/cover.jpg');
+    expect(record?.label, 'Dance Artist — Dance Track');
+    expect(StationMetadataLookup.parseNovaForTest(
+      [], 'nova-danse'), isNull);
+  });
+
   test('strict 256 kbps cutoff with verified lossless-codec exception', () {
     expect(qualifiesRadioBrowserStation(station('low', 'MP3', 255)), isFalse);
     expect(qualifiesRadioBrowserStation(station('aac', 'AAC', 256)), isTrue);
