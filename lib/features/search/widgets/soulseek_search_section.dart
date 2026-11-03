@@ -81,10 +81,11 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   }
 
   Future<void> _search(int generation, String query) async {
+    final account = _service.username;
     try {
       final files = await _service.search(query);
-      // A source-pill switch must not discard a completed peer search.
-      _service.rememberSearch(query, files);
+      // Retain results across source switches, but not across account changes.
+      if (_service.username == account) _service.rememberSearch(query, files);
       if (!mounted || generation != _generation) return;
       setState(() { _results = files; _loading = false; });
     } catch (e) {
