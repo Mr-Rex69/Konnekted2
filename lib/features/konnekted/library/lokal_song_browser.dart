@@ -585,6 +585,7 @@ class LokalSongListPage extends ConsumerWidget {
     this.subtitleOf,
     this.recentlyAddedRanks,
     this.preferencesKey,
+    this.showTotalDuration = false,
   });
 
   final String title;
@@ -597,6 +598,7 @@ class LokalSongListPage extends ConsumerWidget {
   final String Function(Song song)? subtitleOf;
   final Map<String, int> Function(WidgetRef ref)? recentlyAddedRanks;
   final String? preferencesKey;
+  final bool showTotalDuration;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -604,7 +606,11 @@ class LokalSongListPage extends ConsumerWidget {
     final list = songs.value;
     return LokalLibraryPage(
       title: title,
-      subtitle: list == null ? null : lokalSongCount(list.length),
+      subtitle: list == null
+          ? null
+          : showTotalDuration
+              ? '${lokalSongCount(list.length)} · ${lokalRunningTime(list)}'
+              : lokalSongCount(list.length),
       slivers: [
         if (list != null && list.isNotEmpty)
           LokalSongBrowser(
