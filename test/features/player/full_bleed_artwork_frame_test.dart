@@ -107,4 +107,30 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('still'))).height, 350);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('poster mask fades within banner, not inner image viewport', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 930);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MaterialApp(
+      home: FullBleedArtworkFrame(
+        canvas: false,
+        bannerBottom: 510,
+        child: ColoredBox(color: Colors.purple),
+      ),
+    ));
+
+    final mask = find.byType(ShaderMask);
+    expect(mask, findsOneWidget);
+    expect(tester.getSize(mask), const Size(430, 510));
+    // On the old build the ShaderMask was *inside* the OverflowBox,
+    // allowing the clipped banner to retain a hard partially opaque edge.
+    expect(find.ancestor(
+      of: find.byType(OverflowBox),
+      matching: find.byType(ShaderMask),
+    ), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }

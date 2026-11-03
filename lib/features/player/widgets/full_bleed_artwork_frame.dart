@@ -66,32 +66,38 @@ class FullBleedArtworkFrame extends StatelessWidget {
             child: LokalPlayerArtwork(
               enabled: morphEnabled,
               expandedRadius: 0,
-              child: OverflowBox(
-                alignment: Alignment.center,
-                minWidth: constraints.maxWidth,
-                maxWidth: constraints.maxWidth,
-                minHeight: LokalPlayerMorph.artworkViewportHeight(
-                  context,
-                  Size(constraints.maxWidth, height),
-                ),
-                maxHeight: LokalPlayerMorph.artworkViewportHeight(
-                  context,
-                  Size(constraints.maxWidth, height),
-                ),
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white,
-                      Colors.white,
-                      Colors.white.withValues(alpha: fadeOutCompletely
+              // Apply the dissolve in *banner coordinates*, outside the
+              // morphing viewport. Masking the taller inner OverflowBox
+              // leaves a partially opaque edge where the banner clips it,
+              // visibly separating the cover from the ambient blur.
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white,
+                    Colors.white,
+                    Colors.white.withValues(
+                      alpha: fadeOutCompletely
                           ? 0
-                          : 1 - (dimOnExpand ? progress : .85)),
-                    ],
-                    stops: [0, .68, 1],
-                  ).createShader(rect),
+                          : 1 - (dimOnExpand ? progress : .85),
+                    ),
+                  ],
+                  stops: const [0, .58, 1],
+                ).createShader(rect),
+                child: OverflowBox(
+                  alignment: Alignment.center,
+                  minWidth: constraints.maxWidth,
+                  maxWidth: constraints.maxWidth,
+                  minHeight: LokalPlayerMorph.artworkViewportHeight(
+                    context,
+                    Size(constraints.maxWidth, height),
+                  ),
+                  maxHeight: LokalPlayerMorph.artworkViewportHeight(
+                    context,
+                    Size(constraints.maxWidth, height),
+                  ),
                   child: SizedBox.expand(child: child),
                 ),
               ),
