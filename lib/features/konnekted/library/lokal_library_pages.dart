@@ -94,7 +94,8 @@ Widget? lokalLibraryPage(String name) => switch (name) {
     emptyMessage: 'Songs you play show up here.',
   ),
   'recentlyAdded' => LokalSongListPage(
-    title: lokalText('Recently added'),
+    title: lokalText('Library'),
+    showTotalDuration: true,
     preferencesKey: 'lokal.library.recently_added.song_browser_view.v1',
     source: (ref) => ref.watch(konnektedLibraryProvider),
   ),
