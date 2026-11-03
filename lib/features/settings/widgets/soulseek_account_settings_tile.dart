@@ -132,9 +132,9 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
           dense: true,
           title: Text('Share my main Lokal music folder',
               style: TextStyle(fontSize: 13, color: t.text)),
-          subtitle: Text(signed
-              ? 'Visible on Soulseek · ' + _service.sharedFiles.toString() + ' audio files'
-              : 'Off by default. Other users can browse and download ALL files in the selected folder, including covers, lyrics and other documents.',
+          subtitle: Text(signed && _service.shareEnabled
+              ? 'Sharing ${_service.sharedFiles} files, including non-audio files. Other users can browse and download them.'
+              : 'Sharing is off. If enabled, other users can download ALL files in the selected folder, including covers, lyrics and documents.',
               style: TextStyle(fontSize: 11, color: t.muted)),
           value: signed ? _service.shareEnabled : _share,
           onChanged: working ? null : (value) {
