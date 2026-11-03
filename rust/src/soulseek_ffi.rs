@@ -34,7 +34,14 @@ fn safe_basename(path: &str) -> Result<&str, String> {
 }
 
 fn shareable_directory(path: &str) -> Result<String, String> {
-    let root = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+    let chosen = Path::new(path);
+    // Resolving the selected root first would hide a symlink pointing at an
+    // unrelated private folder. Refuse leaf symlinks as well as nested ones.
+    if chosen.symlink_metadata().map_err(|e| e.to_string())?
+        .file_type().is_symlink() {
+        return Err("The selected music folder is a symbolic link. Choose the real folder before sharing.".into());
+    }
+    let root = chosen.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() { return Err("Shared music folder is not a directory".into()); }
     // Upstream scan_many() currently follows symlinks via DirEntry::metadata,
     // so reject a root with links rather than accidentally share outside it.
@@ -178,7 +185,7 @@ fn execute(input: Value) -> Result<Value, String> {
             let client = current()?;
             // Retry a failed or cancelled transfer with its same .part staging
             // directory. The protocol engine validates/resumes partial bytes.
-            client.remove_download(username, remote);
+            let _ = client.remove_download(username, remote);
             let (download, _) = client.download(remote.to_owned(), username.to_owned(),
                 size, folder_string).map_err(|e| e.to_string())?;
             Ok(json!({"id": download.token, "path": folder.join(name).to_string_lossy()}))
@@ -291,6 +298,16 @@ mod tests {
         symlink("/etc", root.join("external")).unwrap();
         assert!(shareable_directory(root.to_str().unwrap())
             .unwrap_err().contains("symbolic links"));
+        std::fs::remove_file(root.join("external")).unwrap();
+
+        // A symlink selected as the library root must not be canonicalized
+        // silently and advertised to the P2P network.
+        let alias = root.with_extension("soulseek-link");
+        let _ = std::fs::remove_file(&alias);
+        symlink(&root, &alias).unwrap();
+        assert!(shareable_directory(alias.to_str().unwrap())
+            .unwrap_err().contains("symbolic link"));
+        std::fs::remove_file(alias).unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 }
