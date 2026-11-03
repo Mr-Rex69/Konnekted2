@@ -16,6 +16,8 @@ import 'package:flick/features/spotify/spotify_storage.dart';
 import 'package:flick/features/spotify/spotify_web_api.dart';
 import 'package:flick/models/song.dart';
 import 'package:flutter/material.dart';
+import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Read-only library browser using the already-configured Spotify cookie.
@@ -397,18 +399,13 @@ class _SpotifyPlaylistDetailState
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      // The large scrollable hero owns the playlist title.
-      actions: [
-        IconButton(
-          tooltip: 'Refresh playlist',
-          icon: const Icon(Icons.refresh_rounded),
-          onPressed: _loading ? null : () => unawaited(_refresh()),
-        ),
-
-      ],
-    ),
-    body: _loading
+    backgroundColor: context.lokal.bg,
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        // Artwork and its fade begin at y=0, underneath Android status icons.
+        Positioned.fill(
+          child: _loading
         ? const Center(child: CircularProgressIndicator())
         : _error != null
             ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -434,6 +431,23 @@ class _SpotifyPlaylistDetailState
                     artworkBuilder: (track) => _SpotifyCover(url: track.artworkUrl),
                     onPlay: _playOrdered,
                     onSongActions: _songActions,
-                  ),
+                  ),,
+        ),
+        Positioned(
+          top: MediaQuery.paddingOf(context).top,
+          left: 0,
+          right: 0,
+          child: LokalPageBar(
+            actions: [
+              LokalRoundAction(
+              icon: Icons.refresh_rounded,
+              label: 'Refresh playlist',
+              onPressed: _loading ? null : () => unawaited(_refresh()),
+            ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
