@@ -41,7 +41,7 @@ Future<Map<String, dynamic>> fetchRadioCatalogJson(
     if (initialUrl.toString() != defaultRadioCatalogUrl) rethrow;
     final apiUrl = Uri.https(
       'api.github.com',
-      '/repos/sipbuu/lokal/contents/radios.json',
+      '/repos/lokal-music/Desktop/contents/radios.json',
       {'ref': 'main'},
     );
     return _fetchRadioCatalogAtUrl(
