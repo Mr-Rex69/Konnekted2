@@ -26,12 +26,15 @@ void main() {
     expect(page.title, 'Library');
     expect(page.showTotalDuration, isTrue);
     expect(page.preferencesKey, 'lokal.library.songs.song_browser_view.v1');
+    final added = lokalLibraryPage('recentlyAdded') as LokalSongListPage;
+    expect(added.title, 'Library');
+    expect(added.showTotalDuration, isTrue);
     // The You tab's history navigation retains a distinct, truthful page.
     final history = lokalLibraryPage('recentlyPlayed') as LokalSongListPage;
     expect(history.title, 'Recently played');
   });
 
-  testWidgets('Library shows full collection, subtitle and route below More', (
+  testWidgets('Recently Added becomes Library; Recently Played remains intact', (
     tester,
   ) async {
     tester.view
@@ -95,7 +98,13 @@ void main() {
       of: libraryShelf,
       matching: find.text('Track library2'),
     ), findsOneWidget);
-    expect(find.text('Track r1'), findsNothing);
+    final widget = tester.widget<KonnektedSongShelf>(libraryShelf);
+    expect(widget.showTotalDuration, isTrue);
+    expect(widget.summarySongs?.value?.length, library.length);
+    expect(find.descendant(
+      of: libraryShelf,
+      matching: find.text('Track r1'),
+    ), findsNothing);
     expect(find.text('2 songs · 1 hr 10 min'), findsOneWidget);
     final horizontalList = tester.widget<ListView>(
       find.descendant(of: libraryShelf, matching: find.byType(ListView)),
@@ -125,7 +134,33 @@ void main() {
     await tester.tap(
       find.descendant(of: libraryShelf, matching: find.text('See all')),
     );
-    expect(opened, [KonnektedDestination.songs]);
+    expect(opened, [KonnektedDestination.recentlyAdded]);
+    final playedShelf = find.byWidgetPredicate(
+      (widget) => widget is KonnektedSongShelf &&
+          widget.title == 'Recently played',
+    );
+    await tester.scrollUntilVisible(
+      playedShelf,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    final playedWidget = tester.widget<KonnektedSongShelf>(playedShelf);
+    expect(playedWidget.showTotalDuration, isFalse);
+    expect(playedWidget.summarySongs, isNull);
+    expect(find.descendant(
+      of: playedShelf, matching: find.text('Track r1'),
+    ), findsOneWidget);
+    expect(find.descendant(
+      of: playedShelf, matching: find.text('Track r2'),
+    ), findsOneWidget);
+    await tester.tap(find.descendant(
+      of: playedShelf, matching: find.text('See all'),
+    ));
+    expect(opened, [
+      KonnektedDestination.recentlyAdded,
+      KonnektedDestination.recentlyPlayed,
+    ]);
     expect(tester.takeException(), isNull);
   });
 }

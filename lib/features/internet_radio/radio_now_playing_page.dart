@@ -9,7 +9,6 @@ import 'package:flick/features/konnekted/library/lokal_navigation.dart';
 import 'package:flick/features/konnekted/library/lokal_music_detail_page.dart';
 import 'package:flick/services/global_catalogue_search.dart';
 import 'package:flick/services/android_audio_device_service.dart';
-import 'package:flick/features/internet_radio/internet_radio_page.dart';
 import 'package:flick/features/internet_radio/radio_catalog.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/internet_radio/station_favorites.dart';
@@ -302,24 +301,6 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
         final entries = <Widget>[
           if (songName.isNotEmpty)
             _RadioMenuRow(
-              icon: Icons.album_outlined,
-              label: 'Open current album',
-              onTap: () => execute(
-                () => unawaited(_openCurrentAlbum(songName, artistName)),
-              ),
-            ),
-          if (artistName.isNotEmpty)
-            _RadioMenuRow(
-              icon: Icons.person_outline_rounded,
-              label: 'Open artist',
-              onTap: () => execute(
-                () => unawaited(
-                  openLokalArtist(context, name: artistName),
-                ),
-              ),
-            ),
-          if (songName.isNotEmpty)
-            _RadioMenuRow(
               icon: Icons.search_rounded,
               label: 'Find current song',
               onTap: () => execute(() => _find(
@@ -338,11 +319,6 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
             label: 'Favorite or unfavorite station',
             onTap: () => execute(() => unawaited(ref
                 .read(stationFavoritesProvider.notifier).toggle(station))),
-          ),
-          _RadioMenuRow(
-            icon: Icons.speaker_rounded,
-            label: 'Audio output',
-            onTap: () => execute(() => unawaited(_chooseOutput())),
           ),
           _RadioMenuRow(
             icon: Icons.ios_share_rounded,
@@ -364,17 +340,6 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
             icon: Icons.link_rounded,
             label: 'Copy station URL',
             onTap: () => execute(() => _copy(station.url)),
-          ),
-          _RadioMenuRow(
-            icon: Icons.explore_rounded,
-            label: 'Browse stations',
-            onTap: () => execute(() {
-              Navigator.of(context).push<void>(PageRouteBuilder<void>(
-                pageBuilder: (_, _, _) => const InternetRadioPage(),
-                transitionsBuilder: (_, animation, _, child) =>
-                    FadeTransition(opacity: animation, child: child),
-              ));
-            }),
           ),
         ];
         return ConstrainedBox(
