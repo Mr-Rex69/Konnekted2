@@ -35,6 +35,7 @@ import '../widgets/lyric_motion_line.dart';
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
 import '../widgets/immersive_lyrics_stage.dart';
+import '../widgets/space_stardust_reveal.dart';
 import '../widgets/material_player_thumb.dart';
 
 import 'dart:async';
@@ -117,6 +118,24 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   bool _videoFullscreen = false;
   bool _immersiveLyrics = false;
+  // Keep the subtitle layer alive until the exit reveal finishes.
+  bool _spaceLayerMounted = false;
+  late final AnimationController _spaceProgress = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 620),
+    reverseDuration: const Duration(milliseconds: 500),
+  )..addStatusListener((status) {
+      if (status == AnimationStatus.dismissed &&
+          !_immersiveLyrics && _spaceLayerMounted && mounted) {
+        setState(() => _spaceLayerMounted = false);
+      }
+    });
+
+  late final Animation<double> _spaceChromeOpacity =
+      ReverseAnimation(CurvedAnimation(
+        parent: _spaceProgress,
+        curve: const Interval(0, .68, curve: Curves.easeOutCubic),
+      ));
   final Media3MusicVideoController _videoController = Media3MusicVideoController();
   final GlobalKey _videoSurfaceKey = GlobalKey(debugLabel: 'persistent-media3-video');
 
@@ -305,6 +324,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _queue.dispose();
     _queueProgress.dispose();
     _lyricsProgress.dispose();
+    _spaceProgress.dispose();
     _canvasChrome.dispose();
     _videoController.dispose();
     _player.currentSongNotifier.removeListener(_onSongChanged);
@@ -423,15 +443,33 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   void _toggleImmersiveLyrics() {
-    _restoreCanvasControls();
     if (_immersiveLyrics) {
+      // The painter, aperture and subtitles reverse in place. Unmount only
+      // when the reverse animation is fully dismissed.
       setState(() => _immersiveLyrics = false);
+      if (_animate) {
+        _spaceProgress.reverse();
+      } else {
+        _spaceProgress.value = 0;
+        setState(() => _spaceLayerMounted = false);
+      }
+      _restoreCanvasControls();
       return;
     }
+
+    _restoreCanvasControls();
     if (_showLyrics) _moveLyrics(false);
     _queue.setOpen(false, animate: false);
     HapticFeedback.selectionClick();
-    setState(() => _immersiveLyrics = true);
+    setState(() {
+      _immersiveLyrics = true;
+      _spaceLayerMounted = true;
+    });
+    if (_animate) {
+      _spaceProgress.forward();
+    } else {
+      _spaceProgress.value = 1;
+    }
     unawaited(_loadLyrics());
   }
 
@@ -841,34 +879,49 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 ),
               ),
             ),
-          if (_immersiveLyrics)
+          if (_spaceLayerMounted)
             Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _toggleImmersiveLyrics,
-                onLongPress: _showSpaceOptions,
-                child: const SizedBox.expand(),
+              child: SpaceStardustReveal(
+                progress: _spaceProgress,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: math.max(
+                        MediaQuery.paddingOf(context).bottom + 52,
+                        MediaQuery.sizeOf(context).height * .28,
+                      ),
+                      child: IgnorePointer(
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: _videoController.nativeNotifier,
+                          builder: (_, native, __) => native
+                              ? _spaceSubtitle(song)
+                              : const Text(
+                                  'Timed subtitles unavailable in video fallback',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          if (_immersiveLyrics)
-            Positioned(
-              left: 12, right: 12,
-              // Full-screen video has no seek row; keep its subtitle in the
-              // same elevated viewing band while respecting the safe area.
-              bottom: math.max(
-                MediaQuery.paddingOf(context).bottom + 52,
-                MediaQuery.sizeOf(context).height * .28,
-              ),
+          if (_spaceLayerMounted)
+            Positioned.fill(
               child: IgnorePointer(
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: _videoController.nativeNotifier,
-                  builder: (_, native, __) => native
-                      ? _spaceSubtitle(song)
-                      : const Text(
-                          'Timed subtitles unavailable in video fallback',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
+                ignoring: !_immersiveLyrics,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleImmersiveLyrics,
+                  onLongPress: _showSpaceOptions,
+                  child: const SizedBox.expand(),
                 ),
               ),
             ),
@@ -1142,32 +1195,46 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   ),
                 ),
                 ),
-                if (_immersiveLyrics)
+                if (_spaceLayerMounted)
                   Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleImmersiveLyrics,
-                      onLongPress: _showSpaceOptions,
-                      child: const SizedBox.expand(),
+                    child: SpaceStardustReveal(
+                      progress: _spaceProgress,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          SeekbarAlignedSpaceSubtitle(
+                            seekbarLink: _seekbarSubtitleLink,
+                            subtitle: _videoActive
+                                ? ValueListenableBuilder<bool>(
+                                    valueListenable: _videoController.nativeNotifier,
+                                    builder: (context, native, _) => native
+                                        ? _spaceSubtitle(song)
+                                        : const Text(
+                                            'Timed subtitles unavailable in embedded video fallback',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                  )
+                                : _spaceSubtitle(song),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                if (_immersiveLyrics)
-                  SeekbarAlignedSpaceSubtitle(
-                    seekbarLink: _seekbarSubtitleLink,
-                    subtitle: _videoActive
-                        ? ValueListenableBuilder<bool>(
-                            valueListenable: _videoController.nativeNotifier,
-                            builder: (context, native, _) => native
-                                ? _spaceSubtitle(song)
-                                : const Text(
-                                    'Timed subtitles unavailable in embedded video fallback',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white70, fontSize: 13,
-                                    ),
-                                  ),
-                          )
-                        : _spaceSubtitle(song),
+                if (_spaceLayerMounted)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: !_immersiveLyrics,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _toggleImmersiveLyrics,
+                        onLongPress: _showSpaceOptions,
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -1189,12 +1256,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     loading: _lyricsLoading || _lyricsForSongId != song.id,
   );
 
-  Widget _spaceHidden(Widget child) => Visibility(
-    visible: !_immersiveLyrics,
-    maintainState: true,
-    maintainAnimation: true,
-    maintainSize: true,
-    child: child,
+  Widget _spaceHidden(Widget child) => IgnorePointer(
+    ignoring: _immersiveLyrics,
+    child: FadeTransition(
+      opacity: _spaceChromeOpacity,
+      child: child,
+    ),
   );
 
   // ───────────────────────────── top bar ─────────────────────────────
