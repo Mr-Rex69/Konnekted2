@@ -304,6 +304,13 @@ class RadioPlayback {
 /// going in the background), and hands it back to the library when it stops.
 class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   ja.AudioPlayer? _player;
+  bool _showQueueOnPlayerOpen = false;
+  void requestStationQueue() => _showQueueOnPlayerOpen = true;
+  bool consumeStationQueueRequest() {
+    final requested = _showQueueOnPlayerOpen;
+    _showQueueOnPlayerOpen = false;
+    return requested;
+  }
   List<RadioStation> _stationQueue = const [];
   List<RadioStation> get stationQueue => List.unmodifiable(_stationQueue);
   int get stationIndex => _stationQueue.indexWhere((item) => item.id == state.station?.id);
