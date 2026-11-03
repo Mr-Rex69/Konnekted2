@@ -9,6 +9,7 @@ import 'radio_browser.dart';
 import 'radio_catalog.dart';
 import 'radio_providers.dart';
 import 'station_favorites.dart';
+import 'station_metadata.dart';
 
 const _countries = <String, String>{
   '': 'Worldwide',
@@ -354,13 +355,57 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _StationRow extends ConsumerWidget {
+class _StationRow extends ConsumerStatefulWidget {
   const _StationRow({super.key, required this.station, required this.favorite});
   final RadioStation station;
   final bool favorite;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_StationRow> createState() => _StationRowState();
+}
+
+class _StationRowState extends ConsumerState<_StationRow> {
+  Timer? _metadataTimer;
+  String? _broadcastTrack;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshMetadata());
+    });
+    _metadataTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      unawaited(_refreshMetadata());
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _StationRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.station.id != widget.station.id) {
+      _broadcastTrack = null;
+      unawaited(_refreshMetadata());
+    }
+  }
+
+  Future<void> _refreshMetadata() async {
+    final id = widget.station.id;
+    final info = await StationMetadataLookup.lookup(widget.station);
+    if (!mounted || id != widget.station.id || info == null ||
+        info.label == _broadcastTrack) return;
+    setState(() => _broadcastTrack = info.label);
+  }
+
+  @override
+  void dispose() {
+    _metadataTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final station = widget.station;
+    final favorite = widget.favorite;
     final t = context.lokal;
     // Each lazy row selects only its own playback status; no list-wide ticker.
     final selected = ref.watch(radioPlayerProvider.select(
@@ -369,10 +414,11 @@ class _StationRow extends ConsumerWidget {
     final playing = ref.watch(radioPlayerProvider.select(
       (state) => state.station?.id == station.id && state.playing,
     ));
-    final now = ref.watch(radioPlayerProvider.select(
+    final activeNow = ref.watch(radioPlayerProvider.select(
       (state) => state.station?.id == station.id
           ? state.nowPlaying : null,
     ));
+    final now = activeNow ?? _broadcastTrack;
     final fallback = ColoredBox(
       color: t.surface2,
       child: Icon(Icons.radio_rounded, color: t.muted, size: 22),
