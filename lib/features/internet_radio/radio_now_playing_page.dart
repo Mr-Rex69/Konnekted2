@@ -243,7 +243,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
     await openAndroidOutputChooser(context);
     // Android's route-change callback normally refreshes this as soon as
     // the user selects a device; also request an explicit snapshot.
-    await AndroidAudioDeviceService.instance.refresh();
+    await AndroidAudioDeviceService.instance.refreshMediaOutput();
   }
 
   void _copy(String value) {
@@ -798,7 +798,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                           child: Center(
                             child: ValueListenableBuilder<AndroidPlaybackDeviceInfo>(
                               valueListenable: AndroidAudioDeviceService
-                                  .instance.deviceInfoNotifier,
+                                  .instance.mediaOutputInfoNotifier,
                               builder: (context, output, _) => InkWell(
                                 onTap: () => unawaited(_chooseOutput()),
                                 borderRadius: BorderRadius.circular(24),
