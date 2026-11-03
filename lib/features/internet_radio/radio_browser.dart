@@ -26,6 +26,11 @@ class RadioBrowseResult {
   final bool hasMore;
 }
 
+String _streamUrl(Map<String, dynamic> data) {
+  final resolved = (data['url_resolved'] ?? '').toString().trim();
+  return resolved.isNotEmpty ? resolved : (data['url'] ?? '').toString().trim();
+}
+
 /// Directory metadata is an eligibility signal, not measured fidelity.
 /// A reported 320 kbps stream may not deliver that actual bitrate.
 bool qualifiesRadioBrowserStation(Map<String, dynamic> data) {
@@ -42,7 +47,7 @@ bool qualifiesRadioBrowserStation(Map<String, dynamic> data) {
   }
   final uuid = (data['stationuuid'] ?? '').toString().trim();
   final name = (data['name'] ?? '').toString().trim();
-  final link = (data['url_resolved'] ?? data['url'] ?? '').toString().trim();
+  final link = _streamUrl(data);
   final uri = Uri.tryParse(link);
   return uuid.isNotEmpty &&
       name.isNotEmpty &&
@@ -60,7 +65,7 @@ RadioStation stationFromRadioBrowser(Map<String, dynamic> data) {
   return RadioStation(
     id: 'rb:' + (data['stationuuid'] ?? '').toString(),
     title: (data['name'] ?? '').toString().trim(),
-    url: (data['url_resolved'] ?? data['url']).toString().trim(),
+    url: _streamUrl(data),
     icon: (icon != null && (icon.scheme == 'https' || icon.scheme == 'http'))
         ? favicon : null,
     genre: tags.isEmpty ? null : tags.first,
