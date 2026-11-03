@@ -351,6 +351,9 @@ class SoulseekService extends ChangeNotifier {
       error = '';
       await _secure.delete(key: _userKey);
       await _secure.delete(key: _passwordKey);
+      // Signing out also revokes the saved opt-in; never auto-share on a
+      // later sign-in just because a previous account had opted in.
+      await (await SharedPreferences.getInstance()).setBool(_shareKey, false);
       notifyListeners();
     }
   }
