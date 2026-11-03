@@ -7,6 +7,7 @@ import 'package:flick/features/internet_radio/radio_catalog.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/internet_radio/station_favorites.dart';
 import 'package:flick/features/player/widgets/artwork_gradient_backdrop.dart';
+import 'package:flick/features/player/widgets/android_output_chooser.dart';
 import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/features/player/widgets/player_transport_controls.dart';
 import 'package:flick/features/player/widgets/song_stage_carousel.dart';
@@ -153,6 +154,12 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
               title: const Text('Favorite or unfavorite station'),
               onTap: () => execute(() => unawaited(ref
                   .read(stationFavoritesProvider.notifier).toggle(station))),
+            ),
+            ListTile(
+              leading: const Icon(Icons.speaker_rounded),
+              title: const Text('Audio output'),
+              onTap: () => execute(() =>
+                  unawaited(openAndroidOutputChooser(context))),
             ),
             ListTile(
               leading: const Icon(Icons.ios_share_rounded),
@@ -493,12 +500,20 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                           icon: const Icon(Icons.chevron_left_rounded,
                             color: FullPlayerVisuals.primaryText, size: 27),
                         ),
-                        const Expanded(child: Center(child: Text(
-                          'STATIONS · LIVE', style: TextStyle(
-                            fontSize: 12, letterSpacing: 1.4,
-                            color: FullPlayerVisuals.primaryText,
-                            fontWeight: FontWeight.w700),
-                        ))),
+                        Expanded(child: Center(
+                          child: TextButton.icon(
+                            onPressed: () => unawaited(
+                                openAndroidOutputChooser(context)),
+                            icon: const Icon(Icons.speaker_rounded,
+                              size: 17,
+                              color: FullPlayerVisuals.primaryText),
+                            label: const Text('AUDIO OUTPUT',
+                              style: TextStyle(fontSize: 12,
+                                color: FullPlayerVisuals.primaryText,
+                                letterSpacing: 1.0,
+                                fontWeight: FontWeight.w600)),
+                          ),
+                        )),
                         IconButton(
                           key: const ValueKey('radio-player-more'),
                           tooltip: 'More options',
