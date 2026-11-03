@@ -228,6 +228,20 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
             gaplessPlayback: true,
             errorBuilder: (_, _, _) => fallback)
         : fallback;
+    // A station favicon is often only 32–128 px. Stretching it edge-to-edge
+    // in Full Cover looks pixelated; instead keep the ambient full player
+    // background and display the station branding at a deliberate size.
+    if (fullCover && url != null && url == station.icon) {
+      return Center(child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 240, maxHeight: 240),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(26),
+          child: Image.network(url, fit: BoxFit.contain,
+            cacheWidth: 480,
+            errorBuilder: (_, _, _) => fallback),
+        ),
+      ));
+    }
     // Retain station identity in a small badge if live song artwork exists.
     if (song.id != 'radio:' + station.id ||
         station.icon == null || url == station.icon) return image;
