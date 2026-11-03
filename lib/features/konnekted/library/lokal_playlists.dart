@@ -538,6 +538,7 @@ class LokalPlaylistPage extends ConsumerWidget {
         title: playlist.name,
         metadata: '${lokalSongCount(songs.length)} · ${lokalRunningTime(songs)}',
         coverBytes: coverBytes,
+        coverPath: serverId == null ? coverId : null,
         covers: [
           for (final song in songs)
             PlaylistHeroCover(
