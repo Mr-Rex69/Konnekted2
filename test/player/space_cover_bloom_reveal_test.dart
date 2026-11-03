@@ -7,58 +7,43 @@ void main() {
   const viewport = Size(430, 930);
   const artwork = Rect.fromLTWH(24, 175, 380, 380);
 
-  test('Space blur rises from the bottom rather than sinking downward', () {
-    final start = spaceRisingBlurFront(viewport, 0);
-    final quarter = spaceRisingBlurFront(viewport, .25);
-    final half = spaceRisingBlurFront(viewport, .5);
-    final threeQuarters = spaceRisingBlurFront(viewport, .75);
-    final end = spaceRisingBlurFront(viewport, 1);
-
-    expect(start, greaterThan(viewport.height));
-    expect(start, greaterThan(quarter));
-    expect(quarter, greaterThan(half));
-    expect(half, greaterThan(threeQuarters));
-    expect(threeQuarters, greaterThan(end));
-    expect(end, lessThan(0));
+  test('Space expands outward from every cover edge, not vertically', () {
+    final start = spaceCoverBloomBounds(viewport, artwork, 0);
+    final mid = spaceCoverBloomBounds(viewport, artwork, .5);
+    final end = spaceCoverBloomBounds(viewport, artwork, 1);
+    expect(start, artwork.inflate(2));
+    expect(mid.top, lessThan(start.top));
+    expect(mid.bottom, greaterThan(start.bottom));
+    expect(mid.left, lessThan(start.left));
+    expect(mid.right, greaterThan(start.right));
+    expect(end.top, lessThan(0));
+    expect(end.left, lessThan(0));
+    expect(end.bottom, greaterThan(viewport.height));
+    expect(end.right, greaterThan(viewport.width));
   });
 
-  test('rounded cutout matches the exact 20px normal-cover corners', () {
+  test('frost never covers the normal 20px-radius album corners', () {
     final cover = spaceCoverRevealAnchor(viewport, coverRect: artwork);
     expect(cover, artwork);
-    final path = spaceRisingFrostClip(
-      viewport, cover, 1, cornerRadius: 20,
-    );
-    // A pixel inside the square corners but *outside* a radius-20 cover
-    // must get blurred. The old 20→7px radius exposed this as a sharp wedge.
-    expect(path.contains(const Offset(28, 179)), isTrue);
-    expect(path.contains(const Offset(44, 176)), isFalse);
-    expect(path.contains(cover.center), isFalse);
-    expect(path.contains(const Offset(10, 600)), isTrue);
+    for (final progress in [.5, .85, 1.0]) {
+      final path = spaceCoverBloomFrostClip(
+        viewport, cover, progress, cornerRadius: 20,
+      );
+      // The square corner lies OUTSIDE the rounded image and may receive
+      // frost; the inner cover's edges and centre must remain untouched.
+      expect(path.contains(const Offset(28, 179)), isTrue);
+      expect(path.contains(const Offset(44, 176)), isFalse);
+      expect(path.contains(cover.center), isFalse);
+    }
   });
 
-  test('cutout radius is unchanged throughout the expansion', () {
-    final p1 = spaceRisingFrostClip(
-      viewport, artwork, .85, cornerRadius: 20,
-    );
-    final p2 = spaceRisingFrostClip(
-      viewport, artwork, 1, cornerRadius: 20,
-    );
-    expect(p1.contains(artwork.center), isFalse);
-    expect(p2.contains(artwork.center), isFalse);
-    expect(p1.contains(const Offset(28, 179)), isTrue);
-    expect(p2.contains(const Offset(28, 179)), isTrue);
-  });
-
-  test('Space uses the real expanded player-panel layout from Lyrics', () {
-    // These values match PlayerPanelStage's uncompressed artwork target,
-    // rather than the 52px thumbnail shown while Lyrics is open.
+  test('Space uses the full-size panel layout when entered from Lyrics', () {
     final expanded = playerPanelRestArtworkRect(
       const Size(384, 560),
       artGap: 17,
       infoReserve: 72,
     );
     expect(expanded, const Rect.fromLTWH(0, 40.5, 384, 384));
-
     final compact = playerPanelRestArtworkRect(
       const Size(384, 400),
       artGap: 10,
@@ -67,34 +52,34 @@ void main() {
     expect(compact, const Rect.fromLTWH(36, 0, 312, 312));
   });
 
-  test('Fullcover keeps its square full-width poster edge', () {
+  test('Fullcover has a square full-width clear poster', () {
     const sleeve = Rect.fromLTWH(0, 0, 430, 570);
     final cover = spaceCoverRevealAnchor(
       viewport, coverRect: sleeve,
     );
-    expect(cover.top, 0);
-    expect(cover.width, viewport.width);
-    final path = spaceRisingFrostClip(
+    final clip = spaceCoverBloomFrostClip(
       viewport, cover, 1, cornerRadius: 0,
     );
-    expect(path.contains(const Offset(1, 1)), isFalse);
-    expect(path.contains(const Offset(10, 650)), isTrue);
+    expect(cover.top, 0);
+    expect(cover.width, viewport.width);
+    expect(clip.contains(const Offset(1, 1)), isFalse);
+    expect(clip.contains(const Offset(10, 650)), isTrue);
   });
 
-  test('Canvas preserves an edge-to-edge upper visual plane', () {
+  test('Canvas remains clear in its upper visual plane', () {
     final canvas = spaceCoverRevealAnchor(viewport, canvasMode: true);
     expect(canvas.left, 0);
     expect(canvas.top, 0);
     expect(canvas.width, viewport.width);
     expect(canvas.height, closeTo(viewport.height * .64, .001));
-    final path = spaceRisingFrostClip(
+    final clip = spaceCoverBloomFrostClip(
       viewport, canvas, 1, cornerRadius: 0,
     );
-    expect(path.contains(const Offset(215, 300)), isFalse);
-    expect(path.contains(const Offset(215, 800)), isTrue);
+    expect(clip.contains(const Offset(215, 300)), isFalse);
+    expect(clip.contains(const Offset(215, 800)), isTrue);
   });
 
-  testWidgets('blur layer and lyrics animate forward and back in place', (
+  testWidgets('frost expands and contracts without replacing lyrics', (
     tester,
   ) async {
     tester.view.physicalSize = viewport;
@@ -136,7 +121,7 @@ void main() {
     expect(animation.value, 0);
   });
 
-  testWidgets('full-screen Canvas stays mounted through a frosted reveal', (
+  testWidgets('Canvas stays mounted during the outward frosted reveal', (
     tester,
   ) async {
     final animation = AnimationController(
