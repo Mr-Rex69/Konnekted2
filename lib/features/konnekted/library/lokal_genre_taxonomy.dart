@@ -1,4 +1,4 @@
-// Generated from desktop lokal-music/lokal/electron/genreTaxonomy.json
+// Generated from desktop lokal-music/Desktop/electron/genreTaxonomy.json
 // Desktop source blob: 3c444a7dd07c622d4e7aea49ada17a36616ee07a
 // Broad genre families and whole-phrase hints are shared by both platforms.
 // Classification never modifies stored audio metadata.
