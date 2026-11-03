@@ -20,7 +20,7 @@ const station = RadioStation(
   codec: 'AAC',
   bitrate: 320,
 );
-const nextStation = RadioStation(
+const nextRadioStation = RadioStation(
   id: 'rb:radio-next',
   title: 'Another Station',
   url: 'https://stream.example.com/next.aac',
@@ -40,7 +40,7 @@ class _Radio extends RadioPlayerNotifier {
   );
 
   @override
-  List<RadioStation> get stationQueue => [station, nextStation];
+  List<RadioStation> get stationQueue => [station, nextRadioStation];
 
   @override
   Future<void> nextStation() async {}
