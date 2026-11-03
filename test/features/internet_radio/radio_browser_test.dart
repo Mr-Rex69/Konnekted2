@@ -19,6 +19,31 @@ Map<String, Object?> station(String id, String codec, int bitrate) => {
 };
 
 void main() {
+
+  test('Nova Danse uses shared official broadcaster metadata including artwork', () {
+    final station = stationFromRadioBrowser({
+      ...station('nova-dance', 'AAC', 256),
+      'url_resolved': 'https://nova-dance.ice.infomaniak.ch/nova-dance-256.aac',
+    });
+    expect(StationMetadataLookup.novaCodeForStation(station), 'nova-danse');
+    final record = StationMetadataLookup.parseNovaForTest([
+      {'radio': {'code': 'radio-nova'},
+       'currentTrack': {'artist': 'Other', 'title': 'Wrong'}},
+      {'radio': {'code': 'nova-danse'},
+       'currentTrack': {
+         'artist': 'Dance Artist',
+         'title': 'Dance Track',
+         'image': 'https://www.nova.fr/artwork/cover.jpg',
+       }},
+    ], 'nova-danse');
+    expect(record?.artist, 'Dance Artist');
+    expect(record?.title, 'Dance Track');
+    expect(record?.cover, 'https://www.nova.fr/artwork/cover.jpg');
+    expect(record?.label, 'Dance Artist — Dance Track');
+    expect(StationMetadataLookup.parseNovaForTest(
+      [], 'nova-danse'), isNull);
+  });
+
   test('strict 256 kbps cutoff with verified lossless-codec exception', () {
     expect(qualifiesRadioBrowserStation(station('low', 'MP3', 255)), isFalse);
     expect(qualifiesRadioBrowserStation(station('aac', 'AAC', 256)), isTrue);
