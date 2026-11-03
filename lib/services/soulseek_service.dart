@@ -239,9 +239,16 @@ class SoulseekService extends ChangeNotifier {
   Future<void> signIn(String user, String password, {required bool share}) async {
     if (user.trim().isEmpty || password.isEmpty) throw StateError('Enter username and password.');
     await _login(user.trim(), password, share);
-    await _secure.write(key: _userKey, value: user.trim());
-    await _secure.write(key: _passwordKey, value: password);
-    await (await SharedPreferences.getInstance()).setBool(_shareKey, share);
+    try {
+      await _secure.write(key: _userKey, value: user.trim());
+      await _secure.write(key: _passwordKey, value: password);
+      await (await SharedPreferences.getInstance()).setBool(_shareKey, share);
+    } catch (_) {
+      // A session without securely stored credentials must not be left
+      // uploading files after the account screen reports sign-in failure.
+      await signOut();
+      rethrow;
+    }
     shareEnabled = share;
     notifyListeners();
   }
@@ -250,8 +257,10 @@ class SoulseekService extends ChangeNotifier {
     if (busy) throw StateError('Soulseek is already connecting.');
     busy = true;
     error = '';
+    var loginAttempted = false;
     notifyListeners();
     try {
+      loginAttempted = true;
       final data = await _call('login', {
         'username': user, 'password': password,
         'share': share ? await _mainFolder() : '',
@@ -265,10 +274,19 @@ class SoulseekService extends ChangeNotifier {
       _ticker = Timer.periodic(const Duration(seconds: 2),
           (_) => unawaited(refresh()));
       await _resumePending();
+      // The Android service can have been stopped by task dismissal or a
+      // system timeout while the Flutter process remained alive. Re-establish
+      // the foreground lifetime after each successful native login.
+      _foregroundActive = false;
       await _background();
       unawaited(refresh());
     } catch (e) {
+      _ticker?.cancel();
       connected = false;
+      if (loginAttempted) {
+        try { await _call('logout'); } catch (_) {}
+      }
+      await _background();
       error = '$e';
       rethrow;
     } finally {
