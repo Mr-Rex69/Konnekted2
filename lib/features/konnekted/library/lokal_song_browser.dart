@@ -607,6 +607,11 @@ class LokalSongListPage extends ConsumerWidget {
     final metadata = list == null
         ? null
         : '${lokalSongCount(list.length)} · ${lokalRunningTime(list)}';
+    final pendingMetadata = songs.hasError
+        ? lokalText('Couldn’t load these songs')
+        : (title == lokalText('Library')
+            ? lokalText('Opening your collection')
+            : lokalText('Loading history…'));
     return LokalLibraryPage(
       title: title,
       // Recently Played uses a full-size metadata row: never hide its
@@ -622,7 +627,7 @@ class LokalSongListPage extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
                   child: Text(
-                    metadata ?? lokalText('Loading history…'),
+                    metadata ?? pendingMetadata,
                     style: TextStyle(
                       color: context.lokal.muted,
                       fontSize: 15,
