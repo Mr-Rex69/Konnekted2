@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/features/settings/widgets/soulseek_account_settings_tile.dart';
 import 'package:flick/services/soulseek_service.dart';
 import 'package:flick/features/search/widgets/soulseek_search_section.dart';
 
@@ -71,4 +76,168 @@ void main() {
     }
   });
 
+
+  test('album queueing is capped and skips already queued files', () async {
+    final service = _FakeSoulseekService()..connected = true;
+    final files = List.generate(70, (index) => SoulseekFile(
+      username: 'peer', filename: 'Album/${index + 1}.flac', size: 1024,
+    ));
+    service.queuedKeys.add(files.first.key);
+    await service.queueAll(files);
+    expect(service.queuedKeys.length, 60);
+    expect(service.queuedFiles.length, 59);
+    expect(service.queuedKeys.contains(files.last.key), isFalse);
+  });
+
+  testWidgets('newer search results replace stale peer replies', (tester) async {
+    final service = _FakeSoulseekService()..connected = true;
+    Widget app(String query) => MaterialApp(
+      theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+      home: Scaffold(body: SoulseekSearchSection(query: query, service: service)),
+    );
+    await tester.pumpWidget(app('alpha'));
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(service.requests.containsKey('alpha'), isTrue);
+    await tester.pumpWidget(app('beta'));
+    await tester.pump(const Duration(milliseconds: 700));
+    service.requests['beta']!.complete([
+      const SoulseekFile(
+        username: 'peer', filename: r'Library\\Beta\\new.flac', size: 200,
+      ),
+    ]);
+    await tester.pump();
+    expect(find.text('new.flac'), findsOneWidget);
+    service.requests['alpha']!.complete([
+      const SoulseekFile(
+        username: 'peer', filename: r'Library\\Alpha\\old.flac', size: 200,
+      ),
+    ]);
+    await tester.pump();
+    expect(find.text('new.flac'), findsOneWidget);
+    expect(find.text('old.flac'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('download states expose labels and transfer actions', (tester) async {
+    final service = _FakeSoulseekService()..connected = true;
+    const track = SoulseekFile(
+      username: 'peer', filename: 'Disc/song.flac', size: 100,
+      extension: 'FLAC',
+    );
+    await tester.pumpWidget(MaterialApp(
+      theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+      home: Scaffold(
+        body: SoulseekSearchSection(query: 'song', service: service),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 700));
+    service.requests['song']!.complete([track]);
+    await tester.pump();
+
+    service.transfers = [
+      const SoulseekTransfer(
+        file: track, status: 'completed', bytes: 100, speed: 0,
+        path: '/download/song.flac',
+      ),
+    ];
+    service.notifyListeners();
+    await tester.pump();
+    expect(find.byTooltip('Downloaded'), findsOneWidget);
+
+    service.queuedKeys.add(track.key);
+    service.transfers = [
+      const SoulseekTransfer(
+        file: track, status: 'queued', bytes: 0, speed: 0,
+        path: '/download/song.flac',
+      ),
+    ];
+    service.notifyListeners();
+    await tester.pump();
+    expect(find.byTooltip('Download queued'), findsOneWidget);
+    await tester.tap(find.byTooltip('Transfer actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pause').last);
+    await tester.pumpAndSettle();
+    expect(service.actions, ['pause']);
+  });
+
+  testWidgets('Soulseek account controls sign in and update sharing', (tester) async {
+    final service = _FakeSoulseekService();
+    await tester.pumpWidget(MaterialApp(
+      theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+      home: Scaffold(
+        body: SoulseekAccountSettingsTile(service: service),
+      ),
+    ));
+    await tester.pump();
+    expect(find.text('Sign in'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, 'mobile-peer');
+    await tester.enterText(find.byType(TextField).last, 'password');
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(service.username, 'mobile-peer');
+    expect(find.text('Sign out'), findsOneWidget);
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    expect(service.shareEnabled, isTrue);
+    await tester.tap(find.text('Sign out'));
+    await tester.pumpAndSettle();
+    expect(service.connected, isFalse);
+  });
+
+}
+
+class _FakeSoulseekService extends SoulseekService {
+  _FakeSoulseekService() : super.testing();
+
+  final requests = <String, Completer<List<SoulseekFile>>>{};
+  final queuedKeys = <String>{};
+  final queuedFiles = <SoulseekFile>[];
+  final actions = <String>[];
+
+  @override
+  Future<bool> ensureConnected() async => connected;
+
+  @override
+  Future<List<SoulseekFile>> search(String query) =>
+      requests.putIfAbsent(query, () => Completer<List<SoulseekFile>>()).future;
+
+  @override
+  bool queued(SoulseekFile file) => queuedKeys.contains(file.key);
+
+  @override
+  Future<void> queue(SoulseekFile file) async {
+    queuedFiles.add(file);
+    queuedKeys.add(file.key);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> control(SoulseekFile file, String action) async {
+    actions.add(action);
+  }
+
+  @override
+  Future<void> loadAccount() async {}
+
+  @override
+  Future<void> signIn(String user, String password, {required bool share}) async {
+    connected = true;
+    username = user;
+    shareEnabled = share;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> signOut() async {
+    connected = false;
+    username = '';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setSharing(bool share) async {
+    shareEnabled = share;
+    notifyListeners();
+  }
 }

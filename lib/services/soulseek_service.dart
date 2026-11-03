@@ -138,6 +138,8 @@ bool soulseekIsUnsafeShareRoot(String? root) {
 
 class SoulseekService extends ChangeNotifier {
   SoulseekService._();
+  @visibleForTesting
+  SoulseekService.testing() : this._();
   static final instance = SoulseekService._();
   static const _userKey = 'lokal.soulseek.user.v1';
   static const _passwordKey = 'lokal.soulseek.password.v1';

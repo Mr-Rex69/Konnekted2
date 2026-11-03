@@ -6,13 +6,15 @@ import 'package:flick/services/soulseek_service.dart';
 /// Data > Accounts, first provider. The user only needs a network username
 /// and password; the embedded native client is bundled with Lokal.
 class SoulseekAccountSettingsTile extends StatefulWidget {
-  const SoulseekAccountSettingsTile({super.key});
+  const SoulseekAccountSettingsTile({super.key, this.service});
+  @visibleForTesting
+  final SoulseekService? service;
   @override
   State<SoulseekAccountSettingsTile> createState() => _SoulseekAccountSettingsTileState();
 }
 
 class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTile> {
-  final _service = SoulseekService.instance;
+  late final SoulseekService _service;
   final _user = TextEditingController();
   final _password = TextEditingController();
   bool _share = false, _working = false;
@@ -21,6 +23,7 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
   @override
   void initState() {
     super.initState();
+    _service = widget.service ?? SoulseekService.instance;
     _service.addListener(_refresh);
     unawaited(_initialize());
   }

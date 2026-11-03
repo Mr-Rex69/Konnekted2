@@ -13,14 +13,16 @@ String soulseekSize(int bytes) {
 }
 
 class SoulseekSearchSection extends StatefulWidget {
-  const SoulseekSearchSection({super.key, required this.query});
+  const SoulseekSearchSection({super.key, required this.query, this.service});
   final String query;
+  @visibleForTesting
+  final SoulseekService? service;
   @override
   State<SoulseekSearchSection> createState() => _SoulseekSearchSectionState();
 }
 
 class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
-  final _service = SoulseekService.instance;
+  late final SoulseekService _service;
   Timer? _debounce;
   int _generation = 0;
   bool _loading = false, _lossless = false;
@@ -31,6 +33,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   @override
   void initState() {
     super.initState();
+    _service = widget.service ?? SoulseekService.instance;
     _service.addListener(_changed);
     unawaited(_initialize());
     _schedule();
@@ -121,10 +124,16 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
     final waiting = _queueing.contains(file.key);
     final queued = _service.queued(file);
     if (transfer?.status == 'completed' && !queued) {
-      return const Icon(Icons.check_circle_outline, color: Colors.green, size: 20);
+      return const Tooltip(
+        message: 'Downloaded',
+        child: Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+      );
     }
     if (transfer != null && transfer.active) {
-      return const Icon(Icons.schedule, size: 20);
+      return Tooltip(
+        message: 'Download ${transfer.status}',
+        child: const Icon(Icons.schedule, size: 20),
+      );
     }
     return TextButton.icon(
       onPressed: waiting || (queued && transfer?.status != 'failed') ? null :
