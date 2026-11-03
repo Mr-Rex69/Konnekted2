@@ -7,9 +7,10 @@ import 'package:http/http.dart' as http;
 import 'radio_catalog.dart';
 
 class StationLiveMetadata {
-  const StationLiveMetadata({required this.artist, required this.title});
+  const StationLiveMetadata({required this.artist, required this.title, this.cover});
   final String artist;
   final String title;
+  final String? cover;
   String get label => artist.isEmpty ? title : artist + ' — ' + title;
 }
 
@@ -26,7 +27,50 @@ class StationMetadataLookup {
   static final _cache = <String, _CachedStatus>{};
   static final _waiting = Queue<Completer<void>>();
   static int _active = 0;
-  static const _successTtl = Duration(seconds: 60);
+  static const novaUrl = 'https://www.nova.fr/radios-data/www.nova.fr/all.json';
+  static const _novaHosts = <String, String>{
+    'radionova.ice.infomaniak.ch': 'radio-nova',
+    'nova-vnt.ice.infomaniak.ch': 'nova-classics',
+    'nova-ln.ice.infomaniak.ch': 'nova-lanuit',
+    'nova-dance.ice.infomaniak.ch': 'nova-danse',
+    'nova-odn.ice.infomaniak.ch': 'nova-hip-hop',
+    'nova-reggae.ice.infomaniak.ch': 'nova-reggae',
+    'nova-soul.ice.infomaniak.ch': 'nova-soul',
+    'nova-nouvo.ice.infomaniak.ch': 'nouvo-nova',
+    'novalaplage.ice.infomaniak.ch': 'nova-la-plage',
+  };
+
+  /// Match only official stream hosts, never names supplied by directory users.
+  static String? novaCodeForStation(RadioStation station) {
+    final url = Uri.tryParse(station.url);
+    return url == null ? null : _novaHosts[url.host.toLowerCase()];
+  }
+
+  static StationLiveMetadata? parseNovaForTest(Object? data, String code) {
+    final stations = data is List ? data :
+        (data is Map && data['radios'] is List ? data['radios'] as List : const []);
+    for (final item in stations) {
+      if (item is! Map || item['radio'] is! Map) continue;
+      if ((item['radio'] as Map)['code'] != code) continue;
+      final current = item['currentTrack'];
+      if (current is! Map) return null;
+      final artist = (current['artist'] ?? '').toString().trim();
+      final title = (current['title'] ?? '').toString().trim();
+      if (title.isEmpty) return null;
+      final image = (current['image'] ?? '').toString().trim();
+      final coverUrl = Uri.tryParse(image);
+      return StationLiveMetadata(
+        artist: artist,
+        title: title,
+        cover: coverUrl != null &&
+            (coverUrl.scheme == 'https' || coverUrl.scheme == 'http')
+            ? image : null,
+      );
+    }
+    return null;
+  }
+
+  static const _successTtl = Duration(seconds: 45);
   static const _failureTtl = Duration(minutes: 5);
 
   static Future<T> _withSlot<T>(Future<T> Function() job) async {
@@ -101,11 +145,11 @@ class StationMetadataLookup {
       final response = await client.send(request)
           .timeout(const Duration(seconds: 4));
       if (response.statusCode != 200 ||
-          (response.contentLength ?? 0) > 128 * 1024) return null;
+          (response.contentLength ?? 0) > 512 * 1024) return null;
       final bytes = <int>[];
       await for (final chunk in response.stream
           .timeout(const Duration(seconds: 4))) {
-        if (bytes.length + chunk.length > 128 * 1024) return null;
+        if (bytes.length + chunk.length > 512 * 1024) return null;
         bytes.addAll(chunk);
       }
       return jsonDecode(utf8.decode(bytes));
@@ -117,7 +161,8 @@ class StationMetadataLookup {
   }
 
   static Future<StationLiveMetadata?> lookup(RadioStation station) async {
-    final uri = _statusUri(station);
+    final novaCode = novaCodeForStation(station);
+    final uri = novaCode == null ? _statusUri(station) : Uri.parse(novaUrl);
     if (uri == null) return null;
     final key = uri.toString();
     final now = DateTime.now();
@@ -133,6 +178,7 @@ class StationMetadataLookup {
       });
       if (_cache.length > 150) _cache.remove(_cache.keys.first);
     }
-    return _parse(await entry.pending, station.url);
+    final data = await entry.pending;
+    return novaCode == null ? _parse(data, station.url) : parseNovaForTest(data, novaCode);
   }
 }
