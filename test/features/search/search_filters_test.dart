@@ -171,6 +171,13 @@ void main() {
           closeTo(allLeftBefore, 1.0));
       expect(c.read(searchScopeProvider), SearchScope.soulseek);
       expect(find.byType(ChoiceChip), findsNothing);
+      // Soulseek has no result-type chips, but its account card must not
+      // touch the scope selector: every tab reserves a 16px content gutter.
+      expect(
+        tester.getBottomLeft(find.byType(SearchFilterChips)).dy -
+            tester.getBottomLeft(find.byType(SegmentedButton<SearchScope>)).dy,
+        closeTo(16, 0.1),
+      );
       await tester.ensureVisible(find.text('All'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('All'));
@@ -181,6 +188,13 @@ void main() {
       expect(c.read(searchScopeProvider), SearchScope.library);
       expect(c.read(searchFilterProvider), {SearchCategory.lyrics});
       expect(find.widgetWithText(ChoiceChip, 'Lyrics'), findsOneWidget);
+      expect(find.text('Choose a result type'), findsNothing);
+      expect(find.text('This category searches your library'), findsNothing);
+      expect(
+        tester.getBottomLeft(find.byType(SearchFilterChips)).dy -
+            tester.getBottomLeft(find.byType(ListView)).dy,
+        closeTo(16, 0.1),
+      );
       expect(tester.takeException(), isNull);
     },
   );
