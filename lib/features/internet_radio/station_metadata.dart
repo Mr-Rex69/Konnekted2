@@ -87,6 +87,11 @@ class StationMetadataLookup {
         );
   }
 
+  /// Pure parser exposed for focused regression tests (never fetches audio).
+  static StationLiveMetadata? parseIcecastStatusForTest(
+    Object? data, String streamUrl,
+  ) => _parse(data, streamUrl);
+
   static Future<Object?> _fetch(Uri uri) async {
     final client = http.Client();
     try {
