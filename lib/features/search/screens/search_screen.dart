@@ -207,24 +207,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
             // Poweramp-style horizontal chip shelf.
-            Padding(
-              padding: EdgeInsets.only(
-                  bottom: scope == SearchScope.soulseek ? 0 : 8),
-              child: Builder(
-                builder: (context) {
-                  final counts = resultsAsync?.value?.counts;
-                  return SearchFilterChips(
-                    enabled: enabled,
-                    scope: scope,
-                    onScopeChanged: (value) =>
-                        ref.read(searchScopeProvider.notifier).select(value),
-                    onToggle: (cat) =>
-                        ref.read(searchFilterProvider.notifier).toggle(cat),
-                    counts: counts,
-                    query: repoQuery,
-                  );
-                },
-              ),
+            Builder(
+              builder: (context) {
+                final counts = resultsAsync?.value?.counts;
+                return SearchFilterChips(
+                  enabled: enabled,
+                  scope: scope,
+                  onScopeChanged: (value) =>
+                      ref.read(searchScopeProvider.notifier).select(value),
+                  onToggle: (cat) =>
+                      ref.read(searchFilterProvider.notifier).toggle(cat),
+                  counts: counts,
+                  query: repoQuery,
+                );
+              },
             ),
             Expanded(
               child: scope == SearchScope.soulseek
