@@ -19,6 +19,11 @@ class PlaylistHeroCover {
 /// selection; force-closing and relaunching changes the artwork arrangement.
 final int _playlistHeroSessionSeed = math.Random().nextInt(0x7fffffff);
 
+/// Sized against display height, not screen width, so the artwork never
+/// dominates more than roughly a third of a phone's vertical viewport.
+double playlistHeroHeightForScreen(double height) =>
+    math.min(height * .34, 370.0);
+
 List<PlaylistHeroCover> playlistHeroCoversForSession(
   String playlistId,
   Iterable<PlaylistHeroCover> candidates, {
@@ -71,7 +76,7 @@ class PlaylistHeroHeader extends StatelessWidget {
     final width = MediaQuery.sizeOf(context).width;
     // The hero occupies at most ~34% of the screen, including the status
     // bar. Its image extends behind system chrome rather than starting below it.
-    final height = math.min(MediaQuery.sizeOf(context).height * .34, 370.0);
+    final height = playlistHeroHeightForScreen(MediaQuery.sizeOf(context).height);
     final sampled = playlistHeroCoversForSession(playlistId, covers);
     final fallback = PlaylistDiagonalCollage(
       key: ValueKey('playlist-art:$playlistId'),
