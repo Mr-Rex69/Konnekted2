@@ -439,6 +439,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                                     key: _miniPlayerKey,
                                     artworkKey: _miniArtworkKey,
                                     onOpen: () => unawaited(_openPlayer()),
+                                    onPullUpStart: _pullPlayerStart,
+                                    onPullUpUpdate: (dy) => _pull?.dragBy(dy),
+                                    onPullUpEnd: _pullPlayerEnd,
                                   )
                                 : KonnektedMiniPlayer(
                               key: _miniPlayerKey,
