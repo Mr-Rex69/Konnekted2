@@ -1235,7 +1235,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 ),
                 if (_spaceLayerMounted)
                   Positioned.fill(
-                    child: SpaceStardustReveal(
+                    child: SpaceCoverBloomReveal(
+                      coverRect: _spaceCoverRect,
+                      canvasMode: _spaceCanvasMode,
+                      surfaceColor: colors.last,
                       progress: _spaceProgress,
                       child: Stack(
                         fit: StackFit.expand,
