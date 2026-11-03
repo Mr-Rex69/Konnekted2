@@ -9,7 +9,7 @@ import 'package:flick/features/playlist_links/playlist_unmatched_downloader.dart
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/songs_provider.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
-import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/features/konnekted/library/playlist_hero_header.dart';
 import 'package:flick/features/spotify/provider_playlist_track_tile.dart';
 import 'package:flick/widgets/lokal/lokal_choice_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -128,31 +128,30 @@ RemotePlaylistEntry providerPlaylistDownloadEntry(
   );
 }
 
-/// Matches the local playlist artwork/title presentation for provider lists.
-/// Duration is shown only if every cached track has duration metadata.
+/// The same responsive hero used by local playlists. Provider covers take
+/// precedence; otherwise track thumbnails form the animated fallback.
 class ProviderPlaylistHeader extends StatelessWidget {
   const ProviderPlaylistHeader({
     super.key,
     required this.title,
     required this.tracks,
+    required this.playlistId,
     this.coverUrl,
     this.owner,
   });
 
   final String title;
+  final String playlistId;
   final String? coverUrl;
   final String? owner;
   final List<LokalDiscoveryTrack> tracks;
 
   @override
   Widget build(BuildContext context) {
-    final color = context.lokal;
-    final width = MediaQuery.sizeOf(context).width;
-    final cover = coverUrl?.trim();
-    final hasCover = cover != null && cover.startsWith('https://');
-    final hasCompleteDurations =
-        tracks.isNotEmpty && tracks.every((track) => track.duration != null);
-    final total = hasCompleteDurations
+    final knownDurations =
+        tracks.isNotEmpty &&
+        tracks.every((track) => track.duration != null);
+    final total = knownDurations
         ? tracks.fold<Duration>(
             Duration.zero,
             (sum, track) => sum + track.duration!,
@@ -162,59 +161,17 @@ class ProviderPlaylistHeader extends StatelessWidget {
     final durationLabel = minutes >= 60
         ? '${minutes ~/ 60} hr ${minutes % 60} min'
         : '$minutes min';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
-      child: Column(
-        children: [
-          SizedBox.square(
-            dimension: (width * .62).clamp(150.0, 300.0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: hasCover
-                  ? Image.network(
-                      cover!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => ColoredBox(
-                        color: color.surface2,
-                        child: Icon(Icons.library_music_rounded,
-                            size: 64, color: color.muted),
-                      ),
-                    )
-                  : ColoredBox(
-                      color: color.surface2,
-                      child: Icon(Icons.library_music_rounded,
-                          size: 64, color: color.muted),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: color.text,
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (owner != null && owner!.trim().isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              owner!,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: color.muted),
-            ),
-          ],
-          const SizedBox(height: 4),
-          Text(
-            '${tracks.length} songs'
-            '${hasCompleteDurations ? ' · $durationLabel' : ''}',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: color.muted),
-          ),
-        ],
-      ),
+    return PlaylistHeroHeader(
+      playlistId: playlistId,
+      title: title,
+      owner: owner,
+      metadata: '${tracks.length} songs'
+          '${knownDurations ? ' · $durationLabel' : ''}',
+      coverUrl: coverUrl,
+      covers: [
+        for (final track in tracks)
+          PlaylistHeroCover(imagePath: track.artworkUrl),
+      ],
     );
   }
 }
