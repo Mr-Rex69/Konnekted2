@@ -419,11 +419,10 @@ class _SpotifyPlaylistDetailState
                 TextButton(onPressed: () => unawaited(_refresh()),
                     child: const Text('Retry')),
               ]))
-            : _tracks.isEmpty
-                ? const Center(child: Text('No playable tracks in this playlist.'))
-                : ProviderPlaylistTrackBrowser(
+            : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
                     header: ProviderPlaylistHeader(
+                      playlistId: 'spotify:${widget.accountId}:${widget.playlist.id}',
                       title: widget.playlist.name,
                       coverUrl: widget.playlist.imageUrl,
                       owner: widget.playlist.owner,
