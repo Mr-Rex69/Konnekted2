@@ -552,33 +552,40 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
         InkWell(
           key: const ValueKey('radio-player-song-title'),
           onTap: hasSong
-              ? () => _find(hasArtist ? performer + ' ' + name : name)
+              ? () => unawaited(
+                  _openCurrentAlbum(name, hasArtist ? performer : ''),
+                )
               : () => _showMore(station, null, null),
-          child: Row(children: [
-            Expanded(child: Text(name,
-              maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: FullPlayerVisuals.primaryText,
-                fontSize: compact ? 23 : 29,
-                fontWeight: FontWeight.w700),
-            )),
-            if (hasSong) const Icon(Icons.north_east_rounded,
-              color: FullPlayerVisuals.secondaryText, size: 17),
-          ]),
+          borderRadius: BorderRadius.circular(8),
+          child: Text(
+            name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: FullPlayerVisuals.primaryText,
+              fontSize: compact ? 23 : 29,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
         const SizedBox(height: 5),
         InkWell(
           key: const ValueKey('radio-player-song-artist'),
-          onTap: hasArtist ? () => _find(performer) : null,
-          child: Row(children: [
-            Expanded(child: Text(performer,
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: FullPlayerVisuals.secondaryText, fontSize: 16),
-            )),
-            if (hasArtist) const Icon(Icons.north_east_rounded,
-              color: FullPlayerVisuals.secondaryText, size: 15),
-          ]),
+          onTap: hasArtist
+              ? () => unawaited(
+                  openLokalArtist(context, name: performer),
+                )
+              : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Text(
+            performer,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FullPlayerVisuals.secondaryText,
+              fontSize: 16,
+            ),
+          ),
         ),
         const SizedBox(height: 10),
         Row(children: [
@@ -787,20 +794,54 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                           icon: const Icon(Icons.chevron_left_rounded,
                             color: FullPlayerVisuals.primaryText, size: 27),
                         ),
-                        Expanded(child: Center(
-                          child: TextButton.icon(
-                            onPressed: () => unawaited(
-                                openAndroidOutputChooser(context)),
-                            icon: const Icon(Icons.speaker_rounded,
-                              size: 17,
-                              color: FullPlayerVisuals.primaryText),
-                            label: const Text('AUDIO OUTPUT',
-                              style: TextStyle(fontSize: 12,
-                                color: FullPlayerVisuals.primaryText,
-                                letterSpacing: 1.0,
-                                fontWeight: FontWeight.w600)),
+                        Expanded(
+                          child: Center(
+                            child: ValueListenableBuilder<AndroidPlaybackDeviceInfo>(
+                              valueListenable: AndroidAudioDeviceService
+                                  .instance.deviceInfoNotifier,
+                              builder: (context, output, _) => InkWell(
+                                onTap: () => unawaited(_chooseOutput()),
+                                borderRadius: BorderRadius.circular(24),
+                                child: Container(
+                                  constraints: const BoxConstraints(maxWidth: 204),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: .22),
+                                    ),
+                                    color: Colors.white.withValues(alpha: .08),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        radioOutputRouteIcon(output),
+                                        size: 17,
+                                        color: FullPlayerVisuals.primaryText,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          radioOutputRouteLabel(output),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: FullPlayerVisuals.primaryText,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        )),
+                        ),
                         IconButton(
                           key: const ValueKey('radio-player-more'),
                           tooltip: 'More options',
