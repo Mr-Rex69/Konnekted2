@@ -19,7 +19,7 @@ Song _song(String id) => Song(
 );
 
 void main() {
-  testWidgets('Library shows recently played as a horizontal shelf below More', (
+  testWidgets('Library shows full collection, subtitle and route below More', (
     tester,
   ) async {
     tester.view
@@ -28,12 +28,13 @@ void main() {
     addTearDown(tester.view.reset);
 
     final opened = <KonnektedDestination>[];
+    final library = [_song('library'), _song('library2')];
     final history = [_song('r1'), _song('r2')];
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           konnektedLibraryProvider.overrideWithValue(
-            AsyncData([_song('library')]),
+            AsyncData(library),
           ),
           konnektedRecentSongsProvider.overrideWith(
             (ref) => Stream.value(history),
@@ -56,22 +57,24 @@ void main() {
     expect(find.byType(LokalNavRow), findsNWidgets(4));
     expect(find.byIcon(Icons.history_rounded), findsNothing);
 
-    final recentShelf = find.byWidgetPredicate(
+    final libraryShelf = find.byWidgetPredicate(
       (widget) =>
-          widget is KonnektedSongShelf && widget.title == 'Recently played',
+          widget is KonnektedSongShelf && widget.title == 'Library',
     );
     await tester.scrollUntilVisible(
-      recentShelf,
+      libraryShelf,
       180,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Recently played'), findsOneWidget);
-    expect(find.text('Track r1'), findsOneWidget);
-    expect(find.text('Track r2'), findsOneWidget);
+    expect(find.text('Library'), findsNWidgets(2));
+    expect(find.text('Track library'), findsOneWidget);
+    expect(find.text('Track library2'), findsOneWidget);
+    expect(find.text('Track r1'), findsNothing);
+    expect(find.text('2 songs · 6 min'), findsOneWidget);
     final horizontalList = tester.widget<ListView>(
-      find.descendant(of: recentShelf, matching: find.byType(ListView)),
+      find.descendant(of: libraryShelf, matching: find.byType(ListView)),
     );
     expect(horizontalList.scrollDirection, Axis.horizontal);
 
@@ -90,15 +93,15 @@ void main() {
     );
 
     await tester.scrollUntilVisible(
-      recentShelf,
+      libraryShelf,
       -180,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
     await tester.tap(
-      find.descendant(of: recentShelf, matching: find.text('See all')),
+      find.descendant(of: libraryShelf, matching: find.text('See all')),
     );
-    expect(opened, [KonnektedDestination.recentlyPlayed]);
+    expect(opened, [KonnektedDestination.songs]);
     expect(tester.takeException(), isNull);
   });
 }
