@@ -44,6 +44,29 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
   void initState() {
     super.initState();
     _queue.addListener(_queueChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !ref.read(radioPlayerProvider.notifier)
+              .consumeStationQueueRequest()) return;
+      // An explicit queue tap should reveal the queue after the normal
+      // mini→full spring settles, not compete with the artwork morph.
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation == null ||
+          animation.status == AnimationStatus.completed) {
+        _setQueueOpen(true);
+        return;
+      }
+      late AnimationStatusListener listener;
+      listener = (status) {
+        if (status != AnimationStatus.completed &&
+            status != AnimationStatus.dismissed) return;
+        animation.removeStatusListener(listener);
+        if (mounted && status == AnimationStatus.completed) {
+          _setQueueOpen(true);
+        }
+      };
+      animation.addStatusListener(listener);
+    });
   }
 
   void _queueChanged() {
