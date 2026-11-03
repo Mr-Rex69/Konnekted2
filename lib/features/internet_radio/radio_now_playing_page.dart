@@ -323,7 +323,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
       AnimatedBuilder(
         animation: _queueController,
         builder: (context, _) {
-          final p = _queueController.value.clamp(0.0, 1.0);
+          final p = _queueController.value.clamp(0.0, 1.0).toDouble();
           if (p == 0 && !_queue.isOpen) return const SizedBox.shrink();
           return Positioned.fill(child: IgnorePointer(
             ignoring: !_queue.isOpen,
