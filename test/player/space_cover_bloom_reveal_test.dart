@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/player/widgets/space_cover_bloom_reveal.dart';
+import 'package:flick/features/player/widgets/player_panel_stage.dart';
 
 void main() {
   const viewport = Size(430, 930);
@@ -46,6 +47,24 @@ void main() {
     expect(p2.contains(artwork.center), isFalse);
     expect(p1.contains(const Offset(28, 179)), isTrue);
     expect(p2.contains(const Offset(28, 179)), isTrue);
+  });
+
+  test('Space uses the real expanded player-panel layout from Lyrics', () {
+    // These values match PlayerPanelStage's uncompressed artwork target,
+    // rather than the 52px thumbnail shown while Lyrics is open.
+    final expanded = playerPanelRestArtworkRect(
+      const Size(384, 560),
+      artGap: 17,
+      infoReserve: 72,
+    );
+    expect(expanded, const Rect.fromLTWH(0, 40.5, 384, 384));
+
+    final compact = playerPanelRestArtworkRect(
+      const Size(384, 400),
+      artGap: 10,
+      infoReserve: 72,
+    );
+    expect(compact, const Rect.fromLTWH(36, 0, 312, 312));
   });
 
   test('Fullcover keeps its square full-width poster edge', () {
