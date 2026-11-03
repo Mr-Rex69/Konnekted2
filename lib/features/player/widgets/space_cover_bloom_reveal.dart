@@ -3,12 +3,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-/// Reveals Space as a soft frosted surface lifting from the bottom of the
-/// player. It uses the already-painted album palette / ambient mesh below
-/// rather than adding a dark layer that appears to sink into the controls.
+/// Space expands outward from the actual artwork, as in the original cover
+/// reveal. The surrounding player gains a softer, slightly more luminous
+/// version of its existing ambient blur; nothing travels bottom-to-top.
 ///
-/// The current cover is an exact, rounded cutout: its underlying still art,
-/// video or Canvas continues to render normally through the transition.
+/// The cover itself remains untouched behind an exact, fixed-radius cutout.
+/// Canvas/video surfaces and lyrics remain mounted across both directions.
 class SpaceCoverBloomReveal extends StatelessWidget {
   const SpaceCoverBloomReveal({
     super.key,
@@ -27,9 +27,8 @@ class SpaceCoverBloomReveal extends StatelessWidget {
   final bool canvasMode;
   final Color surfaceColor;
 
-  // A static filter over the *already blurred* player backdrop. Only the
-  // clipping wave changes with progress; sigma is never animated or decoded
-  // from the album art on each frame. Kept modest for high-refresh devices.
+  // The sigma is constant. We animate only the clipping geometry, not the
+  // blur kernel, and never decode or reparent the artwork or Canvas texture.
   static final ui.ImageFilter _frost = ui.ImageFilter.blur(
     sigmaX: 8,
     sigmaY: 8,
@@ -46,52 +45,50 @@ class SpaceCoverBloomReveal extends StatelessWidget {
             canvasMode: canvasMode,
           );
           final radius = canvasMode ? 0.0 : coverCornerRadius;
+
+          // A neutral, extremely translucent lift rather than a black
+          // gradient. The existing artwork mesh supplies the hue and depth.
+          final frostTint = Color.lerp(surfaceColor, Colors.white, .78)!
+              .withValues(alpha: .045);
+
           return Stack(
             fit: StackFit.expand,
             children: [
               IgnorePointer(
                 child: ClipPath(
-                  clipper: _SpaceRisingFrostClipper(
+                  clipper: _SpaceBloomFrostClipper(
                     progress: progress,
                     cover: cover,
                     cornerRadius: radius,
                   ),
-                  // Blur only where the ascending wave has passed. The
-                  // original album-derived mesh stays mounted and animating
-                  // underneath; no second artwork decode is necessary.
                   child: BackdropFilter(
                     filter: _frost,
-                    child: CustomPaint(
-                      painter: _SpaceRisingHighlight(progress),
-                      child: ColoredBox(
-                        color: Color.lerp(
-                          surfaceColor,
-                          Colors.white,
-                          .84,
-                        )!.withValues(alpha: .035),
-                      ),
+                    child: ColoredBox(color: frostTint),
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _SpaceBloomGlint(
+                      progress: progress,
+                      cover: cover,
+                      cornerRadius: radius,
                     ),
                   ),
                 ),
               ),
               IgnorePointer(
                 child: ClipPath(
-                  clipper: _SpaceRisingLyricsClipper(progress),
+                  clipper: _SpaceBloomLyricsClipper(progress, cover),
                   child: FadeTransition(
                     opacity: CurvedAnimation(
                       parent: progress,
                       curve: const Interval(
-                        .25, .80, curve: Curves.easeInOutCubic,
+                        .44, .85, curve: Curves.easeInOutCubic,
                       ),
                     ),
-                    child: AnimatedBuilder(
-                      animation: progress,
-                      child: child,
-                      builder: (context, lyric) => Transform.translate(
-                        offset: Offset(0, 12 * (1 - progress.value)),
-                        child: lyric,
-                      ),
-                    ),
+                    child: child,
                   ),
                 ),
               ),
@@ -101,9 +98,9 @@ class SpaceCoverBloomReveal extends StatelessWidget {
       );
 }
 
-/// Same cover anchor for the normal player, Fullcover banner and Canvas.
-/// Canvas is edge-to-edge; protect its upper visual plane instead of creating
-/// an artificial inset rounded rectangle across the video.
+/// The normal player supplies its measured square; Fullcover supplies the
+/// true poster banner. Canvas stays edge-to-edge without an invented rounded
+/// rectangle over its upper visual plane.
 @visibleForTesting
 Rect spaceCoverRevealAnchor(
   Size size, {
@@ -112,12 +109,7 @@ Rect spaceCoverRevealAnchor(
 }) {
   if (size.isEmpty) return Rect.zero;
   if (canvasMode) {
-    return Rect.fromLTWH(
-      0,
-      0,
-      size.width,
-      size.height * .64,
-    );
+    return Rect.fromLTWH(0, 0, size.width, size.height * .64);
   }
   if (coverRect != null &&
       coverRect.isFinite &&
@@ -138,59 +130,52 @@ Rect spaceCoverRevealAnchor(
   );
 }
 
-/// The frosted region enters from BELOW the playback controls and rises above
-/// the cover. This is the opposite of the old bottom-heavy dark expansion.
+/// A symmetrical outward expansion, NEVER a vertically travelling wave.
+/// All edges move away from the cover at once, with a gentle eased spread.
 @visibleForTesting
-double spaceRisingBlurFront(Size size, double progress) {
-  if (size.isEmpty) return 0;
-  final t = Curves.easeInOutCubic.transform(
+Rect spaceCoverBloomBounds(Size size, Rect cover, double progress) {
+  if (size.isEmpty) return Rect.zero;
+  final p = Curves.easeInOutCubic.transform(
     progress.clamp(0.0, 1.0),
   );
-  return ui.lerpDouble(size.height * 1.04, -size.height * .12, t)!;
+  final target = Rect.fromLTWH(
+    -size.width * .04,
+    -size.height * .04,
+    size.width * 1.08,
+    size.height * 1.08,
+  );
+  return Rect.lerp(cover.inflate(2), target, p)!;
 }
 
-/// Tests and both clippers use the same wave path so lyrics and frost advance
-/// upward together. The front is deliberately slightly curved, not a hard
-/// horizontal bar across the control row.
-Path _spaceRisingWave(Size size, double progress) {
-  final front = spaceRisingBlurFront(size, progress);
-  if (front >= size.height + 12 || size.isEmpty) return Path();
-  final overscan = size.width * .08;
-  return Path()
-    ..moveTo(-overscan, front + 9)
-    ..quadraticBezierTo(
-      size.width * .5,
-      front - 14,
-      size.width + overscan,
-      front + 9,
-    )
-    ..lineTo(size.width + overscan, size.height + 24)
-    ..lineTo(-overscan, size.height + 24)
-    ..close();
-}
-
-/// Exact transparency around a normal 20px-radius cover. During the entire
-/// transition the cutout is unchanged: previous 20→7px corner interpolation
-/// exposed four conspicuous wedges around the album art.
+/// The frosted area grows OUTSIDE the current cover's unchanged rounded
+/// outline. Matching 20px in normal mode avoids the former corner wedges.
 @visibleForTesting
-Path spaceRisingFrostClip(
+Path spaceCoverBloomFrostClip(
   Size size,
   Rect cover,
   double progress, {
   double cornerRadius = 20,
 }) {
-  final wave = _spaceRisingWave(size, progress);
-  if (wave.getBounds().isEmpty) return wave;
-  final cutout = Path()
+  if (size.isEmpty || progress <= 0) return Path();
+  final outer = spaceCoverBloomBounds(size, cover, progress);
+  final expansion = Curves.easeInOutCubic.transform(
+    progress.clamp(0.0, 1.0),
+  );
+  final outerPath = Path()
+    ..addRRect(RRect.fromRectAndRadius(
+      outer,
+      Radius.circular(cornerRadius * (1 - expansion)),
+    ));
+  final innerPath = Path()
     ..addRRect(RRect.fromRectAndRadius(
       cover,
       Radius.circular(cornerRadius),
     ));
-  return Path.combine(PathOperation.difference, wave, cutout);
+  return Path.combine(PathOperation.difference, outerPath, innerPath);
 }
 
-class _SpaceRisingFrostClipper extends CustomClipper<Path> {
-  _SpaceRisingFrostClipper({
+class _SpaceBloomFrostClipper extends CustomClipper<Path> {
+  _SpaceBloomFrostClipper({
     required this.progress,
     required this.cover,
     required this.cornerRadius,
@@ -201,7 +186,7 @@ class _SpaceRisingFrostClipper extends CustomClipper<Path> {
   final double cornerRadius;
 
   @override
-  Path getClip(Size size) => spaceRisingFrostClip(
+  Path getClip(Size size) => spaceCoverBloomFrostClip(
         size,
         cover,
         progress.value,
@@ -209,57 +194,70 @@ class _SpaceRisingFrostClipper extends CustomClipper<Path> {
       );
 
   @override
-  bool shouldReclip(covariant _SpaceRisingFrostClipper oldClipper) =>
-      oldClipper.progress != progress ||
-      oldClipper.cover != cover ||
-      oldClipper.cornerRadius != cornerRadius;
+  bool shouldReclip(covariant _SpaceBloomFrostClipper old) =>
+      old.progress != progress ||
+      old.cover != cover ||
+      old.cornerRadius != cornerRadius;
 }
 
-class _SpaceRisingLyricsClipper extends CustomClipper<Path> {
-  _SpaceRisingLyricsClipper(this.progress) : super(reclip: progress);
+class _SpaceBloomLyricsClipper extends CustomClipper<Path> {
+  _SpaceBloomLyricsClipper(this.progress, this.cover)
+      : super(reclip: progress);
 
   final Animation<double> progress;
+  final Rect cover;
 
   @override
-  Path getClip(Size size) => _spaceRisingWave(size, progress.value);
+  Path getClip(Size size) {
+    final p = progress.value.clamp(0.0, 1.0);
+    return Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        spaceCoverBloomBounds(size, cover, p),
+        Radius.circular(20 * (1 - p)),
+      ));
+  }
 
   @override
-  bool shouldReclip(covariant _SpaceRisingLyricsClipper oldClipper) =>
-      oldClipper.progress != progress;
+  bool shouldReclip(covariant _SpaceBloomLyricsClipper old) =>
+      old.progress != progress || old.cover != cover;
 }
 
-/// A very restrained soft highlight on the ascending leading edge. Unlike
-/// the previous gradient, this does NOT accumulate dark opacity at the bottom
-/// of the screen or impose a different color palette on the blurred mesh.
-class _SpaceRisingHighlight extends CustomPainter {
-  _SpaceRisingHighlight(this.progress) : super(repaint: progress);
+/// A faint outline only while the reveal grows, not a persistent rim or a
+/// darkened layer. It conveys the expansion without changing its direction.
+class _SpaceBloomGlint extends CustomPainter {
+  _SpaceBloomGlint({
+    required this.progress,
+    required this.cover,
+    required this.cornerRadius,
+  }) : super(repaint: progress);
 
   final Animation<double> progress;
+  final Rect cover;
+  final double cornerRadius;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final p = progress.value.clamp(0.0, 1.0);
-    if (p <= .005 || p >= .995) return;
-    final top = spaceRisingBlurFront(size, p);
-    if (top < -60 || top > size.height + 60) return;
-    final rect = Rect.fromLTWH(0, top - 36, size.width, 100);
-    canvas.drawRect(
-      rect,
+    if (p <= .005 || p >= .75) return;
+    final envelope = math.sin(math.pi * (p / .75));
+    if (envelope <= .001) return;
+    final bounds = spaceCoverBloomBounds(size, cover, p);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        bounds,
+        Radius.circular(cornerRadius * (1 - p)),
+      ),
       Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0x00FFFFFF),
-            Color(0x12FFFFFF),
-            Color(0x00FFFFFF),
-          ],
-        ).createShader(rect),
+        ..color = Colors.white.withValues(alpha: .075 * envelope)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
     );
   }
 
   @override
-  bool shouldRepaint(covariant _SpaceRisingHighlight oldDelegate) =>
-      oldDelegate.progress != progress;
+  bool shouldRepaint(covariant _SpaceBloomGlint old) =>
+      old.progress != progress ||
+      old.cover != cover ||
+      old.cornerRadius != cornerRadius;
 }
