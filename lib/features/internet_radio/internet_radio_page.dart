@@ -101,6 +101,7 @@ class _InternetRadioPageState extends ConsumerState<InternetRadioPage> {
         offset: reset ? 0 : _nextOffset,
       );
       if (!mounted || generation != _generation) return;
+      unawaited(ref.read(stationFavoritesProvider.notifier).adoptLegacy(result.stations));
       final seen = <String>{for (final s in reset ? const <RadioStation>[] : _stations) s.id};
       setState(() {
         _stations = [
