@@ -46,6 +46,7 @@ jobs:
             lib/features/internet_radio/station_metadata.dart \
             lib/features/internet_radio/station_favorites.dart \
             lib/features/internet_radio/internet_radio_page.dart \
+            lib/features/internet_radio/radio_browse_selection.dart \
             lib/features/internet_radio/radio_providers.dart \
             lib/features/internet_radio/radio_now_playing_page.dart \
             lib/features/player/widgets/player_panel_stage.dart \
