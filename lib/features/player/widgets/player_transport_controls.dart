@@ -110,29 +110,14 @@ class _PlayerTransportControlsState extends ConsumerState<PlayerTransportControl
             ? SizedBox.square(
                 key: const ValueKey('apple-play-pause'),
                 dimension: lerpDouble(62, 44, l)!,
-                child: AnimatedSwitcher(
-                  // Only animate the glyph, never introduce a button box.
-                  // A short fade/scale reads as a play/pause morph without
-                  // running a continuous animation between interactions.
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 240),
-                  reverseDuration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(
-                      scale: Tween<double>(begin: .88, end: 1).animate(animation),
-                      child: child,
-                    ),
-                  ),
-                  child: _AppleTransportGlyph(
-                    key: ValueKey(widget.playing ? 'apple-pause' : 'apple-play'),
-                    glyph: widget.playing ? _AppleGlyph.pause : _AppleGlyph.play,
-                    size: lerpDouble(62, 44, l)!,
+                child: Center(
+                  // Share the boxed control's path interpolation, not a
+                  // cross-fade of two static icons. Keep the unboxed hit area
+                  // and primary-text color unchanged.
+                  child: AnimatedIcon(
+                    icon: AnimatedIcons.play_pause,
+                    progress: _icon,
+                    size: lerpDouble(62, 44, l),
                     color: FullPlayerVisuals.primaryText,
                   ),
                 ),
