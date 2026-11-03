@@ -575,6 +575,7 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
   const KonnektedRadioMiniPlayer({
     super.key,
     required this.onOpen,
+    required this.onQueue,
     this.artworkKey,
     this.onPullUpStart,
     this.onPullUpUpdate,
@@ -582,6 +583,7 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
   });
 
   final VoidCallback onOpen;
+  final VoidCallback onQueue;
   final Key? artworkKey;
   final VoidCallback? onPullUpStart;
   final ValueChanged<double>? onPullUpUpdate;
@@ -592,79 +594,40 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
     final radio = ref.watch(radioPlayerProvider);
     final station = radio.station;
     if (station == null) return const SizedBox.shrink();
-    final t = context.lokal;
     final title = radio.trackMetadata?.title ??
         radio.nowPlaying ?? station.title;
-    final artist = radio.trackMetadata?.artist.isNotEmpty == true
+    final performer = radio.trackMetadata?.artist.isNotEmpty == true
         ? radio.trackMetadata!.artist : station.title;
-    final image = radio.trackMetadata?.cover ?? station.icon;
-    final collapsed = KonnektedMiniPlayerScope.collapsedOf(context);
-    final body = InkWell(
-        onTap: onOpen,
-        customBorder: const StadiumBorder(),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(7, 5, 7, 5),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(9),
-                child: SizedBox.square(
-                  key: artworkKey,
-                  dimension: 42,
-                  child: image == null
-                      ? Icon(Icons.radio_rounded, color: t.accent)
-                      : Image.network(image, fit: BoxFit.cover,
-                          cacheWidth: 128,
-                          errorBuilder: (_, _, _) =>
-                              Icon(Icons.radio_rounded, color: t.accent)),
-                ),
-              ),
-              if (!collapsed) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13,
-                          fontWeight: FontWeight.w600, color: t.text)),
-                      Text(
-                        artist + ' · ' +
-                            (station.lossless ? 'Lossless' :
-                              station.bitrate.toString() + ' kbps'),
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: t.muted),
-                      ),
-                    ],
-                  ),
-                ),
-              ] else
-                const Spacer(),
-              IconButton(
-                tooltip: radio.playing ? 'Pause station' : 'Play station',
-                onPressed: () => unawaited(
-                    ref.read(radioPlayerProvider.notifier).toggle()),
-                icon: radio.loading
-                    ? const SizedBox.square(dimension: 19,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : Icon(radio.playing ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded, color: t.text),
-              ),
-            ],
-          ),
-        ),
-      );
-    if (onPullUpStart == null) return body;
-    return _PullUp(
-      onStart: onPullUpStart!,
-      onUpdate: onPullUpUpdate,
-      onEnd: onPullUpEnd,
-      onPrevious: () => unawaited(
-        ref.read(radioPlayerProvider.notifier).previousStation()),
+    final quality = station.lossless
+        ? 'Lossless' : station.bitrate.toString() + ' kbps';
+    // Exactly the same mini-player component, artwork Hero, hit regions,
+    // marquee, next button and upward pull used by ordinary songs.
+    // Only its callbacks and track model are adapted to a live station.
+    final display = Song(
+      id: 'radio:' + station.id,
+      title: title,
+      artist: performer + ' · ' + quality,
+      albumArt: radio.trackMetadata?.cover ?? station.icon,
+      fileType: 'Stream',
+      duration: Duration.zero,
+    );
+    return KonnektedMiniPlayerContent(
+      song: display,
+      artworkKey: artworkKey,
+      isPlaying: radio.playing,
+      onOpen: onOpen,
+      onQueue: onQueue,
+      onPullUpStart: onPullUpStart,
+      onPullUpUpdate: onPullUpUpdate,
+      onPullUpEnd: onPullUpEnd,
+      onPlayPause: () => unawaited(
+        ref.read(radioPlayerProvider.notifier).toggle()),
       onNext: () => unawaited(
         ref.read(radioPlayerProvider.notifier).nextStation()),
-      child: body,
+      onPrevious: () => unawaited(
+        ref.read(radioPlayerProvider.notifier).previousStation()),
+      // Live broadcasts are not seekable; never invent track progress.
+      progress: const SizedBox.shrink(),
     );
   }
 }
