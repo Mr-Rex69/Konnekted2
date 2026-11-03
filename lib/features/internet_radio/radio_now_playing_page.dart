@@ -125,7 +125,9 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
           Navigator.pop(sheetContext);
           action();
         }
-        return SafeArea(child: ListView(
+        return Theme(
+          data: ThemeData.dark(useMaterial3: true),
+          child: SafeArea(child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(10, 0, 10, 18),
           children: [
@@ -191,7 +193,8 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
               }),
             ),
           ],
-        ));
+        )),
+        );
       },
     );
   }
