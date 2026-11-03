@@ -303,7 +303,10 @@ class SoulseekService extends ChangeNotifier {
       if (data['loggedIn'] != true) throw StateError('Soulseek login was rejected.');
       connected = true;
       shareEnabled = false;
-      if (username != user) _searchCache.clear();
+      if (username != user) {
+        _searchCache.clear();
+        _searchRequests.clear();
+      }
       username = user;
       sharedFiles = (data['sharedFiles'] as num?)?.toInt() ?? 0;
       _ticker?.cancel();
@@ -339,6 +342,7 @@ class SoulseekService extends ChangeNotifier {
       shareEnabled = false;
       sharePreference = false;
       _searchCache.clear();
+      _searchRequests.clear();
       username = '';
       transfers = const [];
       uploads = const [];
