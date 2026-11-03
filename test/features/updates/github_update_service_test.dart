@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-const root = 'https://github.com/lokal-music/lokal-mobile/releases/download';
+const root = 'https://github.com/lokal-music/Mobile/releases/download';
 final hash = List.filled(64, 'a').join();
 Map<String, Object?> release(
   String version, {
@@ -39,7 +39,7 @@ void main() {
       requested.add(request.url);
       if (request.url.host == 'api.github.com') {
         if (request.url.path !=
-            '/repos/lokal-music/lokal-mobile/releases/latest') {
+            '/repos/lokal-music/Mobile/releases/latest') {
           return http.Response('Wrong repository path', 404);
         }
         return http.Response(jsonEncode(release('2.0.0')), 200);
@@ -78,7 +78,7 @@ void main() {
     final forged = release('2.0.0');
     final assets = forged['assets']! as List<Map<String, String>>;
     assets[0]['browser_download_url'] =
-        'https://github.com/lokal-music/lokal-mobile-evil/releases/download/v2.0.0/full-metadata.json';
+        'https://github.com/lokal-music/Mobile-evil/releases/download/v2.0.0/full-metadata.json';
     final client = MockClient((request) async {
       if (request.url.host == 'api.github.com') {
         return http.Response(jsonEncode(forged), 200);
