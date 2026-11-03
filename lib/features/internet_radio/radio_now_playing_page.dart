@@ -82,11 +82,12 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
     );
   }
 
-  Future<void> _shareStation(RadioStation station) =>
-      SharePlus.instance.share(ShareParams(
-        text: station.title + '\n' + station.url,
-        subject: station.title + ' · Stations',
-      ));
+  Future<void> _shareStation(RadioStation station) async {
+    await SharePlus.instance.share(ShareParams(
+      text: station.title + '\n' + station.url,
+      subject: station.title + ' · Stations',
+    ));
+  }
 
   void _showMore(RadioStation station, String? artist, String? title) {
     final artistName = artist?.trim() ?? '';
