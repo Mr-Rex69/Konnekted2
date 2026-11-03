@@ -2,6 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flick/core/theme/lokal_appearance.dart';
+import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/features/konnekted/konnekted_data.dart';
+import 'package:flick/features/konnekted/library/lokal_navigation.dart';
+import 'package:flick/features/konnekted/library/lokal_music_detail_page.dart';
+import 'package:flick/services/global_catalogue_search.dart';
+import 'package:flick/services/android_audio_device_service.dart';
 import 'package:flick/features/internet_radio/internet_radio_page.dart';
 import 'package:flick/features/internet_radio/radio_catalog.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
@@ -22,6 +29,89 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+
+String _radioIdentity(String value) =>
+    value.trim().toLowerCase().replaceAll(RegExp(r'\\s+'), ' ');
+
+/// Live radio metadata has no album ID. Only a complete artist/title match
+/// with a single identifiable release may navigate directly to an album.
+@visibleForTesting
+Song? radioMatchingLocalAlbum(
+  Iterable<Song> library, {
+  required String title,
+  required String artist,
+}) {
+  if (title.trim().isEmpty || artist.trim().isEmpty) return null;
+  final rows = library.where((song) =>
+      _radioIdentity(song.title) == _radioIdentity(title) &&
+      _radioIdentity(song.artist) == _radioIdentity(artist) &&
+      (song.album?.trim().isNotEmpty ?? false)).toList();
+  if (rows.isEmpty ||
+      rows.map((s) => _radioIdentity(s.album!)).toSet().length != 1) {
+    return null;
+  }
+  return rows.first;
+}
+
+@visibleForTesting
+GlobalCatalogueSong? radioMatchingCatalogueAlbum(
+  Iterable<GlobalCatalogueSong> rows, {
+  required String title,
+  required String artist,
+}) {
+  if (title.trim().isEmpty || artist.trim().isEmpty) return null;
+  final exact = rows.where((row) =>
+      _radioIdentity(row.title) == _radioIdentity(title) &&
+      _radioIdentity(row.artist) == _radioIdentity(artist) &&
+      row.album.trim().isNotEmpty).toList();
+  if (exact.isEmpty ||
+      exact.map((s) => _radioIdentity(s.album)).toSet().length != 1) {
+    return null;
+  }
+  return exact.first;
+}
+
+/// Use Android's live media-route snapshot, not the ordinary music engine's
+/// stale diagnostics while a separate radio stream is playing.
+@visibleForTesting
+String radioOutputRouteLabel(AndroidPlaybackDeviceInfo route) {
+  switch ((route.routeType ?? '').toLowerCase()) {
+    case 'internal':
+    case 'speaker':
+      return 'Speaker';
+    case 'wired':
+      return route.routeLabel?.trim().isNotEmpty == true
+          ? route.routeLabel!.trim() : 'Wired headphones';
+    case 'bluetooth':
+      return route.routeLabel?.trim().isNotEmpty == true
+          ? route.routeLabel!.trim() : 'Bluetooth audio';
+    case 'usb':
+    case 'dock':
+      return route.routeLabel?.trim().isNotEmpty == true
+          ? route.routeLabel!.trim() : 'USB audio';
+    default:
+      return route.routeLabel?.trim().isNotEmpty == true
+          ? route.routeLabel!.trim() : 'Audio output';
+  }
+}
+
+@visibleForTesting
+IconData radioOutputRouteIcon(AndroidPlaybackDeviceInfo route) {
+  switch ((route.routeType ?? '').toLowerCase()) {
+    case 'internal':
+    case 'speaker':
+      return Icons.speaker_rounded;
+    case 'wired':
+      return Icons.headphones_rounded;
+    case 'bluetooth':
+      return Icons.bluetooth_audio_rounded;
+    case 'usb':
+    case 'dock':
+      return Icons.usb_rounded;
+    default:
+      return Icons.speaker_rounded;
+  }
+}
 
 /// The live-radio transport shares FullPlayerScreen's player route, artwork
 /// morph, dismissal spring and appearance settings with local/remote playback.
@@ -47,6 +137,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
   void initState() {
     super.initState();
     _queue.addListener(_queueChanged);
+    unawaited(AndroidAudioDeviceService.instance.initialize());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           !ref.read(radioPlayerProvider.notifier)
@@ -99,6 +190,60 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
       transitionsBuilder: (_, animation, _, child) =>
           FadeTransition(opacity: animation, child: child),
     ));
+  }
+
+  Future<void> _openCurrentAlbum(String title, String artist) async {
+    final normalizedTitle = title.trim();
+    final normalizedArtist = artist.trim();
+    if (normalizedTitle.isEmpty || normalizedArtist.isEmpty) {
+      _find('$normalizedArtist $normalizedTitle');
+      return;
+    }
+
+    // Prefer a verified local recording, never create an album by guessing
+    // from a station name or from a search result with a different artist.
+    final local = ref.read(konnektedLibraryProvider).value ?? const <Song>[];
+    final owned = radioMatchingLocalAlbum(
+      local, title: normalizedTitle, artist: normalizedArtist,
+    );
+    if (owned != null) {
+      await openLokalAlbumForSong(context, owned);
+      return;
+    }
+
+    GlobalCatalogueSong? matched;
+    try {
+      final result = await const GlobalCatalogueSearchService()
+          .search('$normalizedArtist $normalizedTitle', songsOnly: true)
+          .timeout(const Duration(seconds: 9));
+      matched = radioMatchingCatalogueAlbum(
+        result.songs, title: normalizedTitle, artist: normalizedArtist,
+      );
+    } catch (_) {
+      // A radio stream does not identify the album; never open an unrelated
+      // release on timeout, invalid metadata, or ambiguous catalogue hits.
+    }
+    if (!mounted) return;
+    if (matched == null) {
+      _find('$normalizedArtist $normalizedTitle');
+      return;
+    }
+    await pushLokalPage(
+      context,
+      LokalMusicDetailPage.album(
+        title: matched.album,
+        artist: matched.artist,
+        localSongs: const [],
+        initialOnline: true,
+      ),
+    );
+  }
+
+  Future<void> _chooseOutput() async {
+    await openAndroidOutputChooser(context);
+    // Android's route-change callback normally refreshes this as soon as
+    // the user selects a device; also request an explicit snapshot.
+    await AndroidAudioDeviceService.instance.refresh();
   }
 
   void _copy(String value) {
