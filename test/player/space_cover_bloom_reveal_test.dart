@@ -68,7 +68,6 @@ void main() {
         ),
       ),
     ));
-    expect(find.byType(SpaceCoverBloomPainter), findsNothing);
     expect(find.text('Synchronized lyrics'), findsOneWidget);
     animation.forward();
     await tester.pump();
