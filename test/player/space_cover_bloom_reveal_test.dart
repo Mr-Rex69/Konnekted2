@@ -153,7 +153,6 @@ void main() {
       duration: const Duration(milliseconds: 620),
       reverseDuration: const Duration(milliseconds: 500),
     );
-    addTearDown(animation.dispose);
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -181,6 +180,9 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(milliseconds: 250));
     expect(animation.value, 0);
+    // WidgetTester checks live tickers before addTearDown runs.
+    await tester.pumpWidget(const SizedBox.shrink());
+    animation.dispose();
   });
 
   testWidgets('Canvas stays mounted during the outward frosted reveal', (
