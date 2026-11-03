@@ -118,6 +118,7 @@ void main() {
   test('radio album navigation requires exact artist, title and release', () {
     final known = Song(
       id: 'library:recording',
+      fileType: 'FLAC',
       title: 'Current Track',
       artist: 'Artist Name',
       album: 'Actual Album',
@@ -125,6 +126,7 @@ void main() {
     );
     final other = Song(
       id: 'library:other',
+      fileType: 'FLAC',
       title: 'Current Track',
       artist: 'Different Artist',
       album: 'Wrong Album',
