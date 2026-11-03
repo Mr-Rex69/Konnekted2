@@ -18,6 +18,7 @@ class SpaceCoverBloomReveal extends StatelessWidget {
     this.coverRectResolver,
     this.coverMotion,
     this.coverCornerRadius = 20,
+    this.coverCornerRadiusResolver,
     this.canvasMode = false,
     this.surfaceColor = const Color(0xFF15141C),
   });
@@ -32,6 +33,8 @@ class SpaceCoverBloomReveal extends StatelessWidget {
   /// Notifies the frost clip and glint while the artwork itself animates.
   final Listenable? coverMotion;
   final double coverCornerRadius;
+  /// Live 20→12 px thumbnail radius while exiting Queue or Lyrics.
+  final double Function()? coverCornerRadiusResolver;
   final bool canvasMode;
   final Color surfaceColor;
 
@@ -55,7 +58,8 @@ class SpaceCoverBloomReveal extends StatelessWidget {
           final changes = coverMotion == null
               ? progress
               : Listenable.merge([progress, coverMotion!]);
-          final radius = canvasMode ? 0.0 : coverCornerRadius;
+          double radiusAt() => canvasMode ? 0.0
+              : (coverCornerRadiusResolver?.call() ?? coverCornerRadius);
 
           // A neutral, extremely translucent lift rather than a black
           // gradient. The existing artwork mesh supplies the hue and depth.
@@ -71,7 +75,7 @@ class SpaceCoverBloomReveal extends StatelessWidget {
                     progress: progress,
                     coverAt: coverAt,
                     changes: changes,
-                    cornerRadius: radius,
+                    cornerRadiusAt: radiusAt,
                   ),
                   child: BackdropFilter(
                     filter: _frost,
@@ -86,7 +90,7 @@ class SpaceCoverBloomReveal extends StatelessWidget {
                       progress: progress,
                       coverAt: coverAt,
                       changes: changes,
-                      cornerRadius: radius,
+                      cornerRadiusAt: radiusAt,
                     ),
                   ),
                 ),
@@ -196,20 +200,20 @@ class _SpaceBloomFrostClipper extends CustomClipper<Path> {
     required this.progress,
     required this.coverAt,
     required this.changes,
-    required this.cornerRadius,
+    required this.cornerRadiusAt,
   }) : super(reclip: changes);
 
   final Animation<double> progress;
   final Rect Function(Size size) coverAt;
   final Listenable changes;
-  final double cornerRadius;
+  final double Function() cornerRadiusAt;
 
   @override
   Path getClip(Size size) => spaceCoverBloomFrostClip(
         size,
         coverAt(size),
         progress.value,
-        cornerRadius: cornerRadius,
+        cornerRadius: cornerRadiusAt(),
       );
 
   @override
@@ -217,7 +221,7 @@ class _SpaceBloomFrostClipper extends CustomClipper<Path> {
       old.progress != progress ||
       old.coverAt != coverAt ||
       old.changes != changes ||
-      old.cornerRadius != cornerRadius;
+      old.cornerRadiusAt != cornerRadiusAt;
 }
 
 class _SpaceBloomLyricsClipper extends CustomClipper<Path> {
@@ -252,13 +256,13 @@ class _SpaceBloomGlint extends CustomPainter {
     required this.progress,
     required this.coverAt,
     required this.changes,
-    required this.cornerRadius,
+    required this.cornerRadiusAt,
   }) : super(repaint: changes);
 
   final Animation<double> progress;
   final Rect Function(Size size) coverAt;
   final Listenable changes;
-  final double cornerRadius;
+  final double Function() cornerRadiusAt;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -271,7 +275,7 @@ class _SpaceBloomGlint extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         bounds,
-        Radius.circular(cornerRadius * (1 - p)),
+        Radius.circular(cornerRadiusAt() * (1 - p)),
       ),
       Paint()
         ..color = Colors.white.withValues(alpha: .075 * envelope)
@@ -285,5 +289,5 @@ class _SpaceBloomGlint extends CustomPainter {
       old.progress != progress ||
       old.coverAt != coverAt ||
       old.changes != changes ||
-      old.cornerRadius != cornerRadius;
+      old.cornerRadiusAt != cornerRadiusAt;
 }
