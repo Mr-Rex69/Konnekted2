@@ -76,7 +76,7 @@ class SoulseekFile {
   /// Full parent path, not just its displayed album name: a peer may share
   /// different artists' albums that happen to have the same folder name.
   String get directory {
-    final normalized = filename.replaceAll('\\\\', '/');
+    final normalized = filename.replaceAll('\\', '/');
     final slash = normalized.lastIndexOf('/');
     return slash < 0 ? '' : normalized.substring(0, slash);
   }
