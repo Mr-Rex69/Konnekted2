@@ -1,0 +1,246 @@
+//! Embedded Soulseek client for Android. The protocol engine is an unmodified,
+//! MIT-licensed soulseek-rs-lib pinned in Cargo.toml. This tiny C ABI avoids
+//! regenerating Flutter Rust Bridge bindings for each protocol-library update.
+//! Passwords never enter logs, arguments, preferences or returned JSON.
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use soulseek_rs::{Client, ClientSettings, DownloadStatus};
+use std::{
+    ffi::{c_char, CStr, CString},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
+
+static SESSION: OnceLock<Mutex<Option<Arc<Client>>>> = OnceLock::new();
+fn session() -> &'static Mutex<Option<Arc<Client>>> {
+    SESSION.get_or_init(|| Mutex::new(None))
+}
+fn current() -> Result<Arc<Client>, String> {
+    session().lock().map_err(|_| "Soulseek session is unavailable".to_string())?
+        .as_ref().cloned().ok_or_else(|| "Sign in to Soulseek first".to_string())
+}
+fn string<'a>(input: &'a Value, field: &str) -> Result<&'a str, String> {
+    input.get(field).and_then(Value::as_str)
+        .ok_or_else(|| format!("Missing {field}"))
+}
+fn safe_basename(path: &str) -> Result<&str, String> {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or("");
+    if name.is_empty() || name == "." || name == ".."
+        || name.chars().any(|c| c.is_control()) {
+        return Err("Invalid remote filename".into());
+    }
+    Ok(name)
+}
+fn file_extension(path: &str) -> &str {
+    path.rsplit('.').next().unwrap_or("").trim()
+}
+fn is_audio(path: &str) -> bool {
+    matches!(file_extension(path).to_ascii_lowercase().as_str(),
+        "flac" | "mp3" | "wav" | "m4a" | "aac" | "ogg" | "opus"
+        | "wma" | "alac" | "aif" | "aiff" | "ape" | "wv" | "dsf" | "dff")
+}
+fn search_score(file: &soulseek_rs::File, slots: u8, speed: u32) -> i64 {
+    let extension = file_extension(&file.name).to_ascii_lowercase();
+    let quality = match extension.as_str() {
+        "flac" | "wav" | "aiff" | "aif" | "ape" | "wv" | "dsf" | "dff" => 100,
+        "m4a" | "alac" => 60,
+        _ => 10,
+    };
+    i64::from(quality) + if slots > 0 { 100 } else { 0 }
+        + i64::from(speed / 100_000).min(100)
+}
+fn execute(input: Value) -> Result<Value, String> {
+    let action = string(&input, "action")?;
+    match action {
+        "login" => {
+            let username = string(&input, "username")?.trim();
+            let password = string(&input, "password")?;
+            if username.is_empty() || username.len() > 80 || password.is_empty() {
+                return Err("Enter a Soulseek username and password".into());
+            }
+            // Close our previous session before logging in (one network session
+            // per username). Other operations hold an Arc until they finish.
+            let old = session().lock().map_err(|_| "Session lock failed")?.take();
+            drop(old);
+            let shared = input.get("share").and_then(Value::as_str).unwrap_or("").trim();
+            let shared_directories = if shared.is_empty() { Vec::new() } else {
+                let dir = Path::new(shared);
+                if !dir.is_absolute() || !dir.is_dir() {
+                    return Err("The music folder is not accessible as a filesystem directory. Choose a readable local folder or disable sharing.".into());
+                }
+                vec![dir.canonicalize().map_err(|e| e.to_string())?
+                    .to_string_lossy().into_owned()]
+            };
+            let mut settings = ClientSettings::new(username, password);
+            // Let the OS allocate an unused port. Peer-connection fallback is
+            // handled by the library when NAT/firewall blocks incoming traffic.
+            settings.listen_port = 0;
+            settings.shared_directories = shared_directories;
+            let mut client = Client::with_settings(settings);
+            client.connect().map_err(|e| format!("Cannot connect to the Soulseek server: {e}"))?;
+            if !client.login().map_err(|e| format!("Soulseek login timed out or failed: {e}"))? {
+                return Err("Soulseek rejected this username/password. The username may already be taken.".into());
+            }
+            let (folders, files) = client.shared_counts();
+            *session().lock().map_err(|_| "Session lock failed")? = Some(Arc::new(client));
+            Ok(json!({"loggedIn": true, "username": username, "sharedFolders": folders,
+                "sharedFiles": files, "engineVersion": "20.0.0"}))
+        }
+        "logout" => {
+            let old = session().lock().map_err(|_| "Session lock failed")?.take();
+            drop(old);
+            Ok(json!({"loggedIn": false}))
+        }
+        "status" => {
+            let maybe = session().lock().map_err(|_| "Session lock failed")?.clone();
+            let Some(client) = maybe else { return Ok(json!({"loggedIn": false, "engineVersion": "20.0.0"})); };
+            let loss = client.session_loss().map(|x| x.to_string());
+            let (folders, files) = client.shared_counts();
+            Ok(json!({"loggedIn": loss.is_none(), "username": client.username(),
+                "error": loss, "sharedFolders": folders, "sharedFiles": files,
+                "engineVersion": "20.0.0"}))
+        }
+        "search" => {
+            let query = string(&input, "query")?.trim();
+            if query.chars().count() < 2 || query.chars().count() > 160 {
+                return Err("Search for at least two characters (maximum 160)".into());
+            }
+            let client = current()?;
+            if let Some(loss) = client.session_loss() {
+                return Err(format!("Soulseek disconnected: {loss}"));
+            }
+            let responses = client.search(query, Duration::from_secs(9))
+                .map_err(|e| format!("Soulseek search failed: {e}"))?;
+            let users = responses.len();
+            let mut found: Vec<(i64, Value)> = Vec::new();
+            for response in responses {
+                for file in response.files {
+                    if !is_audio(&file.name) || safe_basename(&file.name).is_err() { continue; }
+                    let bitrate = file.attribs.get(&0).copied();
+                    let duration = file.attribs.get(&1).copied();
+                    let sample_rate = file.attribs.get(&4).copied();
+                    let bit_depth = file.attribs.get(&5).copied();
+                    let score = search_score(&file, response.slots, response.speed);
+                    let ext = file_extension(&file.name).to_ascii_uppercase();
+                    found.push((score, json!({"username": file.username,
+                        "filename": file.name, "size": file.size,
+                        "bitrate": bitrate, "duration": duration, "sampleRate": sample_rate,
+                        "bitDepth": bit_depth, "extension": ext,
+                        "freeSlot": response.slots > 0, "speed": response.speed, "score": score})));
+                }
+            }
+            found.sort_unstable_by(|a,b| b.0.cmp(&a.0));
+            found.truncate(700);
+            Ok(json!({"users": users, "results": found.into_iter().map(|(_,f)| f).collect::<Vec<_>>()}))
+        }
+        "download" => {
+            let username = string(&input, "username")?;
+            let remote = string(&input, "filename")?;
+            let name = safe_basename(remote)?;
+            if !is_audio(name) { return Err("That file is not a supported audio format".into()); }
+            let size = input.get("size").and_then(Value::as_u64)
+                .filter(|size| *size > 0).ok_or("Invalid file size")?;
+            let staging = Path::new(string(&input, "staging")?);
+            if !staging.is_absolute() || !staging.is_dir() {
+                return Err("Soulseek download directory is unavailable".into());
+            }
+            let digest = Sha256::digest(format!("{username}\0{remote}").as_bytes());
+            let key: String = digest[..12].iter().map(|b| format!("{b:02x}")).collect();
+            let folder = staging.join(key);
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let folder_string = folder.to_string_lossy().into_owned();
+            let client = current()?;
+            // Retry a failed or cancelled transfer with its same .part staging
+            // directory. The protocol engine validates/resumes partial bytes.
+            client.remove_download(username, remote);
+            let (download, _) = client.download(remote.to_owned(), username.to_owned(),
+                size, folder_string).map_err(|e| e.to_string())?;
+            Ok(json!({"id": download.token, "path": folder.join(name).to_string_lossy()}))
+        }
+        "transfers" => {
+            let client = current()?;
+            let transfers: Vec<Value> = client.get_all_downloads().iter().map(|d| {
+                let (status, error) = match &d.status {
+                    DownloadStatus::Queued => ("queued", None),
+                    DownloadStatus::InProgress { .. } => ("downloading", None),
+                    DownloadStatus::Paused { .. } => ("paused", None),
+                    DownloadStatus::Completed => ("completed", None),
+                    DownloadStatus::Cancelled => ("cancelled", None),
+                    DownloadStatus::Failed(reason) => ("failed", reason.as_deref()),
+                    DownloadStatus::TimedOut => ("failed", Some("Peer timed out")),
+                };
+                let name = safe_basename(&d.filename).unwrap_or("unknown");
+                json!({"id": d.token, "username": d.username, "filename": d.filename,
+                    "path": PathBuf::from(&d.download_directory).join(name).to_string_lossy(),
+                    "status": status, "error": error, "size": d.size,
+                    "bytes": d.bytes_downloaded(), "speed": d.speed_bytes_per_sec(),
+                    "queuePosition": d.queue_position})
+            }).collect();
+            Ok(json!({"transfers": transfers}))
+        }
+        "cancel" | "pause" | "resume" => {
+            let client = current()?;
+            let username = string(&input, "username")?;
+            let filename = string(&input, "filename")?;
+            let ok = match action {
+                "cancel" => client.cancel_download(username, filename),
+                "pause" => client.pause_download(username, filename),
+                _ => client.resume_download(username, filename),
+            };
+            Ok(json!({"ok": ok}))
+        }
+        "shares" => {
+            let client = current()?;
+            let folder = input.get("folder").and_then(Value::as_str).unwrap_or("").trim();
+            if !folder.is_empty() && (!Path::new(folder).is_absolute() || !Path::new(folder).is_dir()) {
+                return Err("Cannot read the selected folder for sharing".into());
+            }
+            client.set_shared_directories(if folder.is_empty() { vec![] } else {
+                vec![folder.to_owned()]
+            }).map_err(|e| e.to_string())?;
+            let (folders, files) = client.shared_counts();
+            Ok(json!({"sharedFolders": folders, "sharedFiles": files}))
+        }
+        "uploads" => {
+            let client = current()?;
+            Ok(json!({"uploads": client.uploads().iter().map(|u| json!({
+                "username": u.username, "filename": u.filename, "size": u.size,
+                "bytes": u.bytes_sent, "speed": u.speed_bytes_per_sec,
+                "status": format!("{:?}", u.status)
+            })).collect::<Vec<_>>() }))
+        }
+        _ => Err("Unknown Soulseek action".into()),
+    }
+}
+/// Caller owns the returned NUL-terminated JSON. Free with lokal_soulseek_free.
+#[no_mangle]
+pub unsafe extern "C" fn lokal_soulseek_invoke(request: *const c_char) -> *mut c_char {
+    let response = std::panic::catch_unwind(|| {
+        if request.is_null() { return json!({"error":"Missing request"}); }
+        // SAFETY: Dart owns a live UTF-8 NUL-terminated buffer for this call.
+        let text = unsafe { CStr::from_ptr(request) }.to_str();
+        let result = text.map_err(|_| "Invalid UTF-8".to_string())
+            .and_then(|text| serde_json::from_str::<Value>(text).map_err(|_| "Invalid request JSON".to_string()))
+            .and_then(execute);
+        match result { Ok(v) => v, Err(e) => json!({"error": e}) }
+    }).unwrap_or_else(|_| json!({"error": "Soulseek engine failed"}));
+    CString::new(response.to_string()).unwrap_or_default().into_raw()
+}
+#[no_mangle]
+pub unsafe extern "C" fn lokal_soulseek_free(value: *mut c_char) {
+    if !value.is_null() { drop(unsafe { CString::from_raw(value) }); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{safe_basename, is_audio};
+    #[test]
+    fn remote_paths_cannot_traverse_download_directories() {
+        assert_eq!(safe_basename(r"C:\album\track.flac").unwrap(), "track.flac");
+        assert!(safe_basename("../..").is_err());
+        assert!(safe_basename("a/b/\u{0}").is_err());
+        assert!(is_audio("recording.FLAC"));
+        assert!(!is_audio("executable.apk"));
+    }
+}

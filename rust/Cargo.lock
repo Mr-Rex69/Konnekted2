@@ -2074,6 +2074,7 @@ dependencies = [
 name = "rust_lib_flick_player"
 version = "0.1.0"
 dependencies = [
+ "soulseek-rs-lib",
  "aes",
  "aes-gcm",
  "android_logger",
@@ -2381,6 +2382,14 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "soulseek-rs-lib"
+version = "20.0.0"
+source = "git+https://github.com/michel/soulseek-rs?rev=3c5f1d12f25f98730ad8f1ca57621250d7c3bd41#3c5f1d12f25f98730ad8f1ca57621250d7c3bd41"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
