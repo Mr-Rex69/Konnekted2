@@ -3,7 +3,7 @@ import 'package:flick/services/soulseek_service.dart';
 import 'package:flick/features/search/widgets/soulseek_search_section.dart';
 
 void main() {
-  test('remote paths keep peer and directory identity without traversal on local save', () {
+  test('remote paths preserve peer, filename and directory identity', () {
     final file = SoulseekFile.fromMap({
       'username': 'peer', 'filename': r'Library\Artist\Album\01 - Track.FLAC',
       'size': 10485760, 'extension': 'FLAC', 'bitDepth': 24,
@@ -50,6 +50,25 @@ void main() {
     expect(first.albumGroupKey, nextTrack.albumGroupKey);
     expect(first.albumGroupKey, isNot(otherArtist.albumGroupKey));
     expect(first.albumGroupKey, isNot(otherPeer.albumGroupKey));
+  });
+
+
+  test('sharing never accidentally exposes entire device or SD-card roots', () {
+    for (final unsafe in <String>[
+      '/', '/sdcard', '/storage/emulated/0', '/storage/emulated/10',
+      '/storage/1234-5678', '/storage/self/primary', '/mnt',
+      '/mnt/media_rw/1234-5678', '/mnt/runtime/default/1234-5678',
+      '/data', '/storage',
+    ]) {
+      expect(soulseekIsUnsafeShareRoot(unsafe), isTrue, reason: unsafe);
+    }
+    for (final allowed in <String>[
+      '/storage/emulated/0/Music',
+      '/storage/1234-5678/My Music',
+      '/mnt/media_rw/1234-5678/Audio',
+    ]) {
+      expect(soulseekIsUnsafeShareRoot(allowed), isFalse, reason: allowed);
+    }
   });
 
 }

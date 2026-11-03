@@ -26,13 +26,17 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
   }
 
   Future<void> _initialize() async {
-    await _service.loadAccount();
-    if (!mounted) return;
-    _user.text = _service.username;
-    setState(() => _share = _service.shareEnabled);
-    if (_service.username.isNotEmpty) {
-      await _service.ensureConnected();
-      if (mounted) setState(() {});
+    try {
+      await _service.loadAccount();
+      if (!mounted) return;
+      _user.text = _service.username;
+      setState(() => _share = _service.shareEnabled);
+      if (_service.username.isNotEmpty) {
+        await _service.ensureConnected();
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      if (mounted) setState(() => _problem = e is StateError ? e.message : '$e');
     }
   }
 

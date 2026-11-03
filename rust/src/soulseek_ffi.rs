@@ -83,6 +83,12 @@ fn search_score(file: &soulseek_rs::File, slots: u8, speed: u32) -> i64 {
     i64::from(quality) + if slots > 0 { 100 } else { 0 }
         + i64::from(speed / 100_000).min(100)
 }
+fn session_status(username: &str, loss: Option<&str>, folders: u32, files: u32) -> Value {
+    // Session loss is data, not a failed FFI invocation. Dart must be able to
+    // update its connection flag and allow secure-credential reconnection.
+    json!({"loggedIn": loss.is_none(), "username": username, "sessionLoss": loss,
+        "sharedFolders": folders, "sharedFiles": files, "engineVersion": "20.0.0"})
+}
 fn execute(input: Value) -> Result<Value, String> {
     let action = string(&input, "action")?;
     match action {
@@ -129,9 +135,7 @@ fn execute(input: Value) -> Result<Value, String> {
             let Some(client) = maybe else { return Ok(json!({"loggedIn": false, "engineVersion": "20.0.0"})); };
             let loss = client.session_loss().map(|x| x.to_string());
             let (folders, files) = client.shared_counts();
-            Ok(json!({"loggedIn": loss.is_none(), "username": client.username(),
-                "error": loss, "sharedFolders": folders, "sharedFiles": files,
-                "engineVersion": "20.0.0"}))
+            Ok(session_status(client.username(), loss.as_deref(), folders, files))
         }
         "search" => {
             let query = string(&input, "query")?.trim();
@@ -278,7 +282,7 @@ pub unsafe extern "C" fn lokal_soulseek_free(value: *mut c_char) {
 
 #[cfg(test)]
 mod tests {
-    use super::{safe_basename, is_audio, shareable_directory};
+    use super::{safe_basename, is_audio, shareable_directory, session_status};
     #[test]
     fn remote_paths_cannot_traverse_download_directories() {
         assert_eq!(safe_basename(r"C:\album\track.flac").unwrap(), "track.flac");
@@ -286,6 +290,16 @@ mod tests {
         assert!(safe_basename("a/b/\u{0}").is_err());
         assert!(is_audio("recording.FLAC"));
         assert!(!is_audio("executable.apk"));
+    }
+
+    #[test]
+    fn lost_session_remains_a_status_response_not_an_ffi_error() {
+        let report = session_status("tester", Some("server disconnected"), 2, 15);
+        assert_eq!(report["loggedIn"], false);
+        assert_eq!(report["sessionLoss"], "server disconnected");
+        assert_eq!(report["sharedFiles"], 15);
+        assert!(report.get("error").is_none());
+        assert_eq!(session_status("tester", None, 0, 0)["loggedIn"], true);
     }
 
     #[cfg(unix)]

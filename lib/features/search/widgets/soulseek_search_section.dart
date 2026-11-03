@@ -37,8 +37,12 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   }
 
   Future<void> _initialize() async {
-    await _service.ensureConnected();
-    if (mounted) setState(() {});
+    try {
+      await _service.ensureConnected();
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) setState(() => _error = e is StateError ? e.message : '$e');
+    }
   }
 
   @override
@@ -70,7 +74,11 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
       setState(() { _results = files; _loading = false; });
     } catch (e) {
       if (!mounted || generation != _generation) return;
-      setState(() { _error = '$e'; _loading = false; _results = const []; });
+      setState(() {
+        _error = e is StateError ? e.message : '$e';
+        _loading = false;
+        _results = const [];
+      });
     }
   }
 
@@ -88,10 +96,10 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   }
 
   Future<void> _queueAlbum(List<SoulseekFile> files) async {
-    // Prevent a maliciously large peer folder from flooding transfer slots.
-    for (final file in files.take(60)) {
-      if (!mounted) return;
-      if (!_service.queued(file)) await _queue(file);
+    try {
+      await _service.queueAll(files);
+    } catch (e) {
+      if (mounted) setState(() => _error = e is StateError ? e.message : '$e');
     }
   }
 
@@ -307,7 +315,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
             Padding(padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(_error, style: const TextStyle(
                   color: Colors.redAccent, fontSize: 12))),
-          if (!_loading && visible.isEmpty)
+          if (!_loading && visible.isEmpty && _error.isEmpty)
             Padding(padding: const EdgeInsets.all(24),
               child: Text(_lossless && _results.isNotEmpty
                   ? 'No lossless files in these results.'
