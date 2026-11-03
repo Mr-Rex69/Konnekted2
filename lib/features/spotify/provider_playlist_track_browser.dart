@@ -173,7 +173,7 @@ class ProviderPlaylistHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: hasCover
                   ? Image.network(
-                      cover,
+                      cover!,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => ColoredBox(
                         color: color.surface2,
