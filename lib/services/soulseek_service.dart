@@ -73,6 +73,14 @@ class SoulseekFile {
   final int? bitrate, duration, sampleRate, bitDepth;
   String get key => username + '\u0000' + filename;
   String get name => filename.replaceAll('\\', '/').split('/').last;
+  /// Full parent path, not just its displayed album name: a peer may share
+  /// different artists' albums that happen to have the same folder name.
+  String get directory {
+    final normalized = filename.replaceAll('\\\\', '/');
+    final slash = normalized.lastIndexOf('/');
+    return slash < 0 ? '' : normalized.substring(0, slash);
+  }
+  String get albumGroupKey => username + String.fromCharCode(0) + directory;
   String get folder {
     final split = filename.replaceAll('\\', '/').split('/');
     return split.length > 1 ? split[split.length - 2] : 'Shared files';

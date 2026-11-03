@@ -210,7 +210,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
         : _results;
     final groups = <String, List<SoulseekFile>>{};
     for (final file in visible) {
-      final key = file.username + '\u0000' + file.folder;
+      final key = file.albumGroupKey;
       groups.putIfAbsent(key, () => []).add(file);
     }
     final transfers = _service.transfers.reversed.take(25).toList();

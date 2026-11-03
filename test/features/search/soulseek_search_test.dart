@@ -28,4 +28,28 @@ void main() {
     expect(soulseekSize(1048576), '1.0 MB');
     expect(soulseekSize(1073741824), '1.00 GB');
   });
+
+  test('album downloads never combine different peer directories', () {
+    final first = SoulseekFile.fromMap({
+      'username': 'peer', 'filename': r'Music\\Artist A\\Greatest Hits\\01.flac',
+      'size': 1024, 'extension': 'FLAC',
+    });
+    final otherArtist = SoulseekFile.fromMap({
+      'username': 'peer', 'filename': r'Music\\Artist B\\Greatest Hits\\02.flac',
+      'size': 1024, 'extension': 'FLAC',
+    });
+    final nextTrack = SoulseekFile.fromMap({
+      'username': 'peer', 'filename': r'Music\\Artist A\\Greatest Hits\\03.flac',
+      'size': 1024, 'extension': 'FLAC',
+    });
+    final otherPeer = SoulseekFile.fromMap({
+      'username': 'another', 'filename': r'Music\\Artist A\\Greatest Hits\\01.flac',
+      'size': 1024, 'extension': 'FLAC',
+    });
+    expect(first.folder, 'Greatest Hits');
+    expect(first.albumGroupKey, nextTrack.albumGroupKey);
+    expect(first.albumGroupKey, isNot(otherArtist.albumGroupKey));
+    expect(first.albumGroupKey, isNot(otherPeer.albumGroupKey));
+  });
+
 }
