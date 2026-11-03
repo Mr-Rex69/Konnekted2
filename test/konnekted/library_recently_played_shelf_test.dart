@@ -12,11 +12,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Song _song(String id) => Song(
+Song _song(String id, {Duration duration = const Duration(minutes: 3)}) => Song(
   id: id,
   title: 'Track $id',
   artist: 'Artist $id',
-  duration: const Duration(minutes: 3),
+  duration: duration,
   fileType: 'FLAC',
 );
 
@@ -40,7 +40,10 @@ void main() {
     addTearDown(tester.view.reset);
 
     final opened = <KonnektedDestination>[];
-    final library = [_song('library'), _song('library2')];
+    final library = [
+      _song('library', duration: const Duration(minutes: 65)),
+      _song('library2', duration: const Duration(minutes: 5)),
+    ];
     final history = [_song('r1'), _song('r2')];
     await tester.pumpWidget(
       ProviderScope(
@@ -87,7 +90,7 @@ void main() {
     expect(find.text('Track library'), findsOneWidget);
     expect(find.text('Track library2'), findsOneWidget);
     expect(find.text('Track r1'), findsNothing);
-    expect(find.text('2 songs · 6 min'), findsOneWidget);
+    expect(find.text('2 songs · 1 hr 10 min'), findsOneWidget);
     final horizontalList = tester.widget<ListView>(
       find.descendant(of: libraryShelf, matching: find.byType(ListView)),
     );
