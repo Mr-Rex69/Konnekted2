@@ -398,7 +398,7 @@ class _SpotifyPlaylistDetailState
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.playlist.name),
+      // The large scrollable hero owns the playlist title.
       actions: [
         IconButton(
           tooltip: 'Refresh playlist',
@@ -419,10 +419,15 @@ class _SpotifyPlaylistDetailState
                 TextButton(onPressed: () => unawaited(_refresh()),
                     child: const Text('Retry')),
               ]))
-            : _tracks.isEmpty
-                ? const Center(child: Text('No playable tracks in this playlist.'))
-                : ProviderPlaylistTrackBrowser(
+            : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
+                    header: ProviderPlaylistHeader(
+                      playlistId: 'spotify:${widget.accountId}:${widget.playlist.id}',
+                      title: widget.playlist.name,
+                      coverUrl: widget.playlist.imageUrl,
+                      owner: widget.playlist.owner,
+                      tracks: _tracks,
+                    ),
                     source: PlaylistLinkSource.spotify,
                     playlistId: widget.playlist.id,
                     accountId: widget.accountId,

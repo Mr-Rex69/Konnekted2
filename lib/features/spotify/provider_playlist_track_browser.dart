@@ -9,6 +9,7 @@ import 'package:flick/features/playlist_links/playlist_unmatched_downloader.dart
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/songs_provider.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
+import 'package:flick/features/konnekted/library/playlist_hero_header.dart';
 import 'package:flick/features/spotify/provider_playlist_track_tile.dart';
 import 'package:flick/widgets/lokal/lokal_choice_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -127,6 +128,54 @@ RemotePlaylistEntry providerPlaylistDownloadEntry(
   );
 }
 
+/// The same responsive hero used by local playlists. Provider covers take
+/// precedence; otherwise track thumbnails form the animated fallback.
+class ProviderPlaylistHeader extends StatelessWidget {
+  const ProviderPlaylistHeader({
+    super.key,
+    required this.title,
+    required this.tracks,
+    required this.playlistId,
+    this.coverUrl,
+    this.owner,
+  });
+
+  final String title;
+  final String playlistId;
+  final String? coverUrl;
+  final String? owner;
+  final List<LokalDiscoveryTrack> tracks;
+
+  @override
+  Widget build(BuildContext context) {
+    final knownDurations =
+        tracks.isNotEmpty &&
+        tracks.every((track) => track.duration != null);
+    final total = knownDurations
+        ? tracks.fold<Duration>(
+            Duration.zero,
+            (sum, track) => sum + track.duration!,
+          )
+        : Duration.zero;
+    final minutes = total.inMinutes;
+    final durationLabel = minutes >= 60
+        ? '${minutes ~/ 60} hr ${minutes % 60} min'
+        : '$minutes min';
+    return PlaylistHeroHeader(
+      playlistId: playlistId,
+      title: title,
+      owner: owner,
+      metadata: '${tracks.length} songs'
+          '${knownDurations ? ' · $durationLabel' : ''}',
+      coverUrl: coverUrl,
+      covers: [
+        for (final track in tracks)
+          PlaylistHeroCover(imagePath: track.artworkUrl),
+      ],
+    );
+  }
+}
+
 /// Shared read-only playlist controls for Spotify and YouTube Music.
 /// Playback is delegated to the parent so source resolution, queues, and
 /// providers are exactly the same as when a track is tapped.
@@ -140,6 +189,7 @@ class ProviderPlaylistTrackBrowser extends ConsumerStatefulWidget {
     required this.accountId,
     required this.onPlay,
     required this.onSongActions,
+    this.header,
   });
 
   final List<LokalDiscoveryTrack> tracks;
@@ -152,6 +202,7 @@ class ProviderPlaylistTrackBrowser extends ConsumerStatefulWidget {
   /// [startIndex] addresses that queue, not the unfiltered source playlist.
   final void Function(List<int> orderedIndices, int startIndex) onPlay;
   final void Function(int sourceIndex) onSongActions;
+  final Widget? header;
 
   @override
   ConsumerState<ProviderPlaylistTrackBrowser> createState() =>
@@ -387,120 +438,137 @@ class _ProviderPlaylistTrackBrowserState
     final visible = providerPlaylistVisibleIndices(
       widget.tracks, _query, sort: _sort, descending: _descending,
     );
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 8, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: LokalSearchField(
-                  controller: _search,
-                  hint: lokalText('Search songs'),
-                  onChanged: (query) => setState(() => _query = query),
+    return CustomScrollView(
+      slivers: [
+        if (widget.header != null)
+          SliverToBoxAdapter(child: widget.header!),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 8, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: LokalSearchField(
+                    controller: _search,
+                    hint: lokalText('Search songs'),
+                    onChanged: (query) => setState(() => _query = query),
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Sort: ${_sort.label}',
-                icon: const Icon(Icons.sort_rounded),
-                onPressed: () => unawaited(_chooseSort()),
-              ),
-              IconButton(
-                tooltip: _descending
-                    ? 'Descending · switch to ascending'
-                    : 'Ascending · switch to descending',
-                icon: Icon(_descending
-                    ? Icons.arrow_downward_rounded
-                    : Icons.arrow_upward_rounded),
-                onPressed: () => _updateOrder(
-                  () => _descending = !_descending,
+                IconButton(
+                  tooltip: 'Sort: ${_sort.label}',
+                  icon: const Icon(Icons.sort_rounded),
+                  onPressed: () => unawaited(_chooseSort()),
                 ),
-              ),
-            ],
+                IconButton(
+                  tooltip: _descending
+                      ? 'Descending · switch to ascending'
+                      : 'Ascending · switch to descending',
+                  icon: Icon(_descending
+                      ? Icons.arrow_downward_rounded
+                      : Icons.arrow_upward_rounded),
+                  onPressed: () => _updateOrder(
+                    () => _descending = !_descending,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: LokalPill(
-                  icon: Icons.play_arrow_rounded,
-                  label: lokalText('Play'),
-                  onTap: visible.isEmpty ? null : () => _play(visible),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: LokalPill(
+                    icon: Icons.play_arrow_rounded,
+                    label: lokalText('Play'),
+                    onTap: visible.isEmpty ? null : () => _play(visible),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: LokalPill(
-                  icon: Icons.shuffle_rounded,
-                  label: lokalText('Shuffle'),
-                  onTap: visible.isEmpty
-                      ? null
-                      : () => _play(visible, shuffle: true),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: LokalPill(
+                    icon: Icons.shuffle_rounded,
+                    label: lokalText('Shuffle'),
+                    onTap: visible.isEmpty
+                        ? null
+                        : () => _play(visible, shuffle: true),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _downloading
-                  ? _cancelDownload
-                  : () => unawaited(_downloadPlaylist()),
-              icon: Icon(_downloading
-                  ? Icons.cancel_outlined : Icons.download_rounded),
-              label: Text(_downloading
-                  ? 'Cancel playlist download' : 'Download playlist'),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _downloading
+                    ? _cancelDownload
+                    : () => unawaited(_downloadPlaylist()),
+                icon: Icon(_downloading
+                    ? Icons.cancel_outlined : Icons.download_rounded),
+                label: Text(_downloading
+                    ? 'Cancel playlist download' : 'Download playlist'),
+              ),
             ),
           ),
         ),
         if (_downloadStatus != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _downloadStatus!,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _downloadStatus!,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ),
         if (_query.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text('${visible.length} of ${widget.tracks.length} songs'),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('${visible.length} of ${widget.tracks.length} songs'),
+              ),
             ),
           ),
-        Expanded(
-          child: visible.isEmpty
-              ? Center(
-                  child: Text(
-                    _query.trim().isNotEmpty
-                        ? lokalText('No matching songs')
-                        : 'No tracks in this playlist.',
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: visible.length,
-                  itemBuilder: (context, position) {
-                    final sourceIndex = visible[position];
-                    final track = widget.tracks[sourceIndex];
-                    return ProviderPlaylistTrackTile(
-                      track: track,
-                      leading: widget.artworkBuilder(track),
-                      onPlay: () => _play(visible, start: position),
-                      onSongActions: () => widget.onSongActions(sourceIndex),
-                    );
-                  },
+        if (visible.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: Text(
+                  _query.trim().isNotEmpty
+                      ? lokalText('No matching songs')
+                      : 'No tracks in this playlist.',
                 ),
-        ),
+              ),
+            ),
+          )
+        else
+          SliverList.builder(
+            itemCount: visible.length,
+            itemBuilder: (context, position) {
+              final sourceIndex = visible[position];
+              final track = widget.tracks[sourceIndex];
+              return ProviderPlaylistTrackTile(
+                track: track,
+                leading: widget.artworkBuilder(track),
+                onPlay: () => _play(visible, start: position),
+                onSongActions: () => widget.onSongActions(sourceIndex),
+              );
+            },
+          ),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
     );
   }

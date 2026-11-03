@@ -24,6 +24,7 @@ class SongStageCarousel extends StatefulWidget {
     this.animateButtonDissolve = true,
     this.maskOutgoingOnDissolve = false,
     this.allowUnresolvedSwipe = false,
+    this.coverGap = 0,
     this.onDragStateChanged,
   });
   final Song currentSong;
@@ -42,6 +43,9 @@ class SongStageCarousel extends StatefulWidget {
   /// A remote transport can skip even when the paired desktop has not yet
   /// published its adjacent queue thumbnails. Local playback stays strict.
   final bool allowUnresolvedSwipe;
+  /// Empty space between adjacent covers during a horizontal swipe.
+  /// Set to zero for full-bleed posters; boxed artwork can use a visible gap.
+  final double coverGap;
   final ValueChanged<bool>? onDragStateChanged;
 
   @override
@@ -117,6 +121,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
   }
 
   double get _width => context.size?.width ?? MediaQuery.sizeOf(context).width;
+  double get _stride =>
+      _width + widget.coverGap.clamp(0.0, _width * .16).toDouble();
 
   Future<bool> _moveTo(double target) async {
     if (!mounted) return false;
@@ -206,7 +212,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
     _committing = true;
     final before = _current.id;
     try {
-      if (!await _moveTo(next ? -_width : _width)) return;
+      if (!await _moveTo(next ? -_stride : _stride)) return;
       HapticFeedback.selectionClick();
       if (next) {
         await widget.onNext();
@@ -258,7 +264,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
         ((delta < 0 && _next == null) || (delta > 0 && _previous == null))) {
       delta *= .32 * math.exp(-_offset.abs() / math.max(_width * .6, 1));
     }
-    setState(() => _offset = (_offset + delta).clamp(-_width, _width));
+    setState(() => _offset = (_offset + delta).clamp(-_stride, _stride));
   }
 
   Future<void> _end(DragEndDetails details) =>
@@ -269,9 +275,9 @@ class SongStageCarouselState extends State<SongStageCarousel>
     _dragging = false;
     widget.onDragStateChanged?.call(false);
     final goNext =
-        velocity <= -700 || (velocity.abs() < 700 && _offset < -_width * .25);
+        velocity <= -700 || (velocity.abs() < 700 && _offset < -_stride * .25);
     final goPrevious =
-        velocity >= 700 || (velocity.abs() < 700 && _offset > _width * .25);
+        velocity >= 700 || (velocity.abs() < 700 && _offset > _stride * .25);
     if (goNext && _next != null) {
       await _commit(true);
     } else if (goPrevious && _previous != null) {
@@ -314,6 +320,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
     builder: (context, constraints) {
       final width = constraints.maxWidth;
       if (width <= 0) return const SizedBox.shrink();
+      final stride =
+          width + widget.coverGap.clamp(0.0, width * .16).toDouble();
       Widget stage(Song song, double offset, String slot) {
         final repeated =
             [
@@ -357,8 +365,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
                     : stage(oldSong, 0, 'outgoing')
               else ...[
                 if (_previous != null)
-                  stage(_previous!, -width + _offset, 'previous'),
-                if (_next != null) stage(_next!, width + _offset, 'next'),
+                  stage(_previous!, -stride + _offset, 'previous'),
+                if (_next != null) stage(_next!, stride + _offset, 'next'),
               ],
               if (_dissolveFrom != null)
                 CloudCoverReveal(

@@ -299,7 +299,7 @@ class _YoutubePlaylistDetailState
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.playlist.title),
+      // The large scrollable hero owns the playlist title.
       actions: [
         IconButton(
           tooltip: 'Update playlist', onPressed: _updating ? null : () => unawaited(_refresh()),
@@ -312,10 +312,16 @@ class _YoutubePlaylistDetailState
         ? const Center(child: CircularProgressIndicator())
         : _error != null && _tracks.isEmpty
             ? Center(child: Text(_error!))
-            : _tracks.isEmpty
-                ? const Center(child: Text('No accessible tracks in this playlist.'))
-                : ProviderPlaylistTrackBrowser(
+            : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
+                    header: ProviderPlaylistHeader(
+                      playlistId: 'youtube:${widget.accountId}:${widget.playlist.id}',
+                      title: widget.playlist.title,
+                      coverUrl: widget.playlist.artworkUrl,
+                      owner: widget.playlist.author.isEmpty
+                          ? null : widget.playlist.author,
+                      tracks: _tracks,
+                    ),
                     source: PlaylistLinkSource.youtube,
                     playlistId: widget.playlist.id,
                     accountId: widget.accountId,

@@ -83,6 +83,7 @@ Widget? lokalLibraryPage(String name) => switch (name) {
   ),
   'recentlyPlayed' => LokalSongListPage(
     title: lokalText('Recently played'),
+    showTotalDuration: true,
     preferencesKey: 'lokal.library.recently_played.song_browser_view.v1',
     source: (ref) => ref.watch(lokalRecentlyPlayedProvider),
     initialSort: LokalSongSort.original,
