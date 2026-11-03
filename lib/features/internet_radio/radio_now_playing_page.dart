@@ -31,7 +31,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 String _radioIdentity(String value) =>
-    value.trim().toLowerCase().replaceAll(RegExp(r'\\s+'), ' ');
+    value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
 /// Live radio metadata has no album ID. Only a complete artist/title match
 /// with a single identifiable release may navigate directly to an album.
@@ -263,84 +263,184 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
   void _showMore(RadioStation station, String? artist, String? title) {
     final artistName = artist?.trim() ?? '';
     final songName = title?.trim() ?? '';
+    final theme = context.lokal;
+    final art = ref.read(radioPlayerProvider).trackMetadata?.cover ??
+        station.icon;
+
+    // Match the regular FullPlayer's song-actions sheet: surface color,
+    // 24px rounded top, border, drag handle, artwork header and 50px rows.
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
-      backgroundColor: const Color(0xFF232227),
+      backgroundColor: theme.surface,
+      barrierColor: Colors.black.withValues(
+        alpha: theme.isLight ? .25 : .5,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: theme.border),
+      ),
       builder: (sheetContext) {
+        final colors = sheetContext.lokal;
         void execute(VoidCallback action) {
-          Navigator.pop(sheetContext);
+          Navigator.of(sheetContext).pop();
           action();
         }
-        return Theme(
-          data: ThemeData.dark(useMaterial3: true),
-          child: SafeArea(child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(10, 0, 10, 18),
-          children: [
-            ListTile(
-              leading: const Icon(Icons.radio_rounded),
-              title: Text(station.title, maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-              subtitle: Text(_quality(station)),
-            ),
-            if (songName.isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.search_rounded),
-                title: const Text('Find current song'),
-                onTap: () => execute(() => _find(
-                  artistName.isEmpty ? songName :
-                    artistName + ' ' + songName)),
+
+        final entries = <Widget>[
+          if (songName.isNotEmpty)
+            _RadioMenuRow(
+              icon: Icons.album_outlined,
+              label: 'Open current album',
+              onTap: () => execute(
+                () => unawaited(_openCurrentAlbum(songName, artistName)),
               ),
-            if (artistName.isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.person_search_rounded),
-                title: const Text('Find artist'),
-                onTap: () => execute(() => _find(artistName)),
+            ),
+          if (artistName.isNotEmpty)
+            _RadioMenuRow(
+              icon: Icons.person_outline_rounded,
+              label: 'Open artist',
+              onTap: () => execute(
+                () => unawaited(
+                  openLokalArtist(context, name: artistName),
+                ),
               ),
-            ListTile(
-              leading: const Icon(Icons.favorite_border_rounded),
-              title: const Text('Favorite or unfavorite station'),
-              onTap: () => execute(() => unawaited(ref
-                  .read(stationFavoritesProvider.notifier).toggle(station))),
             ),
-            ListTile(
-              leading: const Icon(Icons.speaker_rounded),
-              title: const Text('Audio output'),
-              onTap: () => execute(() =>
-                  unawaited(openAndroidOutputChooser(context))),
+          if (songName.isNotEmpty)
+            _RadioMenuRow(
+              icon: Icons.search_rounded,
+              label: 'Find current song',
+              onTap: () => execute(() => _find(
+                artistName.isEmpty ? songName :
+                    '$artistName $songName',
+              )),
             ),
-            ListTile(
-              leading: const Icon(Icons.ios_share_rounded),
-              title: const Text('Share station'),
-              onTap: () => execute(() => unawaited(_shareStation(station))),
+          if (artistName.isNotEmpty)
+            _RadioMenuRow(
+              icon: Icons.person_search_rounded,
+              label: 'Find artist',
+              onTap: () => execute(() => _find(artistName)),
             ),
-            if (songName.isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.copy_rounded),
-                title: const Text('Copy current song'),
-                onTap: () => execute(() => _copy(
-                  artistName.isEmpty ? songName :
-                    artistName + ' — ' + songName)),
+          _RadioMenuRow(
+            icon: Icons.favorite_border_rounded,
+            label: 'Favorite or unfavorite station',
+            onTap: () => execute(() => unawaited(ref
+                .read(stationFavoritesProvider.notifier).toggle(station))),
+          ),
+          _RadioMenuRow(
+            icon: Icons.speaker_rounded,
+            label: 'Audio output',
+            onTap: () => execute(() => unawaited(_chooseOutput())),
+          ),
+          _RadioMenuRow(
+            icon: Icons.ios_share_rounded,
+            label: 'Share station',
+            onTap: () => execute(
+              () => unawaited(_shareStation(station)),
+            ),
+          ),
+          if (songName.isNotEmpty)
+            _RadioMenuRow(
+              icon: Icons.copy_rounded,
+              label: 'Copy current song',
+              onTap: () => execute(() => _copy(
+                artistName.isEmpty ? songName :
+                    '$artistName — $songName',
+              )),
+            ),
+          _RadioMenuRow(
+            icon: Icons.link_rounded,
+            label: 'Copy station URL',
+            onTap: () => execute(() => _copy(station.url)),
+          ),
+          _RadioMenuRow(
+            icon: Icons.explore_rounded,
+            label: 'Browse stations',
+            onTap: () => execute(() {
+              Navigator.of(context).push<void>(PageRouteBuilder<void>(
+                pageBuilder: (_, _, _) => const InternetRadioPage(),
+                transitionsBuilder: (_, animation, _, child) =>
+                    FadeTransition(opacity: animation, child: child),
+              ));
+            }),
+          ),
+        ];
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .78,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox.square(
+                        dimension: 52,
+                        child: art != null && art.startsWith('https://')
+                            ? Image.network(
+                                art,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const Icon(
+                                  Icons.radio_rounded,
+                                ),
+                              )
+                            : const ColoredBox(
+                                color: Color(0xFF25242A),
+                                child: Icon(Icons.radio_rounded),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            songName.isNotEmpty ? songName : station.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: LokalTheme.sans,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: colors.text,
+                            ),
+                          ),
+                          Text(
+                            artistName.isNotEmpty
+                                ? '$artistName · ${station.title}'
+                                : _quality(station),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 13, color: colors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ListTile(
-              leading: const Icon(Icons.link_rounded),
-              title: const Text('Copy station URL'),
-              onTap: () => execute(() => _copy(station.url)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.explore_rounded),
-              title: const Text('Browse stations'),
-              onTap: () => execute(() {
-                Navigator.of(context).push<void>(PageRouteBuilder<void>(
-                  pageBuilder: (_, _, _) => const InternetRadioPage(),
-                  transitionsBuilder: (_, animation, _, child) =>
-                      FadeTransition(opacity: animation, child: child),
-                ));
-              }),
-            ),
-          ],
-        )),
+              Divider(height: 1, color: colors.border),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.only(
+                    top: 6,
+                    bottom: 12 + MediaQuery.paddingOf(sheetContext).bottom,
+                  ),
+                  children: entries,
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -821,6 +921,55 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
             ),
             _queueOverlay(stationQueue, station),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _RadioMenuRow extends StatelessWidget {
+  const _RadioMenuRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.lokal;
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 50),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 12,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 22, color: theme.muted),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: LokalTheme.sans,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: theme.text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
