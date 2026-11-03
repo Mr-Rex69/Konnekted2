@@ -20,6 +20,32 @@ Map<String, Object?> station(String id, String codec, int bitrate) => {
 
 void main() {
 
+  test('AzuraCast matches the correct mount and returns artwork', () {
+    final result = StationMetadataLookup.parseAzuraCastForTest([
+      {'station': {'listen_url': 'https://radio.example.org/other'},
+        'now_playing': {'song': {'artist': 'Wrong', 'title': 'Wrong'}}},
+      {'station': {'listen_url': 'https://radio.example.org/main',
+          'mounts': [{'url': 'https://radio.example.org/live-256.mp3'}]},
+        'now_playing': {'song': {'artist': 'Correct Artist',
+          'title': 'Correct Track', 'art': 'https://covers.example.org/right.jpg'}}},
+    ], 'https://radio.example.org/live-256.mp3');
+    expect(result?.artist, 'Correct Artist');
+    expect(result?.title, 'Correct Track');
+    expect(result?.cover, 'https://covers.example.org/right.jpg');
+    expect(StationMetadataLookup.parseAzuraCastForTest([
+      {'station': {'listen_url': 'https://radio.example.org/other'},
+        'now_playing': {'song': {'artist': 'Wrong', 'title': 'Wrong'}}},
+    ], 'https://radio.example.org/not-this-stream'), isNull);
+  });
+
+  test('SHOUTcast parses titles only when server reports a live stream', () {
+    final title = StationMetadataLookup.parseShoutcastForTest(
+      {'songtitle': 'Artist - Song', 'streamstatus': 1});
+    expect(title?.label, 'Artist — Song');
+    expect(StationMetadataLookup.parseShoutcastForTest(
+      {'songtitle': 'Artist - Song', 'streamstatus': 0}), isNull);
+  });
+
   test('Nova Danse uses shared official broadcaster metadata including artwork', () {
     final station = stationFromRadioBrowser({
       ...station('nova-dance', 'AAC', 256),
