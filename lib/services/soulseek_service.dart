@@ -153,6 +153,7 @@ class SoulseekService extends ChangeNotifier {
   String username = '', error = '';
   int sharedFiles = 0;
   List<SoulseekTransfer> transfers = const [];
+  List<Map<String, dynamic>> uploads = const [];
 
   Future<Map<String, dynamic>> _call(String method,
       [Map<String, dynamic> args = const {}]) {
@@ -259,6 +260,7 @@ class SoulseekService extends ChangeNotifier {
       connected = false;
       username = '';
       transfers = const [];
+      uploads = const [];
       await _background();
       sharedFiles = 0;
       error = '';
@@ -405,6 +407,15 @@ class SoulseekService extends ChangeNotifier {
         }
       }
       transfers = rows;
+      if (shareEnabled) {
+        final uploadInfo = await _call('uploads');
+        uploads = (uploadInfo['uploads'] as List? ?? [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+      } else {
+        uploads = const [];
+      }
       await _background();
       notifyListeners();
     } catch (e) {

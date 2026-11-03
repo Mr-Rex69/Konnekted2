@@ -32,6 +32,32 @@ fn safe_basename(path: &str) -> Result<&str, String> {
     }
     Ok(name)
 }
+
+fn shareable_directory(path: &str) -> Result<String, String> {
+    let root = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+    if !root.is_dir() { return Err("Shared music folder is not a directory".into()); }
+    // Upstream scan_many() currently follows symlinks via DirEntry::metadata,
+    // so reject a root with links rather than accidentally share outside it.
+    let mut pending = vec![root.clone()];
+    let mut inspected = 0usize;
+    while let Some(dir) = pending.pop() {
+        let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let kind = entry.file_type().map_err(|e| e.to_string())?;
+            if kind.is_symlink() {
+                return Err("This music folder contains symbolic links. Remove them before sharing, to avoid exposing files outside the folder.".into());
+            }
+            if kind.is_dir() { pending.push(entry.path()); }
+            inspected += 1;
+            if inspected > 500_000 {
+                return Err("Shared folder contains too many entries. Choose a smaller music folder.".into());
+            }
+        }
+    }
+    Ok(root.to_string_lossy().into_owned())
+}
+
 fn file_extension(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or("").trim()
 }
@@ -69,8 +95,7 @@ fn execute(input: Value) -> Result<Value, String> {
                 if !dir.is_absolute() || !dir.is_dir() {
                     return Err("The music folder is not accessible as a filesystem directory. Choose a readable local folder or disable sharing.".into());
                 }
-                vec![dir.canonicalize().map_err(|e| e.to_string())?
-                    .to_string_lossy().into_owned()]
+                vec![shareable_directory(shared)?]
             };
             let mut settings = ClientSettings::new(username, password);
             // Let the OS allocate an unused port. Peer-connection fallback is
@@ -197,7 +222,7 @@ fn execute(input: Value) -> Result<Value, String> {
                 return Err("Cannot read the selected folder for sharing".into());
             }
             client.set_shared_directories(if folder.is_empty() { vec![] } else {
-                vec![folder.to_owned()]
+                vec![shareable_directory(folder)?]
             }).map_err(|e| e.to_string())?;
             let (folders, files) = client.shared_counts();
             Ok(json!({"sharedFolders": folders, "sharedFiles": files}))
@@ -246,7 +271,7 @@ pub unsafe extern "C" fn lokal_soulseek_free(value: *mut c_char) {
 
 #[cfg(test)]
 mod tests {
-    use super::{safe_basename, is_audio};
+    use super::{safe_basename, is_audio, shareable_directory};
     #[test]
     fn remote_paths_cannot_traverse_download_directories() {
         assert_eq!(safe_basename(r"C:\album\track.flac").unwrap(), "track.flac");
@@ -254,5 +279,18 @@ mod tests {
         assert!(safe_basename("a/b/\u{0}").is_err());
         assert!(is_audio("recording.FLAC"));
         assert!(!is_audio("executable.apk"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_in_shared_folders_are_rejected() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("lokal-soulseek-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        symlink("/etc", root.join("external")).unwrap();
+        assert!(shareable_directory(root.to_str().unwrap())
+            .unwrap_err().contains("symbolic links"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

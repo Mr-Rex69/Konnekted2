@@ -75,7 +75,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   }
 
   Future<void> _queue(SoulseekFile file) async {
-    if (!_queueing.add(file.key)) return;
+    if (!mounted || !_queueing.add(file.key)) return;
     setState(() {});
     try {
       await _service.queue(file);
@@ -90,6 +90,7 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
   Future<void> _queueAlbum(List<SoulseekFile> files) async {
     // Prevent a maliciously large peer folder from flooding transfer slots.
     for (final file in files.take(60)) {
+      if (!mounted) return;
       if (!_service.queued(file)) await _queue(file);
     }
   }
@@ -248,6 +249,25 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
           Padding(padding: const EdgeInsets.only(top: 10),
             child: Text(_service.error, style: const TextStyle(
                 color: Colors.redAccent, fontSize: 12))),
+        if (_service.uploads.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Uploads', style: TextStyle(color: t.text,
+              fontSize: 15, fontWeight: FontWeight.w600)),
+          for (final upload in _service.uploads.reversed.take(8))
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text((upload['filename'] as String? ?? '')
+                  .replaceAll('\\', '/').split('/').last,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(
+                (upload['username'] as String? ?? '') + ' · ' +
+                (upload['status'] as String? ?? 'Unknown') +
+                ' · ' + soulseekSize((upload['bytes'] as num?)?.toInt() ?? 0) +
+                '/' + soulseekSize((upload['size'] as num?)?.toInt() ?? 0),
+                style: TextStyle(color: t.muted, fontSize: 11)),
+            ),
+        ],
         if (transfers.isNotEmpty) ...[
           const SizedBox(height: 14),
           Text('Transfers', style: TextStyle(color: t.text,
@@ -327,7 +347,8 @@ class _SoulseekSearchSectionState extends State<SoulseekSearchSection> {
                     if (group.value.length > 1)
                       TextButton(
                         onPressed: () => unawaited(_queueAlbum(group.value)),
-                        child: const Text('Get album'),
+                        child: Text(group.value.length > 60
+                            ? 'Get first 60' : 'Get album'),
                       ),
                   ]),
                 ),

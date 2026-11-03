@@ -155,6 +155,14 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
             label: Text(working ? 'Connecting…' : 'Sign in'),
           ),
         ],
+        if (signed && _service.uploads.isNotEmpty) Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('Uploads: ' +
+              _service.uploads.where((row) =>
+                  (row['status'] as String? ?? '').startsWith('InProgress'))
+                  .length.toString() + ' active',
+              style: TextStyle(color: t.muted, fontSize: 11)),
+        ),
         const SizedBox(height: 6),
         Text('Sharing stays on while the foreground notification is active. '
             'Android may limit long-running background sharing.',
