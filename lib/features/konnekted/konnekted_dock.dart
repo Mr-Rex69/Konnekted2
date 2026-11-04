@@ -42,17 +42,19 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
-// The bezel bends strong backdrop edges and the center magnifies what is
-// behind the glass by ~6.5%. Foreground artwork/buttons remain sharp.
-// kube.io's Music Player uses a convex bezel, refraction 1 and blur 1;
-// these are tuned equivalents for Flutter's different shader pipeline.
+// Optical behaviour follows BitChord's actual Kyant0/backdrop lens:
+// 24dp circular bezel, 24dp refraction, depth and chromatic aberration.
+// Lokal additionally retains a gently magnified centre for Apple's lens look.
+// Reference: kushagrasinghx/BitChord, LiquidGlass.kt (GPL-3.0) and
+// Kyant0/backdrop v2.0.0 (Apache-2.0).
 const _dockGlassLens = LokalLens(
   height: 24,
-  amount: 32,
-  fraction: .49,
-  dispersion: 0, // Single texture sample on moving capsules.
+  amount: 24,
+  fraction: .5,
+  depth: 1,
+  dispersion: 1,
   magnification: .065,
-  profile: LokalLensProfile.squircle,
+  profile: LokalLensProfile.circular,
 );
 
 const _dockBlurRadius = .8;
@@ -507,10 +509,11 @@ class _Lens extends StatelessWidget {
       builder: (context, t, _) => LokalClearLens(
         // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
+          // BitChord's raised selection uses a 12dp/14dp chromatic lens.
           height: 12,
-          amount: 22,
-          dispersion: .15,
-          profile: LokalLensProfile.squircle,
+          amount: 14,
+          dispersion: 1,
+          profile: LokalLensProfile.circular,
         ).scale(t),
         child: DecoratedBox(
           decoration: ShapeDecoration(
