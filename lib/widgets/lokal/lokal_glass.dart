@@ -23,23 +23,43 @@ abstract final class LokalGlassShaders {
   static final rim = ValueNotifier<ui.FragmentProgram?>(null);
 
   static Future<void> load() async {
+    // The outline is decoration, not a prerequisite for the actual lens.
+    // Previously a rim compile/load failure prevented loading the lens at
+    // all and the footer silently fell back to opaque frosted glass.
     try {
       rim.value ??= await ui.FragmentProgram.fromAsset(
         'shaders/lokal_glass_rim.frag',
       );
-      if (ui.ImageFilter.isShaderFilterSupported) {
-        lens.value ??= await ui.FragmentProgram.fromAsset(
-          'shaders/lokal_glass_lens.frag',
-        );
-      }
     } catch (error, stack) {
-      // Glass still works without them; it just isn't liquid.
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
           stack: stack,
           library: 'lokal glass',
-          context: ErrorDescription('loading the glass shaders'),
+          context: ErrorDescription('loading the optional rim shader'),
+        ),
+      );
+    }
+
+    if (!ui.ImageFilter.isShaderFilterSupported) {
+      debugPrint(
+        'Lokal glass: shader backdrop filters unsupported by renderer; '
+        'liquid refraction disabled (requires Impeller).',
+      );
+      return;
+    }
+    try {
+      lens.value ??= await ui.FragmentProgram.fromAsset(
+        'shaders/lokal_glass_lens.frag',
+      );
+      debugPrint('Lokal glass: Impeller refractive lens ready');
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'lokal glass',
+          context: ErrorDescription('loading the refractive lens shader'),
         ),
       );
     }
