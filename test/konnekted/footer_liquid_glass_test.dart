@@ -202,6 +202,53 @@ void main() {
   });
 
 
+  testWidgets('changing tabs lifts a refractive lens above the tab row',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var selected = KonnektedTab.listen;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, update) => Align(
+                alignment: Alignment.bottomCenter,
+                child: KonnektedDock(
+                  selected: selected,
+                  onSelect: (tab) => update(() => selected = tab),
+                  miniPlayer: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Library'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(selected, KonnektedTab.library);
+    final lifted = tester.widget<LokalClearLens>(
+      find.byKey(const ValueKey('dock-travel-lens')),
+    );
+    expect(lifted.lens.amount, greaterThan(8));
+    expect(lifted.lens.dispersion, 1);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpAndSettle();
+    final settled = tester.widget<LokalClearLens>(
+      find.byKey(const ValueKey('dock-travel-lens')),
+    );
+    expect(settled.lens.amount, closeTo(0, .0001));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Home bounce actually fires when dock collapses; Search does not',
       (tester) async {
     tester.view
