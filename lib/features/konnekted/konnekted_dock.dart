@@ -67,8 +67,11 @@ const _dockBlurRadius = 1.2;
 double dockHomeBubbleScale(double progress) {
   final p = progress.clamp(0.0, 1.0);
   if (p <= 0 || p >= 1) return 1;
-  return 1 + .075 * math.sin(4 * math.pi * p) *
-      math.sin(math.pi * p);
+  // One small deformation, not two opposing oscillations. The previous
+  // double sine caused repeated grow/shrink while the bar was already
+  // resizing, amplifying GPU work and looking like frame jitter.
+  final wave = math.sin(math.pi * p);
+  return 1 + .03 * wave * wave;
 }
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
@@ -84,6 +87,7 @@ class KonnektedDock extends StatefulWidget {
     required this.miniPlayer,
     this.hasMiniPlayer = true,
     this.collapsed = false,
+    this.scrollActive = false,
     this.onExpand,
   });
 
@@ -95,6 +99,10 @@ class KonnektedDock extends StatefulWidget {
   /// single row and never collapses.
   final bool hasMiniPlayer;
   final bool collapsed;
+
+  /// True while content is actively scrolling; prevents repeated GPU
+  /// backdrop captures behind the three moving footer surfaces.
+  final bool scrollActive;
 
   /// Tapping the shrunken tab capsule asks for the full dock back.
   final VoidCallback? onExpand;
@@ -131,9 +139,19 @@ class _KonnektedDockState extends State<KonnektedDock>
     vsync: this,
     duration: const Duration(milliseconds: 420),
     value: _wantsCollapse ? 1 : 0,
-  );
+  )..addStatusListener(_onCollapseStatus);
 
   bool _miniPressed = false;
+
+  void _onCollapseStatus(AnimationStatus status) {
+    // The final animation tick may fire while isAnimating is still true.
+    // Repaint *once* after the spring settles to restore the optical lens,
+    // without any GPU-heavy backdrop passes during the geometry change.
+    if ((status == AnimationStatus.completed ||
+         status == AnimationStatus.dismissed) && mounted) {
+      setState(() {});
+    }
+  }
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
 
@@ -176,7 +194,9 @@ class _KonnektedDockState extends State<KonnektedDock>
 
   @override
   void dispose() {
-    _collapse.dispose();
+    _collapse
+      ..removeStatusListener(_onCollapseStatus)
+      ..dispose();
     super.dispose();
   }
 
@@ -214,6 +234,7 @@ class _KonnektedDockState extends State<KonnektedDock>
     // another easeInOutCubic made the icons stop/start twice and obscured the
     // spring's response on rapid direction reversals.
     final t = _collapse.value.clamp(0.0, 1.0);
+    final suspendGlass = widget.scrollActive || _collapse.isAnimating;
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
 
@@ -270,6 +291,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                     lens: _dockGlassLens,
                     liquidTintOpacity: lerpDouble(.09, .13, t)!,
                     liquidBlurRadius: _dockBlurRadius,
+                    suspendBackdrop: suspendGlass,
                     fallbackTintOpacity: lerpDouble(.16, .20, t)!,
                     fallbackBlurSigma: 2,
                     pronouncedRim: true,
@@ -296,6 +318,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: _TabCapsule(
                     width: tabsOpen.width,
                     collapse: t,
+                    suspendBackdrop: suspendGlass,
                     selected: widget.selected,
                     onSelect: widget.onSelect,
                     onExpand: widget.onExpand,
@@ -307,6 +330,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                 child: _SearchCircle(
                   selected: widget.selected == KonnektedTab.explore,
                   collapse: t,
+                  suspendBackdrop: suspendGlass,
                   onTap: () => widget.onSelect(KonnektedTab.explore),
                 ),
               ),
@@ -353,6 +377,7 @@ class _TabCapsule extends StatefulWidget {
   const _TabCapsule({
     required this.width,
     required this.collapse,
+    required this.suspendBackdrop,
     required this.selected,
     required this.onSelect,
     required this.onExpand,
@@ -361,6 +386,7 @@ class _TabCapsule extends StatefulWidget {
   /// The open capsule's width; the tabs keep it while the capsule shrinks.
   final double width;
   final double collapse;
+  final bool suspendBackdrop;
   final KonnektedTab selected;
   final ValueChanged<KonnektedTab> onSelect;
   final VoidCallback? onExpand;
@@ -542,6 +568,7 @@ class _TabCapsuleState extends State<_TabCapsule>
         lens: _dockGlassLens,
         liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
+        suspendBackdrop: widget.suspendBackdrop,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
         pronouncedRim: true,
@@ -909,11 +936,13 @@ class _SearchCircle extends StatelessWidget {
   const _SearchCircle({
     required this.selected,
     required this.collapse,
+    required this.suspendBackdrop,
     required this.onTap,
   });
 
   final bool selected;
   final double collapse;
+  final bool suspendBackdrop;
   final VoidCallback onTap;
 
   @override
@@ -934,6 +963,7 @@ class _SearchCircle extends StatelessWidget {
           lens: _dockGlassLens,
           liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
+          suspendBackdrop: suspendBackdrop,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
           pronouncedRim: true,
