@@ -91,7 +91,8 @@ void main() {
         container.read(lokalAppearanceProvider).performanceLevel,
         LokalPerformanceLevel.ultra,
       );
-      await tester.tap(find.text('Full'));
+      await tester.tap(find.text('Off'));
+      expect(find.text('Full'), findsNothing);
       await tester.pumpAndSettle();
       expect(
         container.read(lokalAppearanceProvider).performanceLevel,
