@@ -409,6 +409,7 @@ class _TabCapsuleState extends State<_TabCapsule>
   @override
   void dispose() {
     _selectionPosition.dispose();
+    _pressed.dispose();
     super.dispose();
   }
 
@@ -418,7 +419,7 @@ class _TabCapsuleState extends State<_TabCapsule>
   /// The lens follows a dragging finger, like iOS 26's tab bar.
   double? _dragX;
   int? _dragIndex;
-  bool _pressed = false;
+  final _pressed = ValueNotifier<bool>(false);
 
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
 
@@ -471,8 +472,9 @@ class _TabCapsuleState extends State<_TabCapsule>
     final shown = _lastCapsuleTab;
     final open = 1 - widget.collapse;
 
-    // The whole lens responds to touch like BitChord's material, squashing
-    // gently before the lift. Search stays a separate, non-bouncing sphere.
+    // The glass capsule must never scale on pointer down. Animate only
+    // selected icon/tab content *inside* it; searching and transport taps
+    // similarly leave their outer optical surfaces stationary.
     return AnimatedBuilder(
       animation: _selectionPosition,
       builder: (context, _) {
@@ -484,22 +486,9 @@ class _TabCapsuleState extends State<_TabCapsule>
                 );
         return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) {
-        if (!_pressed) setState(() => _pressed = true);
-      },
-      onPointerUp: (_) {
-        if (_pressed) setState(() => _pressed = false);
-      },
-      onPointerCancel: (_) {
-        if (_pressed) setState(() => _pressed = false);
-      },
-      child: AnimatedScale(
-      key: const ValueKey('dock-home-press'),
-      scale: reduceMotion ? 1 :
-          _dragX != null ? 1 + 16 / widget.width :
-          _pressed ? .975 : 1,
-      duration: const Duration(milliseconds: 190),
-      curve: Curves.easeOutBack,
+      onPointerDown: (_) => _pressed.value = true,
+      onPointerUp: (_) => _pressed.value = false,
+      onPointerCancel: (_) => _pressed.value = false,
       child: LokalGlass.capsule(
         key: const ValueKey('dock-tab-glass'),
         grouped: true,
@@ -511,7 +500,18 @@ class _TabCapsuleState extends State<_TabCapsule>
         fallbackBlurSigma: 2,
         pronouncedRim: true,
         rimStrength: .82,
-        child: Stack(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _pressed,
+          builder: (context, pressed, _) => AnimatedScale(
+            key: const ValueKey('dock-home-press'),
+            scale: reduceMotion
+                ? 1
+                : _dragX != null
+                    ? 1 + 16 / widget.width
+                    : pressed ? .975 : 1,
+            duration: const Duration(milliseconds: 190),
+            curve: Curves.easeOutBack,
+            child: Stack(
           fit: StackFit.expand,
           children: [
             // Keep the whole expanded subtree mounted at both endpoints.
@@ -659,8 +659,9 @@ class _TabCapsuleState extends State<_TabCapsule>
                 },
               ),
           ],
+            ),
+          ),
         ),
-      ),
       ),
       );
       },
@@ -668,8 +669,10 @@ class _TabCapsuleState extends State<_TabCapsule>
   }
 }
 
-/// The selection lens: a brighter pane of glass under the current tab.
-/// Static selected-tab highlight; the parent capsule already refracts.
+/// Plain, tinted selection indicator on Home / Library / You.
+/// The enclosing capsule already provides the real refractive glass,
+/// including its border. This must not add a second lens, gradient rim,
+/// or independently filtered material on top.
 class _Lens extends StatelessWidget {
   const _Lens({super.key, required this.color, this.active = false});
 
@@ -677,27 +680,12 @@ class _Lens extends StatelessWidget {
   final bool active;
 
   @override
-  Widget build(BuildContext context) {
-    final light = context.lokal.isLight;
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        shape: StadiumBorder(
-          side: BorderSide(
-            color: Colors.white.withValues(alpha: light ? .44 : .24),
-            width: .9,
-          ),
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            color.withValues(alpha: active ? .24 : .19),
-            color.withValues(alpha: active ? .13 : .09),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: active ? .20 : .14),
+      borderRadius: BorderRadius.circular(999),
+    ),
+  );
 }
 
 class _TabButton extends StatelessWidget {
