@@ -554,6 +554,15 @@ class _TabCapsuleState extends State<_TabCapsule>
                                                       ),
                                                     ),
                                                   ),
+                                                  shadows: [
+                                                    BoxShadow(
+                                                      color: Colors.black.withValues(
+                                                        alpha: .24 * lift,
+                                                      ),
+                                                      blurRadius: 12,
+                                                      offset: const Offset(0, 2),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ),
