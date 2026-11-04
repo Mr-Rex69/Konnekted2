@@ -70,9 +70,12 @@ class LokalPerformanceAdvisor extends ConsumerStatefulWidget {
   // to the last interaction for M05 diagnostics without adding per-frame
   // platform-channel calls or logging any private content.
   static int _scrollUntilMicros = 0, _navigationUntilMicros = 0;
-  static String _navigationSurface = 'other';
-  static void noteScroll() =>
-      _scrollUntilMicros = DateTime.now().microsecondsSinceEpoch + 500000;
+  static String _navigationSurface = 'other', _scrollSurface = 'other';
+  static void noteScroll({String surface = 'other'}) {
+    _scrollSurface = surface;
+    _scrollUntilMicros = DateTime.now().microsecondsSinceEpoch + 500000;
+  }
+  static String get scrollSurface => _scrollSurface;
   static void noteNavigation({String surface = 'other'}) {
     _navigationSurface = surface;
     _navigationUntilMicros = DateTime.now().microsecondsSinceEpoch + 1000000;
@@ -103,6 +106,7 @@ class _LokalPerformanceAdvisorState
   int _scrollFrames = 0, _scrollRasterMisses = 0;
   int _navigationFrames = 0, _navigationRasterMisses = 0;
   final Map<String, _NavigationFrameWindow> _navigationWindows = {};
+  final Map<String, _NavigationFrameWindow> _scrollWindows = {};
   int? _previousCpuMs, _previousWallMs;
   @override
   void initState() {
@@ -151,6 +155,13 @@ class _LokalPerformanceAdvisorState
         case 'scroll':
           _scrollFrames++;
           if (slowRaster) _scrollRasterMisses++;
+          final window = _scrollWindows.putIfAbsent(
+            LokalPerformanceAdvisor.scrollSurface,
+            _NavigationFrameWindow.new,
+          );
+          window.frames++;
+          if (slowUi) window.uiMisses++;
+          if (slowRaster) window.rasterMisses++;
         case 'navigation':
           _navigationFrames++;
           if (slowRaster) _navigationRasterMisses++;
@@ -179,6 +190,7 @@ class _LokalPerformanceAdvisorState
       _scrollFrames = _scrollRasterMisses = 0;
       _navigationFrames = _navigationRasterMisses = 0;
       _navigationWindows.clear();
+      _scrollWindows.clear();
       return;
     }
     try {
@@ -206,6 +218,10 @@ class _LokalPerformanceAdvisorState
             ? 'ultra'
             : appearance.performanceMode ? 'performance' : 'normal';
         final rssMb = ProcessInfo.currentRss ~/ (1024 * 1024);
+        final scrollBySurface = _scrollWindows.entries.map(
+          (entry) => '${entry.key}:${entry.value.frames}/'
+              '${entry.value.uiMisses}/${entry.value.rasterMisses}',
+        ).join(',');
         final navBySurface = _navigationWindows.entries.map(
           (entry) => '${entry.key}:${entry.value.frames}/'
               '${entry.value.uiMisses}/${entry.value.rasterMisses}',
@@ -222,6 +238,7 @@ class _LokalPerformanceAdvisorState
           'mode=$mode rssMb=$rssMb '
           'surface=${LokalPerformanceAdvisor.diagnosticSurface} '
           'scrollRaster=$_scrollRasterMisses/$_scrollFrames '
+          'scrollFramesUiRaster=$scrollBySurface '
           'navigationRaster=$_navigationRasterMisses/$_navigationFrames '
           'navFramesUiRaster=$navBySurface',
           source: LogSource.platform,
@@ -234,6 +251,7 @@ class _LokalPerformanceAdvisorState
       _scrollFrames = _scrollRasterMisses = 0;
       _navigationFrames = _navigationRasterMisses = 0;
       _navigationWindows.clear();
+      _scrollWindows.clear();
     } catch (_) {
       // Perf telemetry must never interfere with startup or the audio path.
     }
@@ -298,6 +316,7 @@ class _LokalPerformanceAdvisorState
       _scrollFrames = _scrollRasterMisses = 0;
       _navigationFrames = _navigationRasterMisses = 0;
       _navigationWindows.clear();
+      _scrollWindows.clear();
     }
   }
 
