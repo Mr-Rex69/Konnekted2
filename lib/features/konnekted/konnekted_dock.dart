@@ -397,7 +397,6 @@ class _TabCapsuleState extends State<_TabCapsule>
   @override
   void dispose() {
     _selectionPosition.dispose();
-    _pressed.dispose();
     super.dispose();
   }
 
@@ -407,8 +406,6 @@ class _TabCapsuleState extends State<_TabCapsule>
   /// The lens follows a dragging finger, like iOS 26's tab bar.
   double? _dragX;
   int? _dragIndex;
-  final _pressed = ValueNotifier<bool>(false);
-
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
 
   int _indexAt(double x) =>
@@ -456,9 +453,9 @@ class _TabCapsuleState extends State<_TabCapsule>
     final shown = _lastCapsuleTab;
     final open = 1 - widget.collapse;
 
-    // The glass capsule must never scale on pointer down. Animate only
-    // selected icon/tab content *inside* it; searching and transport taps
-    // similarly leave their outer optical surfaces stationary.
+    // The selected icon has no touch-scale or elastic press feedback.
+    // Only the dock's bounded geometric fold and collapse-only left squash
+    // affect the house.
     return AnimatedBuilder(
       animation: _selectionPosition,
       builder: (context, _) {
@@ -468,12 +465,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                 _selectionPosition.value.clamp(
                   0.0, (_tabs.length - 1).toDouble(),
                 );
-        return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _pressed.value = true,
-      onPointerUp: (_) => _pressed.value = false,
-      onPointerCancel: (_) => _pressed.value = false,
-      child: LokalGlass.capsule(
+        return LokalGlass.capsule(
         key: const ValueKey('dock-tab-glass'),
         grouped: true,
         lens: _dockGlassLens,
@@ -484,11 +476,7 @@ class _TabCapsuleState extends State<_TabCapsule>
         fallbackBlurSigma: 2,
         pronouncedRim: true,
         rimStrength: .82,
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _pressed,
-          // Reuse the complete tab subtree during press/release; only the
-          // icon/content transform needs to animate, not the glass or layout.
-          child: Stack(
+        child: Stack(
           fit: StackFit.expand,
           children: [
             // Keep the whole expanded subtree mounted at both endpoints.
@@ -643,20 +631,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                 },
               ),
           ],
-          ),
-          builder: (context, pressed, child) => AnimatedScale(
-            key: const ValueKey('dock-home-press'),
-            scale: reduceMotion
-                ? 1
-                : _dragX != null
-                    ? 1 + 16 / widget.width
-                    : pressed ? .975 : 1,
-            duration: const Duration(milliseconds: 190),
-            curve: Curves.easeOutBack,
-            child: child,
-          ),
         ),
-      ),
       );
       },
     );
