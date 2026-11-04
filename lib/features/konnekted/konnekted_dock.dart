@@ -47,7 +47,8 @@ const _dockGlassLens = LokalLens(
   height: 26,
   amount: 34,
   fraction: .49,
-  dispersion: .07,
+  // Avoid seven-tap chromatic sampling across the entire moving footer.
+  dispersion: 0,
   profile: LokalLensProfile.squircle,
 );
 
@@ -210,7 +211,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                     liquidTintOpacity: lerpDouble(.20, .28, t)!,
                     liquidBlurRadius: _dockBlurRadius,
                     pronouncedRim: true,
-                    rimStrength: 1.10 + .12 * t,
+                    rimStrength: 1.0 + .04 * t,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t > .5,
                       child: widget.miniPlayer,
@@ -340,7 +341,7 @@ class _TabCapsuleState extends State<_TabCapsule> {
         liquidTintOpacity: lerpDouble(.20, .28, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
         pronouncedRim: true,
-        rimStrength: 1.10 + .12 * widget.collapse,
+        rimStrength: 1.0 + .04 * widget.collapse,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -576,7 +577,7 @@ class _SearchCircle extends StatelessWidget {
           liquidTintOpacity: lerpDouble(.20, .28, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
           pronouncedRim: true,
-          rimStrength: 1.10 + .12 * collapse,
+          rimStrength: 1.0 + .04 * collapse,
           child: Stack(
             fit: StackFit.expand,
             children: [
