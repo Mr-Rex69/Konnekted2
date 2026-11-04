@@ -538,6 +538,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                           child: Opacity(
                                             opacity: lift,
                                             child: LokalClearLens(
+                                              key: const ValueKey('dock-travel-lens'),
                                               lens: LokalLens(
                                                 height: 12,
                                                 amount: 14,
