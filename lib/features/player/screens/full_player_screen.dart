@@ -1598,7 +1598,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                               child: Hero(
                                 tag: widget.heroTag,
                                 createRectTween: (begin, end) =>
-                                    RectTween(begin: begin, end: end),
+                                    LokalArtworkRectTween(begin: begin, end: end),
                                 flightShuttleBuilder: (
                                   _,
                                   __,
@@ -1930,7 +1930,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   child: Hero(
                     tag: widget.heroTag,
                     createRectTween: (begin, end) =>
-                        RectTween(begin: begin, end: end),
+                        LokalArtworkRectTween(begin: begin, end: end),
                     flightShuttleBuilder:
                         (
                           flightContext,
