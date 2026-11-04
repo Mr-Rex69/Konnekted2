@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/konnekted_dock.dart';
