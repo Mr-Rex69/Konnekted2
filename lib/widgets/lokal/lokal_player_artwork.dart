@@ -30,13 +30,14 @@ abstract final class LokalArtworkFlight {
     final downward = dock.dy - full.dy;
     if (downward <= 0) return bounds;
 
-    // This deliberate below-destination sweep is what the previous
-    // bottom-clamped sheet ride prevented. Limit it by the available vertical
-    // travel to avoid an exaggerated loop on small/landscape players.
+    // This is a restrained J-shaped hook, not a tracing of the user's
+    // approximate sketch. The second control point is briefly below the mini
+    // target, producing a shallow dip and a smooth upward final tangent.
+    // Bound the dip to avoid a deep loop or unnecessary off-screen travel.
     final availableTravel = sheetTravel == null
         ? downward
         : math.min(downward, math.max(sheetTravel, 0.0));
-    final belowDestination = math.min(180.0, availableTravel * .42);
+    final belowDestination = math.min(130.0, availableTravel * .36);
     final dx = dock.dx - full.dx;
 
     // A cubic Bézier with a mostly vertical departure and the second control
