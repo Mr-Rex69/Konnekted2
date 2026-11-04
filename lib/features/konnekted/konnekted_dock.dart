@@ -549,8 +549,10 @@ class _TabCapsuleState extends State<_TabCapsule>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (open > 0)
-              IgnorePointer(
+            // Keep the whole expanded subtree mounted at both endpoints.
+            // Unmounting it on the final frame flashes a new backdrop/lens
+            // hierarchy and can read as a one-frame collapse jitter.
+            IgnorePointer(
                 ignoring: widget.collapse > .5,
                 child: Opacity(
                   opacity: Curves.easeIn.transform(open),
@@ -683,8 +685,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                   ),
                 ),
               ),
-            if (widget.collapse > 0)
-              IgnorePointer(
+            IgnorePointer(
                 ignoring: widget.collapse <= .5,
                 child: Opacity(
                   opacity: Curves.easeOut.transform(widget.collapse),
@@ -1206,7 +1207,11 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
             // *expanded* width when deciding whether Next can appear, so
             // it doesn't pop away when crossing 360 logical pixels mid-flight.
             final expandedWidth = constraints.maxWidth +
-                2 * (KonnektedDock.barHeight + KonnektedDock.gap) * collapse;
+                2 * (
+                  KonnektedDock.inlineInset +
+                  KonnektedDock.collapsedHeight +
+                  KonnektedDock.inlineSpacing
+                ) * collapse;
             final compactAtRest = expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
@@ -1392,7 +1397,8 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
     required IconData icon,
     double iconSize = 24,
   }) {
-    if (reveal <= .001) return const SizedBox.shrink();
+    // Preserve the control subtree throughout the fold. Switching to a
+    // SizedBox at reveal=0 recreated the icon button during direction changes.
     return IgnorePointer(
       ignoring: reveal < .85,
       child: ClipRect(
