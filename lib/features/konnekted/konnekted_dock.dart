@@ -114,8 +114,10 @@ class _KonnektedDockState extends State<KonnektedDock>
 
   static final _spring = SpringDescription.withDampingRatio(
     mass: 1,
-    stiffness: 400,
-    ratio: 1,
+    // A softer critically-near-damped spring feels continuous rather than
+    // snapping the two floating surfaces into their final positions.
+    stiffness: 255,
+    ratio: .90,
   );
 
   @override
@@ -180,7 +182,10 @@ class _KonnektedDockState extends State<KonnektedDock>
     const bar = KonnektedDock.barHeight;
     const mini = KonnektedDock.miniHeight;
     const gap = KonnektedDock.gap;
-    final t = _collapse.value;
+    // One smooth, reversible progress for geometry, material and inner
+    // controls. Using a single value prevents a detached mid-flight jump.
+    final springT = _collapse.value.clamp(0.0, 1.0);
+    final t = Curves.easeInOutCubic.transform(springT);
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
 
@@ -213,7 +218,8 @@ class _KonnektedDockState extends State<KonnektedDock>
                     pronouncedRim: true,
                     rimStrength: 1.0 + .04 * t,
                     child: KonnektedMiniPlayerScope(
-                      collapsed: t > .5,
+                      collapsed: t >= 1,
+                      progress: t,
                       child: widget.miniPlayer,
                     ),
                   ),
@@ -249,20 +255,30 @@ class KonnektedMiniPlayerScope extends InheritedWidget {
   const KonnektedMiniPlayerScope({
     super.key,
     required this.collapsed,
+    this.progress,
     required super.child,
   });
 
+  /// Legacy compact state. Actual dock transitions use continuous progress.
   final bool collapsed;
 
+  /// 0 = two-row accessory, 1 = inline with the minimized tab bar.
+  /// Null preserves callers that only pass [collapsed] (including tests).
+  final double? progress;
+
+  static double progressOf(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<KonnektedMiniPlayerScope>();
+    return (scope?.progress ?? (scope?.collapsed == true ? 1.0 : 0.0))
+        .clamp(0.0, 1.0);
+  }
+
   static bool collapsedOf(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<KonnektedMiniPlayerScope>()
-          ?.collapsed ??
-      false;
+      progressOf(context) >= 1;
 
   @override
   bool updateShouldNotify(KonnektedMiniPlayerScope old) =>
-      collapsed != old.collapsed;
+      collapsed != old.collapsed || progress != old.progress;
 }
 
 class _TabCapsule extends StatefulWidget {
@@ -803,14 +819,30 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
   }
 
   Widget _body(BuildContext context) {
-    final tucked = KonnektedMiniPlayerScope.collapsedOf(context);
+    final collapse = KonnektedMiniPlayerScope.progressOf(context);
+    final tucked = collapse >= 1;
+    // Instead of swapping entire subtrees halfway through the spring, fade
+    // controls out while relinquishing their width to the title. This keeps
+    // album artwork and the play button in one continuous layout.
+    final artistReveal = 1 - Curves.easeInOutCubic.transform(
+      ((collapse - .12) / .58).clamp(0.0, 1.0),
+    );
+    final queueReveal = 1 - Curves.easeInOutCubic.transform(
+      ((collapse - .18) / .70).clamp(0.0, 1.0),
+    );
+    final nextReveal = 1 - Curves.easeInOutCubic.transform(
+      (collapse / .56).clamp(0.0, 1.0),
+    );
     return Stack(
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final compact =
-                tucked ||
-                constraints.maxWidth < 360 ||
+            // The width actively shrinks while collapsing. Check the
+            // *expanded* width when deciding whether Next can appear, so
+            // it doesn't pop away when crossing 360 logical pixels mid-flight.
+            final expandedWidth = constraints.maxWidth +
+                2 * (KonnektedDock.barHeight + KonnektedDock.gap) * collapse;
+            final compactAtRest = expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
@@ -867,27 +899,37 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    if (!tucked) ...[
-                                      const SizedBox(height: 2),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              song.artist,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: context.lokal.muted,
+                                    if (artistReveal > .001)
+                                      ClipRect(
+                                        child: Align(
+                                          alignment: Alignment.topLeft,
+                                          heightFactor: artistReveal,
+                                          child: Opacity(
+                                            opacity: artistReveal,
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(top: 2),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      song.artist,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: context.lokal.muted,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const Flexible(
+                                                    child: LokalOutputPill(),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),
-                                          const Flexible(
-                                            child: LokalOutputPill(),
-                                          ),
-                                        ],
+                                        ),
                                       ),
-                                    ],
                                   ],
                                 ),
                               ),
@@ -907,18 +949,20 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                       size: 28,
                     ),
                   ),
-                  if (!compact)
-                    IconButton(
+                  if (!compactAtRest)
+                    _collapsingControl(
+                      reveal: nextReveal,
                       tooltip: lokalText('Next track'),
                       onPressed: onNext,
-                      icon: const Icon(Icons.skip_next_rounded),
+                      icon: Icons.skip_next_rounded,
                     ),
-                  if (!tucked)
-                    IconButton(
-                      tooltip: lokalText('Open queue'),
-                      onPressed: onQueue,
-                      icon: const Icon(Icons.queue_music_rounded, size: 22),
-                    ),
+                  _collapsingControl(
+                    reveal: queueReveal,
+                    tooltip: lokalText('Open queue'),
+                    onPressed: onQueue,
+                    icon: Icons.queue_music_rounded,
+                    iconSize: 22,
+                  ),
                 ],
               ),
             );
@@ -926,6 +970,36 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
         ),
         Positioned(left: 24, right: 24, bottom: 0, child: progress),
       ],
+    );
+  }
+
+  /// Compress an action continuously with the glass rather than removing it
+  /// at the halfway point. Disabled taps/semantics prevent hidden controls
+  /// intercepting gestures in the collapsed player.
+  Widget _collapsingControl({
+    required double reveal,
+    required String tooltip,
+    required VoidCallback onPressed,
+    required IconData icon,
+    double iconSize = 24,
+  }) {
+    if (reveal <= .001) return const SizedBox.shrink();
+    return IgnorePointer(
+      ignoring: reveal < .85,
+      child: ClipRect(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: reveal,
+          child: Opacity(
+            opacity: reveal,
+            child: IconButton(
+              tooltip: tooltip,
+              onPressed: onPressed,
+              icon: Icon(icon, size: iconSize),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
