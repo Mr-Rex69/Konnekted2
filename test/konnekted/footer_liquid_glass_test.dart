@@ -1,6 +1,7 @@
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/konnekted_dock.dart';
+import 'package:flick/models/song.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,4 +60,73 @@ void main() {
     checkGlass(.28);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('mini-player controls fade continuously into inline layout',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const song = Song(
+      id: 'glass-transition',
+      title: 'Transition test song',
+      artist: 'Transition artist',
+      duration: Duration(minutes: 3),
+      fileType: 'FLAC',
+    );
+
+    Widget atProgress(double progress) => ProviderScope(
+          child: MaterialApp(
+            theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  width: 340,
+                  height: 58,
+                  child: KonnektedMiniPlayerScope(
+                    collapsed: progress >= 1,
+                    progress: progress,
+                    child: KonnektedMiniPlayerContent(
+                      song: song,
+                      isPlaying: true,
+                      onOpen: () {},
+                      onPlayPause: () {},
+                      onPrevious: () {},
+                      onNext: () {},
+                      onQueue: () {},
+                      progress: const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(atProgress(0));
+    await tester.pump();
+    expect(find.byTooltip('Open queue'), findsOneWidget);
+    expect(find.text('Transition artist'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(atProgress(.45));
+    await tester.pump();
+    expect(find.byTooltip('Open queue'), findsOneWidget);
+    expect(find.text('Transition artist'), findsOneWidget);
+    expect(find.byTooltip('Pause'), findsOneWidget);
+    final middleScope = tester.widget<KonnektedMiniPlayerScope>(
+      find.byType(KonnektedMiniPlayerScope),
+    );
+    expect(middleScope.progress, closeTo(.45, .001));
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(atProgress(1));
+    await tester.pump();
+    expect(find.byTooltip('Open queue'), findsNothing);
+    expect(find.text('Transition artist'), findsNothing);
+    expect(find.byTooltip('Pause'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }
