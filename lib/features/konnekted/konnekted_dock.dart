@@ -860,7 +860,19 @@ class _TabButton extends StatelessWidget {
                   curve: Curves.easeOutBack,
                   child: Opacity(
                     opacity: hideIcon ? 0 : 1,
-                    child: Icon(tab.icon, size: 22, color: color),
+                    child: Icon(
+                      tab.icon,
+                      size: 22,
+                      color: color,
+                      shadows: [
+                        Shadow(
+                          color: context.lokal.isLight
+                              ? Colors.white.withValues(alpha: .75)
+                              : Colors.black.withValues(alpha: .85),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -870,9 +882,17 @@ class _TabButton extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     color: color,
+                    shadows: [
+                      Shadow(
+                        color: context.lokal.isLight
+                            ? Colors.white.withValues(alpha: .85)
+                            : Colors.black.withValues(alpha: .88),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
                 ),
               ],
