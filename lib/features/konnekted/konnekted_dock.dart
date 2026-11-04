@@ -538,9 +538,11 @@ class _TabCapsuleState extends State<_TabCapsule>
                                         child: Transform.scale(
                                           scaleX: 1 + .18 * lift,
                                           scaleY: 1 + .10 * lift,
-                                          child: Opacity(
-                                            opacity: lift,
-                                            child: LokalClearLens(
+                                          // Never put a BackdropFilter inside an
+                                          // Opacity saveLayer: it can obscure
+                                          // the recorded tab pixels that the
+                                          // lens is supposed to refract.
+                                          child: LokalClearLens(
                                               key: const ValueKey('dock-travel-lens'),
                                               lens: LokalLens(
                                                 height: 12,
@@ -569,7 +571,6 @@ class _TabCapsuleState extends State<_TabCapsule>
                                                 ),
                                               ),
                                             ),
-                                          ),
                                         ),
                                       );
                                     },
