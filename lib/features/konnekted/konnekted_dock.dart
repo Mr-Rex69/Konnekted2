@@ -618,12 +618,67 @@ class _TabCapsuleState extends State<_TabCapsule>
                       child: InkWell(
                         onTap: widget.onExpand,
                         customBorder: const CircleBorder(),
-                        child: Icon(shown.icon, color: t.accent, size: 24),
+                        // The glyph is drawn once, outside this fading
+                        // layout, so it physically moves from the selected
+                        // expanded tab into the compact Home bubble.
+                        child: const SizedBox.expand(),
                       ),
                     ),
                   ),
                 ),
               ),
+            // BitChord uses a shared element for the selected glyph: unlike
+            // a crossfade between two separate icons, this is always one
+            // drawable. Its centre follows the capsule as it shrinks and the
+            // icon grows from the expanded 22dp to a readable compact ~28dp.
+            IgnorePointer(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(end: _tabs.indexOf(shown).toDouble()),
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 340),
+                curve: Curves.easeOutBack,
+                builder: (context, tabIndex, _) {
+                  final visualWidth = lerpDouble(
+                    widget.width,
+                    KonnektedDock.barHeight,
+                    widget.collapse,
+                  )!;
+                  final fromX = _inset + _slot * (tabIndex + .5);
+                  final centreX = lerpDouble(
+                    fromX,
+                    visualWidth * .5,
+                    widget.collapse,
+                  )!;
+                  final centreY = lerpDouble(
+                    22,
+                    KonnektedDock.barHeight * .5,
+                    widget.collapse,
+                  )!;
+                  return Positioned(
+                    left: centreX - 11,
+                    top: centreY - 11,
+                    width: 22,
+                    height: 22,
+                    child: Transform.scale(
+                      key: const ValueKey('dock-shared-selected-icon'),
+                      scale: 1.08 + .20 * widget.collapse,
+                      child: AnimatedSwitcher(
+                        duration: reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 170),
+                        child: Icon(
+                          shown.icon,
+                          key: ValueKey(shown),
+                          color: t.accent,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
