@@ -138,7 +138,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     if (n is ScrollUpdateNotification ||
         n is OverscrollNotification ||
         (n is UserScrollNotification && n.direction != ScrollDirection.idle)) {
-      LokalPerformanceAdvisor.noteScroll();
+      LokalPerformanceAdvisor.noteScroll(
+        surface: switch (_tab.value) {
+          KonnektedTab.listen => 'Home',
+          KonnektedTab.library => 'Library',
+          KonnektedTab.settings => 'You',
+          KonnektedTab.explore => 'Search',
+        },
+      );
     }
 
     if (n is ScrollEndNotification ||
