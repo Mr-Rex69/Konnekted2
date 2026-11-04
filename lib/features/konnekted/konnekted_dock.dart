@@ -67,8 +67,11 @@ const _dockBlurRadius = 1.2;
 double dockHomeBubbleScale(double progress) {
   final p = progress.clamp(0.0, 1.0);
   if (p <= 0 || p >= 1) return 1;
-  return 1 + .075 * math.sin(4 * math.pi * p) *
-      math.sin(math.pi * p);
+  // One small deformation, not two opposing oscillations. The previous
+  // double sine caused repeated grow/shrink while the bar was already
+  // resizing, amplifying GPU work and looking like frame jitter.
+  final wave = math.sin(math.pi * p);
+  return 1 + .03 * wave * wave;
 }
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
@@ -84,6 +87,7 @@ class KonnektedDock extends StatefulWidget {
     required this.miniPlayer,
     this.hasMiniPlayer = true,
     this.collapsed = false,
+    this.scrollActive = false,
     this.onExpand,
   });
 
@@ -95,6 +99,10 @@ class KonnektedDock extends StatefulWidget {
   /// single row and never collapses.
   final bool hasMiniPlayer;
   final bool collapsed;
+
+  /// True while content is actively scrolling; prevents repeated GPU
+  /// backdrop captures behind the three moving footer surfaces.
+  final bool scrollActive;
 
   /// Tapping the shrunken tab capsule asks for the full dock back.
   final VoidCallback? onExpand;
@@ -131,9 +139,21 @@ class _KonnektedDockState extends State<KonnektedDock>
     vsync: this,
     duration: const Duration(milliseconds: 420),
     value: _wantsCollapse ? 1 : 0,
-  );
+  )..addStatusListener(_onCollapseStatus);
 
   bool _miniPressed = false;
+
+  void _onCollapseStatus(AnimationStatus status) {
+    // The final animation tick may fire while isAnimating is still true.
+    // Repaint *once* after the spring settles to restore the optical lens,
+    // without any GPU-heavy backdrop passes during the geometry change.
+    if ((status == AnimationStatus.completed ||
+         status == AnimationStatus.dismissed) && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
 
@@ -176,7 +196,9 @@ class _KonnektedDockState extends State<KonnektedDock>
 
   @override
   void dispose() {
-    _collapse.dispose();
+    _collapse
+      ..removeStatusListener(_onCollapseStatus)
+      ..dispose();
     super.dispose();
   }
 
@@ -214,6 +236,7 @@ class _KonnektedDockState extends State<KonnektedDock>
     // another easeInOutCubic made the icons stop/start twice and obscured the
     // spring's response on rapid direction reversals.
     final t = _collapse.value.clamp(0.0, 1.0);
+    final suspendGlass = widget.scrollActive || _collapse.isAnimating;
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
 
@@ -270,6 +293,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                     lens: _dockGlassLens,
                     liquidTintOpacity: lerpDouble(.09, .13, t)!,
                     liquidBlurRadius: _dockBlurRadius,
+                    suspendBackdrop: suspendGlass,
                     fallbackTintOpacity: lerpDouble(.16, .20, t)!,
                     fallbackBlurSigma: 2,
                     pronouncedRim: true,
@@ -296,6 +320,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: _TabCapsule(
                     width: tabsOpen.width,
                     collapse: t,
+                    suspendBackdrop: suspendGlass,
                     selected: widget.selected,
                     onSelect: widget.onSelect,
                     onExpand: widget.onExpand,
@@ -307,6 +332,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                 child: _SearchCircle(
                   selected: widget.selected == KonnektedTab.explore,
                   collapse: t,
+                  suspendBackdrop: suspendGlass,
                   onTap: () => widget.onSelect(KonnektedTab.explore),
                 ),
               ),
@@ -353,6 +379,7 @@ class _TabCapsule extends StatefulWidget {
   const _TabCapsule({
     required this.width,
     required this.collapse,
+    required this.suspendBackdrop,
     required this.selected,
     required this.onSelect,
     required this.onExpand,
@@ -361,6 +388,7 @@ class _TabCapsule extends StatefulWidget {
   /// The open capsule's width; the tabs keep it while the capsule shrinks.
   final double width;
   final double collapse;
+  final bool suspendBackdrop;
   final KonnektedTab selected;
   final ValueChanged<KonnektedTab> onSelect;
   final VoidCallback? onExpand;
@@ -542,6 +570,7 @@ class _TabCapsuleState extends State<_TabCapsule>
         lens: _dockGlassLens,
         liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
+        suspendBackdrop: widget.suspendBackdrop,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
         pronouncedRim: true,
@@ -587,6 +616,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                       : 1,
                                   child: _Lens(
                                     color: t.accent,
+                                    suspendBackdrop: widget.suspendBackdrop,
                                     active: _dragX != null && !reduceMotion,
                                   ),
                                 ),
@@ -645,6 +675,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                           // lens is supposed to refract.
                                           child: LokalClearLens(
                                               key: const ValueKey('dock-travel-lens'),
+                                              suspendBackdrop: widget.suspendBackdrop,
                                               lens: LokalLens(
                                                 height: 9,
                                                 amount: 8,
@@ -742,19 +773,17 @@ class _TabCapsuleState extends State<_TabCapsule>
                     height: 22,
                     child: IgnorePointer(
                       child: Transform.scale(
-                      key: const ValueKey('dock-shared-selected-icon'),
-                      scale: 1.08 + .20 * widget.collapse,
-                      child: AnimatedSwitcher(
-                        duration: reduceMotion
-                            ? Duration.zero
-                            : const Duration(milliseconds: 170),
+                        key: const ValueKey('dock-shared-selected-icon'),
+                        // Keep the house glyph steady. The dock already
+                        // shrinks 58→48dp, so enlarging the icon another 20%
+                        // and crossfading a second copy added noisy motion
+                        // without improving its visibility.
+                        scale: 1.08,
                         child: Icon(
                           shown.icon,
-                          key: ValueKey(shown),
                           color: t.accent,
                           size: 22,
                         ),
-                      ),
                       ),
                     ),
                   );
@@ -772,9 +801,14 @@ class _TabCapsuleState extends State<_TabCapsule>
 
 /// The selection lens: a brighter pane of glass under the current tab.
 class _Lens extends StatelessWidget {
-  const _Lens({required this.color, this.active = false});
+  const _Lens({
+    required this.color,
+    this.active = false,
+    this.suspendBackdrop = false,
+  });
 
   final Color color;
+  final bool suspendBackdrop;
 
   /// While a finger drags it, the lens turns clear and refracts the tabs
   /// under it with a rainbow fringe, as in iOS 26.
@@ -788,6 +822,7 @@ class _Lens extends StatelessWidget {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       builder: (context, t, _) => LokalClearLens(
+        suspendBackdrop: suspendBackdrop,
         // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
           // The moving selection is a shallow clear lens, never a rainbow.
@@ -855,27 +890,25 @@ class _TabButton extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                AnimatedScale(
-                  scale: selected ? 1.08 : 1,
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutBack,
-                  child: Opacity(
-                    opacity: hideIcon ? 0 : 1,
-                    child: Icon(
-                      tab.icon,
-                      size: 22,
-                      color: color,
-                      shadows: [
-                        Shadow(
-                          color: context.lokal.isLight
-                              ? Colors.white.withValues(alpha: .75)
-                              : Colors.black.withValues(alpha: .85),
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
+                // The shared selected glyph owns the active icon. Leave an
+                // identically sized slot without painting an invisible copy
+                // or animating another icon beneath it on every dock frame.
+                if (hideIcon)
+                  const SizedBox(width: 22, height: 22)
+                else
+                  Icon(
+                    tab.icon,
+                    size: 22,
+                    color: color,
+                    shadows: [
+                      Shadow(
+                        color: context.lokal.isLight
+                            ? Colors.white.withValues(alpha: .75)
+                            : Colors.black.withValues(alpha: .85),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
-                ),
                 const SizedBox(height: 2),
                 Text(
                   tab.label,
@@ -909,11 +942,13 @@ class _SearchCircle extends StatelessWidget {
   const _SearchCircle({
     required this.selected,
     required this.collapse,
+    required this.suspendBackdrop,
     required this.onTap,
   });
 
   final bool selected;
   final double collapse;
+  final bool suspendBackdrop;
   final VoidCallback onTap;
 
   @override
@@ -934,6 +969,7 @@ class _SearchCircle extends StatelessWidget {
           lens: _dockGlassLens,
           liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
+          suspendBackdrop: suspendBackdrop,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
           pronouncedRim: true,
@@ -946,7 +982,10 @@ class _SearchCircle extends StatelessWidget {
                 opacity: selected ? 1 : 0,
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: _Lens(color: t.accent),
+                  child: _Lens(
+                    color: t.accent,
+                    suspendBackdrop: suspendBackdrop,
+                  ),
                 ),
               ),
               InkWell(

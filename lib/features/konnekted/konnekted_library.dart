@@ -139,10 +139,15 @@ class KonnektedLibrary extends ConsumerWidget {
                 onAction: () => _addFolder(context),
               ),
             ),
-          SliverToBoxAdapter(child: _Tiles(onNavigate: onNavigate)),
+          SliverToBoxAdapter(
+            child: RepaintBoundary(
+              child: _Tiles(onNavigate: onNavigate),
+            ),
+          ),
           if (songs != null && songs.isNotEmpty)
             SliverToBoxAdapter(
-              child: KonnektedSongShelf(
+              child: RepaintBoundary(
+                child: KonnektedSongShelf(
                 title: lokalText('Library'),
                 songs: ref.watch(konnektedRecentlyAddedProvider),
                 summarySongs: library,
@@ -153,14 +158,20 @@ class KonnektedLibrary extends ConsumerWidget {
                 onRetry: () => ref.invalidate(songsProvider),
                 onPlay: (song, queue) =>
                     lokalPlay(context, ref, queue, start: song),
+                ),
               ),
             ),
           SliverToBoxAdapter(
             child: LokalSectionTitle(title: lokalText('More')),
           ),
-          SliverToBoxAdapter(child: _MoreRows(onNavigate: onNavigate)),
           SliverToBoxAdapter(
-            child: KonnektedSongShelf(
+            child: RepaintBoundary(
+              child: _MoreRows(onNavigate: onNavigate),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: RepaintBoundary(
+              child: KonnektedSongShelf(
               title: lokalText('Recently played'),
               songs: ref.watch(konnektedRecentSongsProvider),
               emptyTitle: 'Nothing played yet',
@@ -169,6 +180,7 @@ class KonnektedLibrary extends ConsumerWidget {
               onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
               onPlay: (song, queue) =>
                   lokalPlay(context, ref, queue, start: song),
+              ),
             ),
           ),
           if (songs == null)
