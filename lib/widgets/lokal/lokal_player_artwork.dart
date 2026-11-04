@@ -27,9 +27,33 @@ abstract final class LokalArtworkFlight {
     final vertical = (expanded.center.dy - mini.center.dy).abs();
     final wave = math.sin(math.pi * t);
     final bend = wave * wave;
-    final lateral = horizontal.sign * math.min(horizontal.abs() * .16, 16.0);
-    final lift = math.min(vertical * .012, 10.0);
+    // The previous maximum (16px sideways / 10px vertically) disappeared
+    // during a 500–800px sheet slide. Give the sleeve a perceptible, but
+    // still restrained, arc while keeping the same endpoints and crop.
+    final lateral = horizontal.sign * math.min(horizontal.abs() * .34, 52.0);
+    final lift = math.min(vertical * .045, 26.0);
     return linear.shift(Offset(lateral * bend, -lift * bend));
+  }
+}
+
+/// Tracks the actual mini-player artwork bounds for the lifetime of a
+/// player transition. The mini's GlobalKey can temporarily detach while
+/// Heroes switch their source/destination; sampling the source just once at
+/// transition creation and retaining the most recent valid rect keeps the
+/// artwork portal active through those frames instead of silently reverting
+/// to a straight sheet slide.
+class LokalArtworkSource {
+  LokalArtworkSource(this._read) : _last = _read();
+
+  final Rect? Function() _read;
+  Rect? _last;
+
+  Rect? current() {
+    final live = _read();
+    if (live != null && live.isFinite && !live.isEmpty) {
+      _last = live;
+    }
+    return _last;
   }
 }
 
