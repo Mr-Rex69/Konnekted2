@@ -792,6 +792,7 @@ class _HeaderStat extends StatelessWidget {
     final t = context.lokal;
     return MergeSemantics(
       child: LokalGlass(
+        staticSurface: true,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
         thickness: LokalGlassThickness.thin,
         shadow: false,
@@ -862,6 +863,7 @@ class _RecapCard extends StatelessWidget {
       child: SizedBox(
         width: 156,
         child: LokalGlass(
+          staticSurface: true,
           borderRadius: const BorderRadius.all(Radius.circular(20)),
           thickness: LokalGlassThickness.thin,
           shadow: false,
@@ -985,6 +987,7 @@ class _StatsSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: LokalGlass(
+            staticSurface: true,
             borderRadius: const BorderRadius.all(Radius.circular(20)),
             thickness: LokalGlassThickness.thin,
             shadow: false,
@@ -1199,6 +1202,7 @@ class _MilestonesSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: LokalGlass(
+              staticSurface: true,
               borderRadius: const BorderRadius.all(Radius.circular(20)),
               thickness: LokalGlassThickness.thin,
               shadow: false,
@@ -1255,6 +1259,7 @@ class _Badge extends StatelessWidget {
               SizedBox.square(
                 dimension: 60,
                 child: LokalGlass.capsule(
+                  staticSurface: true,
                   thickness: LokalGlassThickness.thin,
                   tint: type.tierColor.withValues(alpha: .22),
                   shadow: false,
@@ -1307,6 +1312,7 @@ class _AccountChip extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: LokalGlass.capsule(
+          staticSurface: true,
           thickness: LokalGlassThickness.thin,
           shadow: false,
           padding: const EdgeInsets.fromLTRB(12, 9, 14, 9),
