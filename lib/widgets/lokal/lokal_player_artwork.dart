@@ -25,7 +25,8 @@ abstract final class LokalArtworkFlight {
     // centred full player, but disappears on nearly vertical trips.
     final horizontal = expanded.center.dx - mini.center.dx;
     final vertical = (expanded.center.dy - mini.center.dy).abs();
-    final bend = math.pow(math.sin(math.pi * t), 2).toDouble();
+    final wave = math.sin(math.pi * t);
+    final bend = wave * wave;
     final lateral = horizontal.sign * math.min(horizontal.abs() * .16, 16.0);
     final lift = math.min(vertical * .012, 10.0);
     return linear.shift(Offset(lateral * bend, -lift * bend));
