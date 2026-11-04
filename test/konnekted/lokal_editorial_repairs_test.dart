@@ -464,6 +464,77 @@ void main() {
   });
 
   testWidgets(
+    'shell slides Library to Search right and Search to Library left',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _app(KonnektedShell(runtimeBuilder: (child) => child)),
+      );
+      await tester.pump();
+
+      // Search sits beyond the capsule's right edge, even though its enum
+      // index precedes Library. The shell must follow the real dock layout.
+      expect(KonnektedTab.dockOrder, [
+        KonnektedTab.listen,
+        KonnektedTab.library,
+        KonnektedTab.settings,
+        KonnektedTab.explore,
+      ]);
+      final dock = find.byType(KonnektedDock);
+      final switcherFinder = find.byType(LokalNavigationSwitcher);
+      final library = find.byKey(const ValueKey(KonnektedTab.library));
+      final search = find.byKey(const ValueKey(KonnektedTab.explore));
+
+      await tester.tap(find.descendant(
+        of: dock,
+        matching: find.bySemanticsLabel('Library'),
+      ));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.widget<KonnektedDock>(dock).selected,
+          KonnektedTab.library);
+      final origin = tester.getCenter(library).dx;
+      final width = tester.getSize(switcherFinder).width;
+
+      await tester.tap(find.descendant(
+        of: dock,
+        matching: find.bySemanticsLabel('Search'),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 55));
+      expect(tester.widget<KonnektedDock>(dock).selected,
+          KonnektedTab.explore);
+      expect(tester.widget<LokalNavigationSwitcher>(switcherFinder).direction,
+          1);
+      final outgoingLibrary = tester.getCenter(library).dx;
+      final incomingSearch = tester.getCenter(search).dx;
+      expect(outgoingLibrary, lessThan(origin));
+      expect(incomingSearch, greaterThan(origin));
+      expect(incomingSearch - outgoingLibrary, closeTo(width, .1));
+
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.descendant(
+        of: dock,
+        matching: find.bySemanticsLabel('Library'),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 55));
+      expect(tester.widget<KonnektedDock>(dock).selected,
+          KonnektedTab.library);
+      expect(tester.widget<LokalNavigationSwitcher>(switcherFinder).direction,
+          -1);
+      final outgoingSearch = tester.getCenter(search).dx;
+      final incomingLibrary = tester.getCenter(library).dx;
+      expect(outgoingSearch, greaterThan(origin));
+      expect(incomingLibrary, lessThan(origin));
+      expect(outgoingSearch - incomingLibrary, closeTo(width, .1));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'system back at tab root keeps nested route and returns home once',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
