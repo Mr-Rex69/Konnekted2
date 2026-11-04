@@ -41,7 +41,17 @@ abstract final class LokalArtworkFlight {
     final ride = ((mini.top - expanded.top) / travel).clamp(0.0, 1.0);
     final offset = (1 - t) * travel;
     final sheetRide = t * offset * ride;
-    return linear.shift(Offset(0, sheetRide));
+    // The sleeve grows while it travels. A ride computed from top edges
+    // alone can move its *bottom* below both endpoint covers (most visible
+    // with a full-height Canvas poster). Keep the bottom inside the larger
+    // of the actual start/end artwork bounds, while retaining BitChord's
+    // sheet-coupled vertical movement whenever there is space.
+    final bottomLimit = math.max(mini.bottom, expanded.bottom);
+    final bottomRoom = math.max(0.0, bottomLimit - linear.bottom);
+    final safeRide = bottomRoom <= 1e-4
+        ? 0.0
+        : bottomRoom * (1 - math.exp(-sheetRide / bottomRoom));
+    return linear.shift(Offset(0, safeRide));
   }
 }
 
