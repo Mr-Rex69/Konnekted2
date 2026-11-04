@@ -164,14 +164,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('selected icon compresses only vertically with one brief pulse', () {
-    expect(dockSelectedIconVerticalScale(0), 1);
-    expect(dockSelectedIconVerticalScale(1), closeTo(1, .0001));
-    expect(dockSelectedIconVerticalScale(.25), closeTo(.955, .001));
-    expect(dockSelectedIconVerticalScale(.5), closeTo(.82, .001));
-    expect(dockSelectedIconVerticalScale(.75), closeTo(.955, .001));
-    expect(dockSelectedIconVerticalScale(-1), 1);
-    expect(dockSelectedIconVerticalScale(2), closeTo(1, .0001));
+  test('collapse squash compresses toward left and ends at natural size', () {
+    expect(dockSelectedIconLeftSquash(-1), 1);
+    expect(dockSelectedIconLeftSquash(0), 1);
+    expect(dockSelectedIconLeftSquash(.16), 1);
+    expect(dockSelectedIconLeftSquash(.5), closeTo(.76, .002));
+    expect(dockSelectedIconLeftSquash(.82), 1);
+    expect(dockSelectedIconLeftSquash(1), 1);
+    expect(dockSelectedIconLeftSquash(2), 1);
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
@@ -344,7 +344,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('house glyph squashes vertically; glass and Search never bounce',
+  testWidgets('house squashes left on collapse only; expansion stays normal',
       (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
@@ -353,78 +353,79 @@ void main() {
 
     var collapsed = false;
     late StateSetter change;
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-          home: Scaffold(
-            body: StatefulBuilder(
-              builder: (context, setState) {
-                change = setState;
-                return Align(
-                  alignment: Alignment.bottomCenter,
-                  child: KonnektedDock(
-                    selected: KonnektedTab.listen,
-                    onSelect: (_) {},
-                    collapsed: collapsed,
-                    miniPlayer: const SizedBox.expand(),
-                  ),
-                );
-              },
-            ),
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              change = setState;
+              return Align(
+                alignment: Alignment.bottomCenter,
+                child: KonnektedDock(
+                  selected: KonnektedTab.listen,
+                  onSelect: (_) {},
+                  collapsed: collapsed,
+                  miniPlayer: const SizedBox.expand(),
+                ),
+              );
+            },
           ),
         ),
       ),
-    );
+    ));
 
-    const glyph = ValueKey('dock-shared-selected-icon');
-    const tabGlass = ValueKey('dock-tab-glass');
-    const miniGlass = ValueKey('dock-mini-glass');
-    const searchGlass = ValueKey('dock-search-glass');
-    final tabStart = tester.getRect(find.byKey(tabGlass));
-    final searchStart = tester.getRect(find.byKey(searchGlass));
-    final original = tester.widget<Transform>(find.byKey(glyph)).transform;
-    expect(original.storage[0], closeTo(original.storage[5], .001));
-    expect(find.byKey(const ValueKey('dock-home-bounce')), findsNothing);
+    const glyphKey = ValueKey('dock-shared-selected-icon');
+    const tabsKey = ValueKey('dock-tab-glass');
+    const searchKey = ValueKey('dock-search-glass');
+    Transform glyph() => tester.widget<Transform>(find.byKey(glyphKey));
+
+    final openTabs = tester.getRect(find.byKey(tabsKey));
+    final openSearch = tester.getRect(find.byKey(searchKey));
+    expect(glyph().alignment, Alignment.centerLeft);
+    expect(glyph().transform.storage[0], closeTo(1.08, .001));
+    expect(glyph().transform.storage[5], closeTo(1.08, .001));
 
     change(() => collapsed = true);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90));
-
-    final midTab = tester.getRect(find.byKey(tabGlass));
-    final midSearch = tester.getRect(find.byKey(searchGlass));
-    final midMini = tester.getRect(find.byKey(miniGlass));
-    final fold = ((KonnektedDock.miniHeight - midMini.height) /
-        (KonnektedDock.miniHeight - KonnektedDock.collapsedHeight))
-        .clamp(0.0, 1.0);
-    expect(fold, inExclusiveRange(0, 1));
-    final mid = tester.widget<Transform>(find.byKey(glyph)).transform;
-    expect(mid.storage[0], closeTo(1.08, .001),
-        reason: 'The house width must never change');
-    expect(mid.storage[5], lessThan(mid.storage[0] - .03),
-        reason: 'Only a brief vertical compression is permitted');
-    expect(find.byKey(const ValueKey('dock-home-bounce')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 125));
+    final middle = glyph().transform;
+    expect(middle.storage[0], lessThan(.88),
+        reason: 'The house compresses horizontally toward its left anchor');
+    expect(middle.storage[5], closeTo(1.08, .001),
+        reason: 'The house never stretches or bounces vertically');
+    expect(middle.getTranslation().x, 0);
+    expect(find.byKey(const ValueKey('dock-home-press')), findsNothing);
     expect(find.bySemanticsLabel('Search'), findsOneWidget);
-    expect(tester.takeException(), isNull);
 
     await tester.pumpAndSettle();
-    final tabEnd = tester.getRect(find.byKey(tabGlass));
-    final searchEnd = tester.getRect(find.byKey(searchGlass));
-    // No unexpected whole-capsule travel: both optical surfaces must
-    // follow only the layout Rect.lerp, even while the selected icon squashes.
-    for (final (actual, expected) in [
-      (midTab, Rect.lerp(tabStart, tabEnd, fold)!),
-      (midSearch, Rect.lerp(searchStart, searchEnd, fold)!),
-    ]) {
-      expect(actual.left, closeTo(expected.left, 1));
-      expect(actual.top, closeTo(expected.top, 1));
-      expect(actual.width, closeTo(expected.width, 1));
-      expect(actual.height, closeTo(expected.height, 1));
+    final compactTabs = tester.getRect(find.byKey(tabsKey));
+    final compactSearch = tester.getRect(find.byKey(searchKey));
+    expect(compactTabs.width, lessThan(openTabs.width));
+    expect(compactSearch.width, lessThan(openSearch.width));
+    expect(glyph().transform.storage[0], closeTo(1.08, .001));
+
+    // Reopening never triggers the compression: no reverse bounce, spring,
+    // directional sway or intermediate stretching of the selected icon.
+    change(() => collapsed = false);
+    await tester.pump();
+    final leftBound = compactTabs.left;
+    final rightBound = openTabs.left;
+    for (var frame = 0; frame < 12; frame++) {
+      await tester.pump(const Duration(milliseconds: 22));
+      expect(glyph().transform.storage[0], closeTo(1.08, .001));
+      expect(glyph().transform.storage[5], closeTo(1.08, .001));
+      expect(glyph().transform.getTranslation().x, 0);
+      final glass = tester.getRect(find.byKey(tabsKey));
+      expect(glass.left,
+          inInclusiveRange(math.min(leftBound, rightBound) - .01,
+              math.max(leftBound, rightBound) + .01),
+          reason: 'The capsule cannot overshoot the natural open position');
     }
-    final settled = tester.widget<Transform>(find.byKey(glyph)).transform;
-    expect(settled.storage[5], closeTo(settled.storage[0], .001));
-    expect(settled.storage[0], closeTo(1.08, .001));
-    expect(find.byKey(const ValueKey('dock-tab-glass')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(tabsKey)), openTabs);
+    expect(tester.getRect(find.byKey(searchKey)), openSearch);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('pressing any player control moves content, never its glass',
@@ -512,7 +513,6 @@ void main() {
     ));
 
     const glassKey = ValueKey('dock-tab-glass');
-    const pressKey = ValueKey('dock-home-press');
     const indicatorKey = ValueKey('dock-selection-indicator');
     final glassBounds = tester.getRect(find.byKey(glassKey));
 
@@ -521,17 +521,8 @@ void main() {
         tester.getCenter(find.bySemanticsLabel(tab)),
       );
       await tester.pump(const Duration(milliseconds: 60));
-      expect(
-        find.descendant(
-          of: find.byKey(glassKey),
-          matching: find.byKey(pressKey),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        tester.widget<AnimatedScale>(find.byKey(pressKey)).scale,
-        closeTo(.975, .001),
-      );
+      expect(find.byKey(const ValueKey('dock-home-press')), findsNothing,
+          reason: 'Tab taps must never trigger a house bounce');
       expect(tester.getRect(find.byKey(glassKey)), glassBounds);
       await pointer.up();
       await tester.pumpAndSettle();
@@ -589,7 +580,7 @@ void main() {
     );
     expect(expandedIcon.transform.getMaxScaleOnAxis(), closeTo(1.08, .001));
     expect(find.byKey(const ValueKey('dock-mini-press')), findsOneWidget);
-    expect(find.byKey(const ValueKey('dock-home-press')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dock-home-press')), findsNothing);
     await tester.pumpWidget(build(true));
     await tester.pumpAndSettle();
     final compactIcon = tester.widget<Transform>(
@@ -611,7 +602,7 @@ void main() {
 
 
 
-  testWidgets('selection icon follows a physical spring and Search preserves it',
+  testWidgets('selection icon glides without a spring and Search preserves it',
       (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
