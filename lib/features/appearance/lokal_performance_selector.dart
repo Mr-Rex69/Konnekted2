@@ -18,7 +18,7 @@ LokalSettingRow lokalPerformanceSelector(WidgetRef ref) {
     trailing: LokalSegmented<LokalPerformanceLevel>(
       value: level,
       segments: const [
-        LokalSegment(LokalPerformanceLevel.full, 'Full'),
+        LokalSegment(LokalPerformanceLevel.full, 'Off'),
         LokalSegment(LokalPerformanceLevel.performance, 'Performance'),
         LokalSegment(LokalPerformanceLevel.ultra, 'Ultra'),
       ],
