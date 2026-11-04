@@ -30,21 +30,26 @@ abstract final class LokalArtworkFlight {
     final downward = dock.dy - full.dy;
     if (downward <= 0) return bounds;
 
-    // This is a restrained J-shaped hook, not a tracing of the user's
-    // approximate sketch. The second control point is briefly below the mini
-    // target, producing a shallow dip and a smooth upward final tangent.
-    // Bound the dip to avoid a deep loop or unnecessary off-screen travel.
+    // The long part of the J travels DIAGONALLY toward the mini-player
+    // from the beginning, rather than falling vertically at the expanded
+    // cover's X. The bottom hook forms close to the final miniature cover,
+    // dips BELOW it, and curves up into the exact target position.
+    //
+    // Preserve the sheet-travel guard from #468: a short sheet excursion
+    // must not create an oversized loop. The dip is typically 25–40dp for
+    // a full-player return, scaled down for shorter flights.
     final availableTravel = sheetTravel == null
         ? downward
         : math.min(downward, math.max(sheetTravel, 0.0));
-    final belowDestination = math.min(130.0, availableTravel * .36);
+    final dip = math.min(40.0, availableTravel * .095);
     final dx = dock.dx - full.dx;
 
-    // A cubic Bézier with a mostly vertical departure and the second control
-    // point *below* the mini-player. Its last tangent points up and left into
-    // the target, reproducing the drawn J rather than a sideways sine hump.
-    final control1 = Offset(full.dx + dx * .03, full.dy + downward * .58);
-    final control2 = Offset(dock.dx - dx * .17, dock.dy + belowDestination);
+    // Move both Bézier handles toward the destination: this places the
+    // lowest point of the J within ~35dp of the mini artwork instead of
+    // beneath the expanded cover. The final handle lies below the target,
+    // so the last tangent climbs back upward into the miniature.
+    final control1 = Offset(full.dx + dx * .65, dock.dy + dip * .30);
+    final control2 = Offset(full.dx + dx * .83, dock.dy + dip * 2.70);
     final close = 1.0 - t;
     final open = t;
     final centre = full * (open * open * open) +

@@ -12,8 +12,8 @@ void main() {
     expect(LokalArtworkFlight.rect(mini, expanded, -1), mini);
     expect(LokalArtworkFlight.rect(mini, expanded, 2), expanded);
 
-    // During a close, descending artwork retains its horizontal position
-    // initially, then bends left and briefly passes BELOW its dock target.
+    // During a close, artwork moves diagonally toward the mini-player and
+    // then passes BELOW its dock target before returning upward.
     final early = LokalArtworkFlight.rect(mini, expanded, .85);
     final dip = LokalArtworkFlight.rect(mini, expanded, .2);
     final recovery = LokalArtworkFlight.rect(mini, expanded, .05);
@@ -34,6 +34,41 @@ void main() {
         reason: 'Only the cover centre curves; size/crop never squashes',
       );
     }
+  });
+
+  test('diagonal J descends toward dock, then hooks below it nearby', () {
+    final early = LokalArtworkFlight.rect(mini, expanded, .95);
+    final hook = LokalArtworkFlight.rect(mini, expanded, .25);
+    final rising = LokalArtworkFlight.rect(mini, expanded, .10);
+
+    expect(early.center.dx, lessThan(expanded.center.dx - 10),
+        reason: 'The long stroke must be diagonal, not vertical');
+    expect(early.center.dy, greaterThan(expanded.center.dy + 40));
+    expect(hook.center.dx, greaterThan(mini.center.dx));
+    expect((hook.center.dx - mini.center.dx).abs(), lessThan(35),
+        reason: 'Bottom hook stays close to the miniature entry point');
+    expect(hook.center.dy, greaterThan(mini.center.dy + 25));
+    expect(rising.center.dx, lessThan(hook.center.dx));
+    expect(rising.center.dy, lessThan(hook.center.dy));
+    expect(rising.center.dy, greaterThan(mini.center.dy));
+
+    final samples = [
+      for (var i = 0; i <= 100; i++)
+        LokalArtworkFlight.rect(mini, expanded, 1 - i / 100).center,
+    ];
+    final bottom = samples.reduce((a, b) => a.dy > b.dy ? a : b);
+    expect(bottom.dy - mini.center.dy, inInclusiveRange(25, 55));
+    expect((bottom.dx - mini.center.dx).abs(), lessThan(35));
+  });
+
+  test('mirrored diagonal J works when mini-player artwork is on right', () {
+    const rightMini = Rect.fromLTWH(345, 710, 42, 42);
+    final early = LokalArtworkFlight.rect(rightMini, expanded, .95);
+    final hook = LokalArtworkFlight.rect(rightMini, expanded, .25);
+    expect(early.center.dx, greaterThan(expanded.center.dx + 10));
+    expect((hook.center.dx - rightMini.center.dx).abs(), lessThan(35));
+    expect(hook.center.dy, greaterThan(rightMini.center.dy + 25));
+    expect(LokalArtworkFlight.rect(rightMini, expanded, 0), rightMini);
   });
 
   test('full-size and Canvas covers use the same J with exact endpoint landing', () {
