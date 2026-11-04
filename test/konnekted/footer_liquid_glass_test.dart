@@ -140,7 +140,8 @@ void main() {
     await tester.pumpWidget(atProgress(1));
     await tester.pump();
     expect(find.byTooltip('Open queue'), findsNothing);
-    expect(find.text('Transition artist'), findsNothing);
+    expect(find.text('Transition artist'), findsOneWidget,
+        reason: 'BitChord keeps the artist even in its inline accessory');
     expect(find.byTooltip('Pause'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
