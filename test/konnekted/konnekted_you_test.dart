@@ -331,7 +331,12 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 220));
     expect(find.byType(DiscoveryArtwork), findsNothing);
-    await tester.pump(const Duration(milliseconds: 220));
+    // PR #471 restored the full 330ms navigation slide. The old 90ms
+    // hydration timer would start recap/artwork work halfway through it.
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.byType(DiscoveryArtwork), findsNothing,
+        reason: 'Recap work must not compete with the 330ms tab slide');
+    await tester.pump(const Duration(milliseconds: 80));
     await tester.pump();
     expect(find.byType(DiscoveryArtwork), findsOneWidget);
     expect(find.text('48 min'), findsOneWidget);
