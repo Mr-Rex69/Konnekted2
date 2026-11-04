@@ -248,9 +248,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Flutter reads this as a BOOLEAN from ApplicationInfo.metaData.
+             android:resource stores the resource ID (an int), not its boolean
+             value; that silently defeats the API 31+ Impeller opt-in and
+             makes ImageFilter.shader fall back to plain frosted glass. -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:resource="@bool/enable_impeller" />
+            android:value="@bool/enable_impeller" />
         <!-- Media Notification Service for background playback -->
         <service
             android:name=".MusicNotificationService"
