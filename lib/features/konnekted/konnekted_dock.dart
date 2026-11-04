@@ -360,8 +360,8 @@ class _TabCapsule extends StatefulWidget {
 
 class _TabCapsuleState extends State<_TabCapsule>
     with SingleTickerProviderStateMixin {
-  // BitChord keeps the selected glass travelling on its own physical spring
-  // and preserves velocity when the user retargets a tab before it settles.
+  // The selected indicator can move between tabs, but must not overshoot,
+  // launch a spring or push the house right of its target.
   late final AnimationController _selectionPosition;
   late KonnektedTab _lastCapsuleTab;
 
@@ -387,14 +387,10 @@ class _TabCapsuleState extends State<_TabCapsule>
       _selectionPosition.value = newIndex.toDouble();
       return;
     }
-    _selectionPosition.animateWith(
-      SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 620, damping: 48),
-        _selectionPosition.value,
-        newIndex.toDouble(),
-        _selectionPosition.velocity,
-        snapToEnd: true,
-      ),
+    _selectionPosition.animateTo(
+      newIndex.toDouble(),
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -444,14 +440,10 @@ class _TabCapsuleState extends State<_TabCapsule>
     if (index != null && _tabs[index] != widget.selected) {
       widget.onSelect(_tabs[index]);
     } else if (position != null) {
-      _selectionPosition.animateWith(
-        SpringSimulation(
-          const SpringDescription(mass: 1, stiffness: 620, damping: 48),
-          _selectionPosition.value,
-          _tabs.indexOf(_lastCapsuleTab).toDouble(),
-          0,
-          snapToEnd: true,
-        ),
+      _selectionPosition.animateTo(
+        _tabs.indexOf(_lastCapsuleTab).toDouble(),
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
       );
     }
   }
@@ -628,17 +620,18 @@ class _TabCapsuleState extends State<_TabCapsule>
                     child: IgnorePointer(
                       child: Transform.scale(
                         key: const ValueKey('dock-shared-selected-icon'),
-                        alignment: Alignment.center,
-                        // Only the glyph compresses vertically. X stays
-                        // constant, so the icon does not slide left, stretch
-                        // sideways or alter the glass sampling origin.
-                        scaleX: 1.08,
-                        scaleY: 1.08 *
-                            (reduceMotion
+                        // The icon's left edge is the fixed anchor. Only
+                        // collapsing pulls its right edge inward briefly;
+                        // expanding keeps the glyph completely undistorted.
+                        // Neither the icon nor its glass uses a spring.
+                        alignment: Alignment.centerLeft,
+                        scaleX: 1.08 *
+                            (reduceMotion || !widget.squashOnCollapse
                                 ? 1.0
-                                : dockSelectedIconVerticalScale(
+                                : dockSelectedIconLeftSquash(
                                     widget.collapse,
                                   )),
+                        scaleY: 1.08,
                         child: Icon(
                           shown.icon,
                           color: t.accent,
