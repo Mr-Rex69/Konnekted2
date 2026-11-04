@@ -55,7 +55,9 @@ void main() {
             final bytes = await image.toByteData(
               format: ui.ImageByteFormat.rawRgba,
             );
-            final center = LokalArtworkFlight.rect(source, target, progress).center;
+            final center = LokalArtworkFlight.rect(
+              source, target, progress, sheetTravel: 700,
+            ).center;
             final offset =
                 (center.dy.round() * image.width + center.dx.round()) * 4;
             // The source image remains painted at the interpolated screen rect,
