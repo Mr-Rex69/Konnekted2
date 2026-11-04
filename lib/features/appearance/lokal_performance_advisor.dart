@@ -155,13 +155,13 @@ class _LokalPerformanceAdvisorState
         case 'scroll':
           _scrollFrames++;
           if (slowRaster) _scrollRasterMisses++;
-          final window = _scrollWindows.putIfAbsent(
+          final scrollWindow = _scrollWindows.putIfAbsent(
             LokalPerformanceAdvisor.scrollSurface,
             _NavigationFrameWindow.new,
           );
-          window.frames++;
-          if (slowUi) window.uiMisses++;
-          if (slowRaster) window.rasterMisses++;
+          scrollWindow.frames++;
+          if (slowUi) scrollWindow.uiMisses++;
+          if (slowRaster) scrollWindow.rasterMisses++;
         case 'navigation':
           _navigationFrames++;
           if (slowRaster) _navigationRasterMisses++;
