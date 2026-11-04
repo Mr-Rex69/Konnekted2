@@ -1151,6 +1151,32 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
     );
     return Stack(
       children: [
+        // Glass remains clear, but text needs stable contrast when a bright
+        // playlist mosaic scrolls beneath it. This *localized*, feathered
+        // scrim protects the title/artist lane without filling the whole
+        // capsule with opaque tint or obscuring the album thumbnail.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  stops: const [0, .17, .55, 1],
+                  colors: [
+                    Colors.transparent,
+                    (context.lokal.isLight ? Colors.white : Colors.black)
+                        .withValues(alpha: .31),
+                    (context.lokal.isLight ? Colors.white : Colors.black)
+                        .withValues(alpha: .38),
+                    (context.lokal.isLight ? Colors.white : Colors.black)
+                        .withValues(alpha: .23),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
         LayoutBuilder(
           builder: (context, constraints) {
             // The width actively shrinks while collapsing. Check the
@@ -1215,9 +1241,18 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                     OverflowMarqueeTitle(
                                       key: ValueKey('dock-mini-title:${song.id}'),
                                       title: song.title,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,
+                                        color: context.lokal.text,
+                                        shadows: [
+                                          Shadow(
+                                            color: context.lokal.isLight
+                                                ? Colors.white.withValues(alpha: .85)
+                                                : Colors.black.withValues(alpha: .80),
+                                            blurRadius: 5,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                     if (artistReveal > .001)
@@ -1238,7 +1273,19 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                                       overflow: TextOverflow.ellipsis,
                                                       style: TextStyle(
                                                         fontSize: 11,
-                                                        color: context.lokal.muted,
+                                                        color: Color.lerp(
+                                                          context.lokal.muted,
+                                                          context.lokal.text,
+                                                          .75,
+                                                        ),
+                                                        shadows: [
+                                                          Shadow(
+                                                            color: context.lokal.isLight
+                                                                ? Colors.white.withValues(alpha: .8)
+                                                                : Colors.black.withValues(alpha: .8),
+                                                            blurRadius: 4,
+                                                          ),
+                                                        ],
                                                       ),
                                                     ),
                                                   ),
@@ -1277,6 +1324,15 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
                       size: lerpDouble(29, 24, collapse)!,
+                      color: context.lokal.text,
+                      shadows: [
+                        Shadow(
+                          color: context.lokal.isLight
+                              ? Colors.white.withValues(alpha: .75)
+                              : Colors.black.withValues(alpha: .75),
+                          blurRadius: 4,
+                        ),
+                      ],
                     ),
                   ),
                   if (!compactAtRest)
