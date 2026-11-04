@@ -383,6 +383,7 @@ class _TabCapsuleState extends State<_TabCapsule>
   /// The lens follows a dragging finger, like iOS 26's tab bar.
   double? _dragX;
   int? _dragIndex;
+  bool _pressed = false;
 
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
 
@@ -441,12 +442,25 @@ class _TabCapsuleState extends State<_TabCapsule>
         : _inset + _slot * (selectedIndex < 0 ? 0 : selectedIndex);
     final open = 1 - widget.collapse;
 
-    // The bar swells by 16 px while the lens is dragged: glass you can
-    // push on.
-    return AnimatedScale(
-      scale: _dragX != null && !reduceMotion ? 1 + 16 / widget.width : 1,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+    // The whole lens responds to touch like BitChord's material, squashing
+    // gently before the lift. Search stays a separate, non-bouncing sphere.
+    return Listener(
+      onPointerDown: (_) {
+        if (!_pressed) setState(() => _pressed = true);
+      },
+      onPointerUp: (_) {
+        if (_pressed) setState(() => _pressed = false);
+      },
+      onPointerCancel: (_) {
+        if (_pressed) setState(() => _pressed = false);
+      },
+      child: AnimatedScale(
+      key: const ValueKey('dock-home-press'),
+      scale: reduceMotion ? 1 :
+          _dragX != null ? 1 + 16 / widget.width :
+          _pressed ? .975 : 1,
+      duration: const Duration(milliseconds: 190),
+      curve: Curves.easeOutBack,
       child: LokalGlass.capsule(
         grouped: true,
         lens: _dockGlassLens,
@@ -682,6 +696,7 @@ class _TabCapsuleState extends State<_TabCapsule>
               ),
           ],
         ),
+      ),
       ),
     );
   }
