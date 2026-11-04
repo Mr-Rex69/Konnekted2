@@ -16,6 +16,7 @@ import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
+import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
@@ -1024,7 +1025,7 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                 // The artwork travels directly between the
                                 // two real layouts, like BitChord's docked art.
                                 createRectTween: (begin, end) =>
-                                    RectTween(begin: begin, end: end),
+                                    LokalArtworkRectTween(begin: begin, end: end),
                                 flightShuttleBuilder: _flight,
                                 child: SizedBox(
                                   key: artworkKey,

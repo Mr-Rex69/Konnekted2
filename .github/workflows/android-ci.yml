@@ -63,6 +63,12 @@ jobs:
           done
       - name: Verify desktop remote cover swipes, lyrics and queue animation
         run: flutter test --no-pub test/features/player/desktop_remote_full_player_test.dart
+      - name: Verify curved cover docking for full-cover and compact artwork
+        run: >-
+          flutter test --no-pub
+          test/widgets/lokal/lokal_artwork_flight_test.dart
+          test/features/player/player_morph_return_test.dart
+          test/features/player/full_bleed_artwork_morph_test.dart
       - name: Focused suites from docs/BUILD.md, including share and picker
         run: >-
           flutter test --no-pub
