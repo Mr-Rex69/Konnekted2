@@ -548,6 +548,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                       ? 1.08
                                       : 1,
                                   child: _Lens(
+                                    key: const ValueKey('dock-selection-indicator'),
                                     color: t.accent,
                                     active: _dragX != null && !reduceMotion,
                                   ),
