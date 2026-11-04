@@ -129,4 +129,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+
+  testWidgets('dock accessory collapse is reversible before settling',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var collapsed = false;
+    late StateSetter change;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                change = setState;
+                return Align(
+                  alignment: Alignment.bottomCenter,
+                  child: KonnektedDock(
+                    selected: KonnektedTab.listen,
+                    onSelect: (_) {},
+                    collapsed: collapsed,
+                    miniPlayer: const SizedBox.expand(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    change(() => collapsed = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 125));
+    final progress = tester.widget<KonnektedMiniPlayerScope>(
+      find.byType(KonnektedMiniPlayerScope),
+    ).progress!;
+    expect(progress, greaterThan(0));
+    expect(progress, lessThan(1));
+
+    // Reverse the same spring mid-flight instead of swapping the layout.
+    change(() => collapsed = false);
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<KonnektedMiniPlayerScope>(
+        find.byType(KonnektedMiniPlayerScope),
+      ).progress,
+      closeTo(0, .001),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
 }
