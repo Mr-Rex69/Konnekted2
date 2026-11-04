@@ -77,12 +77,19 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
     if (widget.retainVisitedTabs) _remember(widget.child);
     _progress = AnimationController(
       vsync: this,
-      duration: widget.efficientMotion
+      duration: _useEfficientMotion
           ? LokalNavigationSwitcher.efficientDuration
           : LokalNavigationSwitcher.enterDuration,
       value: 1,
     )..addStatusListener(_onAnimationStatus);
   }
+
+  // Single-page rendering needs the retained offstage cache. If callers
+  // request efficient motion without retention, preserve the original
+  // generic two-page transition instead of dereferencing a null _outgoing.
+  bool get _useEfficientMotion =>
+      widget.efficientMotion && widget.retainVisitedTabs &&
+      widget.child.key != null;
 
   bool get _reduceMotion =>
       MediaQuery.disableAnimationsOf(context) ||
@@ -93,8 +100,10 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
   void didUpdateWidget(covariant LokalNavigationSwitcher oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.retainVisitedTabs) _remember(widget.child);
-    if (oldWidget.efficientMotion != widget.efficientMotion) {
-      _progress.duration = widget.efficientMotion
+    if (oldWidget.efficientMotion != widget.efficientMotion ||
+        oldWidget.retainVisitedTabs != widget.retainVisitedTabs ||
+        (oldWidget.child.key == null) != (widget.child.key == null)) {
+      _progress.duration = _useEfficientMotion
           ? LokalNavigationSwitcher.efficientDuration
           : LokalNavigationSwitcher.enterDuration;
     }
@@ -104,7 +113,7 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
     if (_reduceMotion) {
       _outgoing = null;
       _progress.value = 1;
-    } else if (widget.efficientMotion) {
+    } else if (_useEfficientMotion) {
       // No outgoing page is painted during the animation. The old page
       // stays alive in the bounded Offstage cache but consumes zero raster
       // work while Library or You comes in.
@@ -133,10 +142,10 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
 
   Widget _retainedScene(double direction, bool animating) {
     final current = widget.child.key;
-    final exiting = widget.efficientMotion
+    final exiting = _useEfficientMotion
         ? null
         : animating ? _outgoing?.key : null;
-    final travel = widget.efficientMotion ? .045 : 1.0;
+    final travel = _useEfficientMotion ? .045 : 1.0;
     // Put the incoming surface last so it paints in front, while the
     // outgoing screen occupies the adjacent viewport region.
     final ordered = [
@@ -197,7 +206,7 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
   Widget build(BuildContext context) {
     final reduceMotion = _reduceMotion;
     final animating = !reduceMotion &&
-        (widget.efficientMotion ? _progress.isAnimating : _outgoing != null);
+        (_useEfficientMotion ? _progress.isAnimating : _outgoing != null);
     final direction =
         (Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0) *
         _travel;
