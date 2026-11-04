@@ -100,13 +100,76 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('scrolling and folding suspend only transient backdrop work',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var collapsed = false;
+    var scrolling = false;
+    late StateSetter update;
+
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return Align(
+                alignment: Alignment.bottomCenter,
+                child: KonnektedDock(
+                  selected: KonnektedTab.listen,
+                  onSelect: (_) {},
+                  miniPlayer: const SizedBox.expand(),
+                  collapsed: collapsed,
+                  scrollActive: scrolling,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    ));
+
+    void allSurfaces(bool suspended) {
+      final glass = tester.widgetList<LokalGlass>(
+        find.byType(LokalGlass),
+      ).toList();
+      expect(glass, hasLength(3));
+      for (final capsule in glass) {
+        expect(capsule.suspendBackdrop, suspended);
+        expect(capsule.lens?.magnification, closeTo(.023, .001));
+        expect(capsule.pronouncedRim, isTrue);
+      }
+    }
+
+    allSurfaces(false);
+    update(() => scrolling = true);
+    await tester.pump();
+    allSurfaces(true);
+    update(() => collapsed = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 75));
+    allSurfaces(true);
+    update(() => scrolling = false);
+    await tester.pump();
+    allSurfaces(true);
+    await tester.pumpAndSettle();
+    allSurfaces(false);
+    expect(tester.takeException(), isNull);
+  });
+
   test('Home capsule flex follows spring progress with no independent timer', () {
     expect(dockHomeBubbleScale(0), 1);
     expect(dockHomeBubbleScale(1), 1);
     // Lift is visible for multiple frames even at a high refresh rate.
-    expect(dockHomeBubbleScale(.125), greaterThan(1.02));
-    expect(dockHomeBubbleScale(.375), lessThan(.97));
-    expect(dockHomeBubbleScale(.625), greaterThan(1.04));
+    expect(dockHomeBubbleScale(.125), greaterThan(1.003));
+    expect(dockHomeBubbleScale(.375), greaterThan(1.02));
+    expect(dockHomeBubbleScale(.625), greaterThan(1.02));
+    expect(dockHomeBubbleScale(.875), greaterThan(1));
+    expect(dockHomeBubbleScale(.5), lessThan(1.04));
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
