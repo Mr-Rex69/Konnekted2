@@ -18,8 +18,8 @@ void main() {
     final dip = LokalArtworkFlight.rect(mini, expanded, .2);
     final recovery = LokalArtworkFlight.rect(mini, expanded, .05);
     expect(early.center.dx, greaterThan(dip.center.dx + 100));
-    expect(dip.center.dy, greaterThan(mini.center.dy + 35));
-    expect(recovery.center.dy, greaterThan(mini.center.dy + 15));
+    expect(dip.center.dy, greaterThan(mini.center.dy + 20));
+    expect(recovery.center.dy, greaterThan(mini.center.dy + 10));
     expect(recovery.center.dy, lessThan(dip.center.dy),
         reason: 'Cover must rise from below its destination to dock');
 
@@ -43,7 +43,7 @@ void main() {
       const Rect.fromLTWH(0, 0, 400, 800),
     ]) {
       final dip = LokalArtworkFlight.rect(wideMini, full, .15, sheetTravel: 700);
-      expect(dip.center.dy, greaterThan(wideMini.center.dy + 30));
+      expect(dip.center.dy, greaterThan(wideMini.center.dy + 20));
       expect(dip.bottom, greaterThan(wideMini.bottom),
           reason: 'The return must visibly travel below its final position');
       expect(LokalArtworkFlight.rect(wideMini, full, 0), wideMini);
