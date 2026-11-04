@@ -773,19 +773,17 @@ class _TabCapsuleState extends State<_TabCapsule>
                     height: 22,
                     child: IgnorePointer(
                       child: Transform.scale(
-                      key: const ValueKey('dock-shared-selected-icon'),
-                      scale: 1.08 + .20 * widget.collapse,
-                      child: AnimatedSwitcher(
-                        duration: reduceMotion
-                            ? Duration.zero
-                            : const Duration(milliseconds: 170),
+                        key: const ValueKey('dock-shared-selected-icon'),
+                        // Keep the house glyph steady. The dock already
+                        // shrinks 58→48dp, so enlarging the icon another 20%
+                        // and crossfading a second copy added noisy motion
+                        // without improving its visibility.
+                        scale: 1.08,
                         child: Icon(
                           shown.icon,
-                          key: ValueKey(shown),
                           color: t.accent,
                           size: 22,
                         ),
-                      ),
                       ),
                     ),
                   );
@@ -892,27 +890,25 @@ class _TabButton extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                AnimatedScale(
-                  scale: selected ? 1.08 : 1,
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutBack,
-                  child: Opacity(
-                    opacity: hideIcon ? 0 : 1,
-                    child: Icon(
-                      tab.icon,
-                      size: 22,
-                      color: color,
-                      shadows: [
-                        Shadow(
-                          color: context.lokal.isLight
-                              ? Colors.white.withValues(alpha: .75)
-                              : Colors.black.withValues(alpha: .85),
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
+                // The shared selected glyph owns the active icon. Leave an
+                // identically sized slot without painting an invisible copy
+                // or animating another icon beneath it on every dock frame.
+                if (hideIcon)
+                  const SizedBox(width: 22, height: 22)
+                else
+                  Icon(
+                    tab.icon,
+                    size: 22,
+                    color: color,
+                    shadows: [
+                      Shadow(
+                        color: context.lokal.isLight
+                            ? Colors.white.withValues(alpha: .75)
+                            : Colors.black.withValues(alpha: .85),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
-                ),
                 const SizedBox(height: 2),
                 Text(
                   tab.label,
