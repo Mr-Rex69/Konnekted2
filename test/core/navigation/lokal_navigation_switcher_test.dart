@@ -268,6 +268,41 @@ void main() {
     },
   );
 
+  testWidgets('instant cached navigation has no page flight or outgoing raster',
+      (tester) async {
+    final inits = <String, int>{};
+    Widget page(String tab) => MaterialApp(
+      home: LokalNavigationSwitcher(
+        instantNavigation: true,
+        retainVisitedTabs: true,
+        child: KeyedSubtree(
+          key: ValueKey(tab),
+          child: _TabLifecycleProbe(
+            name: tab,
+            onInit: (name) => inits[name] = (inits[name] ?? 0) + 1,
+            onDispose: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(page('Home'));
+    final origin = tester.getCenter(find.text('Home'));
+    await tester.pumpWidget(page('Library'));
+    // The first new frame is final; there is no outgoing raster or motion.
+    expect(find.text('Home'), findsNothing);
+    expect(find.text('Home', skipOffstage: false), findsOneWidget);
+    expect(find.text('Library'), findsOneWidget);
+    final incoming = tester.getCenter(find.text('Library'));
+    expect(incoming, origin);
+    await tester.pumpWidget(page('You'));
+    expect(find.text('Library'), findsNothing);
+    expect(find.text('You'), findsOneWidget);
+    await tester.pumpWidget(page('Home'));
+    expect(inits, {'Home': 1, 'Library': 1, 'You': 1});
+    expect(tester.getCenter(find.text('Home')), origin);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('reduced motion removes transient tab immediately',
       (tester) async {
     AppConstants.setAnimationsEnabled(false);
