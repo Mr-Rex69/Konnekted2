@@ -4,6 +4,52 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+/// The same dock-to-cover flight used by local, station and desktop-remote
+/// playback, including the full-bleed artwork mode.
+///
+/// BitChord's PlayerDock/NowPlayingScreen constrains how far the artwork
+/// rides the closing sheet instead of linearly translating it to the cover.
+/// Lokal has a separate moving route, so give its portal a shallow arc with
+/// exact endpoints and zero offset velocity at each landing. Both opening
+/// and closing read the same position from the finger-driven progress.
+abstract final class LokalArtworkFlight {
+  /// Move from the mini-player's actual on-screen cover to the expanded art.
+  /// Width and height still interpolate linearly: only the centre travels on
+  /// the arc, avoiding image distortion and artwork-crop discontinuities.
+  static Rect rect(Rect mini, Rect expanded, double progress) {
+    final t = progress.clamp(0.0, 1.0);
+    final linear = Rect.lerp(mini, expanded, t)!;
+    if (t <= 0 || t >= 1) return linear;
+
+    // The curve is more evident when a left-hand mini cover docks into a
+    // centred full player, but disappears on nearly vertical trips.
+    final horizontal = expanded.center.dx - mini.center.dx;
+    final vertical = (expanded.center.dy - mini.center.dy).abs();
+    final bend = math.pow(math.sin(math.pi * t), 2).toDouble();
+    final lateral = horizontal.sign * math.min(horizontal.abs() * .16, 16.0);
+    final lift = math.min(vertical * .012, 10.0);
+    return linear.shift(Offset(lateral * bend, -lift * bend));
+  }
+}
+
+/// Fallback Hero flights use the identical curve when the route has no
+/// dedicated artwork portal (older/classic mini-player entry points).
+/// Canonicalize by size so pop and push follow the exact same arc in reverse.
+class LokalArtworkRectTween extends RectTween {
+  LokalArtworkRectTween({super.begin, super.end});
+
+  @override
+  Rect? lerp(double t) {
+    final from = begin;
+    final to = end;
+    if (from == null || to == null) return super.lerp(t);
+    final opening = from.width * from.height <= to.width * to.height;
+    return opening
+        ? LokalArtworkFlight.rect(from, to, t)
+        : LokalArtworkFlight.rect(to, from, 1 - t);
+  }
+}
+
 /// Paints the player's real cover above the moving sheet's clips. Its layout
 /// stays in the full player, while its paint bounds follow the same progress
 /// as the sheet, including a finger-held drag and its settling spring.
@@ -239,7 +285,7 @@ class _RenderArtworkPortal extends RenderProxyBox {
     final origin = localToGlobal(Offset.zero);
     final from = source.shift(-origin);
     final to = natural.shift(Offset(0, -_sheetOffset));
-    final rect = Rect.lerp(from, to, _progress.clamp(0.0, 1.0))!;
+    final rect = LokalArtworkFlight.rect(from, to, _progress);
     // One scale preserves the artwork's aspect ratio. Independent X/Y
     // scaling squashed tall fullscreen art into a square and snapped when
     // the actual miniplayer cover took over.
