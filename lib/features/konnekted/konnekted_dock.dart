@@ -43,22 +43,21 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
-// Optical behaviour follows BitChord's actual Kyant0/backdrop lens:
-// 24dp circular bezel, 24dp refraction, depth and chromatic aberration.
-// Lokal additionally retains a gently magnified centre for Apple's lens look.
-// Reference: kushagrasinghx/BitChord, LiquidGlass.kt (GPL-3.0) and
-// Kyant0/backdrop v2.0.0 (Apache-2.0).
+// BitChord supplies the *interaction* physics. Apple's Music glass is much
+// gentler optically: a small centre magnification, low-displacement bezel,
+// almost neutral chroma and no strong refractive rainbow at rest. Applying
+// BitChord's 24/24/1.0 lens wholesale yielded the user's vivid RGB artifacts.
 const _dockGlassLens = LokalLens(
-  height: 24,
-  amount: 24,
+  height: 13,
+  amount: 8,
   fraction: .5,
-  depth: 1,
-  dispersion: 1,
-  magnification: .065,
+  depth: .18,
+  dispersion: .10,
+  magnification: .023,
   profile: LokalLensProfile.circular,
 );
 
-const _dockBlurRadius = .8;
+const _dockBlurRadius = 1.2;
 
 /// A damped spring pulse with its own timeline. The previous implementation
 /// sampled the already-eased collapse progress, making its tiny pulse
@@ -256,7 +255,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                     fallbackTintOpacity: lerpDouble(.16, .20, t)!,
                     fallbackBlurSigma: 2,
                     pronouncedRim: false,
-                    rimStrength: .65,
+                    rimStrength: .38,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t >= 1,
                       progress: t,
@@ -444,7 +443,7 @@ class _TabCapsuleState extends State<_TabCapsule>
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
         pronouncedRim: false,
-        rimStrength: .65,
+        rimStrength: .38,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -546,9 +545,9 @@ class _TabCapsuleState extends State<_TabCapsule>
                                           child: LokalClearLens(
                                               key: const ValueKey('dock-travel-lens'),
                                               lens: LokalLens(
-                                                height: 12,
-                                                amount: 14,
-                                                dispersion: 1,
+                                                height: 9,
+                                                amount: 8,
+                                                dispersion: .12,
                                                 profile: LokalLensProfile.circular,
                                               ).scale(lift),
                                               child: DecoratedBox(
@@ -636,10 +635,10 @@ class _Lens extends StatelessWidget {
       builder: (context, t, _) => LokalClearLens(
         // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
-          // BitChord's raised selection uses a 12dp/14dp chromatic lens.
-          height: 12,
-          amount: 14,
-          dispersion: 1,
+          // The moving selection is a shallow clear lens, never a rainbow.
+          height: 9,
+          amount: 8,
+          dispersion: .12,
           profile: LokalLensProfile.circular,
         ).scale(t),
         child: DecoratedBox(
@@ -751,7 +750,7 @@ class _SearchCircle extends StatelessWidget {
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
           pronouncedRim: false,
-          rimStrength: .65,
+          rimStrength: .38,
           child: Stack(
             fit: StackFit.expand,
             children: [
