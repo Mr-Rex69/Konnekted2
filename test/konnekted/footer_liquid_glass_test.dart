@@ -171,7 +171,9 @@ void main() {
 
     await tester.pumpWidget(atProgress(1));
     await tester.pump();
-    expect(find.byTooltip('Open queue'), findsNothing);
+    // The hidden queue button remains mounted for a flicker-free reverse,
+    // but does not expose semantics or receive pointer events.
+    expect(find.bySemanticsLabel('Open queue'), findsNothing);
     expect(find.text('Transition artist'), findsOneWidget,
         reason: 'BitChord keeps the artist even in its inline accessory');
     expect(find.byTooltip('Pause'), findsOneWidget);
