@@ -366,15 +366,7 @@ class _TabCapsule extends StatefulWidget {
 }
 
 class _TabCapsuleState extends State<_TabCapsule>
-    with TickerProviderStateMixin {
-  // The selected tab rises as an independent glass lens on navigation and
-  // drag, then settles into a flat selected pane. The lens sits OVER the tab
-  // row so it refracts the real icons/labels beneath it, not only the page.
-  late final _selectionTravel = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 430),
-  );
-
+    with SingleTickerProviderStateMixin {
   // BitChord keeps the selected glass travelling on its own physical spring
   // and preserves velocity when the user retargets a tab before it settles.
   late final AnimationController _selectionPosition;
@@ -400,24 +392,21 @@ class _TabCapsuleState extends State<_TabCapsule>
     _lastCapsuleTab = widget.selected;
     if (MediaQuery.disableAnimationsOf(context)) {
       _selectionPosition.value = newIndex.toDouble();
-      _selectionTravel.value = 1;
       return;
     }
     _selectionPosition.animateWith(
       SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 280, damping: 31.4),
+        const SpringDescription(mass: 1, stiffness: 620, damping: 48),
         _selectionPosition.value,
         newIndex.toDouble(),
         _selectionPosition.velocity,
         snapToEnd: true,
       ),
     );
-    if (widget.collapse < .5) _selectionTravel.forward(from: 0);
   }
 
   @override
   void dispose() {
-    _selectionTravel.dispose();
     _selectionPosition.dispose();
     super.dispose();
   }
@@ -431,27 +420,6 @@ class _TabCapsuleState extends State<_TabCapsule>
   bool _pressed = false;
 
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
-
-  @visibleForTesting
-  static double liftedLensProgress(double progress) {
-    final t = progress.clamp(0.0, 1.0);
-    if (t <= 0 || t >= 1) return 0;
-    // BitChord lifts its pill immediately on the first touch, holds it up
-    // throughout its spring travel, and releases it only after 92% of the
-    // journey. The previous sin(pi*t) deflated it halfway through the move.
-    final rise = (1 - math.exp(-17 * t)) *
-        (1 + .055 * math.exp(-4 * t) * math.sin(23 * t));
-    final landing = Curves.easeInOut.transform(
-      ((1 - t) / .20).clamp(0.0, 1.0),
-    );
-    return (rise * landing).clamp(0.0, 1.10);
-  }
-
-  @visibleForTesting
-  static double selectionSquash(double progress) {
-    final t = progress.clamp(0.0, 1.0);
-    return .115 * math.sin(2 * math.pi * t) * math.sin(math.pi * t);
-  }
 
   int _indexAt(double x) =>
       ((x - _inset) / _slot).floor().clamp(0, _tabs.length - 1);
@@ -484,14 +452,13 @@ class _TabCapsuleState extends State<_TabCapsule>
     } else if (position != null) {
       _selectionPosition.animateWith(
         SpringSimulation(
-          const SpringDescription(mass: 1, stiffness: 280, damping: 31.4),
+          const SpringDescription(mass: 1, stiffness: 620, damping: 48),
           _selectionPosition.value,
           _tabs.indexOf(_lastCapsuleTab).toDouble(),
           0,
           snapToEnd: true,
         ),
       );
-      _selectionTravel.forward(from: 0);
     }
   }
 
@@ -608,75 +575,8 @@ class _TabCapsuleState extends State<_TabCapsule>
                                 ],
                               ),
                             ),
-                            // Raised chromatic lens over the recorded tab
-                            // content (same optical layering as BitChord's
-                            // GlassSelectionPill), not another opaque fill.
-                            // Keep the transparent overlay mounted so its
-                            // AnimatedPositioned travels from the previous
-                            // tab instead of materializing at the destination.
-                            // At rest it paints nothing and captures no lens.
-                            if (!reduceMotion)
-                              Positioned(
-                                left: lensLeft,
-                                top: _inset,
-                                bottom: _inset,
-                                width: _slot,
-                                child: IgnorePointer(
-                                  child: AnimatedBuilder(
-                                    animation: _selectionTravel,
-                                    builder: (context, _) {
-                                      final lift = _dragX != null
-                                          ? 1.0
-                                          : liftedLensProgress(_selectionTravel.value);
-                                      return Transform.translate(
-                                        offset: Offset(0, -9 * lift),
-                                        child: Transform.scale(
-                                          // Widen on launch and narrow while
-                                          // braking (reversed for left travel).
-                                          scaleX: 1 + .18 * lift +
-                                              selectionSquash(_selectionTravel.value),
-                                          scaleY: 1 + .12 * lift -
-                                              selectionSquash(_selectionTravel.value),
-                                          // Never put a BackdropFilter inside an
-                                          // Opacity saveLayer: it can obscure
-                                          // the recorded tab pixels that the
-                                          // lens is supposed to refract.
-                                          child: LokalClearLens(
-                                              key: const ValueKey('dock-travel-lens'),
-                                              suspendBackdrop: widget.suspendBackdrop,
-                                              lens: LokalLens(
-                                                height: 9,
-                                                amount: 8,
-                                                dispersion: .12,
-                                                profile: LokalLensProfile.circular,
-                                              ).scale(lift),
-                                              child: DecoratedBox(
-                                                decoration: ShapeDecoration(
-                                                  shape: StadiumBorder(
-                                                    side: BorderSide(
-                                                      color: Colors.white.withValues(
-                                                        alpha: .36 * lift,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  shadows: [
-                                                    BoxShadow(
-                                                      color: Colors.black.withValues(
-                                                        alpha: .24 * lift,
-                                                      ),
-                                                      blurRadius: 12,
-                                                      offset: const Offset(0, 2),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
+                            // One moving selection indicator; no second
+                            // expensive refractive layer over the tab row.
                           ],
                         ),
                       ),
