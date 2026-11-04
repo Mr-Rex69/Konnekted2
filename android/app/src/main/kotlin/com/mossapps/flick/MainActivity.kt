@@ -1420,7 +1420,16 @@ class MainActivity: FlutterActivity() {
                     "manufacturer" to android.os.Build.MANUFACTURER,
                     "model" to android.os.Build.MODEL,
                     "sdk" to android.os.Build.VERSION.SDK_INT,
-                    "impellerRequested" to resources.getBoolean(R.bool.enable_impeller)
+                    // Read the Boolean Flutter actually receives via
+                    // ApplicationInfo.metaData. The resource by itself can
+                    // say true while a malformed manifest passes an int ID.
+                    "impellerRequested" to (
+                        packageManager.getApplicationInfo(
+                            packageName, PackageManager.GET_META_DATA
+                        ).metaData?.getBoolean(
+                            "io.flutter.embedding.android.EnableImpeller", false
+                        ) ?: false
+                    )
                 ))
                 else -> result.notImplemented()
             }
