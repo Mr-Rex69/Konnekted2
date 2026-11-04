@@ -41,6 +41,15 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
+// The footer shares one restrained squircle lens across all glass surfaces.
+// Centre content stays sharp, while the rim bends the actual background.
+const _dockGlassLens = LokalLens(
+  height: 16,
+  amount: 18,
+  fraction: .45,
+  profile: LokalLensProfile.squircle,
+);
+
 /// Apple Music's iOS 26 tab bar in Lokal glass.
 ///
 /// A mini-player capsule floats above a tab capsule with a sliding lens and
@@ -194,6 +203,8 @@ class _KonnektedDockState extends State<KonnektedDock>
                   rect: Rect.lerp(miniOpen, miniShut, t)!,
                   child: LokalGlass.capsule(
                     grouped: true,
+                    lens: _dockGlassLens,
+                    liquidTintOpacity: .34,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t > .5,
                       child: widget.miniPlayer,
@@ -318,6 +329,8 @@ class _TabCapsuleState extends State<_TabCapsule> {
       curve: Curves.easeOutCubic,
       child: LokalGlass.capsule(
         grouped: true,
+        lens: _dockGlassLens,
+        liquidTintOpacity: .34,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -439,7 +452,12 @@ class _Lens extends StatelessWidget {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       builder: (context, t, _) => LokalClearLens(
-        lens: const LokalLens(height: 10, amount: 14, dispersion: 1).scale(t),
+        lens: const LokalLens(
+          height: 10,
+          amount: 14,
+          dispersion: .18,
+          profile: LokalLensProfile.squircle,
+        ).scale(t),
         child: DecoratedBox(
           decoration: ShapeDecoration(
             shape: StadiumBorder(
@@ -538,6 +556,8 @@ class _SearchCircle extends StatelessWidget {
         excludeFromSemantics: true,
         child: LokalGlass.capsule(
           grouped: true,
+          lens: _dockGlassLens,
+          liquidTintOpacity: .34,
           child: Stack(
             fit: StackFit.expand,
             children: [

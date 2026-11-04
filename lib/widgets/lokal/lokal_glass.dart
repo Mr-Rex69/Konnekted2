@@ -46,6 +46,10 @@ abstract final class LokalGlassShaders {
   }
 }
 
+/// Lens surface profile. The squircle uses a convex fourth-root surface
+/// (as described by kube.io's Liquid Glass optics study).
+enum LokalLensProfile { circular, squircle }
+
 /// How a glass shape bends what is behind it (Kyant0/backdrop's lens).
 @immutable
 class LokalLens {
@@ -55,6 +59,7 @@ class LokalLens {
     this.depth = 0,
     this.dispersion = 0,
     this.fraction = 1,
+    this.profile = LokalLensProfile.circular,
   });
 
   /// How far in from the edge the bending reaches, in logical pixels.
@@ -73,6 +78,9 @@ class LokalLens {
   /// so a lens scales with the shape (BitChord's bars use half).
   final double fraction;
 
+  /// Optical curve at the bezel; circular maintains the original effect.
+  final LokalLensProfile profile;
+
   static const none = LokalLens(height: 0, amount: 0);
 
   LokalLens scale(double t) => LokalLens(
@@ -81,6 +89,7 @@ class LokalLens {
     depth: depth,
     dispersion: dispersion,
     fraction: fraction,
+    profile: profile,
   );
 
   @override
@@ -90,10 +99,11 @@ class LokalLens {
       other.amount == amount &&
       other.depth == depth &&
       other.dispersion == dispersion &&
-      other.fraction == fraction;
+      other.fraction == fraction &&
+      other.profile == profile;
 
   @override
-  int get hashCode => Object.hash(height, amount, depth, dispersion, fraction);
+  int get hashCode => Object.hash(height, amount, depth, dispersion, fraction, profile);
 }
 
 /// How much a [LokalGlass] hides what is behind it.
@@ -182,6 +192,7 @@ class LokalGlass extends ConsumerWidget {
     this.shadow = true,
     this.grouped = false,
     this.lens,
+    this.liquidTintOpacity,
   });
 
   /// A fully rounded capsule or circle (`StadiumBorder`-like radius).
@@ -194,6 +205,7 @@ class LokalGlass extends ConsumerWidget {
     this.shadow = true,
     this.grouped = false,
     this.lens,
+    this.liquidTintOpacity,
   }) : borderRadius = const BorderRadius.all(Radius.circular(999));
 
   final Widget child;
@@ -208,6 +220,10 @@ class LokalGlass extends ConsumerWidget {
 
   /// Overrides the thickness's lens.
   final LokalLens? lens;
+
+  /// Optional clearer liquid fill. Frosted/performance fallbacks retain
+  /// their original opacity for legibility.
+  final double? liquidTintOpacity;
 
   static const _vibrancy = 1.5;
 
@@ -225,7 +241,7 @@ class LokalGlass extends ConsumerWidget {
           final light = t.isLight;
           final double alpha;
           if (liquid) {
-            alpha = thickness.tint;
+            alpha = liquidTintOpacity?.clamp(0.0, 1.0) ?? thickness.tint;
           } else {
             final frost = light ? thickness.frostLight : thickness.frostDark;
             // Solid glass gets 20 % more opacity so text keeps its contrast
@@ -500,6 +516,7 @@ class RenderLokalLensBackdrop extends RenderProxyBox {
       amount * dpr,
       _lens.depth,
       _lens.dispersion,
+      _lens.profile == LokalLensProfile.squircle ? 1.0 : 0.0,
     ];
     if (_filter == null || !listEquals(uniforms, _uniforms)) {
       final shader = _program.fragmentShader();
