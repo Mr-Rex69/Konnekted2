@@ -41,14 +41,17 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
-// The footer shares one restrained squircle lens across all glass surfaces.
-// Centre content stays sharp, while the rim bends the actual background.
+// A visually refractive but bezel-localized floating lens like Apple Music.
+// The central region remains flat to keep transport controls crisp.
 const _dockGlassLens = LokalLens(
-  height: 16,
-  amount: 18,
-  fraction: .45,
+  height: 26,
+  amount: 34,
+  fraction: .49,
+  dispersion: .07,
   profile: LokalLensProfile.squircle,
 );
+
+const _dockBlurRadius = 1.5;
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
 ///
@@ -204,7 +207,10 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: LokalGlass.capsule(
                     grouped: true,
                     lens: _dockGlassLens,
-                    liquidTintOpacity: .34,
+                    liquidTintOpacity: lerpDouble(.20, .28, t)!,
+                    liquidBlurRadius: _dockBlurRadius,
+                    pronouncedRim: true,
+                    rimStrength: 1.10 + .12 * t,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t > .5,
                       child: widget.miniPlayer,
@@ -225,6 +231,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                 rect: Rect.lerp(searchOpen, searchShut, t)!,
                 child: _SearchCircle(
                   selected: widget.selected == KonnektedTab.explore,
+                  collapse: t,
                   onTap: () => widget.onSelect(KonnektedTab.explore),
                 ),
               ),
@@ -330,7 +337,10 @@ class _TabCapsuleState extends State<_TabCapsule> {
       child: LokalGlass.capsule(
         grouped: true,
         lens: _dockGlassLens,
-        liquidTintOpacity: .34,
+        liquidTintOpacity: lerpDouble(.20, .28, widget.collapse)!,
+        liquidBlurRadius: _dockBlurRadius,
+        pronouncedRim: true,
+        rimStrength: 1.10 + .12 * widget.collapse,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -448,14 +458,15 @@ class _Lens extends StatelessWidget {
   Widget build(BuildContext context) {
     final light = context.lokal.isLight;
     return TweenAnimationBuilder<double>(
-      tween: Tween(end: active ? 1 : 0),
+      tween: Tween(end: active ? 1.0 : .45),
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       builder: (context, t, _) => LokalClearLens(
+        // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
-          height: 10,
-          amount: 14,
-          dispersion: .18,
+          height: 12,
+          amount: 22,
+          dispersion: .15,
           profile: LokalLensProfile.squircle,
         ).scale(t),
         child: DecoratedBox(
@@ -537,9 +548,14 @@ class _TabButton extends StatelessWidget {
 }
 
 class _SearchCircle extends StatelessWidget {
-  const _SearchCircle({required this.selected, required this.onTap});
+  const _SearchCircle({
+    required this.selected,
+    required this.collapse,
+    required this.onTap,
+  });
 
   final bool selected;
+  final double collapse;
   final VoidCallback onTap;
 
   @override
@@ -557,7 +573,10 @@ class _SearchCircle extends StatelessWidget {
         child: LokalGlass.capsule(
           grouped: true,
           lens: _dockGlassLens,
-          liquidTintOpacity: .34,
+          liquidTintOpacity: lerpDouble(.20, .28, collapse)!,
+          liquidBlurRadius: _dockBlurRadius,
+          pronouncedRim: true,
+          rimStrength: 1.10 + .12 * collapse,
           child: Stack(
             fit: StackFit.expand,
             children: [
