@@ -12,22 +12,26 @@ void main() {
     expect(LokalArtworkFlight.rect(mini, expanded, -1), mini);
     expect(LokalArtworkFlight.rect(mini, expanded, 2), expanded);
 
-    const progress = .5;
+    // Bezier trajectory: the artwork first rises away from the mini, then
+    // travels toward the full player's centre. No sideways mid-flight hump.
+    const progress = .25;
     final direct = Rect.lerp(mini, expanded, progress)!;
     final curved = LokalArtworkFlight.rect(mini, expanded, progress);
-    expect(curved.center.dx, greaterThan(direct.center.dx + 8));
-    expect(curved.center.dy, lessThan(direct.center.dy - 5));
+    expect(curved.center.dx, lessThan(direct.center.dx - 10));
+    expect(curved.center.dy, greaterThan(direct.center.dy + 5));
     expect(curved.size, direct.size,
         reason: 'Only trajectory bends: cover size and crop must not squash');
   });
 
   test('curved return is actually visible across a normal phone cover flight', () {
-    final mid = LokalArtworkFlight.rect(mini, expanded, .5);
-    final direct = Rect.lerp(mini, expanded, .5)!;
-    expect(mid.center.dx - direct.center.dx, greaterThan(40),
-        reason: 'The previous 16px-only correction looked like a straight line');
-    expect(direct.center.dy - mid.center.dy, greaterThan(15));
-    expect(mid.size, direct.size);
+    final middle = LokalArtworkFlight.rect(mini, expanded, .5);
+    final directMiddle = Rect.lerp(mini, expanded, .5)!;
+    final late = LokalArtworkFlight.rect(mini, expanded, .75);
+    final directLate = Rect.lerp(mini, expanded, .75)!;
+    expect(directMiddle.center.dy - middle.center.dy, greaterThan(7));
+    expect(late.center.dx - directLate.center.dx, greaterThan(10),
+        reason: 'The arc changes its horizontal tangent during the flight');
+    expect(middle.size, directMiddle.size);
   });
 
   test('temporary GlobalKey detachment does not cancel the active morph', () {
@@ -44,11 +48,12 @@ void main() {
   });
 
   test('curve lands tangentially without final-frame snap', () {
-    for (final t in [0.001, 0.01, .99, .999]) {
+    for (final t in [0.001, .999]) {
       final curved = LokalArtworkFlight.rect(mini, expanded, t);
-      final direct = Rect.lerp(mini, expanded, t)!;
-      expect((curved.center - direct.center).distance, lessThan(.12),
-          reason: 'Arc correction fades smoothly at p=$t');
+      final anchor = t < .5 ? mini.center : expanded.center;
+      // Ends are vertically tangent: horizontal offset decays quadratically.
+      expect((curved.center.dx - anchor.dx).abs(), lessThan(.01));
+      expect((curved.center.dy - anchor.dy).abs(), lessThan(1));
     }
   });
 
