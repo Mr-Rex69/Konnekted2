@@ -230,6 +230,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                 Positioned.fromRect(
                   rect: Rect.lerp(miniOpen, miniShut, t)!,
                   child: Listener(
+                    behavior: HitTestBehavior.translucent,
                     onPointerDown: (_) {
                       if (!_miniPressed) setState(() => _miniPressed = true);
                     },
@@ -498,6 +499,7 @@ class _TabCapsuleState extends State<_TabCapsule>
     return AnimatedBuilder(
       animation: _selectionPosition,
       builder: (context, _) => Listener(
+      behavior: HitTestBehavior.translucent,
       onPointerDown: (_) {
         if (!_pressed) setState(() => _pressed = true);
       },
