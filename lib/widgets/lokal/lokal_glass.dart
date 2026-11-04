@@ -679,37 +679,39 @@ class LokalGlassRimPainter extends CustomPainter {
     }
     canvas.drawRRect(rrect, paint);
     if (pronounced) {
-      // Two small specular reflections remain visible even against a
-      // uniform backdrop; no additional backdrop filters are required.
+      // BitChord has two reflections: a thin crisp perimeter and a softer
+      // internal return. The old 3.5px white bloom looked like thick painted
+      // edges. These strokes provide definition without restoring rainbow
+      // or overwhelming the real backdrop lens.
       final bloom = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.5
+        ..strokeWidth = 2.0
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          stops: const [0, .4, 1],
+          stops: const [0, .48, 1],
           colors: [
-            Colors.white.withValues(alpha: (light ? .30 : .42) * strength),
-            Colors.white.withValues(alpha: .045 * strength),
-            Colors.white.withValues(alpha: (light ? .15 : .24) * strength),
+            Colors.white.withValues(alpha: (light ? .14 : .22) * strength),
+            Colors.white.withValues(alpha: .025 * strength),
+            Colors.white.withValues(alpha: (light ? .09 : .13) * strength),
           ],
         ).createShader(rect);
-      canvas.drawRRect(rrect.deflate(1.8), bloom);
+      canvas.drawRRect(rrect.deflate(1.25), bloom);
 
       final glint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.25
+        ..strokeWidth = .85
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          stops: const [0, .34, 1],
+          stops: const [0, .38, 1],
           colors: [
-            Colors.white.withValues(alpha: (light ? .65 : .72) * strength),
-            Colors.white.withValues(alpha: .07 * strength),
-            Colors.white.withValues(alpha: (light ? .22 : .35) * strength),
+            Colors.white.withValues(alpha: (light ? .46 : .55) * strength),
+            Colors.white.withValues(alpha: .08 * strength),
+            Colors.white.withValues(alpha: (light ? .20 : .30) * strength),
           ],
         ).createShader(rect);
-      canvas.drawRRect(rrect.deflate(.8), glint);
+      canvas.drawRRect(rrect.deflate(.65), glint);
     }
     // The 0.5 px hairline that gives glass an edge against a page the same
     // colour as its tint.
