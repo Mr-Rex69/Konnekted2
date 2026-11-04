@@ -113,16 +113,16 @@ class LokalPerformanceAdvisor extends ConsumerStatefulWidget {
   /// Look up the activity at frame-build time, not at callback delivery.
   /// Navigation overrides an earlier scroll even if its timeout was active.
   @visibleForTesting
-  static (String kind, String surface) activityForRawFrame(int timestamp) {
+  static ({String kind, String surface}) activityForRawFrame(int timestamp) {
     for (final activity in _frameActivities.reversed) {
       if (timestamp >= activity.since) {
         if (timestamp < activity.until) {
-          return (activity.kind, activity.surface);
+          return (kind: activity.kind, surface: activity.surface);
         }
-        return ('idle', 'other');
+        return (kind: 'idle', surface: 'other');
       }
     }
-    return ('idle', 'other');
+    return (kind: 'idle', surface: 'other');
   }
 
   static void noteScroll({String surface = 'other'}) {
