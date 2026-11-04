@@ -234,6 +234,8 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.singlePassLens = false,
+    this.staticSurface = false,
     this.suspendBackdrop = false,
     this.fallbackTintOpacity,
     this.fallbackBlurSigma,
@@ -253,6 +255,8 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.singlePassLens = false,
+    this.staticSurface = false,
     this.suspendBackdrop = false,
     this.fallbackTintOpacity,
     this.fallbackBlurSigma,
@@ -279,6 +283,17 @@ class LokalGlass extends ConsumerWidget {
 
   /// Clarity for the liquid shader alone; normal fallback retains frost.
   final double? liquidBlurRadius;
+
+  /// Keep the refractive lens permanently active, but skip the separate
+  /// pre-blur/vibrancy backdrop pass. For the floating footer this preserves
+  /// optical motion during scrolling while halving the number of backdrop
+  /// layers. Other glass surfaces retain the original treatment.
+  final bool singlePassLens;
+
+  /// Fixed page content cards should not sample the backdrop on every frame
+  /// of an image-heavy scroll. Preserve tint, shape and specular rim; draw
+  /// these cards without a backdrop shader at all, including at rest.
+  final bool staticSurface;
 
   /// Avoid three expensive full-screen backdrop captures while the dock is
   /// moving over scrolling artwork. Draw the same clear tint and specular
@@ -329,7 +344,7 @@ class LokalGlass extends ConsumerWidget {
         valueListenable: LokalGlassShaders.lens,
         builder: (context, program, _) {
           final lensReady = !solid && program != null;
-          final liquid = lensReady && !suspendBackdrop;
+          final liquid = lensReady && !suspendBackdrop && !staticSurface;
           final light = t.isLight;
           final double alpha;
           if (lensReady) {
@@ -373,14 +388,16 @@ class LokalGlass extends ConsumerWidget {
               program: program,
               radius: _radius(borderRadius),
               lens: lens ?? thickness.lens,
-              inner: _liquidInnerFilter(
-                liquidBlurRadius == null
-                    ? thickness.blurSigma
-                    : math.max(0, liquidBlurRadius!) * .57735 + .5,
-              ),
+              inner: singlePassLens
+                  ? null
+                  : _liquidInnerFilter(
+                      liquidBlurRadius == null
+                          ? thickness.blurSigma
+                          : math.max(0, liquidBlurRadius!) * .57735 + .5,
+                    ),
               child: surface,
             );
-          } else if (!solid && !suspendBackdrop) {
+          } else if (!solid && !suspendBackdrop && !staticSurface) {
             final filter = ui.ImageFilter.compose(
               outer: const ColorFilter.matrix(_vibrancyMatrix),
               inner: ui.ImageFilter.blur(
