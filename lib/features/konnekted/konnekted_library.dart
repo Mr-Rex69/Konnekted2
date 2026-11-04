@@ -263,6 +263,7 @@ class _Tile extends StatelessWidget {
     return Semantics(
       button: true,
       child: LokalGlass(
+        staticSurface: true,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
         thickness: LokalGlassThickness.thin,
         shadow: false,
