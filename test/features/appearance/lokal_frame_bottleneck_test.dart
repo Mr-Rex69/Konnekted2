@@ -12,17 +12,17 @@ void main() {
     LokalPerformanceAdvisor.noteScroll(surface: 'Library');
     expect(
       LokalPerformanceAdvisor.activityForRawFrame(rawStart),
-      ('scroll', 'Library'),
+      (kind: 'scroll', surface: 'Library'),
     );
 
     LokalPerformanceAdvisor.noteNavigation(surface: 'You');
     expect(
       LokalPerformanceAdvisor.activityForRawFrame(rawStart),
-      ('navigation', 'You'),
+      (kind: 'navigation', surface: 'You'),
     );
     expect(
       LokalPerformanceAdvisor.activityForRawFrame(rawStart + 1000001),
-      ('idle', 'other'),
+      (kind: 'idle', surface: 'other'),
     );
   });
 
