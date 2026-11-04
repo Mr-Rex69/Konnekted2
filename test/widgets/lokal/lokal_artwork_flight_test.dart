@@ -12,13 +12,12 @@ void main() {
     expect(LokalArtworkFlight.rect(mini, expanded, -1), mini);
     expect(LokalArtworkFlight.rect(mini, expanded, 2), expanded);
 
-    // Bezier trajectory: the artwork first rises away from the mini, then
-    // travels toward the full player's centre. No sideways mid-flight hump.
+    // The cover follows the moving sheet instead of veering sideways.
     const progress = .25;
     final direct = Rect.lerp(mini, expanded, progress)!;
     final curved = LokalArtworkFlight.rect(mini, expanded, progress);
-    expect(curved.center.dx, lessThan(direct.center.dx - 10));
-    expect(curved.center.dy, greaterThan(direct.center.dy + 5));
+    expect(curved.center.dx, closeTo(direct.center.dx, .001));
+    expect(curved.center.dy - direct.center.dy, closeTo(112.5, .001));
     expect(curved.size, direct.size,
         reason: 'Only trajectory bends: cover size and crop must not squash');
   });
@@ -28,9 +27,9 @@ void main() {
     final directMiddle = Rect.lerp(mini, expanded, .5)!;
     final late = LokalArtworkFlight.rect(mini, expanded, .75);
     final directLate = Rect.lerp(mini, expanded, .75)!;
-    expect(directMiddle.center.dy - middle.center.dy, greaterThan(7));
-    expect(late.center.dx - directLate.center.dx, greaterThan(10),
-        reason: 'The arc changes its horizontal tangent during the flight');
+    expect(middle.center.dy - directMiddle.center.dy, closeTo(150, .001));
+    expect(late.center.dy - directLate.center.dy, closeTo(112.5, .001),
+        reason: 'Dock ride prevents the cover from overshooting its mini');
     expect(middle.size, directMiddle.size);
   });
 
@@ -48,13 +47,14 @@ void main() {
   });
 
   test('curve lands tangentially without final-frame snap', () {
-    for (final t in [0.001, .999]) {
-      final curved = LokalArtworkFlight.rect(mini, expanded, t);
-      final anchor = t < .5 ? mini.center : expanded.center;
-      // Ends are vertically tangent: horizontal offset decays quadratically.
-      expect((curved.center.dx - anchor.dx).abs(), lessThan(.01));
-      expect((curved.center.dy - anchor.dy).abs(), lessThan(1));
-    }
+    // The last fraction of closing motion is tangent to the mini cover:
+    // its Y velocity reaches zero before the route's own spring settles.
+    final nearMini = LokalArtworkFlight.rect(mini, expanded, .001);
+    expect((nearMini.top - mini.top).abs(), lessThan(.01));
+    expect(nearMini.left, closeTo(Rect.lerp(mini, expanded, .001)!.left, .001));
+    final nearFull = LokalArtworkFlight.rect(mini, expanded, .999);
+    expect((nearFull.top - expanded.top).abs(), lessThan(2));
+    expect(LokalArtworkFlight.rect(mini, expanded, 0), mini);
   });
 
   test('closing and opening follow the same arc in opposite directions', () {
@@ -76,4 +76,18 @@ void main() {
     final direct = Rect.lerp(below, expanded, .5)!;
     expect((curved.center.dx - direct.center.dx).abs(), lessThan(3));
   });
+  test('ride uses real player sheet distance and clamps to avoid overshoot', () {
+    final full = Rect.lerp(mini, expanded, .5)!;
+    final atHalf = LokalArtworkFlight.rect(
+      mini, expanded, .5, sheetTravel: 700,
+    );
+    expect(atHalf.top, closeTo(full.top + 150, .001));
+    final shorter = LokalArtworkFlight.rect(
+      mini, expanded, .5, sheetTravel: 300,
+    );
+    expect(shorter.top, closeTo(full.top + 75, .001));
+    expect(shorter.top, lessThan(mini.top));
+  });
+
+
 }
