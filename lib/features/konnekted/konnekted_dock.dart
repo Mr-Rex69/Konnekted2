@@ -453,12 +453,31 @@ class _TabCapsuleState extends State<_TabCapsule>
 
   void _endDrag() {
     final index = _dragIndex;
+    final position = _dragX == null
+        ? null
+        : ((_dragX! - _inset) / _slot - .5)
+            .clamp(0.0, (_tabs.length - 1).toDouble());
+    // Hand the exact finger position and velocity to the same spring
+    // responsible for a tapped selection. This avoids an end-drag jump back
+    // to the old tab before the selected pill takes off again.
+    if (position != null) _selectionPosition.value = position;
     setState(() {
       _dragX = null;
       _dragIndex = null;
     });
     if (index != null && _tabs[index] != widget.selected) {
       widget.onSelect(_tabs[index]);
+    } else if (position != null) {
+      _selectionPosition.animateWith(
+        SpringSimulation(
+          const SpringDescription(mass: 1, stiffness: 280, damping: 31.4),
+          _selectionPosition.value,
+          _tabs.indexOf(_lastCapsuleTab).toDouble(),
+          0,
+          snapToEnd: true,
+        ),
+      );
+      _selectionTravel.forward(from: 0);
     }
   }
 
@@ -526,11 +545,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                         onHorizontalDragCancel: _endDrag,
                         child: Stack(
                           children: [
-                            AnimatedPositioned(
-                              duration: reduceMotion || _dragX != null
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 380),
-                              curve: Curves.easeOutBack,
+                            Positioned(
                               left: lensLeft,
                               top: _inset,
                               bottom: _inset,
@@ -578,11 +593,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                             // tab instead of materializing at the destination.
                             // At rest it paints nothing and captures no lens.
                             if (!reduceMotion)
-                              AnimatedPositioned(
-                                duration: _dragX != null
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 380),
-                                curve: Curves.easeOutBack,
+                              Positioned(
                                 left: lensLeft,
                                 top: _inset,
                                 bottom: _inset,
