@@ -1217,8 +1217,17 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                                       ),
                                                     ),
                                                   ),
-                                                  const Flexible(
-                                                    child: LokalOutputPill(),
+                                                  Flexible(
+                                                    child: ClipRect(
+                                                      child: Align(
+                                                        alignment: Alignment.centerLeft,
+                                                        widthFactor: 1 - collapse,
+                                                        child: Opacity(
+                                                          opacity: 1 - collapse,
+                                                          child: const LokalOutputPill(),
+                                                        ),
+                                                      ),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
