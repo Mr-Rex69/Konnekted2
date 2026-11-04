@@ -43,7 +43,9 @@ abstract final class LokalArtworkFlight {
 /// artwork portal active through those frames instead of silently reverting
 /// to a straight sheet slide.
 class LokalArtworkSource {
-  LokalArtworkSource(this._read) : _last = _read();
+  LokalArtworkSource(Rect? Function() read)
+      : _read = read,
+        _last = read();
 
   final Rect? Function() _read;
   Rect? _last;
