@@ -21,6 +21,18 @@ class _NavigationFrameWindow {
   int rasterMisses = 0;
 }
 
+/// FrameTiming timestamps use Flutter's raw engine epoch, not DateTime's
+/// Unix epoch. Retain activity transitions in that same clock so delayed
+/// release-mode batches are assigned to the original page and gesture.
+class _FrameActivity {
+  const _FrameActivity(this.since, this.until, this.kind, this.surface);
+
+  final int since;
+  final int until;
+  final String kind;
+  final String surface;
+}
+
 /// Distinguish CPU-heavy rasterization from UI work in release diagnostics.
 @visibleForTesting
 String lokalFrameBottleneck(int frames, int slowUi, int slowRaster) {
@@ -71,14 +83,60 @@ class LokalPerformanceAdvisor extends ConsumerStatefulWidget {
   // platform-channel calls or logging any private content.
   static int _scrollUntilMicros = 0, _navigationUntilMicros = 0;
   static String _navigationSurface = 'other', _scrollSurface = 'other';
+  static final List<_FrameActivity> _frameActivities = [];
+
+  static void _recordActivity(String kind, String surface, int duration) {
+    // This unadjusted frame stamp shares its epoch with
+    // FrameTiming.timestampInMicroseconds(FramePhase.buildStart). A note
+    // between frames applies to the following frame, not the previous one.
+    final started =
+        SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds + 1;
+    final previous = _frameActivities.isEmpty ? null : _frameActivities.last;
+    if (previous != null &&
+        previous.kind == kind &&
+        previous.surface == surface &&
+        started <= previous.until) {
+      _frameActivities[_frameActivities.length - 1] =
+          _FrameActivity(previous.since, started + duration, kind, surface);
+    } else {
+      _frameActivities.add(
+        _FrameActivity(started, started + duration, kind, surface),
+      );
+      // Release-mode frame reports can be delayed by roughly a second.
+      // Preserve ample history but never accumulate an unbounded list.
+      if (_frameActivities.length > 128) {
+        _frameActivities.removeRange(0, _frameActivities.length - 96);
+      }
+    }
+  }
+
+  /// Look up the activity at frame-build time, not at callback delivery.
+  /// Navigation overrides an earlier scroll even if its timeout was active.
+  @visibleForTesting
+  static (String kind, String surface) activityForRawFrame(int timestamp) {
+    for (final activity in _frameActivities.reversed) {
+      if (timestamp >= activity.since) {
+        if (timestamp < activity.until) {
+          return (activity.kind, activity.surface);
+        }
+        return ('idle', 'other');
+      }
+    }
+    return ('idle', 'other');
+  }
+
   static void noteScroll({String surface = 'other'}) {
     _scrollSurface = surface;
     _scrollUntilMicros = DateTime.now().microsecondsSinceEpoch + 500000;
+    _recordActivity('scroll', surface, 500000);
   }
   static String get scrollSurface => _scrollSurface;
   static void noteNavigation({String surface = 'other'}) {
     _navigationSurface = surface;
+    // A new page supersedes the old page's active scroll immediately.
+    _scrollUntilMicros = 0;
     _navigationUntilMicros = DateTime.now().microsecondsSinceEpoch + 1000000;
+    _recordActivity('navigation', surface, 1000000);
   }
   static String get navigationSurface => _navigationSurface;
   static String get diagnosticActivity {
@@ -151,12 +209,15 @@ class _LokalPerformanceAdvisorState
       _windowFrames++;
       if (slowUi) _windowUiMisses++;
       if (slowRaster) _windowRasterMisses++;
-      switch (LokalPerformanceAdvisor.diagnosticActivity) {
+      final activity = LokalPerformanceAdvisor.activityForRawFrame(
+        frame.timestampInMicroseconds(FramePhase.buildStart),
+      );
+      switch (activity.kind) {
         case 'scroll':
           _scrollFrames++;
           if (slowRaster) _scrollRasterMisses++;
           final scrollWindow = _scrollWindows.putIfAbsent(
-            LokalPerformanceAdvisor.scrollSurface,
+            activity.surface,
             _NavigationFrameWindow.new,
           );
           scrollWindow.frames++;
@@ -166,7 +227,7 @@ class _LokalPerformanceAdvisorState
           _navigationFrames++;
           if (slowRaster) _navigationRasterMisses++;
           final window = _navigationWindows.putIfAbsent(
-            LokalPerformanceAdvisor.navigationSurface,
+            activity.surface,
             _NavigationFrameWindow.new,
           );
           window.frames++;
