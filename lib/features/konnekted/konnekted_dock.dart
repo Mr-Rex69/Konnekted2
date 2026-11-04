@@ -20,7 +20,6 @@ import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flick/core/utils/app_haptics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,19 +58,20 @@ const _dockGlassLens = LokalLens(
 
 const _dockBlurRadius = 1.2;
 
-/// The selected Home/Library/You icon compresses briefly along its *vertical
-/// axis* while the footer folds. This is the sole icon deformation: the
-/// surrounding glass capsule is never moved, stretched, or bounced.
+/// Compress the selected icon *toward the screen's left edge* only while
+/// the footer is closing. The icon's left edge stays anchored: its right edge
+/// draws inward briefly, then returns to normal width. No translation,
+/// stretching to the right, rotation or spring overshoot is involved.
 ///
-/// A sin^4 envelope has identical endpoints and a short, smooth compression
-/// around the midpoint, without the lateral overshoot previously applied to
-/// the entire refractive tab surface.
+/// Expansion deliberately bypasses this effect entirely.
 @visibleForTesting
-double dockSelectedIconVerticalScale(double progress) {
+double dockSelectedIconLeftSquash(double progress) {
   final t = progress.clamp(0.0, 1.0);
-  final wave = math.sin(math.pi * t);
+  if (t <= .16 || t >= .82) return 1.0;
+  final phase = (t - .16) / .66;
+  final wave = math.sin(math.pi * phase);
   final pulse = wave * wave;
-  return 1.0 - .18 * pulse * pulse;
+  return 1.0 - .24 * pulse * pulse;
 }
 
 class KonnektedDock extends StatefulWidget {
@@ -127,49 +127,39 @@ class _KonnektedDockState extends State<KonnektedDock>
     with SingleTickerProviderStateMixin {
   late final _collapse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 420),
+    duration: const Duration(milliseconds: 250),
     value: _wantsCollapse ? 1 : 0,
   );
 
   // Play/pause press feedback must move only the content, not the refractive
   // mini-player capsule. Updating the notifier avoids rebuilding the dock.
   final _miniPressed = ValueNotifier<bool>(false);
+  bool _collapsing = false;
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
-
-  static final _spring = SpringDescription.withDampingRatio(
-    mass: 1,
-    // A softer critically-near-damped spring feels continuous rather than
-    // snapping the two floating surfaces into their final positions.
-    stiffness: 255,
-    ratio: .90,
-  );
 
   @override
   void didUpdateWidget(KonnektedDock old) {
     super.didUpdateWidget(old);
-    final target = _wantsCollapse ? 1.0 : 0.0;
     if (old.collapsed == widget.collapsed &&
-        old.hasMiniPlayer == widget.hasMiniPlayer)
+        old.hasMiniPlayer == widget.hasMiniPlayer) {
       return;
+    }
+    final target = _wantsCollapse ? 1.0 : 0.0;
+    // The only icon deformation is collapse-only; on reopening the icon
+    // retains its normal proportions throughout the entire transition.
+    _collapsing = target > _collapse.value;
     if (target == _collapse.value && !_collapse.isAnimating) return;
     if (MediaQuery.disableAnimationsOf(context)) {
       _collapse.value = target;
     } else {
-      // Start the reverse on this frame rather than carrying momentum away
-      // from the user's new direction. Continuing folds keep their velocity.
-      _collapse.animateWith(
-        SpringSimulation(
-          _spring,
-          _collapse.value,
-          target,
-          _collapse.velocity * (target - _collapse.value) > 0
-              ? _collapse.velocity
-              : 0,
-          // Without this the spring rests a hair short of 0 and the folded
-          // layer stays on top of the tabs, swallowing their taps.
-          snapToEnd: true,
-        ),
+      // A bounded, non-overshooting fold replaces the previous physical
+      // spring. In particular it cannot recoil past the expanded position
+      // and send the house to the right of its final destination.
+      _collapse.animateTo(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -211,9 +201,8 @@ class _KonnektedDockState extends State<KonnektedDock>
     const inlineGap = KonnektedDock.inlineSpacing;
     const inset = KonnektedDock.inlineInset;
     const gap = KonnektedDock.gap;
-    // Use the physical spring's travel directly. Feeding its value through
-    // another easeInOutCubic made the icons stop/start twice and obscured the
-    // spring's response on rapid direction reversals.
+    // The dock now uses one bounded, non-overshooting animation on opening
+    // and closing. An additional spring or scale is intentionally absent.
     final t = _collapse.value.clamp(0.0, 1.0);
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
@@ -293,6 +282,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                 child: _TabCapsule(
                   width: tabsOpen.width,
                   collapse: t,
+                  squashOnCollapse: _collapsing,
                   selected: widget.selected,
                   onSelect: widget.onSelect,
                   onExpand: widget.onExpand,
@@ -349,6 +339,7 @@ class _TabCapsule extends StatefulWidget {
   const _TabCapsule({
     required this.width,
     required this.collapse,
+    required this.squashOnCollapse,
     required this.selected,
     required this.onSelect,
     required this.onExpand,
@@ -357,6 +348,7 @@ class _TabCapsule extends StatefulWidget {
   /// The open capsule's width; the tabs keep it while the capsule shrinks.
   final double width;
   final double collapse;
+  final bool squashOnCollapse;
   final KonnektedTab selected;
   final ValueChanged<KonnektedTab> onSelect;
   final VoidCallback? onExpand;
@@ -367,8 +359,8 @@ class _TabCapsule extends StatefulWidget {
 
 class _TabCapsuleState extends State<_TabCapsule>
     with SingleTickerProviderStateMixin {
-  // BitChord keeps the selected glass travelling on its own physical spring
-  // and preserves velocity when the user retargets a tab before it settles.
+  // The selected indicator can move between tabs, but must not overshoot,
+  // launch a spring or push the house right of its target.
   late final AnimationController _selectionPosition;
   late KonnektedTab _lastCapsuleTab;
 
@@ -394,21 +386,16 @@ class _TabCapsuleState extends State<_TabCapsule>
       _selectionPosition.value = newIndex.toDouble();
       return;
     }
-    _selectionPosition.animateWith(
-      SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 620, damping: 48),
-        _selectionPosition.value,
-        newIndex.toDouble(),
-        _selectionPosition.velocity,
-        snapToEnd: true,
-      ),
+    _selectionPosition.animateTo(
+      newIndex.toDouble(),
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
     );
   }
 
   @override
   void dispose() {
     _selectionPosition.dispose();
-    _pressed.dispose();
     super.dispose();
   }
 
@@ -418,8 +405,6 @@ class _TabCapsuleState extends State<_TabCapsule>
   /// The lens follows a dragging finger, like iOS 26's tab bar.
   double? _dragX;
   int? _dragIndex;
-  final _pressed = ValueNotifier<bool>(false);
-
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
 
   int _indexAt(double x) =>
@@ -451,14 +436,10 @@ class _TabCapsuleState extends State<_TabCapsule>
     if (index != null && _tabs[index] != widget.selected) {
       widget.onSelect(_tabs[index]);
     } else if (position != null) {
-      _selectionPosition.animateWith(
-        SpringSimulation(
-          const SpringDescription(mass: 1, stiffness: 620, damping: 48),
-          _selectionPosition.value,
-          _tabs.indexOf(_lastCapsuleTab).toDouble(),
-          0,
-          snapToEnd: true,
-        ),
+      _selectionPosition.animateTo(
+        _tabs.indexOf(_lastCapsuleTab).toDouble(),
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
       );
     }
   }
@@ -471,9 +452,9 @@ class _TabCapsuleState extends State<_TabCapsule>
     final shown = _lastCapsuleTab;
     final open = 1 - widget.collapse;
 
-    // The glass capsule must never scale on pointer down. Animate only
-    // selected icon/tab content *inside* it; searching and transport taps
-    // similarly leave their outer optical surfaces stationary.
+    // The selected icon has no touch-scale or elastic press feedback.
+    // Only the dock's bounded geometric fold and collapse-only left squash
+    // affect the house.
     return AnimatedBuilder(
       animation: _selectionPosition,
       builder: (context, _) {
@@ -483,12 +464,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                 _selectionPosition.value.clamp(
                   0.0, (_tabs.length - 1).toDouble(),
                 );
-        return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _pressed.value = true,
-      onPointerUp: (_) => _pressed.value = false,
-      onPointerCancel: (_) => _pressed.value = false,
-      child: LokalGlass.capsule(
+        return LokalGlass.capsule(
         key: const ValueKey('dock-tab-glass'),
         grouped: true,
         lens: _dockGlassLens,
@@ -499,11 +475,7 @@ class _TabCapsuleState extends State<_TabCapsule>
         fallbackBlurSigma: 2,
         pronouncedRim: true,
         rimStrength: .82,
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _pressed,
-          // Reuse the complete tab subtree during press/release; only the
-          // icon/content transform needs to animate, not the glass or layout.
-          child: Stack(
+        child: Stack(
           fit: StackFit.expand,
           children: [
             // Keep the whole expanded subtree mounted at both endpoints.
@@ -635,17 +607,18 @@ class _TabCapsuleState extends State<_TabCapsule>
                     child: IgnorePointer(
                       child: Transform.scale(
                         key: const ValueKey('dock-shared-selected-icon'),
-                        alignment: Alignment.center,
-                        // Only the glyph compresses vertically. X stays
-                        // constant, so the icon does not slide left, stretch
-                        // sideways or alter the glass sampling origin.
-                        scaleX: 1.08,
-                        scaleY: 1.08 *
-                            (reduceMotion
+                        // The icon's left edge is the fixed anchor. Only
+                        // collapsing pulls its right edge inward briefly;
+                        // expanding keeps the glyph completely undistorted.
+                        // Neither the icon nor its glass uses a spring.
+                        alignment: Alignment.centerLeft,
+                        scaleX: 1.08 *
+                            (reduceMotion || !widget.squashOnCollapse
                                 ? 1.0
-                                : dockSelectedIconVerticalScale(
+                                : dockSelectedIconLeftSquash(
                                     widget.collapse,
                                   )),
+                        scaleY: 1.08,
                         child: Icon(
                           shown.icon,
                           color: t.accent,
@@ -657,20 +630,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                 },
               ),
           ],
-          ),
-          builder: (context, pressed, child) => AnimatedScale(
-            key: const ValueKey('dock-home-press'),
-            scale: reduceMotion
-                ? 1
-                : _dragX != null
-                    ? 1 + 16 / widget.width
-                    : pressed ? .975 : 1,
-            duration: const Duration(milliseconds: 190),
-            curve: Curves.easeOutBack,
-            child: child,
-          ),
         ),
-      ),
       );
       },
     );
