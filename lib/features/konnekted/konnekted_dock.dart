@@ -502,16 +502,9 @@ class _TabCapsuleState extends State<_TabCapsule>
         rimStrength: .82,
         child: ValueListenableBuilder<bool>(
           valueListenable: _pressed,
-          builder: (context, pressed, _) => AnimatedScale(
-            key: const ValueKey('dock-home-press'),
-            scale: reduceMotion
-                ? 1
-                : _dragX != null
-                    ? 1 + 16 / widget.width
-                    : pressed ? .975 : 1,
-            duration: const Duration(milliseconds: 190),
-            curve: Curves.easeOutBack,
-            child: Stack(
+          // Reuse the complete tab subtree during press/release; only the
+          // icon/content transform needs to animate, not the glass or layout.
+          child: Stack(
           fit: StackFit.expand,
           children: [
             // Keep the whole expanded subtree mounted at both endpoints.
@@ -659,7 +652,17 @@ class _TabCapsuleState extends State<_TabCapsule>
                 },
               ),
           ],
-            ),
+          ),
+          builder: (context, pressed, child) => AnimatedScale(
+            key: const ValueKey('dock-home-press'),
+            scale: reduceMotion
+                ? 1
+                : _dragX != null
+                    ? 1 + 16 / widget.width
+                    : pressed ? .975 : 1,
+            duration: const Duration(milliseconds: 190),
+            curve: Curves.easeOutBack,
+            child: child,
           ),
         ),
       ),
