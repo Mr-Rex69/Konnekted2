@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flick/core/utils/app_haptics.dart';
+import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/core/theme/lokal_interaction.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
@@ -42,10 +43,10 @@ abstract final class LokalGlassShaders {
     }
 
     if (!ui.ImageFilter.isShaderFilterSupported) {
-      debugPrint(
-        'Lokal glass: shader backdrop filters unsupported by renderer; '
-        'liquid refraction disabled (requires Impeller).',
-      );
+      final reason = 'Lokal glass: shader backdrop filters unsupported '
+          'by active renderer; using frosted fallback (Impeller required).';
+      debugPrint(reason);
+      AppLog.instance.add(reason, source: LogSource.platform);
       return;
     }
     try {
@@ -53,7 +54,16 @@ abstract final class LokalGlassShaders {
         'shaders/lokal_glass_lens.frag',
       );
       debugPrint('Lokal glass: Impeller refractive lens ready');
+      AppLog.instance.add(
+        'Lokal glass: liquid lens shader loaded; '
+        'shaderFilterSupported=true.',
+        source: LogSource.platform,
+      );
     } catch (error, stack) {
+      AppLog.instance.add(
+        'Lokal glass: liquid lens shader failed: $error',
+        source: LogSource.platform,
+      );
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
