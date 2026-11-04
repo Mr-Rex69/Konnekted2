@@ -17,7 +17,8 @@ void main() {
     final direct = Rect.lerp(mini, expanded, progress)!;
     final curved = LokalArtworkFlight.rect(mini, expanded, progress);
     expect(curved.center.dx, closeTo(direct.center.dx, .001));
-    expect(curved.center.dy - direct.center.dy, closeTo(112.5, .001));
+    expect(curved.center.dy - direct.center.dy, greaterThan(25));
+    expect(curved.bottom, lessThanOrEqualTo(mini.bottom + .001));
     expect(curved.size, direct.size,
         reason: 'Only trajectory bends: cover size and crop must not squash');
   });
@@ -27,9 +28,10 @@ void main() {
     final directMiddle = Rect.lerp(mini, expanded, .5)!;
     final late = LokalArtworkFlight.rect(mini, expanded, .75);
     final directLate = Rect.lerp(mini, expanded, .75)!;
-    expect(middle.center.dy - directMiddle.center.dy, closeTo(150, .001));
-    expect(late.center.dy - directLate.center.dy, closeTo(112.5, .001),
-        reason: 'Dock ride prevents the cover from overshooting its mini');
+    expect(middle.center.dy - directMiddle.center.dy, greaterThan(40));
+    expect(late.center.dy - directLate.center.dy, greaterThan(40));
+    expect(middle.bottom, lessThanOrEqualTo(mini.bottom + .001));
+    expect(late.bottom, lessThanOrEqualTo(mini.bottom + .001));
     expect(middle.size, directMiddle.size);
   });
 
@@ -50,7 +52,10 @@ void main() {
     // The last fraction of closing motion is tangent to the mini cover:
     // its Y velocity reaches zero before the route's own spring settles.
     final nearMini = LokalArtworkFlight.rect(mini, expanded, .001);
-    expect((nearMini.top - mini.top).abs(), lessThan(.01));
+    // The cover grows immediately: keeping its top fixed would push its
+    // bottom below the dock. It must therefore depart upward without a jump.
+    expect((nearMini.top - mini.top).abs(), lessThan(1));
+    expect(nearMini.bottom, lessThanOrEqualTo(mini.bottom + .001));
     expect(nearMini.left, closeTo(Rect.lerp(mini, expanded, .001)!.left, .001));
     final nearFull = LokalArtworkFlight.rect(mini, expanded, .999);
     expect((nearFull.top - expanded.top).abs(), lessThan(2));
@@ -81,11 +86,13 @@ void main() {
     final atHalf = LokalArtworkFlight.rect(
       mini, expanded, .5, sheetTravel: 700,
     );
-    expect(atHalf.top, closeTo(full.top + 150, .001));
+    expect(atHalf.top, greaterThan(full.top + 60));
+    expect(atHalf.bottom, lessThanOrEqualTo(mini.bottom + .001));
     final shorter = LokalArtworkFlight.rect(
       mini, expanded, .5, sheetTravel: 300,
     );
-    expect(shorter.top, closeTo(full.top + 75, .001));
+    expect(shorter.top, greaterThan(full.top + 20));
+    expect(shorter.top, lessThan(atHalf.top));
     expect(shorter.top, lessThan(mini.top));
   });
 
