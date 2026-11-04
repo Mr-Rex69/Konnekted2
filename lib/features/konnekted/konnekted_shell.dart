@@ -118,9 +118,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     AppHaptics.selection();
     nestedNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     if (_tab.value != tab) {
-      // Match PixelPlayer's order-aware root navigation: Library -> Home
-      // returns from the left, Home -> Library advances from the right.
-      _tabMotionDirection = tab.index > _tab.value.index ? 1 : -1;
+      // Follow the dock's physical left-to-right order, not the enum order:
+      // Search is to the right of Library and You, despite being declared
+      // before Library in KonnektedTab.
+      _tabMotionDirection =
+          KonnektedTab.dockOrder.indexOf(tab) >
+                  KonnektedTab.dockOrder.indexOf(_tab.value)
+              ? 1
+              : -1;
       _tab.value = tab;
     }
     _dockScroll.reset();
