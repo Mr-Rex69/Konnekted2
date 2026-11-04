@@ -352,7 +352,7 @@ class _TabCapsule extends StatefulWidget {
 }
 
 class _TabCapsuleState extends State<_TabCapsule>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // The selected tab rises as an independent glass lens on navigation and
   // drag, then settles into a flat selected pane. The lens sits OVER the tab
   // row so it refracts the real icons/labels beneath it, not only the page.
@@ -361,19 +361,50 @@ class _TabCapsuleState extends State<_TabCapsule>
     duration: const Duration(milliseconds: 430),
   );
 
+  // BitChord keeps the selected glass travelling on its own physical spring
+  // and preserves velocity when the user retargets a tab before it settles.
+  late final AnimationController _selectionPosition;
+  late KonnektedTab _lastCapsuleTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastCapsuleTab = KonnektedTab.capsule.contains(widget.selected)
+        ? widget.selected
+        : KonnektedTab.listen;
+    _selectionPosition = AnimationController.unbounded(
+      vsync: this,
+      value: KonnektedTab.capsule.indexOf(_lastCapsuleTab).toDouble(),
+    );
+  }
+
   @override
   void didUpdateWidget(_TabCapsule old) {
     super.didUpdateWidget(old);
-    if (old.selected != widget.selected &&
-        widget.collapse < .5 &&
-        !MediaQuery.disableAnimationsOf(context)) {
-      _selectionTravel.forward(from: 0);
+    final newIndex = KonnektedTab.capsule.indexOf(widget.selected);
+    if (old.selected == widget.selected || newIndex < 0) return;
+    _lastCapsuleTab = widget.selected;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _selectionPosition.value = newIndex.toDouble();
+      _selectionTravel.value = 1;
+      return;
     }
+    _selectionPosition.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 280, damping: 31.4),
+        _selectionPosition.value,
+        newIndex.toDouble(),
+        _selectionPosition.velocity,
+        snapToEnd: true,
+      ),
+    );
+    if (widget.collapse < .5) _selectionTravel.forward(from: 0);
   }
 
   @override
   void dispose() {
     _selectionTravel.dispose();
+    _selectionPosition.dispose();
     super.dispose();
   }
 
@@ -436,15 +467,18 @@ class _TabCapsuleState extends State<_TabCapsule>
     final t = context.lokal;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final selectedIndex = _tabs.indexOf(widget.selected);
-    final shown = selectedIndex < 0 ? KonnektedTab.listen : widget.selected;
+    final shown = _lastCapsuleTab;
     final lensLeft = _dragX != null
         ? (_dragX! - _slot / 2).clamp(_inset, widget.width - _inset - _slot)
-        : _inset + _slot * (selectedIndex < 0 ? 0 : selectedIndex);
+        : _inset + _slot *
+            _selectionPosition.value.clamp(0.0, (_tabs.length - 1).toDouble());
     final open = 1 - widget.collapse;
 
     // The whole lens responds to touch like BitChord's material, squashing
     // gently before the lift. Search stays a separate, non-bouncing sphere.
-    return Listener(
+    return AnimatedBuilder(
+      animation: _selectionPosition,
+      builder: (context, _) => Listener(
       onPointerDown: (_) {
         if (!_pressed) setState(() => _pressed = true);
       },
@@ -646,13 +680,10 @@ class _TabCapsuleState extends State<_TabCapsule>
             // a crossfade between two separate icons, this is always one
             // drawable. Its centre follows the capsule as it shrinks and the
             // icon grows from the expanded 22dp to a readable compact ~28dp.
-            TweenAnimationBuilder<double>(
-                tween: Tween(end: _tabs.indexOf(shown).toDouble()),
-                duration: reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 340),
-                curve: Curves.easeOutBack,
-                builder: (context, tabIndex, _) {
+            Builder(
+                builder: (context) {
+                  final tabIndex = _selectionPosition.value
+                      .clamp(0.0, (_tabs.length - 1).toDouble());
                   final visualWidth = lerpDouble(
                     widget.width,
                     KonnektedDock.barHeight,
@@ -696,6 +727,7 @@ class _TabCapsuleState extends State<_TabCapsule>
               ),
           ],
         ),
+      ),
       ),
       ),
     );
