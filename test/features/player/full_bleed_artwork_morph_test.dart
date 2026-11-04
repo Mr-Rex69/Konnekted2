@@ -19,6 +19,14 @@ void main() {
         final target = Rect.fromLTWH(0, 0, 400, canvas ? 800 : 480);
         for (final progress in [.15, .5, .85, 1.0, .85, .5, .15]) {
           final top = (1 - progress) * 700;
+          // A tall 400×800 Canvas must not pass below both its own
+          // mini-player and its full-screen artwork as it grows.
+          final inFlight = LokalArtworkFlight.rect(
+            source, target, progress, sheetTravel: 700,
+          );
+          final maxBottom = source.bottom > target.bottom
+              ? source.bottom : target.bottom;
+          expect(inFlight.bottom, lessThanOrEqualTo(maxBottom + .01));
           await tester.pumpWidget(
             MaterialApp(
               home: RepaintBoundary(
