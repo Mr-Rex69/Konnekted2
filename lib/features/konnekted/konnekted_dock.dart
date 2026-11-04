@@ -509,8 +509,11 @@ class _TabCapsuleState extends State<_TabCapsule>
                             // Raised chromatic lens over the recorded tab
                             // content (same optical layering as BitChord's
                             // GlassSelectionPill), not another opaque fill.
-                            if (!reduceMotion &&
-                                (_selectionTravel.isAnimating || _dragX != null))
+                            // Keep the transparent overlay mounted so its
+                            // AnimatedPositioned travels from the previous
+                            // tab instead of materializing at the destination.
+                            // At rest it paints nothing and captures no lens.
+                            if (!reduceMotion)
                               AnimatedPositioned(
                                 duration: _dragX != null
                                     ? Duration.zero
