@@ -350,7 +350,32 @@ class _TabCapsule extends StatefulWidget {
   State<_TabCapsule> createState() => _TabCapsuleState();
 }
 
-class _TabCapsuleState extends State<_TabCapsule> {
+class _TabCapsuleState extends State<_TabCapsule>
+    with SingleTickerProviderStateMixin {
+  // The selected tab rises as an independent glass lens on navigation and
+  // drag, then settles into a flat selected pane. The lens sits OVER the tab
+  // row so it refracts the real icons/labels beneath it, not only the page.
+  late final _selectionTravel = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 430),
+  );
+
+  @override
+  void didUpdateWidget(_TabCapsule old) {
+    super.didUpdateWidget(old);
+    if (old.selected != widget.selected &&
+        widget.collapse < .5 &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      _selectionTravel.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _selectionTravel.dispose();
+    super.dispose();
+  }
+
   static const _tabs = KonnektedTab.capsule;
   static const _inset = 4.0;
 
@@ -359,6 +384,13 @@ class _TabCapsuleState extends State<_TabCapsule> {
   int? _dragIndex;
 
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
+
+  @visibleForTesting
+  static double liftedLensProgress(double progress) {
+    final t = progress.clamp(0.0, 1.0);
+    // Rise quickly, stay clear in flight, then shed the glass on landing.
+    return math.sin(math.pi * t).clamp(0.0, 1.0);
+  }
 
   int _indexAt(double x) =>
       ((x - _inset) / _slot).floor().clamp(0, _tabs.length - 1);
@@ -474,6 +506,60 @@ class _TabCapsuleState extends State<_TabCapsule> {
                                 ],
                               ),
                             ),
+                            // Raised chromatic lens over the recorded tab
+                            // content (same optical layering as BitChord's
+                            // GlassSelectionPill), not another opaque fill.
+                            if (!reduceMotion &&
+                                (_selectionTravel.isAnimating || _dragX != null))
+                              AnimatedPositioned(
+                                duration: _dragX != null
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 380),
+                                curve: Curves.easeOutBack,
+                                left: lensLeft,
+                                top: _inset,
+                                bottom: _inset,
+                                width: _slot,
+                                child: IgnorePointer(
+                                  child: AnimatedBuilder(
+                                    animation: _selectionTravel,
+                                    builder: (context, _) {
+                                      final lift = _dragX != null
+                                          ? 1.0
+                                          : liftedLensProgress(_selectionTravel.value);
+                                      return Transform.translate(
+                                        offset: Offset(0, -5 * lift),
+                                        child: Transform.scale(
+                                          scaleX: 1 + .18 * lift,
+                                          scaleY: 1 + .10 * lift,
+                                          child: Opacity(
+                                            opacity: lift,
+                                            child: LokalClearLens(
+                                              lens: LokalLens(
+                                                height: 12,
+                                                amount: 14,
+                                                dispersion: 1,
+                                                profile: LokalLensProfile.circular,
+                                              ).scale(lift),
+                                              child: DecoratedBox(
+                                                decoration: ShapeDecoration(
+                                                  shape: StadiumBorder(
+                                                    side: BorderSide(
+                                                      color: Colors.white.withValues(
+                                                        alpha: .36 * lift,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
