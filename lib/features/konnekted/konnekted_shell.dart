@@ -438,11 +438,11 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                                     valueListenable: _tab,
                                     builder: (_, tab, _) => LokalNavigationSwitcher(
                                       direction: _tabMotionDirection,
-                                      // Keep only recently visited Home/Library/You
-                                      // views alive for smooth return entries.
+                                      // Preserve the directional, edge-to-edge
+                                      // screen slide when changing root tabs.
+                                      // Recently visited pages stay cached offstage
+                                      // without sacrificing the transition.
                                       retainVisitedTabs: true,
-                                       // No full-page motion; retain tab state offstage.
-                                      instantNavigation: true,
                                       child: KeyedSubtree(
                                         key: ValueKey(tab),
                                         child: switch (tab) {
