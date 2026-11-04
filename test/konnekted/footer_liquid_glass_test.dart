@@ -348,4 +348,57 @@ void main() {
   });
 
 
+
+  testWidgets('selection icon follows a physical spring and Search preserves it',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var selected = KonnektedTab.listen;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, update) => Align(
+                alignment: Alignment.bottomCenter,
+                child: KonnektedDock(
+                  selected: selected,
+                  onSelect: (tab) => update(() => selected = tab),
+                  miniPlayer: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    const iconKey = ValueKey('dock-shared-selected-icon');
+    final start = tester.getCenter(find.byKey(iconKey));
+    await tester.tap(find.bySemanticsLabel('Library'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 85));
+    final moving = tester.getCenter(find.byKey(iconKey));
+    await tester.pumpAndSettle();
+    final finished = tester.getCenter(find.byKey(iconKey));
+    expect(moving.dx, greaterThan(start.dx));
+    expect(moving.dx, lessThan(finished.dx));
+    expect(finished.dx - start.dx, greaterThan(40));
+
+    // Search is a separate bubble. It does not reset the current Home
+    // capsule to a different icon as the mini-player docks inline.
+    await tester.tap(find.bySemanticsLabel('Search'));
+    await tester.pumpAndSettle();
+    expect(selected, KonnektedTab.explore);
+    final shownIcons = tester.widgetList<Icon>(
+      find.descendant(of: find.byKey(iconKey), matching: find.byType(Icon)),
+    ).toList();
+    expect(shownIcons.single.icon, Icons.library_music_rounded);
+    expect(tester.takeException(), isNull);
+  });
+
 }
