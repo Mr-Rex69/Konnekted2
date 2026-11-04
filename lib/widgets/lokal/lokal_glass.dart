@@ -297,8 +297,8 @@ class LokalGlass extends ConsumerWidget {
   static final _liquidFilterCache = <double, ui.ImageFilter>{};
 
   static ui.ImageFilter _liquidInnerFilter(double sigma) {
+    if (_liquidFilterCache.length > 48) _liquidFilterCache.clear();
     return _liquidFilterCache.putIfAbsent(sigma, () {
-      if (_liquidFilterCache.length > 48) _liquidFilterCache.clear();
       return ui.ImageFilter.compose(
         outer: ui.ImageFilter.blur(
           sigmaX: sigma,
