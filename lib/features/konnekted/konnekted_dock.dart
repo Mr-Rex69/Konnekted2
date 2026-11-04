@@ -127,7 +127,7 @@ class _KonnektedDockState extends State<KonnektedDock>
     with SingleTickerProviderStateMixin {
   late final _collapse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 420),
+    duration: const Duration(milliseconds: 250),
     value: _wantsCollapse ? 1 : 0,
   );
 
