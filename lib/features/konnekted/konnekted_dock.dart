@@ -59,16 +59,16 @@ const _dockGlassLens = LokalLens(
 
 const _dockBlurRadius = 1.2;
 
-/// A damped spring pulse with its own timeline. The previous implementation
-/// sampled the already-eased collapse progress, making its tiny pulse
-/// practically invisible at 120 Hz. Here Home visibly lifts, recoils and
-/// settles, whether a user scrolls quickly or slowly. Search never pulses.
+/// A small deformation tied to the *same spring* that folds the navigation
+/// pill. BitChord's life comes from connected shared-element movement, not
+/// an unrelated timer running after the bar has already finished shrinking.
+
 @visibleForTesting
 double dockHomeBubbleScale(double progress) {
   final p = progress.clamp(0.0, 1.0);
   if (p <= 0 || p >= 1) return 1;
-  return 1 + .18 * math.exp(-2.8 * p) * (1 - p) *
-      math.sin(4 * math.pi * p);
+  return 1 + .075 * math.sin(4 * math.pi * p) *
+      math.sin(math.pi * p);
 }
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
@@ -120,21 +120,14 @@ class KonnektedDock extends StatefulWidget {
 }
 
 class _KonnektedDockState extends State<KonnektedDock>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late final _collapse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
     value: _wantsCollapse ? 1 : 0,
   );
 
-  // Independent bounce on the LEFT Home/tab bubble, not on Search or the
-  // mini-player. It starts on the collapse event instead of being evaluated
-  // only during the tiny end-of-collapse interval.
-  late final _homeBounce = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 560),
-    value: 1,
-  );
+  bool _miniPressed = false;
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
 
@@ -150,16 +143,6 @@ class _KonnektedDockState extends State<KonnektedDock>
   void didUpdateWidget(KonnektedDock old) {
     super.didUpdateWidget(old);
     final target = _wantsCollapse ? 1.0 : 0.0;
-    final wasCollapsed = old.collapsed && old.hasMiniPlayer;
-    if (!wasCollapsed && _wantsCollapse) {
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _homeBounce.value = 1;
-      } else {
-        _homeBounce.forward(from: 0);
-      }
-    } else if (wasCollapsed && !_wantsCollapse) {
-      _homeBounce.value = 1;
-    }
     if (old.collapsed == widget.collapsed &&
         old.hasMiniPlayer == widget.hasMiniPlayer)
       return;
@@ -188,7 +171,6 @@ class _KonnektedDockState extends State<KonnektedDock>
   @override
   void dispose() {
     _collapse.dispose();
-    _homeBounce.dispose();
     super.dispose();
   }
 
@@ -206,7 +188,7 @@ class _KonnektedDockState extends State<KonnektedDock>
           constraints: const BoxConstraints(maxWidth: 560),
           child: LayoutBuilder(
             builder: (context, constraints) => AnimatedBuilder(
-              animation: Listenable.merge([_collapse, _homeBounce]),
+              animation: _collapse,
               builder: (context, _) => _layout(constraints.maxWidth),
             ),
           ),
@@ -265,14 +247,13 @@ class _KonnektedDockState extends State<KonnektedDock>
                 ),
               Positioned.fromRect(
                 rect: Rect.lerp(tabsOpen, tabsShut, t)!,
-                // Physical bounce follows its own 560ms spring timeline.
-                // Unlike the previous .64–1 collapse window it cannot vanish
-                // into the collapse easing curve.
+                // The Home bubble flexes *with* the dock spring. It doesn't
+                // continue bouncing after the mini player has docked.
                 child: Transform.scale(
                   key: const ValueKey('dock-home-bounce'),
                   alignment: Alignment.center,
                   scale: hasMini && !MediaQuery.disableAnimationsOf(context)
-                      ? dockHomeBubbleScale(_homeBounce.value)
+                      ? dockHomeBubbleScale(t)
                       : 1,
                   child: _TabCapsule(
                     width: tabsOpen.width,
