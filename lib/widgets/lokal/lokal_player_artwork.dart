@@ -18,21 +18,33 @@ abstract final class LokalArtworkFlight {
   /// the arc, avoiding image distortion and artwork-crop discontinuities.
   static Rect rect(Rect mini, Rect expanded, double progress) {
     final t = progress.clamp(0.0, 1.0);
-    final linear = Rect.lerp(mini, expanded, t)!;
-    if (t <= 0 || t >= 1) return linear;
+    final bounds = Rect.lerp(mini, expanded, t)!;
+    if (t <= 0 || t >= 1) return bounds;
 
-    // The curve is more evident when a left-hand mini cover docks into a
-    // centred full player, but disappears on nearly vertical trips.
-    final horizontal = expanded.center.dx - mini.center.dx;
-    final vertical = (expanded.center.dy - mini.center.dy).abs();
-    final wave = math.sin(math.pi * t);
-    final bend = wave * wave;
-    // The previous maximum (16px sideways / 10px vertically) disappeared
-    // during a 500–800px sheet slide. Give the sleeve a perceptible, but
-    // still restrained, arc while keeping the same endpoints and crop.
-    final lateral = horizontal.sign * math.min(horizontal.abs() * .34, 52.0);
-    final lift = math.min(vertical * .045, 26.0);
-    return linear.shift(Offset(lateral * bend, -lift * bend));
+    // BitChord's artwork stays connected to the dock while the sheet moves.
+    // A symmetric sin² offset made Lokal's cover perform a sideways *hump*,
+    // moving off the route in the middle and then snapping visually back.
+    //
+    // Instead steer the artwork's centre through the physical docking
+    // points. It first travels substantially vertically away from the mini,
+    // then converges smoothly onto the expanded sleeve. The X velocity
+    // starts and ends at zero, so the tiny cover does not shoot sideways as
+    // it lands. Size / crop / corner morph remain independently interpolated.
+    final miniCenter = mini.center;
+    final fullCenter = expanded.center;
+    final delta = fullCenter - miniCenter;
+    final control1 = miniCenter + Offset(0, delta.dy * .24);
+    final control2 = fullCenter - Offset(0, delta.dy * .18);
+    final u = 1 - t;
+    final centre = miniCenter * (u * u * u) +
+        control1 * (3 * u * u * t) +
+        control2 * (3 * u * t * t) +
+        fullCenter * (t * t * t);
+    return Rect.fromCenter(
+      center: centre,
+      width: bounds.width,
+      height: bounds.height,
+    );
   }
 }
 
