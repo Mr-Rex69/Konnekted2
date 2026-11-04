@@ -227,7 +227,7 @@ class _KonnektedDockState extends State<KonnektedDock>
     final miniShut = Rect.fromLTWH(
       inset + compact + inlineGap,
       0,
-      math.max(80, width - 2 * (inset + compact + inlineGap)),
+      math.max(80.0, width - 2 * (inset + compact + inlineGap)),
       compact,
     );
 
