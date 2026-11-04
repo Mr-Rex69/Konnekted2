@@ -14,6 +14,7 @@ import 'package:flick/providers/lokal_remote_provider.dart';
 
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/navigation/lokal_navigation_switcher.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
@@ -214,8 +215,11 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Cached tabs stay mounted offstage. Avoid starting cold recap queries
-    // while hidden, or rebuilding them halfway through a vertical fling.
+    // The main shell uses the full-width 330ms page slide again (PR #471).
+    // PR #466 reduced this delay to 90ms for instant tab switching, which
+    // starts recap subscriptions and artwork decoding in the middle of the
+    // restored animation. Defer cold hydration until after the slide, while
+    // still avoiding rebuilds in the middle of a vertical fling.
     if (!TickerMode.of(context)) {
       _entryTimer?.cancel();
       _entryTimer = null;
@@ -223,10 +227,14 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
         _entryTimer == null &&
         !MediaQuery.disableAnimationsOf(context) &&
         AppConstants.animationNormal != Duration.zero) {
-      _entryTimer = Timer(const Duration(milliseconds: 90), () {
-        _entryTimer = null;
-        _hydrateIfIdle();
-      });
+      _entryTimer = Timer(
+        LokalNavigationSwitcher.enterDuration +
+            const Duration(milliseconds: 64),
+        () {
+          _entryTimer = null;
+          _hydrateIfIdle();
+        },
+      );
     }
   }
 
