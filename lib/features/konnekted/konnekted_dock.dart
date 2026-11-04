@@ -388,6 +388,9 @@ class _TabCapsuleState extends State<_TabCapsule>
   @visibleForTesting
   static double liftedLensProgress(double progress) {
     final t = progress.clamp(0.0, 1.0);
+    // Important: return exact zero on landing, so LokalClearLens drops its
+    // shader layer instead of retaining a nearly-zero optical filter.
+    if (t <= 0 || t >= 1) return 0;
     // Rise quickly, stay clear in flight, then shed the glass on landing.
     return math.sin(math.pi * t).clamp(0.0, 1.0);
   }
