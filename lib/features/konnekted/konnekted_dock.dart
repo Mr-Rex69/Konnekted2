@@ -1120,12 +1120,9 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
 
   Widget _body(BuildContext context) {
     final collapse = KonnektedMiniPlayerScope.progressOf(context);
-    // Instead of swapping entire subtrees halfway through the spring, fade
-    // controls out while relinquishing their width to the title. This keeps
-    // album artwork and the play button in one continuous layout.
-    final artistReveal = 1 - Curves.easeInOutCubic.transform(
-      ((collapse - .12) / .58).clamp(0.0, 1.0),
-    );
+    // BitChord keeps both title and artist in the narrow accessory. Lokal
+    // previously deleted the artist and made the compact player look empty.
+    const artistReveal = 1.0;
     final queueReveal = 1 - Curves.easeInOutCubic.transform(
       ((collapse - .18) / .70).clamp(0.0, 1.0),
     );
@@ -1144,7 +1141,7 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
             final compactAtRest = expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
+              padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
               child: Row(
                 children: [
                   Expanded(
@@ -1171,8 +1168,8 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                 flightShuttleBuilder: _flight,
                                 child: SizedBox(
                                   key: artworkKey,
-                                  width: 42,
-                                  height: 42,
+                                  width: lerpDouble(40, 31, collapse)!,
+                                  height: lerpDouble(40, 31, collapse)!,
                                   child: _MiniMotionArtwork(
                                     song: song,
                                     playing: isPlaying,
@@ -1245,7 +1242,7 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                       isPlaying
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
-                      size: 28,
+                      size: lerpDouble(29, 24, collapse)!,
                     ),
                   ),
                   if (!compactAtRest)
