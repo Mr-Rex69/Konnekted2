@@ -616,6 +616,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                       : 1,
                                   child: _Lens(
                                     color: t.accent,
+                                    suspendBackdrop: widget.suspendBackdrop,
                                     active: _dragX != null && !reduceMotion,
                                   ),
                                 ),
@@ -674,6 +675,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                           // lens is supposed to refract.
                                           child: LokalClearLens(
                                               key: const ValueKey('dock-travel-lens'),
+                                              suspendBackdrop: widget.suspendBackdrop,
                                               lens: LokalLens(
                                                 height: 9,
                                                 amount: 8,
@@ -801,9 +803,14 @@ class _TabCapsuleState extends State<_TabCapsule>
 
 /// The selection lens: a brighter pane of glass under the current tab.
 class _Lens extends StatelessWidget {
-  const _Lens({required this.color, this.active = false});
+  const _Lens({
+    required this.color,
+    this.active = false,
+    this.suspendBackdrop = false,
+  });
 
   final Color color;
+  final bool suspendBackdrop;
 
   /// While a finger drags it, the lens turns clear and refracts the tabs
   /// under it with a rainbow fringe, as in iOS 26.
@@ -817,6 +824,7 @@ class _Lens extends StatelessWidget {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       builder: (context, t, _) => LokalClearLens(
+        suspendBackdrop: suspendBackdrop,
         // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
           // The moving selection is a shallow clear lens, never a rainbow.
@@ -978,7 +986,10 @@ class _SearchCircle extends StatelessWidget {
                 opacity: selected ? 1 : 0,
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: _Lens(color: t.accent),
+                  child: _Lens(
+                    color: t.accent,
+                    suspendBackdrop: suspendBackdrop,
+                  ),
                 ),
               ),
               InkWell(
