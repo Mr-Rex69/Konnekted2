@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/core/navigation/lokal_navigation_switcher.dart';
 import 'package:flick/core/navigation/root_navigator.dart';
 import 'package:flick/core/theme/lokal_interaction.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
@@ -440,6 +441,26 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('main glass shell retains animated root tab navigation',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _app(KonnektedShell(runtimeBuilder: (child) => child)),
+    );
+    await tester.pump();
+
+    final switcher = tester.widget<LokalNavigationSwitcher>(
+      find.byType(LokalNavigationSwitcher),
+    );
+    expect(switcher.retainVisitedTabs, isTrue);
+    expect(switcher.instantNavigation, isFalse,
+        reason: 'Glass footer optimizations must not remove the page slide');
+    expect(switcher.efficientMotion, isFalse,
+        reason: 'Root tabs use the original full-width adjacent-page push');
   });
 
   testWidgets(
