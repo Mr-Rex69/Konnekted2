@@ -6,21 +6,21 @@ void main() {
     final gate = DockScrollHysteresis(threshold: 24);
     var collapsed = false;
 
-    for (final delta in [4.0, -3, 7, -6, 8, -4, 9, -5]) {
+    for (final delta in [4.0, -3.0, 7.0, -6.0, 8.0, -4.0, 9.0, -5.0]) {
       final change = gate.push(delta, collapsed: collapsed);
       expect(change, isNull,
           reason: 'Tiny reversing motions should not flip the glass spring');
     }
     expect(collapsed, isFalse);
 
-    for (final delta in [9.0, 10, 5]) {
+    for (final delta in [9.0, 10.0, 5.0]) {
       collapsed = gate.push(delta, collapsed: collapsed) ?? collapsed;
     }
     expect(collapsed, isTrue);
     // An already-collapsed direction does not queue a second event.
     expect(gate.push(40, collapsed: collapsed), isNull);
 
-    for (final delta in [-7.0, -8, -9]) {
+    for (final delta in [-7.0, -8.0, -9.0]) {
       collapsed = gate.push(delta, collapsed: collapsed) ?? collapsed;
     }
     expect(collapsed, isFalse);
