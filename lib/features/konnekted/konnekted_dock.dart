@@ -347,7 +347,6 @@ class _TabCapsule extends StatefulWidget {
   const _TabCapsule({
     required this.width,
     required this.collapse,
-    required this.suspendBackdrop,
     required this.selected,
     required this.onSelect,
     required this.onExpand,
@@ -356,7 +355,6 @@ class _TabCapsule extends StatefulWidget {
   /// The open capsule's width; the tabs keep it while the capsule shrinks.
   final double width;
   final double collapse;
-  final bool suspendBackdrop;
   final KonnektedTab selected;
   final ValueChanged<KonnektedTab> onSelect;
   final VoidCallback? onExpand;
@@ -505,7 +503,7 @@ class _TabCapsuleState extends State<_TabCapsule>
         lens: _dockGlassLens,
         liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
-        suspendBackdrop: widget.suspendBackdrop,
+        singlePassLens: true,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
         pronouncedRim: true,
@@ -551,7 +549,6 @@ class _TabCapsuleState extends State<_TabCapsule>
                                       : 1,
                                   child: _Lens(
                                     color: t.accent,
-                                    suspendBackdrop: widget.suspendBackdrop,
                                     active: _dragX != null && !reduceMotion,
                                   ),
                                 ),
@@ -668,57 +665,31 @@ class _TabCapsuleState extends State<_TabCapsule>
 }
 
 /// The selection lens: a brighter pane of glass under the current tab.
+/// Static selected-tab highlight; the parent capsule already refracts.
 class _Lens extends StatelessWidget {
-  const _Lens({
-    required this.color,
-    this.active = false,
-    this.suspendBackdrop = false,
-  });
+  const _Lens({super.key, required this.color, this.active = false});
 
   final Color color;
-  final bool suspendBackdrop;
-
-  /// While a finger drags it, the lens turns clear and refracts the tabs
-  /// under it with a rainbow fringe, as in iOS 26.
   final bool active;
 
   @override
   Widget build(BuildContext context) {
     final light = context.lokal.isLight;
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: active ? 1.0 : .45),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      builder: (context, t, _) => LokalClearLens(
-        suspendBackdrop: suspendBackdrop,
-        // Keep the selected glass optically alive even when not dragging.
-        lens: const LokalLens(
-          // The moving selection is a shallow clear lens, never a rainbow.
-          height: 9,
-          amount: 8,
-          dispersion: .12,
-          profile: LokalLensProfile.circular,
-        ).scale(t),
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            shape: StadiumBorder(
-              side: BorderSide(
-                color: Colors.white.withValues(alpha: light ? .7 : .12),
-              ),
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color.lerp(
-                  color,
-                  Colors.white,
-                  .25,
-                )!.withValues(alpha: .20 * (1 - t)),
-                color.withValues(alpha: .12 * (1 - t)),
-              ],
-            ),
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: Colors.white.withValues(alpha: light ? .44 : .24),
+            width: .9,
           ),
+        ),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            color.withValues(alpha: active ? .24 : .19),
+            color.withValues(alpha: active ? .13 : .09),
+          ],
         ),
       ),
     );
@@ -810,13 +781,11 @@ class _SearchCircle extends StatelessWidget {
   const _SearchCircle({
     required this.selected,
     required this.collapse,
-    required this.suspendBackdrop,
     required this.onTap,
   });
 
   final bool selected;
   final double collapse;
-  final bool suspendBackdrop;
   final VoidCallback onTap;
 
   @override
@@ -837,7 +806,7 @@ class _SearchCircle extends StatelessWidget {
           lens: _dockGlassLens,
           liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
-          suspendBackdrop: suspendBackdrop,
+          singlePassLens: true,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
           pronouncedRim: true,
@@ -852,7 +821,6 @@ class _SearchCircle extends StatelessWidget {
                   padding: const EdgeInsets.all(4),
                   child: _Lens(
                     color: t.accent,
-                    suspendBackdrop: suspendBackdrop,
                   ),
                 ),
               ),
