@@ -219,10 +219,10 @@ class _KonnektedDockState extends State<KonnektedDock>
     const bar = KonnektedDock.barHeight;
     const mini = KonnektedDock.miniHeight;
     const gap = KonnektedDock.gap;
-    // One smooth, reversible progress for geometry, material and inner
-    // controls. Using a single value prevents a detached mid-flight jump.
-    final springT = _collapse.value.clamp(0.0, 1.0);
-    final t = Curves.easeInOutCubic.transform(springT);
+    // Use the physical spring's travel directly. Feeding its value through
+    // another easeInOutCubic made the icons stop/start twice and obscured the
+    // spring's response on rapid direction reversals.
+    final t = _collapse.value.clamp(0.0, 1.0);
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
 
@@ -388,11 +388,22 @@ class _TabCapsuleState extends State<_TabCapsule>
   @visibleForTesting
   static double liftedLensProgress(double progress) {
     final t = progress.clamp(0.0, 1.0);
-    // Important: return exact zero on landing, so LokalClearLens drops its
-    // shader layer instead of retaining a nearly-zero optical filter.
     if (t <= 0 || t >= 1) return 0;
-    // Rise quickly, stay clear in flight, then shed the glass on landing.
-    return math.sin(math.pi * t).clamp(0.0, 1.0);
+    // BitChord lifts its pill immediately on the first touch, holds it up
+    // throughout its spring travel, and releases it only after 92% of the
+    // journey. The previous sin(pi*t) deflated it halfway through the move.
+    final rise = (1 - math.exp(-17 * t)) *
+        (1 + .055 * math.exp(-4 * t) * math.sin(23 * t));
+    final landing = Curves.easeInOut.transform(
+      ((1 - t) / .20).clamp(0.0, 1.0),
+    );
+    return (rise * landing).clamp(0.0, 1.10);
+  }
+
+  @visibleForTesting
+  static double selectionSquash(double progress) {
+    final t = progress.clamp(0.0, 1.0);
+    return .115 * math.sin(2 * math.pi * t) * math.sin(math.pi * t);
   }
 
   int _indexAt(double x) =>
@@ -503,6 +514,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                                         selected: _dragIndex != null
                                             ? i == _dragIndex
                                             : tab == widget.selected,
+                                        hideIcon: tab == shown,
                                         onTap: () => widget.onSelect(tab),
                                       ),
                                     ),
@@ -534,10 +546,14 @@ class _TabCapsuleState extends State<_TabCapsule>
                                           ? 1.0
                                           : liftedLensProgress(_selectionTravel.value);
                                       return Transform.translate(
-                                        offset: Offset(0, -5 * lift),
+                                        offset: Offset(0, -9 * lift),
                                         child: Transform.scale(
-                                          scaleX: 1 + .18 * lift,
-                                          scaleY: 1 + .10 * lift,
+                                          // Widen on launch and narrow while
+                                          // braking (reversed for left travel).
+                                          scaleX: 1 + .18 * lift +
+                                              selectionSquash(_selectionTravel.value),
+                                          scaleY: 1 + .12 * lift -
+                                              selectionSquash(_selectionTravel.value),
                                           // Never put a BackdropFilter inside an
                                           // Opacity saveLayer: it can obscure
                                           // the recorded tab pixels that the
@@ -672,11 +688,14 @@ class _TabButton extends StatelessWidget {
     required this.tab,
     required this.selected,
     required this.onTap,
+    this.hideIcon = false,
   });
 
   final KonnektedTab tab;
   final bool selected;
   final VoidCallback onTap;
+  /// The selected glyph has a persistent counterpart that moves inline.
+  final bool hideIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -697,7 +716,15 @@ class _TabButton extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(tab.icon, size: 22, color: color),
+                AnimatedScale(
+                  scale: selected ? 1.08 : 1,
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutBack,
+                  child: Opacity(
+                    opacity: hideIcon ? 0 : 1,
+                    child: Icon(tab.icon, size: 22, color: color),
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   tab.label,
