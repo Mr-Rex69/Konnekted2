@@ -378,6 +378,11 @@ void main() {
     );
 
     const glyph = ValueKey('dock-shared-selected-icon');
+    const tabGlass = ValueKey('dock-tab-glass');
+    const miniGlass = ValueKey('dock-mini-glass');
+    const searchGlass = ValueKey('dock-search-glass');
+    final tabStart = tester.getRect(find.byKey(tabGlass));
+    final searchStart = tester.getRect(find.byKey(searchGlass));
     final original = tester.widget<Transform>(find.byKey(glyph)).transform;
     expect(original.storage[0], closeTo(original.storage[5], .001));
     expect(find.byKey(const ValueKey('dock-home-bounce')), findsNothing);
@@ -386,6 +391,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90));
 
+    final midTab = tester.getRect(find.byKey(tabGlass));
+    final midSearch = tester.getRect(find.byKey(searchGlass));
+    final midMini = tester.getRect(find.byKey(miniGlass));
+    final fold = ((KonnektedDock.miniHeight - midMini.height) /
+        (KonnektedDock.miniHeight - KonnektedDock.collapsedHeight))
+        .clamp(0.0, 1.0);
+    expect(fold, inExclusiveRange(0, 1));
     final mid = tester.widget<Transform>(find.byKey(glyph)).transform;
     expect(mid.storage[0], closeTo(1.08, .001),
         reason: 'The house width must never change');
@@ -396,6 +408,19 @@ void main() {
     expect(tester.takeException(), isNull);
 
     await tester.pumpAndSettle();
+    final tabEnd = tester.getRect(find.byKey(tabGlass));
+    final searchEnd = tester.getRect(find.byKey(searchGlass));
+    // No unexpected whole-capsule travel: both optical surfaces must
+    // follow only the layout Rect.lerp, even while the selected icon squashes.
+    for (final (actual, expected) in [
+      (midTab, Rect.lerp(tabStart, tabEnd, fold)!),
+      (midSearch, Rect.lerp(searchStart, searchEnd, fold)!),
+    ]) {
+      expect(actual.left, closeTo(expected.left, 1));
+      expect(actual.top, closeTo(expected.top, 1));
+      expect(actual.width, closeTo(expected.width, 1));
+      expect(actual.height, closeTo(expected.height, 1));
+    }
     final settled = tester.widget<Transform>(find.byKey(glyph)).transform;
     expect(settled.storage[5], closeTo(settled.storage[0], .001));
     expect(settled.storage[0], closeTo(1.08, .001));
