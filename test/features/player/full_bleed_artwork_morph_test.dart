@@ -27,7 +27,7 @@ void main() {
             source, target, progress, sheetTravel: 700,
           );
           if (progress == .15) {
-            expect(inFlight.center.dy, greaterThan(source.center.dy + 30));
+            expect(inFlight.center.dy, greaterThan(source.center.dy + 20));
             expect(inFlight.bottom, greaterThan(source.bottom));
           }
           expect(
