@@ -6,33 +6,49 @@ void main() {
   const mini = Rect.fromLTWH(18, 710, 42, 42);
   const expanded = Rect.fromLTWH(0, 110, 400, 400);
 
-  test('cover takes a shallow curved route to the real mini-player', () {
+  test('J-shaped return dips below the mini-player before curving upward', () {
     expect(LokalArtworkFlight.rect(mini, expanded, 0), mini);
     expect(LokalArtworkFlight.rect(mini, expanded, 1), expanded);
     expect(LokalArtworkFlight.rect(mini, expanded, -1), mini);
     expect(LokalArtworkFlight.rect(mini, expanded, 2), expanded);
 
-    // The cover follows the moving sheet instead of veering sideways.
-    const progress = .25;
-    final direct = Rect.lerp(mini, expanded, progress)!;
-    final curved = LokalArtworkFlight.rect(mini, expanded, progress);
-    expect(curved.center.dx, closeTo(direct.center.dx, .001));
-    expect(curved.center.dy - direct.center.dy, greaterThan(25));
-    expect(curved.bottom, lessThanOrEqualTo(mini.bottom + .001));
-    expect(curved.size, direct.size,
-        reason: 'Only trajectory bends: cover size and crop must not squash');
+    // During a close, descending artwork retains its horizontal position
+    // initially, then bends left and briefly passes BELOW its dock target.
+    final early = LokalArtworkFlight.rect(mini, expanded, .85);
+    final dip = LokalArtworkFlight.rect(mini, expanded, .2);
+    final recovery = LokalArtworkFlight.rect(mini, expanded, .05);
+    expect(early.center.dx, greaterThan(dip.center.dx + 100));
+    expect(dip.center.dy, greaterThan(mini.center.dy + 35));
+    expect(recovery.center.dy, greaterThan(mini.center.dy + 15));
+    expect(recovery.center.dy, lessThan(dip.center.dy),
+        reason: 'Cover must rise from below its destination to dock');
+
+    // It curves to the mini from the right, rather than executing the old
+    // centred horizontal sine hump or moving the whole player sheet.
+    expect(dip.center.dx, greaterThan(mini.center.dx));
+    expect(dip.center.dx, lessThan(early.center.dx));
+    for (final progress in [.01, .2, .5, .75, .99]) {
+      expect(
+        LokalArtworkFlight.rect(mini, expanded, progress).size,
+        Rect.lerp(mini, expanded, progress)!.size,
+        reason: 'Only the cover centre curves; size/crop never squashes',
+      );
+    }
   });
 
-  test('curved return is actually visible across a normal phone cover flight', () {
-    final middle = LokalArtworkFlight.rect(mini, expanded, .5);
-    final directMiddle = Rect.lerp(mini, expanded, .5)!;
-    final late = LokalArtworkFlight.rect(mini, expanded, .75);
-    final directLate = Rect.lerp(mini, expanded, .75)!;
-    expect(middle.center.dy - directMiddle.center.dy, greaterThan(40));
-    expect(late.center.dy - directLate.center.dy, greaterThan(40));
-    expect(middle.bottom, lessThanOrEqualTo(mini.bottom + .001));
-    expect(late.bottom, lessThanOrEqualTo(mini.bottom + .001));
-    expect(middle.size, directMiddle.size);
+  test('full-size and Canvas covers use the same J with exact endpoint landing', () {
+    const wideMini = Rect.fromLTWH(18, 710, 52, 52);
+    for (final full in [
+      const Rect.fromLTWH(0, 0, 400, 480),
+      const Rect.fromLTWH(0, 0, 400, 800),
+    ]) {
+      final dip = LokalArtworkFlight.rect(wideMini, full, .15, sheetTravel: 700);
+      expect(dip.center.dy, greaterThan(wideMini.center.dy + 30));
+      expect(dip.bottom, greaterThan(wideMini.bottom),
+          reason: 'The return must visibly travel below its final position');
+      expect(LokalArtworkFlight.rect(wideMini, full, 0), wideMini);
+      expect(LokalArtworkFlight.rect(wideMini, full, 1), full);
+    }
   });
 
   test('temporary GlobalKey detachment does not cancel the active morph', () {
@@ -48,18 +64,17 @@ void main() {
     expect(source.current(), moved);
   });
 
-  test('curve lands tangentially without final-frame snap', () {
-    // The last fraction of closing motion is tangent to the mini cover:
-    // its Y velocity reaches zero before the route's own spring settles.
+  test('J curve approaches the mini from below with continuous landing', () {
+    final dock = mini.center;
     final nearMini = LokalArtworkFlight.rect(mini, expanded, .001);
-    // The cover grows immediately: keeping its top fixed would push its
-    // bottom below the dock. It must therefore depart upward without a jump.
-    expect((nearMini.top - mini.top).abs(), lessThan(1));
-    expect(nearMini.bottom, lessThanOrEqualTo(mini.bottom + .001));
-    expect(nearMini.left, closeTo(Rect.lerp(mini, expanded, .001)!.left, .001));
+    expect(nearMini.center.dy, greaterThan(dock.dy));
+    expect((nearMini.center - dock).distance, lessThan(1));
+    expect(nearMini.size, Rect.lerp(mini, expanded, .001)!.size);
+
     final nearFull = LokalArtworkFlight.rect(mini, expanded, .999);
-    expect((nearFull.top - expanded.top).abs(), lessThan(2));
+    expect((nearFull.center - expanded.center).distance, lessThan(2));
     expect(LokalArtworkFlight.rect(mini, expanded, 0), mini);
+    expect(LokalArtworkFlight.rect(mini, expanded, 1), expanded);
   });
 
   test('closing and opening follow the same arc in opposite directions', () {
@@ -81,19 +96,22 @@ void main() {
     final direct = Rect.lerp(below, expanded, .5)!;
     expect((curved.center.dx - direct.center.dx).abs(), lessThan(3));
   });
-  test('ride uses real player sheet distance and clamps to avoid overshoot', () {
-    final full = Rect.lerp(mini, expanded, .5)!;
-    final atHalf = LokalArtworkFlight.rect(
-      mini, expanded, .5, sheetTravel: 700,
+  test('the J dip scales with sheet travel and remains bounded', () {
+    final longer = LokalArtworkFlight.rect(
+      mini, expanded, .2, sheetTravel: 700,
     );
-    expect(atHalf.top, greaterThan(full.top + 60));
-    expect(atHalf.bottom, lessThanOrEqualTo(mini.bottom + .001));
     final shorter = LokalArtworkFlight.rect(
-      mini, expanded, .5, sheetTravel: 300,
+      mini, expanded, .2, sheetTravel: 100,
     );
-    expect(shorter.top, greaterThan(full.top + 20));
-    expect(shorter.top, lessThan(atHalf.top));
-    expect(shorter.top, lessThan(mini.top));
+    expect(longer.center.dy, greaterThan(shorter.center.dy + 25));
+    expect(longer.center.dy, greaterThan(mini.center.dy));
+    expect(shorter.size, longer.size);
+
+    // No inverted J when the mini artwork is *above* its expanded target.
+    const upperMini = Rect.fromLTWH(20, 0, 48, 48);
+    const upperFull = Rect.fromLTWH(0, 150, 400, 400);
+    final direct = Rect.lerp(upperMini, upperFull, .5)!;
+    expect(LokalArtworkFlight.rect(upperMini, upperFull, .5), direct);
   });
 
 
