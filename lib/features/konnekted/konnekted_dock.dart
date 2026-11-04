@@ -49,10 +49,11 @@ const _dockGlassLens = LokalLens(
   fraction: .49,
   // Avoid seven-tap chromatic sampling across the entire moving footer.
   dispersion: 0,
+  magnification: .055,
   profile: LokalLensProfile.squircle,
 );
 
-const _dockBlurRadius = 1.5;
+const _dockBlurRadius = .45;
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
 ///
@@ -213,10 +214,10 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: LokalGlass.capsule(
                     grouped: true,
                     lens: _dockGlassLens,
-                    liquidTintOpacity: lerpDouble(.20, .28, t)!,
+                    liquidTintOpacity: lerpDouble(.09, .12, t)!,
                     liquidBlurRadius: _dockBlurRadius,
-                    pronouncedRim: true,
-                    rimStrength: 1.0 + .04 * t,
+                    // Refraction and zoom are the material, not a thick rim.
+                    rimStrength: .72,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t >= 1,
                       progress: t,
@@ -354,10 +355,9 @@ class _TabCapsuleState extends State<_TabCapsule> {
       child: LokalGlass.capsule(
         grouped: true,
         lens: _dockGlassLens,
-        liquidTintOpacity: lerpDouble(.20, .28, widget.collapse)!,
+        liquidTintOpacity: lerpDouble(.09, .12, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
-        pronouncedRim: true,
-        rimStrength: 1.0 + .04 * widget.collapse,
+        rimStrength: .72,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -590,10 +590,9 @@ class _SearchCircle extends StatelessWidget {
         child: LokalGlass.capsule(
           grouped: true,
           lens: _dockGlassLens,
-          liquidTintOpacity: lerpDouble(.20, .28, collapse)!,
+          liquidTintOpacity: lerpDouble(.09, .12, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
-          pronouncedRim: true,
-          rimStrength: 1.0 + .04 * collapse,
+          rimStrength: .72,
           child: Stack(
             fit: StackFit.expand,
             children: [
