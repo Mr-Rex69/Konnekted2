@@ -155,5 +155,17 @@ void main() {
     vec4 centre = sampleAt(refracted);
     vec4 red = sampleAt(refracted + dispersed);
     vec4 blue = sampleAt(refracted - dispersed);
-    frag_color = vec4(red.r, centre.g, blue.b, centre.a);
+    // Fragment shaders output premultiplied color. Offset pixels can have a
+    // different alpha along an image's transparent edge; sampling their
+    // premultiplied RGB alongside centre.a without conversion makes bright
+    // rainbow halos in the composited result. Rebase each fringe onto the
+    // centre pixel's alpha and leave green unchanged.
+    float redStraight = red.a > 1e-5 ? red.r / red.a : 0.0;
+    float blueStraight = blue.a > 1e-5 ? blue.b / blue.a : 0.0;
+    frag_color = vec4(
+        clamp(redStraight, 0.0, 1.0) * centre.a,
+        centre.g,
+        clamp(blueStraight, 0.0, 1.0) * centre.a,
+        centre.a
+    );
 }
