@@ -400,6 +400,138 @@ void main() {
   });
 
 
+  testWidgets('pressing any player control moves content, never its glass',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final actions = <String>[];
+
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: KonnektedDock(
+              selected: KonnektedTab.listen,
+              onSelect: (_) {},
+              miniPlayer: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final label in ['Play', 'Next', 'Queue'])
+                    IconButton(
+                      tooltip: label,
+                      onPressed: () => actions.add(label),
+                      icon: const Icon(Icons.play_arrow_rounded),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    const glassKey = ValueKey('dock-mini-glass');
+    const pressKey = ValueKey('dock-mini-press');
+    final outerRect = tester.getRect(find.byKey(glassKey));
+    // Press feedback is entirely below the optical surface in the tree.
+    expect(
+      find.descendant(of: find.byKey(glassKey), matching: find.byKey(pressKey)),
+      findsOneWidget,
+    );
+    for (final label in ['Play', 'Next', 'Queue']) {
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byTooltip(label)),
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+      final scale = tester.widget<AnimatedScale>(find.byKey(pressKey));
+      expect(scale.scale, greaterThan(1));
+      expect(tester.getRect(find.byKey(glassKey)), outerRect);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(glassKey)), outerRect);
+    }
+    expect(actions, ['Play', 'Next', 'Queue']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tab content presses without scaling the glass, selected pill is flat tint',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var selected = KonnektedTab.listen;
+
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, update) => Align(
+              alignment: Alignment.bottomCenter,
+              child: KonnektedDock(
+                selected: selected,
+                onSelect: (tab) => update(() => selected = tab),
+                miniPlayer: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    const glassKey = ValueKey('dock-tab-glass');
+    const pressKey = ValueKey('dock-home-press');
+    const indicatorKey = ValueKey('dock-selection-indicator');
+    final glassBounds = tester.getRect(find.byKey(glassKey));
+
+    for (final tab in ['Home', 'Library', 'You']) {
+      final pointer = await tester.startGesture(
+        tester.getCenter(find.bySemanticsLabel(tab)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(
+        find.descendant(
+          of: find.byKey(glassKey),
+          matching: find.byKey(pressKey),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<AnimatedScale>(find.byKey(pressKey)).scale,
+        closeTo(.975, .001),
+      );
+      expect(tester.getRect(find.byKey(glassKey)), glassBounds);
+      await pointer.up();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(glassKey)), glassBounds);
+      final indicator = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(indicatorKey),
+          matching: find.byType(DecoratedBox),
+        ).first,
+      );
+      final decoration = indicator.decoration as BoxDecoration;
+      expect(decoration.color, isNotNull);
+      expect(decoration.gradient, isNull);
+      expect(decoration.border, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(indicatorKey),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNothing,
+      );
+      expect(tester.widgetList<LokalGlass>(find.byType(LokalGlass)), hasLength(3));
+    }
+    expect(selected, KonnektedTab.settings);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('selected house icon keeps a steady size during dock collapse',
       (tester) async {
     tester.view
