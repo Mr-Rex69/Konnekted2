@@ -99,8 +99,14 @@ class KonnektedDock extends StatefulWidget {
   /// Tapping the shrunken tab capsule asks for the full dock back.
   final VoidCallback? onExpand;
 
+  // BitChord's fully folded row is 48dp, not a 58dp row with fewer labels.
+  // The separate 14dp gaps and 28dp screen gutters make the whole footer
+  // visibly compact while its controls follow the same layout spring.
   static const barHeight = 58.0;
   static const miniHeight = 58.0;
+  static const collapsedHeight = 48.0;
+  static const inlineSpacing = 14.0;
+  static const inlineInset = 14.0;
   static const gap = 8.0;
   static const _margin = EdgeInsets.fromLTRB(14, 6, 14, 8);
 
@@ -200,6 +206,9 @@ class _KonnektedDockState extends State<KonnektedDock>
   Widget _layout(double width) {
     const bar = KonnektedDock.barHeight;
     const mini = KonnektedDock.miniHeight;
+    const compact = KonnektedDock.collapsedHeight;
+    const inlineGap = KonnektedDock.inlineSpacing;
+    const inset = KonnektedDock.inlineInset;
     const gap = KonnektedDock.gap;
     // Use the physical spring's travel directly. Feeding its value through
     // another easeInOutCubic made the icons stop/start twice and obscured the
@@ -209,14 +218,21 @@ class _KonnektedDockState extends State<KonnektedDock>
     final top = hasMini ? mini + gap : 0.0;
 
     final tabsOpen = Rect.fromLTWH(0, top, width - bar - gap, bar);
-    final tabsShut = const Rect.fromLTWH(0, 0, bar, bar);
+    final tabsShut = const Rect.fromLTWH(inset, 0, compact, compact);
     final searchOpen = Rect.fromLTWH(width - bar, top, bar, bar);
-    final searchShut = Rect.fromLTWH(width - bar, 0, bar, bar);
+    final searchShut = Rect.fromLTWH(
+      width - inset - compact, 0, compact, compact,
+    );
     final miniOpen = Rect.fromLTWH(0, 0, width, mini);
-    final miniShut = Rect.fromLTWH(bar + gap, 0, width - 2 * (bar + gap), bar);
+    final miniShut = Rect.fromLTWH(
+      inset + compact + inlineGap,
+      0,
+      math.max(80.0, width - 2 * (inset + compact + inlineGap)),
+      compact,
+    );
 
     return SizedBox(
-      height: lerpDouble(top + bar, bar, t),
+      height: lerpDouble(top + bar, compact, t),
       // Its own ink layer, so tap ripples draw on the glass rather than on
       // the page underneath, where the glass would blur them.
       child: Material(
@@ -249,14 +265,15 @@ class _KonnektedDockState extends State<KonnektedDock>
                       duration: const Duration(milliseconds: 160),
                       curve: Curves.easeOutBack,
                       child: LokalGlass.capsule(
+                    key: const ValueKey('dock-mini-glass'),
                     grouped: true,
                     lens: _dockGlassLens,
                     liquidTintOpacity: lerpDouble(.09, .13, t)!,
                     liquidBlurRadius: _dockBlurRadius,
                     fallbackTintOpacity: lerpDouble(.16, .20, t)!,
                     fallbackBlurSigma: 2,
-                    pronouncedRim: false,
-                    rimStrength: .38,
+                    pronouncedRim: true,
+                    rimStrength: .82,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t >= 1,
                       progress: t,
@@ -520,19 +537,22 @@ class _TabCapsuleState extends State<_TabCapsule>
       duration: const Duration(milliseconds: 190),
       curve: Curves.easeOutBack,
       child: LokalGlass.capsule(
+        key: const ValueKey('dock-tab-glass'),
         grouped: true,
         lens: _dockGlassLens,
         liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
-        pronouncedRim: false,
-        rimStrength: .38,
+        pronouncedRim: true,
+        rimStrength: .82,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (open > 0)
-              IgnorePointer(
+            // Keep the whole expanded subtree mounted at both endpoints.
+            // Unmounting it on the final frame flashes a new backdrop/lens
+            // hierarchy and can read as a one-frame collapse jitter.
+            IgnorePointer(
                 ignoring: widget.collapse > .5,
                 child: Opacity(
                   opacity: Curves.easeIn.transform(open),
@@ -665,8 +685,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                   ),
                 ),
               ),
-            if (widget.collapse > 0)
-              IgnorePointer(
+            IgnorePointer(
                 ignoring: widget.collapse <= .5,
                 child: Opacity(
                   opacity: Curves.easeOut.transform(widget.collapse),
@@ -702,7 +721,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                       .clamp(0.0, (_tabs.length - 1).toDouble());
                   final visualWidth = lerpDouble(
                     widget.width,
-                    KonnektedDock.barHeight,
+                    KonnektedDock.collapsedHeight,
                     widget.collapse,
                   )!;
                   final fromX = _inset + _slot * (tabIndex + .5);
@@ -713,7 +732,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                   )!;
                   final centreY = lerpDouble(
                     22,
-                    KonnektedDock.barHeight * .5,
+                    KonnektedDock.collapsedHeight * .5,
                     widget.collapse,
                   )!;
                   return Positioned(
@@ -842,7 +861,19 @@ class _TabButton extends StatelessWidget {
                   curve: Curves.easeOutBack,
                   child: Opacity(
                     opacity: hideIcon ? 0 : 1,
-                    child: Icon(tab.icon, size: 22, color: color),
+                    child: Icon(
+                      tab.icon,
+                      size: 22,
+                      color: color,
+                      shadows: [
+                        Shadow(
+                          color: context.lokal.isLight
+                              ? Colors.white.withValues(alpha: .75)
+                              : Colors.black.withValues(alpha: .85),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -852,9 +883,17 @@ class _TabButton extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     color: color,
+                    shadows: [
+                      Shadow(
+                        color: context.lokal.isLight
+                            ? Colors.white.withValues(alpha: .85)
+                            : Colors.black.withValues(alpha: .88),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -890,14 +929,15 @@ class _SearchCircle extends StatelessWidget {
         message: tab.label,
         excludeFromSemantics: true,
         child: LokalGlass.capsule(
+          key: const ValueKey('dock-search-glass'),
           grouped: true,
           lens: _dockGlassLens,
           liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
-          pronouncedRim: false,
-          rimStrength: .38,
+          pronouncedRim: true,
+          rimStrength: .82,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -915,7 +955,7 @@ class _SearchCircle extends StatelessWidget {
                 customBorder: const CircleBorder(),
                 child: Icon(
                   tab.icon,
-                  size: 26,
+                  size: lerpDouble(26, 23, collapse)!,
                   color: selected ? t.accent : t.text,
                 ),
               ),
@@ -1135,17 +1175,52 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
     );
     return Stack(
       children: [
+        // Glass remains clear, but text needs stable contrast when a bright
+        // playlist mosaic scrolls beneath it. This *localized*, feathered
+        // scrim protects the title/artist lane without filling the whole
+        // capsule with opaque tint or obscuring the album thumbnail.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  stops: const [0, .17, .55, 1],
+                  colors: [
+                    Colors.transparent,
+                    (context.lokal.isLight ? Colors.white : Colors.black)
+                        .withValues(alpha: .31),
+                    (context.lokal.isLight ? Colors.white : Colors.black)
+                        .withValues(alpha: .38),
+                    (context.lokal.isLight ? Colors.white : Colors.black)
+                        .withValues(alpha: .23),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
         LayoutBuilder(
           builder: (context, constraints) {
             // The width actively shrinks while collapsing. Check the
             // *expanded* width when deciding whether Next can appear, so
             // it doesn't pop away when crossing 360 logical pixels mid-flight.
             final expandedWidth = constraints.maxWidth +
-                2 * (KonnektedDock.barHeight + KonnektedDock.gap) * collapse;
+                2 * (
+                  KonnektedDock.inlineInset +
+                  KonnektedDock.collapsedHeight +
+                  KonnektedDock.inlineSpacing
+                ) * collapse;
             final compactAtRest = expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+              padding: EdgeInsets.fromLTRB(
+                lerpDouble(12, 9, collapse)!,
+                lerpDouble(4, 0, collapse)!,
+                lerpDouble(4, 2, collapse)!,
+                lerpDouble(4, 0, collapse)!,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -1194,9 +1269,18 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                     OverflowMarqueeTitle(
                                       key: ValueKey('dock-mini-title:${song.id}'),
                                       title: song.title,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,
+                                        color: context.lokal.text,
+                                        shadows: [
+                                          Shadow(
+                                            color: context.lokal.isLight
+                                                ? Colors.white.withValues(alpha: .85)
+                                                : Colors.black.withValues(alpha: .80),
+                                            blurRadius: 5,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                     if (artistReveal > .001)
@@ -1217,7 +1301,19 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                                       overflow: TextOverflow.ellipsis,
                                                       style: TextStyle(
                                                         fontSize: 11,
-                                                        color: context.lokal.muted,
+                                                        color: Color.lerp(
+                                                          context.lokal.muted,
+                                                          context.lokal.text,
+                                                          .75,
+                                                        ),
+                                                        shadows: [
+                                                          Shadow(
+                                                            color: context.lokal.isLight
+                                                                ? Colors.white.withValues(alpha: .8)
+                                                                : Colors.black.withValues(alpha: .8),
+                                                            blurRadius: 4,
+                                                          ),
+                                                        ],
                                                       ),
                                                     ),
                                                   ),
@@ -1256,6 +1352,15 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
                       size: lerpDouble(29, 24, collapse)!,
+                      color: context.lokal.text,
+                      shadows: [
+                        Shadow(
+                          color: context.lokal.isLight
+                              ? Colors.white.withValues(alpha: .75)
+                              : Colors.black.withValues(alpha: .75),
+                          blurRadius: 4,
+                        ),
+                      ],
                     ),
                   ),
                   if (!compactAtRest)
@@ -1292,7 +1397,8 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
     required IconData icon,
     double iconSize = 24,
   }) {
-    if (reveal <= .001) return const SizedBox.shrink();
+    // Preserve the control subtree throughout the fold. Switching to a
+    // SizedBox at reveal=0 recreated the icon button during direction changes.
     return IgnorePointer(
       ignoring: reveal < .85,
       child: ClipRect(

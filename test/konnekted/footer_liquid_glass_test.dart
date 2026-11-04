@@ -43,7 +43,8 @@ void main() {
       // Mini player, navigation capsule and separate Search button.
       expect(glasses, hasLength(3));
       for (final glass in glasses) {
-        expect(glass.pronouncedRim, isFalse);
+        expect(glass.pronouncedRim, isTrue);
+        expect(glass.rimStrength, closeTo(.82, .001));
         expect(glass.lens?.profile, LokalLensProfile.circular);
         expect(glass.lens?.height, 13);
         expect(glass.lens?.amount, 8);
@@ -57,14 +58,45 @@ void main() {
       }
     }
 
+    void expectGlassHeights(double height) {
+      for (final key in [
+        const ValueKey('dock-mini-glass'),
+        const ValueKey('dock-tab-glass'),
+        const ValueKey('dock-search-glass'),
+      ]) {
+        expect(tester.getSize(find.byKey(key)).height, closeTo(height, .1));
+      }
+    }
+
     await tester.pumpWidget(dock(collapsed: false));
     await tester.pump();
     checkGlass(.09, .16);
+    expectGlassHeights(58);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(dock(collapsed: true));
     await tester.pump();
     checkGlass(.13, .20);
+    expectGlassHeights(KonnektedDock.collapsedHeight);
+
+    // Expanded-to-inline material isn't a cosmetic change: the row is
+    // 10dp shorter and all three glass surfaces fit one compact line.
+    final compactMini = tester.getRect(
+      find.byKey(const ValueKey('dock-mini-glass')),
+    );
+    final compactTabs = tester.getRect(
+      find.byKey(const ValueKey('dock-tab-glass')),
+    );
+    final compactSearch = tester.getRect(
+      find.byKey(const ValueKey('dock-search-glass')),
+    );
+    expect(compactMini.height, 48);
+    expect(compactTabs.height, 48);
+    expect(compactSearch.height, 48);
+    expect(compactTabs.left, lessThan(compactMini.left));
+    expect(compactMini.right, lessThan(compactSearch.left));
+    expect(compactMini.left - compactTabs.right, closeTo(14, .1));
+    expect(compactSearch.left - compactMini.right, closeTo(14, .1));
     expect(tester.takeException(), isNull);
   });
 
@@ -139,7 +171,9 @@ void main() {
 
     await tester.pumpWidget(atProgress(1));
     await tester.pump();
-    expect(find.byTooltip('Open queue'), findsNothing);
+    // The hidden queue button remains mounted for a flicker-free reverse,
+    // but does not expose semantics or receive pointer events.
+    expect(find.bySemanticsLabel('Open queue'), findsNothing);
     expect(find.text('Transition artist'), findsOneWidget,
         reason: 'BitChord keeps the artist even in its inline accessory');
     expect(find.byTooltip('Pause'), findsOneWidget);

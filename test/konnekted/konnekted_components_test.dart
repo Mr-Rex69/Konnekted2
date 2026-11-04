@@ -981,9 +981,10 @@ void main() {
       tester.getSize(find.byType(KonnektedDock)).height,
       lessThan(openHeight),
     );
-    // The hidden tabs leave the semantics tree; the shrunken capsule stays.
+    // Hidden controls remain mounted for an uninterrupted reverse spring,
+    // but leave the semantics tree and cannot intercept taps.
     expect(find.bySemanticsLabel('Home'), findsNothing);
-    expect(find.byTooltip('Open queue'), findsNothing);
+    expect(find.bySemanticsLabel('Open queue'), findsNothing);
     expect(find.bySemanticsLabel(RegExp('Open player for')), findsOneWidget);
     expect(find.bySemanticsLabel('Search'), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Show tabs. Library'));

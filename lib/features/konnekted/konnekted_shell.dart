@@ -41,6 +41,33 @@ import 'konnekted_runtime.dart';
 import 'konnekted_you.dart';
 import 'library/lokal_library_pages.dart';
 
+/// A thresholded scroll-direction gate. The previous shell toggled the glass
+/// dock on *every* tiny drag/overscroll, causing its spring and backdrop shader
+/// to repeatedly reverse in the middle of a fold.
+@visibleForTesting
+class DockScrollHysteresis {
+  DockScrollHysteresis({this.threshold = 24});
+
+  final double threshold;
+  double _pending = 0;
+
+  bool? push(double delta, {required bool collapsed}) {
+    if (!delta.isFinite || delta == 0) return null;
+    final requested = delta > 0;
+    if (requested == collapsed) {
+      _pending = 0;
+      return null;
+    }
+    if (_pending != 0 && _pending.sign != delta.sign) _pending = 0;
+    _pending += delta;
+    if (_pending.abs() < threshold) return null;
+    _pending = 0;
+    return requested;
+  }
+
+  void reset() => _pending = 0;
+}
+
 /// The post-onboarding entry point. Keep Flick's existing root navigator and
 /// bootstrap; this shell owns the nested navigator and native shell lifecycle.
 class KonnektedShell extends ConsumerStatefulWidget {
@@ -62,6 +89,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   // The lazy Search page observes this without forcing a shell rebuild.
   final _searchFocusRequests = ValueNotifier<int>(0);
   final _dockCollapsed = ValueNotifier(false);
+  final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   DateTime? _lastBack;
   bool _nestedSystemBackHandled = false;
@@ -95,13 +123,15 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       _tabMotionDirection = tab.index > _tab.value.index ? 1 : -1;
       _tab.value = tab;
     }
+    _dockScroll.reset();
     _dockCollapsed.value = false;
     if (tab == KonnektedTab.explore) _searchFocusRequests.value++;
   }
 
-  /// Follow the first non-zero user scroll delta, including overscroll at
-  /// the top. Ballistic updates cannot undo a deliberate direction reversal.
-  /// Horizontal shelves and the dock's own player gestures are outside this.
+  /// Only a meaningful *accumulated* user drag changes the footer's state.
+  /// Do not also react to UserScrollNotification: those direction changes can
+  /// arrive between minute drag/overscroll deltas and ping-pong the spring.
+  /// Ballistic activity continues without changing the explicit user intent.
   bool _onScroll(ScrollNotification n) {
     onScrollNotification(n);
     if (n.metrics.axis != Axis.vertical) return false;
@@ -110,16 +140,26 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
         (n is UserScrollNotification && n.direction != ScrollDirection.idle)) {
       LokalPerformanceAdvisor.noteScroll();
     }
+
+    if (n is ScrollEndNotification ||
+        (n is UserScrollNotification && n.direction == ScrollDirection.idle)) {
+      _dockScroll.reset();
+      return false;
+    }
+
     double? delta;
     if (n is ScrollUpdateNotification && n.dragDetails != null) {
       delta = n.scrollDelta;
     } else if (n is OverscrollNotification && n.dragDetails != null) {
       delta = n.overscroll;
-    } else if (n is UserScrollNotification) {
-      if (n.direction == ScrollDirection.reverse) _dockCollapsed.value = true;
-      if (n.direction == ScrollDirection.forward) _dockCollapsed.value = false;
     }
-    if (delta != null && delta != 0) _dockCollapsed.value = delta > 0;
+    if (delta != null) {
+      final next = _dockScroll.push(
+        delta,
+        collapsed: _dockCollapsed.value,
+      );
+      if (next != null) _dockCollapsed.value = next;
+    }
     return false;
   }
 
