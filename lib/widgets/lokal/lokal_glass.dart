@@ -454,11 +454,16 @@ class LokalClearLens extends StatelessWidget {
     super.key,
     required this.lens,
     required this.child,
+    this.suspendBackdrop = false,
     this.borderRadius = const BorderRadius.all(Radius.circular(999)),
   });
 
   final LokalLens lens;
   final BorderRadius borderRadius;
+
+  /// Skip only the backdrop filter during high-frequency dock motion;
+  /// preserve the fill/outline and the selected-tab semantics.
+  final bool suspendBackdrop;
 
   /// Painted on top of the lens: its fill and rim.
   final Widget child;
@@ -468,7 +473,8 @@ class LokalClearLens extends StatelessWidget {
       ValueListenableBuilder<ui.FragmentProgram?>(
         valueListenable: LokalGlassShaders.lens,
         builder: (context, program, _) {
-          if (program == null || lens.amount <= 0 || lens.height <= 0) {
+          if (suspendBackdrop ||
+              program == null || lens.amount <= 0 || lens.height <= 0) {
             return child;
           }
           return ClipRRect(
