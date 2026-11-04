@@ -28,10 +28,10 @@ void main() {
         height: 26,
         amount: 34,
         profile: LokalLensProfile.squircle,
-        magnification: .055,
+        magnification: .065,
       );
-      expect(transparent.magnification, closeTo(.055, .0001));
-      expect(transparent.scale(.5).magnification, closeTo(.0275, .0001));
+      expect(transparent.magnification, closeTo(.065, .0001));
+      expect(transparent.scale(.5).magnification, closeTo(.0325, .0001));
       expect(transparent.scale(0).magnification, 0);
       expect(transparent, isNot(const LokalLens(
         height: 26,

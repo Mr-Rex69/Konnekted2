@@ -204,6 +204,8 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.fallbackTintOpacity,
+    this.fallbackBlurSigma,
     this.pronouncedRim = false,
     this.rimStrength = 1,
   });
@@ -220,6 +222,8 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.fallbackTintOpacity,
+    this.fallbackBlurSigma,
     this.pronouncedRim = false,
     this.rimStrength = 1,
   }) : borderRadius = const BorderRadius.all(Radius.circular(999));
@@ -243,6 +247,11 @@ class LokalGlass extends ConsumerWidget {
 
   /// Clarity for the liquid shader alone; normal fallback retains frost.
   final double? liquidBlurRadius;
+
+  /// Light frosted fallback for devices without shader image filters.
+  /// Kept separate from Performance Mode's intentionally solid surface.
+  final double? fallbackTintOpacity;
+  final double? fallbackBlurSigma;
 
   /// Opt-in internal reflection and focused bright rim for floating chrome.
   final bool pronouncedRim;
@@ -269,7 +278,9 @@ class LokalGlass extends ConsumerWidget {
             final frost = light ? thickness.frostLight : thickness.frostDark;
             // Solid glass gets 20 % more opacity so text keeps its contrast
             // without the blur behind it.
-            alpha = solid ? (frost + .2).clamp(0.0, .96) : frost;
+            alpha = solid
+                ? (frost + .2).clamp(0.0, .96)
+                : (fallbackTintOpacity?.clamp(0.0, 1.0) ?? frost);
           }
           final base =
               tint ??
@@ -320,8 +331,8 @@ class LokalGlass extends ConsumerWidget {
             final filter = ui.ImageFilter.compose(
               outer: const ColorFilter.matrix(_vibrancyMatrix),
               inner: ui.ImageFilter.blur(
-                sigmaX: thickness.frostSigma,
-                sigmaY: thickness.frostSigma,
+                sigmaX: fallbackBlurSigma ?? thickness.frostSigma,
+                sigmaY: fallbackBlurSigma ?? thickness.frostSigma,
                 tileMode: TileMode.mirror,
               ),
             );

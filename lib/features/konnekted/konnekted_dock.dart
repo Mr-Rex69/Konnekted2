@@ -17,6 +17,7 @@ import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
@@ -41,19 +42,31 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
-// A visually refractive but bezel-localized floating lens like Apple Music.
-// The central region remains flat to keep transport controls crisp.
+// The bezel bends strong backdrop edges and the center magnifies what is
+// behind the glass by ~6.5%. Foreground artwork/buttons remain sharp.
+// kube.io's Music Player uses a convex bezel, refraction 1 and blur 1;
+// these are tuned equivalents for Flutter's different shader pipeline.
 const _dockGlassLens = LokalLens(
-  height: 26,
-  amount: 34,
+  height: 24,
+  amount: 32,
   fraction: .49,
-  // Avoid seven-tap chromatic sampling across the entire moving footer.
-  dispersion: 0,
-  magnification: .055,
+  dispersion: 0, // Single texture sample on moving capsules.
+  magnification: .065,
   profile: LokalLensProfile.squircle,
 );
 
-const _dockBlurRadius = .45;
+const _dockBlurRadius = .8;
+
+/// Subtle elastic response only on the *left* navigation bubble when the
+/// mini player docks into the footer. Search stays at scale 1 throughout.
+/// This curve is anchored at the endpoints, so fast reversal is continuous.
+@visibleForTesting
+double dockHomeBubbleScale(double collapse) {
+  final phase = ((collapse - .64) / .36).clamp(0.0, 1.0);
+  if (phase <= 0 || phase >= 1) return 1;
+  return 1 + .075 * math.sin(2 * math.pi * phase) *
+      math.sin(math.pi * phase);
+}
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
 ///
@@ -214,10 +227,12 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: LokalGlass.capsule(
                     grouped: true,
                     lens: _dockGlassLens,
-                    liquidTintOpacity: lerpDouble(.09, .12, t)!,
+                    liquidTintOpacity: lerpDouble(.09, .13, t)!,
                     liquidBlurRadius: _dockBlurRadius,
-                    // Refraction and zoom are the material, not a thick rim.
-                    rimStrength: .72,
+                    fallbackTintOpacity: lerpDouble(.16, .20, t)!,
+                    fallbackBlurSigma: 2,
+                    pronouncedRim: false,
+                    rimStrength: .65,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t >= 1,
                       progress: t,
@@ -227,12 +242,20 @@ class _KonnektedDockState extends State<KonnektedDock>
                 ),
               Positioned.fromRect(
                 rect: Rect.lerp(tabsOpen, tabsShut, t)!,
-                child: _TabCapsule(
-                  width: tabsOpen.width,
-                  collapse: t,
-                  selected: widget.selected,
-                  onSelect: widget.onSelect,
-                  onExpand: widget.onExpand,
+                // Only this bubble flexes/settles like Apple Music's
+                // compact Home control; the Search circle does not bounce.
+                child: Transform.scale(
+                  alignment: Alignment.center,
+                  scale: hasMini && !MediaQuery.disableAnimationsOf(context)
+                      ? dockHomeBubbleScale(t)
+                      : 1,
+                  child: _TabCapsule(
+                    width: tabsOpen.width,
+                    collapse: t,
+                    selected: widget.selected,
+                    onSelect: widget.onSelect,
+                    onExpand: widget.onExpand,
+                  ),
                 ),
               ),
               Positioned.fromRect(
@@ -302,34 +325,7 @@ class _TabCapsule extends StatefulWidget {
   State<_TabCapsule> createState() => _TabCapsuleState();
 }
 
-class _TabCapsuleState extends State<_TabCapsule>
-    with SingleTickerProviderStateMixin {
-  // Only the Home/tab bubble gets a settling pulse as it docks. Search keeps
-  // its unmodified interpolated position and size.
-  late final AnimationController _homeBounce = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 440),
-  );
-
-  @override
-  void didUpdateWidget(_TabCapsule old) {
-    super.didUpdateWidget(old);
-    if (old.collapse < .78 &&
-        widget.collapse >= .78 &&
-        !MediaQuery.disableAnimationsOf(context)) {
-      _homeBounce.forward(from: 0);
-    }
-    if (old.collapse > .78 && widget.collapse <= .78) {
-      _homeBounce.reset();
-    }
-  }
-
-  @override
-  void dispose() {
-    _homeBounce.dispose();
-    super.dispose();
-  }
-
+class _TabCapsuleState extends State<_TabCapsule> {
   static const _tabs = KonnektedTab.capsule;
   static const _inset = 4.0;
 
@@ -375,27 +371,19 @@ class _TabCapsuleState extends State<_TabCapsule>
 
     // The bar swells by 16 px while the lens is dragged: glass you can
     // push on.
-    return AnimatedBuilder(
-      animation: _homeBounce,
-      builder: (context, child) {
-        final phase = _homeBounce.value;
-        // Short underdamped settle: one outward pulse, smaller inward recoil
-        // and no permanent scaling of the collapsed Home bubble.
-        final scale = reduceMotion
-            ? 1.0
-            : 1 + .14 * math.sin(phase * 2 * math.pi) * (1 - phase);
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: AnimatedScale(
+    return AnimatedScale(
       scale: _dragX != null && !reduceMotion ? 1 + 16 / widget.width : 1,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       child: LokalGlass.capsule(
         grouped: true,
         lens: _dockGlassLens,
-        liquidTintOpacity: lerpDouble(.09, .12, widget.collapse)!,
+        liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
-        rimStrength: .72,
+        fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
+        fallbackBlurSigma: 2,
+        pronouncedRim: false,
+        rimStrength: .65,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -494,7 +482,6 @@ class _TabCapsuleState extends State<_TabCapsule>
               ),
           ],
         ),
-      ),
       ),
     );
   }
@@ -629,9 +616,12 @@ class _SearchCircle extends StatelessWidget {
         child: LokalGlass.capsule(
           grouped: true,
           lens: _dockGlassLens,
-          liquidTintOpacity: lerpDouble(.09, .12, collapse)!,
+          liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
-          rimStrength: .72,
+          fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
+          fallbackBlurSigma: 2,
+          pronouncedRim: false,
+          rimStrength: .65,
           child: Stack(
             fit: StackFit.expand,
             children: [

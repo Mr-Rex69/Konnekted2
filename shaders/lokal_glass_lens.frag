@@ -28,7 +28,7 @@ uniform float u_depth;
 uniform float u_dispersion;
 // 1 opts into the physical squircle profile; 0 keeps existing circle.
 uniform float u_profile;
-// Magnification of the flat interior, independent of rim displacement.
+// Fractional center magnification, separate from the bezel refraction.
 uniform float u_magnification;
 
 uniform sampler2D u_texture;
@@ -93,30 +93,44 @@ void main() {
     vec2 centered = coord - origin - halfSize;
     float radius = min(u_radius, min(halfSize.x, halfSize.y));
 
-    // Shift the backdrop toward the centre, magnifying it without
-    // affecting any text or artwork painted above the glass.
-    vec2 magnified = origin + halfSize +
-        centered / (1.0 + max(u_magnification, 0.0));
-
     float sd = sdRoundedRect(centered, halfSize, radius);
-    if (u_amount <= 0.0 || u_height <= 0.0 || -sd >= u_height) {
-        frag_color = sampleAt(magnified);
+    // The old shader returned unmodified pixels at the end of the bezel.
+    // That left the vast middle of each capsule optically flat. Keep the
+    // refraction confined to the rim, but separately magnify the background
+    // through the transparent middle without scaling foreground controls.
+    // Preserve the original fast path for every non-zoom lens.
+    if (u_magnification <= 0.0 &&
+        (u_amount <= 0.0 || u_height <= 0.0 || -sd >= u_height)) {
+        frag_color = sampleAt(coord);
         return;
     }
-    sd = min(sd, 0.0);
+    float inside = max(-sd, 0.0);
+    vec2 edgeShift = vec2(0.0);
+    if (u_amount > 0.0 && u_height > 0.0 && inside < u_height) {
+        float inset = clamp(inside / u_height, 0.0, 1.0);
+        float bend = u_profile > 0.5
+            ? squircleBend(inset)
+            : circleMap(1.0 - inset);
+        float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+        vec2 toCentre = length(centered) > 1e-3
+            ? normalize(centered) : vec2(0.0);
+        vec2 normal = gradSdRoundedRect(centered, halfSize, gradRadius) +
+            u_depth * toCentre;
+        float normalLength = length(normal);
+        if (normalLength > 1e-4) {
+            edgeShift = -u_amount * bend * (normal / normalLength);
+        }
+    }
 
-    // Keep the opt-in footer effect smooth without changing existing glass.
-    float inset = clamp(-sd / u_height, 0.0, 1.0);
-    float bend = u_profile > 0.5
-        ? squircleBend(inset)
-        : circleMap(1.0 - inset);
-    float d = -u_amount * bend;
-    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-    vec2 toCentre = length(centered) > 1e-3 ? normalize(centered) : vec2(0.0);
-    vec2 grad = normalize(
-        gradSdRoundedRect(centered, halfSize, gradRadius) + u_depth * toCentre
+    // Fade the zoom to zero at the outer edge, joining smoothly with the
+    // squircle refraction. The footer uses a 0.065 background zoom;
+    // foreground controls and artwork are never scaled.
+    float zoomWeight = smoothstep(
+        0.0, max(u_height * 0.85, 1.0), inside
     );
-    vec2 refracted = magnified + d * grad;
+    vec2 zoomShift = -centered *
+        clamp(u_magnification, 0.0, 0.18) * zoomWeight;
+    vec2 refracted = coord + edgeShift + zoomShift;
 
     if (u_dispersion <= 0.0) {
         frag_color = sampleAt(refracted);
@@ -125,7 +139,7 @@ void main() {
 
     float intensity = u_dispersion *
         ((centered.x * centered.y) / (halfSize.x * halfSize.y));
-    vec2 dispersed = d * grad * intensity;
+    vec2 dispersed = edgeShift * intensity;
 
     vec4 color = vec4(0.0);
     vec4 red = sampleAt(refracted + dispersed);
