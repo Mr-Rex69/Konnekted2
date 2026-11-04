@@ -224,6 +224,50 @@ void main() {
     expect(find.text('Search'), findsOneWidget);
   });
 
+  testWidgets(
+    'efficient shell transition paints only incoming page and retains older state',
+    (tester) async {
+      final inits = <String, int>{};
+      Widget page(String tab) => MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.ltr,
+          child: LokalNavigationSwitcher(
+            retainVisitedTabs: true,
+            efficientMotion: true,
+            direction: 1,
+            child: KeyedSubtree(
+              key: ValueKey(tab),
+              child: _TabLifecycleProbe(
+                name: tab,
+                onInit: (name) => inits[name] = (inits[name] ?? 0) + 1,
+                onDispose: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(page('Library'));
+      final initial = tester.getCenter(find.text('Library')).dx;
+      await tester.pumpWidget(page('You'));
+      await tester.pump(const Duration(milliseconds: 20));
+      // Only the incoming page paints, unlike the 330ms full-screen push.
+      expect(find.text('You'), findsOneWidget);
+      expect(find.text('Library'), findsNothing);
+      expect(find.text('Library', skipOffstage: false), findsOneWidget);
+      final entry = tester.getCenter(find.text('You')).dx;
+      expect(entry, greaterThan(initial));
+      expect(entry - initial, lessThan(tester.view.physicalSize.width * .05));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(page('Library'));
+      await tester.pumpAndSettle();
+      expect(inits, {'Library': 1, 'You': 1},
+          reason: 'The offstage cache must preserve Library/You scroll state');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('reduced motion removes transient tab immediately',
       (tester) async {
     AppConstants.setAnimationsEnabled(false);
