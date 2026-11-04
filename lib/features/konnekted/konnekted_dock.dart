@@ -99,8 +99,14 @@ class KonnektedDock extends StatefulWidget {
   /// Tapping the shrunken tab capsule asks for the full dock back.
   final VoidCallback? onExpand;
 
+  // BitChord's fully folded row is 48dp, not a 58dp row with fewer labels.
+  // The separate 14dp gaps and 28dp screen gutters make the whole footer
+  // visibly compact while its controls follow the same layout spring.
   static const barHeight = 58.0;
   static const miniHeight = 58.0;
+  static const collapsedHeight = 48.0;
+  static const inlineSpacing = 14.0;
+  static const inlineInset = 14.0;
   static const gap = 8.0;
   static const _margin = EdgeInsets.fromLTRB(14, 6, 14, 8);
 
@@ -200,6 +206,9 @@ class _KonnektedDockState extends State<KonnektedDock>
   Widget _layout(double width) {
     const bar = KonnektedDock.barHeight;
     const mini = KonnektedDock.miniHeight;
+    const compact = KonnektedDock.collapsedHeight;
+    const inlineGap = KonnektedDock.inlineSpacing;
+    const inset = KonnektedDock.inlineInset;
     const gap = KonnektedDock.gap;
     // Use the physical spring's travel directly. Feeding its value through
     // another easeInOutCubic made the icons stop/start twice and obscured the
@@ -209,14 +218,21 @@ class _KonnektedDockState extends State<KonnektedDock>
     final top = hasMini ? mini + gap : 0.0;
 
     final tabsOpen = Rect.fromLTWH(0, top, width - bar - gap, bar);
-    final tabsShut = const Rect.fromLTWH(0, 0, bar, bar);
+    final tabsShut = const Rect.fromLTWH(inset, 0, compact, compact);
     final searchOpen = Rect.fromLTWH(width - bar, top, bar, bar);
-    final searchShut = Rect.fromLTWH(width - bar, 0, bar, bar);
+    final searchShut = Rect.fromLTWH(
+      width - inset - compact, 0, compact, compact,
+    );
     final miniOpen = Rect.fromLTWH(0, 0, width, mini);
-    final miniShut = Rect.fromLTWH(bar + gap, 0, width - 2 * (bar + gap), bar);
+    final miniShut = Rect.fromLTWH(
+      inset + compact + inlineGap,
+      0,
+      math.max(80, width - 2 * (inset + compact + inlineGap)),
+      compact,
+    );
 
     return SizedBox(
-      height: lerpDouble(top + bar, bar, t),
+      height: lerpDouble(top + bar, compact, t),
       // Its own ink layer, so tap ripples draw on the glass rather than on
       // the page underneath, where the glass would blur them.
       child: Material(
@@ -255,8 +271,8 @@ class _KonnektedDockState extends State<KonnektedDock>
                     liquidBlurRadius: _dockBlurRadius,
                     fallbackTintOpacity: lerpDouble(.16, .20, t)!,
                     fallbackBlurSigma: 2,
-                    pronouncedRim: false,
-                    rimStrength: .38,
+                    pronouncedRim: true,
+                    rimStrength: .82,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t >= 1,
                       progress: t,
@@ -526,8 +542,8 @@ class _TabCapsuleState extends State<_TabCapsule>
         liquidBlurRadius: _dockBlurRadius,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
-        pronouncedRim: false,
-        rimStrength: .38,
+        pronouncedRim: true,
+        rimStrength: .82,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -702,7 +718,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                       .clamp(0.0, (_tabs.length - 1).toDouble());
                   final visualWidth = lerpDouble(
                     widget.width,
-                    KonnektedDock.barHeight,
+                    KonnektedDock.collapsedHeight,
                     widget.collapse,
                   )!;
                   final fromX = _inset + _slot * (tabIndex + .5);
@@ -713,7 +729,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                   )!;
                   final centreY = lerpDouble(
                     22,
-                    KonnektedDock.barHeight * .5,
+                    KonnektedDock.collapsedHeight * .5,
                     widget.collapse,
                   )!;
                   return Positioned(
@@ -896,8 +912,8 @@ class _SearchCircle extends StatelessWidget {
           liquidBlurRadius: _dockBlurRadius,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
-          pronouncedRim: false,
-          rimStrength: .38,
+          pronouncedRim: true,
+          rimStrength: .82,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -915,7 +931,7 @@ class _SearchCircle extends StatelessWidget {
                 customBorder: const CircleBorder(),
                 child: Icon(
                   tab.icon,
-                  size: 26,
+                  size: lerpDouble(26, 23, collapse)!,
                   color: selected ? t.accent : t.text,
                 ),
               ),
@@ -1145,7 +1161,12 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
             final compactAtRest = expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+              padding: EdgeInsets.fromLTRB(
+                lerpDouble(12, 9, collapse)!,
+                lerpDouble(4, 0, collapse)!,
+                lerpDouble(4, 2, collapse)!,
+                lerpDouble(4, 0, collapse)!,
+              ),
               child: Row(
                 children: [
                   Expanded(
