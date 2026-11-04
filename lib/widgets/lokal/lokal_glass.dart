@@ -193,6 +193,9 @@ class LokalGlass extends ConsumerWidget {
     this.grouped = false,
     this.lens,
     this.liquidTintOpacity,
+    this.liquidBlurRadius,
+    this.pronouncedRim = false,
+    this.rimStrength = 1,
   });
 
   /// A fully rounded capsule or circle (`StadiumBorder`-like radius).
@@ -206,6 +209,9 @@ class LokalGlass extends ConsumerWidget {
     this.grouped = false,
     this.lens,
     this.liquidTintOpacity,
+    this.liquidBlurRadius,
+    this.pronouncedRim = false,
+    this.rimStrength = 1,
   }) : borderRadius = const BorderRadius.all(Radius.circular(999));
 
   final Widget child;
@@ -224,6 +230,13 @@ class LokalGlass extends ConsumerWidget {
   /// Optional clearer liquid fill. Frosted/performance fallbacks retain
   /// their original opacity for legibility.
   final double? liquidTintOpacity;
+
+  /// Clarity for the liquid shader alone; normal fallback retains frost.
+  final double? liquidBlurRadius;
+
+  /// Opt-in internal reflection and focused bright rim for floating chrome.
+  final bool pronouncedRim;
+  final double rimStrength;
 
   static const _vibrancy = 1.5;
 
@@ -264,7 +277,8 @@ class LokalGlass extends ConsumerWidget {
               foregroundPainter: LokalGlassRimPainter(
                 borderRadius: borderRadius,
                 light: light,
-                strength: solid ? .6 : 1,
+                strength: (solid ? .6 : 1) * rimStrength,
+                pronounced: pronouncedRim,
                 program: LokalGlassShaders.rim.value,
               ),
               child: padding == null
@@ -280,8 +294,12 @@ class LokalGlass extends ConsumerWidget {
               lens: lens ?? thickness.lens,
               inner: ui.ImageFilter.compose(
                 outer: ui.ImageFilter.blur(
-                  sigmaX: thickness.blurSigma,
-                  sigmaY: thickness.blurSigma,
+                  sigmaX: liquidBlurRadius == null
+                      ? thickness.blurSigma
+                      : math.max(0, liquidBlurRadius!) * .57735 + .5,
+                  sigmaY: liquidBlurRadius == null
+                      ? thickness.blurSigma
+                      : math.max(0, liquidBlurRadius!) * .57735 + .5,
                   tileMode: TileMode.mirror,
                 ),
                 inner: const ColorFilter.matrix(_vibrancyMatrix),
@@ -565,12 +583,14 @@ class LokalGlassRimPainter extends CustomPainter {
     required this.borderRadius,
     required this.light,
     required this.strength,
+    this.pronounced = false,
     this.program,
   });
 
   final BorderRadius borderRadius;
   final bool light;
   final double strength;
+  final bool pronounced;
   final ui.FragmentProgram? program;
 
   @override
@@ -606,6 +626,39 @@ class LokalGlassRimPainter extends CustomPainter {
       ).createShader(rect);
     }
     canvas.drawRRect(rrect, paint);
+    if (pronounced) {
+      // Two small specular reflections remain visible even against a
+      // uniform backdrop; no additional backdrop filters are required.
+      final bloom = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          stops: const [0, .4, 1],
+          colors: [
+            Colors.white.withValues(alpha: (light ? .30 : .42) * strength),
+            Colors.white.withValues(alpha: .045 * strength),
+            Colors.white.withValues(alpha: (light ? .15 : .24) * strength),
+          ],
+        ).createShader(rect);
+      canvas.drawRRect(rrect.deflate(1.8), bloom);
+
+      final glint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.25
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          stops: const [0, .34, 1],
+          colors: [
+            Colors.white.withValues(alpha: (light ? .65 : .72) * strength),
+            Colors.white.withValues(alpha: .07 * strength),
+            Colors.white.withValues(alpha: (light ? .22 : .35) * strength),
+          ],
+        ).createShader(rect);
+      canvas.drawRRect(rrect.deflate(.8), glint);
+    }
     // The 0.5 px hairline that gives glass an edge against a page the same
     // colour as its tint.
     canvas.drawRRect(
@@ -624,6 +677,7 @@ class LokalGlassRimPainter extends CustomPainter {
       old.borderRadius != borderRadius ||
       old.light != light ||
       old.strength != strength ||
+      old.pronounced != pronounced ||
       old.program != program;
 }
 

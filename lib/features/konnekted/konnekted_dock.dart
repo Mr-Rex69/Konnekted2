@@ -41,14 +41,18 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
-// The footer shares one restrained squircle lens across all glass surfaces.
-// Centre content stays sharp, while the rim bends the actual background.
+// A visually refractive but bezel-localized floating lens like Apple Music.
+// The central region remains flat to keep transport controls crisp.
 const _dockGlassLens = LokalLens(
-  height: 16,
-  amount: 18,
-  fraction: .45,
+  height: 26,
+  amount: 34,
+  fraction: .49,
+  // Avoid seven-tap chromatic sampling across the entire moving footer.
+  dispersion: 0,
   profile: LokalLensProfile.squircle,
 );
+
+const _dockBlurRadius = 1.5;
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
 ///
@@ -110,8 +114,10 @@ class _KonnektedDockState extends State<KonnektedDock>
 
   static final _spring = SpringDescription.withDampingRatio(
     mass: 1,
-    stiffness: 400,
-    ratio: 1,
+    // A softer critically-near-damped spring feels continuous rather than
+    // snapping the two floating surfaces into their final positions.
+    stiffness: 255,
+    ratio: .90,
   );
 
   @override
@@ -176,7 +182,10 @@ class _KonnektedDockState extends State<KonnektedDock>
     const bar = KonnektedDock.barHeight;
     const mini = KonnektedDock.miniHeight;
     const gap = KonnektedDock.gap;
-    final t = _collapse.value;
+    // One smooth, reversible progress for geometry, material and inner
+    // controls. Using a single value prevents a detached mid-flight jump.
+    final springT = _collapse.value.clamp(0.0, 1.0);
+    final t = Curves.easeInOutCubic.transform(springT);
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
 
@@ -204,9 +213,13 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: LokalGlass.capsule(
                     grouped: true,
                     lens: _dockGlassLens,
-                    liquidTintOpacity: .34,
+                    liquidTintOpacity: lerpDouble(.20, .28, t)!,
+                    liquidBlurRadius: _dockBlurRadius,
+                    pronouncedRim: true,
+                    rimStrength: 1.0 + .04 * t,
                     child: KonnektedMiniPlayerScope(
-                      collapsed: t > .5,
+                      collapsed: t >= 1,
+                      progress: t,
                       child: widget.miniPlayer,
                     ),
                   ),
@@ -225,6 +238,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                 rect: Rect.lerp(searchOpen, searchShut, t)!,
                 child: _SearchCircle(
                   selected: widget.selected == KonnektedTab.explore,
+                  collapse: t,
                   onTap: () => widget.onSelect(KonnektedTab.explore),
                 ),
               ),
@@ -241,20 +255,30 @@ class KonnektedMiniPlayerScope extends InheritedWidget {
   const KonnektedMiniPlayerScope({
     super.key,
     required this.collapsed,
+    this.progress,
     required super.child,
   });
 
+  /// Legacy compact state. Actual dock transitions use continuous progress.
   final bool collapsed;
 
+  /// 0 = two-row accessory, 1 = inline with the minimized tab bar.
+  /// Null preserves callers that only pass [collapsed] (including tests).
+  final double? progress;
+
+  static double progressOf(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<KonnektedMiniPlayerScope>();
+    return (scope?.progress ?? (scope?.collapsed == true ? 1.0 : 0.0))
+        .clamp(0.0, 1.0);
+  }
+
   static bool collapsedOf(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<KonnektedMiniPlayerScope>()
-          ?.collapsed ??
-      false;
+      progressOf(context) >= 1;
 
   @override
   bool updateShouldNotify(KonnektedMiniPlayerScope old) =>
-      collapsed != old.collapsed;
+      collapsed != old.collapsed || progress != old.progress;
 }
 
 class _TabCapsule extends StatefulWidget {
@@ -330,7 +354,10 @@ class _TabCapsuleState extends State<_TabCapsule> {
       child: LokalGlass.capsule(
         grouped: true,
         lens: _dockGlassLens,
-        liquidTintOpacity: .34,
+        liquidTintOpacity: lerpDouble(.20, .28, widget.collapse)!,
+        liquidBlurRadius: _dockBlurRadius,
+        pronouncedRim: true,
+        rimStrength: 1.0 + .04 * widget.collapse,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -448,14 +475,15 @@ class _Lens extends StatelessWidget {
   Widget build(BuildContext context) {
     final light = context.lokal.isLight;
     return TweenAnimationBuilder<double>(
-      tween: Tween(end: active ? 1 : 0),
+      tween: Tween(end: active ? 1.0 : .45),
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       builder: (context, t, _) => LokalClearLens(
+        // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
-          height: 10,
-          amount: 14,
-          dispersion: .18,
+          height: 12,
+          amount: 22,
+          dispersion: .15,
           profile: LokalLensProfile.squircle,
         ).scale(t),
         child: DecoratedBox(
@@ -537,9 +565,14 @@ class _TabButton extends StatelessWidget {
 }
 
 class _SearchCircle extends StatelessWidget {
-  const _SearchCircle({required this.selected, required this.onTap});
+  const _SearchCircle({
+    required this.selected,
+    required this.collapse,
+    required this.onTap,
+  });
 
   final bool selected;
+  final double collapse;
   final VoidCallback onTap;
 
   @override
@@ -557,7 +590,10 @@ class _SearchCircle extends StatelessWidget {
         child: LokalGlass.capsule(
           grouped: true,
           lens: _dockGlassLens,
-          liquidTintOpacity: .34,
+          liquidTintOpacity: lerpDouble(.20, .28, collapse)!,
+          liquidBlurRadius: _dockBlurRadius,
+          pronouncedRim: true,
+          rimStrength: 1.0 + .04 * collapse,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -783,14 +819,29 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
   }
 
   Widget _body(BuildContext context) {
-    final tucked = KonnektedMiniPlayerScope.collapsedOf(context);
+    final collapse = KonnektedMiniPlayerScope.progressOf(context);
+    // Instead of swapping entire subtrees halfway through the spring, fade
+    // controls out while relinquishing their width to the title. This keeps
+    // album artwork and the play button in one continuous layout.
+    final artistReveal = 1 - Curves.easeInOutCubic.transform(
+      ((collapse - .12) / .58).clamp(0.0, 1.0),
+    );
+    final queueReveal = 1 - Curves.easeInOutCubic.transform(
+      ((collapse - .18) / .70).clamp(0.0, 1.0),
+    );
+    final nextReveal = 1 - Curves.easeInOutCubic.transform(
+      (collapse / .56).clamp(0.0, 1.0),
+    );
     return Stack(
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final compact =
-                tucked ||
-                constraints.maxWidth < 360 ||
+            // The width actively shrinks while collapsing. Check the
+            // *expanded* width when deciding whether Next can appear, so
+            // it doesn't pop away when crossing 360 logical pixels mid-flight.
+            final expandedWidth = constraints.maxWidth +
+                2 * (KonnektedDock.barHeight + KonnektedDock.gap) * collapse;
+            final compactAtRest = expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
@@ -847,27 +898,37 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    if (!tucked) ...[
-                                      const SizedBox(height: 2),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              song.artist,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: context.lokal.muted,
+                                    if (artistReveal > .001)
+                                      ClipRect(
+                                        child: Align(
+                                          alignment: Alignment.topLeft,
+                                          heightFactor: artistReveal,
+                                          child: Opacity(
+                                            opacity: artistReveal,
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(top: 2),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      song.artist,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: context.lokal.muted,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const Flexible(
+                                                    child: LokalOutputPill(),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),
-                                          const Flexible(
-                                            child: LokalOutputPill(),
-                                          ),
-                                        ],
+                                        ),
                                       ),
-                                    ],
                                   ],
                                 ),
                               ),
@@ -887,18 +948,20 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                       size: 28,
                     ),
                   ),
-                  if (!compact)
-                    IconButton(
+                  if (!compactAtRest)
+                    _collapsingControl(
+                      reveal: nextReveal,
                       tooltip: lokalText('Next track'),
                       onPressed: onNext,
-                      icon: const Icon(Icons.skip_next_rounded),
+                      icon: Icons.skip_next_rounded,
                     ),
-                  if (!tucked)
-                    IconButton(
-                      tooltip: lokalText('Open queue'),
-                      onPressed: onQueue,
-                      icon: const Icon(Icons.queue_music_rounded, size: 22),
-                    ),
+                  _collapsingControl(
+                    reveal: queueReveal,
+                    tooltip: lokalText('Open queue'),
+                    onPressed: onQueue,
+                    icon: Icons.queue_music_rounded,
+                    iconSize: 22,
+                  ),
                 ],
               ),
             );
@@ -906,6 +969,36 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
         ),
         Positioned(left: 24, right: 24, bottom: 0, child: progress),
       ],
+    );
+  }
+
+  /// Compress an action continuously with the glass rather than removing it
+  /// at the halfway point. Disabled taps/semantics prevent hidden controls
+  /// intercepting gestures in the collapsed player.
+  Widget _collapsingControl({
+    required double reveal,
+    required String tooltip,
+    required VoidCallback onPressed,
+    required IconData icon,
+    double iconSize = 24,
+  }) {
+    if (reveal <= .001) return const SizedBox.shrink();
+    return IgnorePointer(
+      ignoring: reveal < .85,
+      child: ClipRect(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: reveal,
+          child: Opacity(
+            opacity: reveal,
+            child: IconButton(
+              tooltip: tooltip,
+              onPressed: onPressed,
+              icon: Icon(icon, size: iconSize),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
