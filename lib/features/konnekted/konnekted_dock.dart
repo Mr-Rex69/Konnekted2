@@ -229,7 +229,25 @@ class _KonnektedDockState extends State<KonnektedDock>
               if (hasMini)
                 Positioned.fromRect(
                   rect: Rect.lerp(miniOpen, miniShut, t)!,
-                  child: LokalGlass.capsule(
+                  child: Listener(
+                    onPointerDown: (_) {
+                      if (!_miniPressed) setState(() => _miniPressed = true);
+                    },
+                    onPointerUp: (_) {
+                      if (_miniPressed) setState(() => _miniPressed = false);
+                    },
+                    onPointerCancel: (_) {
+                      if (_miniPressed) setState(() => _miniPressed = false);
+                    },
+                    child: AnimatedScale(
+                      key: const ValueKey('dock-mini-press'),
+                      scale: _miniPressed &&
+                              !MediaQuery.disableAnimationsOf(context)
+                          ? 1.035
+                          : 1,
+                      duration: const Duration(milliseconds: 160),
+                      curve: Curves.easeOutBack,
+                      child: LokalGlass.capsule(
                     grouped: true,
                     lens: _dockGlassLens,
                     liquidTintOpacity: lerpDouble(.09, .13, t)!,
@@ -242,6 +260,8 @@ class _KonnektedDockState extends State<KonnektedDock>
                       collapsed: t >= 1,
                       progress: t,
                       child: widget.miniPlayer,
+                    ),
+                      ),
                     ),
                   ),
                 ),
