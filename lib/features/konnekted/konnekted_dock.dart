@@ -40,6 +40,11 @@ enum KonnektedTab {
   /// The tabs inside the capsule; [explore] is the separate search circle,
   /// as in Apple Music on iOS 26.
   static const capsule = [listen, library, settings];
+
+  /// Physical left-to-right dock order: the Search circle sits to the right
+  /// of the Home/Library/You capsule. Navigation must use this order rather
+  /// than the enum declaration order (where Search comes before Library).
+  static const dockOrder = [...capsule, explore];
 }
 
 // BitChord supplies the *interaction* physics. Apple's Music glass is much

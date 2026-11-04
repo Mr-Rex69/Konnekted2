@@ -268,6 +268,55 @@ void main() {
     },
   );
 
+  testWidgets(
+    'retained main tabs keep the full directional push and cached state',
+    (tester) async {
+      final inits = <String, int>{};
+      Widget page(String tab, int direction) => MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.ltr,
+          child: LokalNavigationSwitcher(
+            retainVisitedTabs: true,
+            direction: direction,
+            child: KeyedSubtree(
+              key: ValueKey(tab),
+              child: _TabLifecycleProbe(
+                name: tab,
+                onInit: (name) => inits[name] = (inits[name] ?? 0) + 1,
+                onDispose: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(page('Home', 1));
+      final origin = tester.getCenter(find.text('Home')).dx;
+      final width = tester.getSize(find.byType(LokalNavigationSwitcher)).width;
+      await tester.pumpWidget(page('Library', 1));
+      await tester.pump(const Duration(milliseconds: 55));
+      final leavingHome = tester.getCenter(find.text('Home')).dx;
+      final enteringLibrary = tester.getCenter(find.text('Library')).dx;
+      expect(leavingHome, lessThan(origin));
+      expect(enteringLibrary, greaterThan(origin));
+      expect(enteringLibrary - leavingHome, closeTo(width, .1),
+          reason: 'The two pages must touch without overlap or a black gap');
+
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(page('Home', -1));
+      await tester.pump(const Duration(milliseconds: 55));
+      final returningHome = tester.getCenter(find.text('Home')).dx;
+      final leavingLibrary = tester.getCenter(find.text('Library')).dx;
+      expect(returningHome, lessThan(origin));
+      expect(leavingLibrary, greaterThan(origin));
+      expect(leavingLibrary - returningHome, closeTo(width, .1));
+      await tester.pumpAndSettle();
+      expect(inits, {'Home': 1, 'Library': 1},
+          reason: 'The restored slide must not rebuild cached tab states');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('instant cached navigation has no page flight or outgoing raster',
       (tester) async {
     final inits = <String, int>{};

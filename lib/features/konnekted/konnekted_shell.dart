@@ -118,9 +118,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     AppHaptics.selection();
     nestedNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     if (_tab.value != tab) {
-      // Match PixelPlayer's order-aware root navigation: Library -> Home
-      // returns from the left, Home -> Library advances from the right.
-      _tabMotionDirection = tab.index > _tab.value.index ? 1 : -1;
+      // Follow the dock's physical left-to-right order, not the enum order:
+      // Search is to the right of Library and You, despite being declared
+      // before Library in KonnektedTab.
+      _tabMotionDirection =
+          KonnektedTab.dockOrder.indexOf(tab) >
+                  KonnektedTab.dockOrder.indexOf(_tab.value)
+              ? 1
+              : -1;
       _tab.value = tab;
     }
     _dockScroll.reset();
@@ -438,11 +443,11 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                                     valueListenable: _tab,
                                     builder: (_, tab, _) => LokalNavigationSwitcher(
                                       direction: _tabMotionDirection,
-                                      // Keep only recently visited Home/Library/You
-                                      // views alive for smooth return entries.
+                                      // Preserve the directional, edge-to-edge
+                                      // screen slide when changing root tabs.
+                                      // Recently visited pages stay cached offstage
+                                      // without sacrificing the transition.
                                       retainVisitedTabs: true,
-                                       // No full-page motion; retain tab state offstage.
-                                      instantNavigation: true,
                                       child: KeyedSubtree(
                                         key: ValueKey(tab),
                                         child: switch (tab) {
