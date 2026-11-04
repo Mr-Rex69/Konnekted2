@@ -4,18 +4,17 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-/// The same dock-to-cover flight used by local, station and desktop-remote
-/// playback, including the full-bleed artwork mode.
+/// Shared artwork trajectory for local, radio and desktop-remote players,
+/// including tall Canvas/Full Cover. The user-drawn close path forms a J:
+/// first descend beside the expanded cover, bend toward the mini-player,
+/// pass *below* the mini artwork's final centre, then rise into the dock.
 ///
-/// BitChord's PlayerDock/NowPlayingScreen constrains how far the artwork
-/// rides the closing sheet instead of linearly translating it to the cover.
-/// Lokal has a separate moving route, so give its portal a shallow arc with
-/// exact endpoints and zero offset velocity at each landing. Both opening
-/// and closing read the same position from the finger-driven progress.
+/// The route already controls time/progress, including finger-driven drags.
+/// This helper changes only the cover centre; width, height, aspect handling,
+/// corner interpolation and the exact start/end rects stay unchanged.
 abstract final class LokalArtworkFlight {
-  /// Move from the mini-player's actual on-screen cover to the expanded art.
-  /// Width and height still interpolate linearly: only the centre travels on
-  /// the arc, avoiding image distortion and artwork-crop discontinuities.
+  /// [progress] is 0 at the mini-player, 1 at fullscreen. The geometric
+  /// path is canonicalized in closing direction and read in reverse for open.
   static Rect rect(
     Rect mini,
     Rect expanded,
@@ -23,35 +22,39 @@ abstract final class LokalArtworkFlight {
     double? sheetTravel,
   }) {
     final t = progress.clamp(0.0, 1.0);
-    final linear = Rect.lerp(mini, expanded, t)!;
-    if (t <= 0 || t >= 1) return linear;
+    final bounds = Rect.lerp(mini, expanded, t)!;
+    if (t <= 0 || t >= 1) return bounds;
 
-    // Port the actual BitChord NowPlayingScreen dockRide/towardsDock math.
-    // The mini cover's distance below the expanded art, expressed as a share
-    // of the full sheet travel, determines how much of the sheet's fall the
-    // artwork can ride without ever moving past the mini-player.
-    //
-    // BitChord (in screen coords):
-    //   ride = clamp((mini.top - sleeve.top) / travel, 0, 1)
-    //   return lerp(mini, sleeve - offset * (1 - ride), openFraction)
-    //          + sheet offset
-    // With offset=(1-t)*travel this reduces to the following additional
-    // vertical motion. It is NOT a sideways sine hump or an arbitrary Bezier.
-    final travel = math.max(sheetTravel ?? mini.top.abs(), 1.0);
-    final ride = ((mini.top - expanded.top) / travel).clamp(0.0, 1.0);
-    final offset = (1 - t) * travel;
-    final sheetRide = t * offset * ride;
-    // The sleeve grows while it travels. A ride computed from top edges
-    // alone can move its *bottom* below both endpoint covers (most visible
-    // with a full-height Canvas poster). Keep the bottom inside the larger
-    // of the actual start/end artwork bounds, while retaining BitChord's
-    // sheet-coupled vertical movement whenever there is space.
-    final bottomLimit = math.max(mini.bottom, expanded.bottom);
-    final bottomRoom = math.max(0.0, bottomLimit - linear.bottom);
-    final safeRide = bottomRoom <= 1e-4
-        ? 0.0
-        : bottomRoom * (1 - math.exp(-sheetRide / bottomRoom));
-    return linear.shift(Offset(0, safeRide));
+    final dock = mini.center;
+    final full = expanded.center;
+    final downward = dock.dy - full.dy;
+    if (downward <= 0) return bounds;
+
+    // This deliberate below-destination sweep is what the previous
+    // bottom-clamped sheet ride prevented. Limit it by the available vertical
+    // travel to avoid an exaggerated loop on small/landscape players.
+    final availableTravel = sheetTravel == null
+        ? downward
+        : math.min(downward, math.max(sheetTravel, 0.0));
+    final belowDestination = math.min(180.0, availableTravel * .42);
+    final dx = dock.dx - full.dx;
+
+    // A cubic Bézier with a mostly vertical departure and the second control
+    // point *below* the mini-player. Its last tangent points up and left into
+    // the target, reproducing the drawn J rather than a sideways sine hump.
+    final control1 = Offset(full.dx + dx * .03, full.dy + downward * .58);
+    final control2 = Offset(dock.dx - dx * .17, dock.dy + belowDestination);
+    final close = 1.0 - t;
+    final open = t;
+    final centre = full * (open * open * open) +
+        control1 * (3 * open * open * close) +
+        control2 * (3 * open * close * close) +
+        dock * (close * close * close);
+    return Rect.fromCenter(
+      center: centre,
+      width: bounds.width,
+      height: bounds.height,
+    );
   }
 }
 
