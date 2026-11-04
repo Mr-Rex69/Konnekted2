@@ -820,7 +820,6 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
 
   Widget _body(BuildContext context) {
     final collapse = KonnektedMiniPlayerScope.progressOf(context);
-    final tucked = collapse >= 1;
     // Instead of swapping entire subtrees halfway through the spring, fade
     // controls out while relinquishing their width to the title. This keeps
     // album artwork and the play button in one continuous layout.
