@@ -16,23 +16,42 @@ abstract final class LokalArtworkFlight {
   /// Move from the mini-player's actual on-screen cover to the expanded art.
   /// Width and height still interpolate linearly: only the centre travels on
   /// the arc, avoiding image distortion and artwork-crop discontinuities.
-  static Rect rect(Rect mini, Rect expanded, double progress) {
+  static Rect rect(
+    Rect mini,
+    Rect expanded,
+    double progress, {
+    double? sheetTravel,
+  }) {
     final t = progress.clamp(0.0, 1.0);
     final linear = Rect.lerp(mini, expanded, t)!;
     if (t <= 0 || t >= 1) return linear;
 
-    // The curve is more evident when a left-hand mini cover docks into a
-    // centred full player, but disappears on nearly vertical trips.
-    final horizontal = expanded.center.dx - mini.center.dx;
-    final vertical = (expanded.center.dy - mini.center.dy).abs();
-    final wave = math.sin(math.pi * t);
-    final bend = wave * wave;
-    // The previous maximum (16px sideways / 10px vertically) disappeared
-    // during a 500–800px sheet slide. Give the sleeve a perceptible, but
-    // still restrained, arc while keeping the same endpoints and crop.
-    final lateral = horizontal.sign * math.min(horizontal.abs() * .34, 52.0);
-    final lift = math.min(vertical * .045, 26.0);
-    return linear.shift(Offset(lateral * bend, -lift * bend));
+    // Port the actual BitChord NowPlayingScreen dockRide/towardsDock math.
+    // The mini cover's distance below the expanded art, expressed as a share
+    // of the full sheet travel, determines how much of the sheet's fall the
+    // artwork can ride without ever moving past the mini-player.
+    //
+    // BitChord (in screen coords):
+    //   ride = clamp((mini.top - sleeve.top) / travel, 0, 1)
+    //   return lerp(mini, sleeve - offset * (1 - ride), openFraction)
+    //          + sheet offset
+    // With offset=(1-t)*travel this reduces to the following additional
+    // vertical motion. It is NOT a sideways sine hump or an arbitrary Bezier.
+    final travel = math.max(sheetTravel ?? mini.top.abs(), 1.0);
+    final ride = ((mini.top - expanded.top) / travel).clamp(0.0, 1.0);
+    final offset = (1 - t) * travel;
+    final sheetRide = t * offset * ride;
+    // The sleeve grows while it travels. A ride computed from top edges
+    // alone can move its *bottom* below both endpoint covers (most visible
+    // with a full-height Canvas poster). Keep the bottom inside the larger
+    // of the actual start/end artwork bounds, while retaining BitChord's
+    // sheet-coupled vertical movement whenever there is space.
+    final bottomLimit = math.max(mini.bottom, expanded.bottom);
+    final bottomRoom = math.max(0.0, bottomLimit - linear.bottom);
+    final safeRide = bottomRoom <= 1e-4
+        ? 0.0
+        : bottomRoom * (1 - math.exp(-sheetRide / bottomRoom));
+    return linear.shift(Offset(0, safeRide));
   }
 }
 
@@ -312,7 +331,18 @@ class _RenderArtworkPortal extends RenderProxyBox {
     final origin = localToGlobal(Offset.zero);
     final from = source.shift(-origin);
     final to = natural.shift(Offset(0, -_sheetOffset));
-    final rect = LokalArtworkFlight.rect(from, to, _progress);
+    // Use the route's actual sheet travel. The fallback Hero tween derives
+    // it from mini bounds, while the shared portal tracks drag/settle motion.
+    final remaining = 1 - _progress;
+    final travel = remaining > 1e-4
+        ? (_sheetOffset / remaining).abs()
+        : null;
+    final rect = LokalArtworkFlight.rect(
+      from,
+      to,
+      _progress,
+      sheetTravel: travel,
+    );
     // One scale preserves the artwork's aspect ratio. Independent X/Y
     // scaling squashed tall fullscreen art into a square and snapped when
     // the actual miniplayer cover took over.

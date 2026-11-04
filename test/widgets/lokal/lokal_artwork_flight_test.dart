@@ -12,22 +12,27 @@ void main() {
     expect(LokalArtworkFlight.rect(mini, expanded, -1), mini);
     expect(LokalArtworkFlight.rect(mini, expanded, 2), expanded);
 
-    const progress = .5;
+    // The cover follows the moving sheet instead of veering sideways.
+    const progress = .25;
     final direct = Rect.lerp(mini, expanded, progress)!;
     final curved = LokalArtworkFlight.rect(mini, expanded, progress);
-    expect(curved.center.dx, greaterThan(direct.center.dx + 8));
-    expect(curved.center.dy, lessThan(direct.center.dy - 5));
+    expect(curved.center.dx, closeTo(direct.center.dx, .001));
+    expect(curved.center.dy - direct.center.dy, greaterThan(25));
+    expect(curved.bottom, lessThanOrEqualTo(mini.bottom + .001));
     expect(curved.size, direct.size,
         reason: 'Only trajectory bends: cover size and crop must not squash');
   });
 
   test('curved return is actually visible across a normal phone cover flight', () {
-    final mid = LokalArtworkFlight.rect(mini, expanded, .5);
-    final direct = Rect.lerp(mini, expanded, .5)!;
-    expect(mid.center.dx - direct.center.dx, greaterThan(40),
-        reason: 'The previous 16px-only correction looked like a straight line');
-    expect(direct.center.dy - mid.center.dy, greaterThan(15));
-    expect(mid.size, direct.size);
+    final middle = LokalArtworkFlight.rect(mini, expanded, .5);
+    final directMiddle = Rect.lerp(mini, expanded, .5)!;
+    final late = LokalArtworkFlight.rect(mini, expanded, .75);
+    final directLate = Rect.lerp(mini, expanded, .75)!;
+    expect(middle.center.dy - directMiddle.center.dy, greaterThan(40));
+    expect(late.center.dy - directLate.center.dy, greaterThan(40));
+    expect(middle.bottom, lessThanOrEqualTo(mini.bottom + .001));
+    expect(late.bottom, lessThanOrEqualTo(mini.bottom + .001));
+    expect(middle.size, directMiddle.size);
   });
 
   test('temporary GlobalKey detachment does not cancel the active morph', () {
@@ -44,12 +49,17 @@ void main() {
   });
 
   test('curve lands tangentially without final-frame snap', () {
-    for (final t in [0.001, 0.01, .99, .999]) {
-      final curved = LokalArtworkFlight.rect(mini, expanded, t);
-      final direct = Rect.lerp(mini, expanded, t)!;
-      expect((curved.center - direct.center).distance, lessThan(.12),
-          reason: 'Arc correction fades smoothly at p=$t');
-    }
+    // The last fraction of closing motion is tangent to the mini cover:
+    // its Y velocity reaches zero before the route's own spring settles.
+    final nearMini = LokalArtworkFlight.rect(mini, expanded, .001);
+    // The cover grows immediately: keeping its top fixed would push its
+    // bottom below the dock. It must therefore depart upward without a jump.
+    expect((nearMini.top - mini.top).abs(), lessThan(1));
+    expect(nearMini.bottom, lessThanOrEqualTo(mini.bottom + .001));
+    expect(nearMini.left, closeTo(Rect.lerp(mini, expanded, .001)!.left, .001));
+    final nearFull = LokalArtworkFlight.rect(mini, expanded, .999);
+    expect((nearFull.top - expanded.top).abs(), lessThan(2));
+    expect(LokalArtworkFlight.rect(mini, expanded, 0), mini);
   });
 
   test('closing and opening follow the same arc in opposite directions', () {
@@ -71,4 +81,20 @@ void main() {
     final direct = Rect.lerp(below, expanded, .5)!;
     expect((curved.center.dx - direct.center.dx).abs(), lessThan(3));
   });
+  test('ride uses real player sheet distance and clamps to avoid overshoot', () {
+    final full = Rect.lerp(mini, expanded, .5)!;
+    final atHalf = LokalArtworkFlight.rect(
+      mini, expanded, .5, sheetTravel: 700,
+    );
+    expect(atHalf.top, greaterThan(full.top + 60));
+    expect(atHalf.bottom, lessThanOrEqualTo(mini.bottom + .001));
+    final shorter = LokalArtworkFlight.rect(
+      mini, expanded, .5, sheetTravel: 300,
+    );
+    expect(shorter.top, greaterThan(full.top + 20));
+    expect(shorter.top, lessThan(atHalf.top));
+    expect(shorter.top, lessThan(mini.top));
+  });
+
+
 }

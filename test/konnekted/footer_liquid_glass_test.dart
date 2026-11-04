@@ -45,14 +45,14 @@ void main() {
       for (final glass in glasses) {
         expect(glass.pronouncedRim, isFalse);
         expect(glass.lens?.profile, LokalLensProfile.circular);
-        expect(glass.lens?.height, 24);
-        expect(glass.lens?.amount, 24);
-        expect(glass.lens?.depth, 1);
-        expect(glass.lens?.dispersion, 1);
-        expect(glass.liquidBlurRadius, .8);
+        expect(glass.lens?.height, 13);
+        expect(glass.lens?.amount, 8);
+        expect(glass.lens?.depth, .18);
+        expect(glass.lens?.dispersion, .10);
+        expect(glass.liquidBlurRadius, 1.2);
         expect(glass.fallbackBlurSigma, 2);
         expect(glass.fallbackTintOpacity, closeTo(fallbackOpacity, .001));
-        expect(glass.lens?.magnification, closeTo(.065, .001));
+        expect(glass.lens?.magnification, closeTo(.023, .001));
         expect(glass.liquidTintOpacity, closeTo(expectedOpacity, .001));
       }
     }
@@ -68,13 +68,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('Home bubble flexes and settles only during the last stage of collapse', () {
+  test('Home capsule flex follows spring progress with no independent timer', () {
     expect(dockHomeBubbleScale(0), 1);
     expect(dockHomeBubbleScale(1), 1);
     // Lift is visible for multiple frames even at a high refresh rate.
-    expect(dockHomeBubbleScale(.125), greaterThan(1.08));
+    expect(dockHomeBubbleScale(.125), greaterThan(1.02));
     expect(dockHomeBubbleScale(.375), lessThan(.97));
-    expect(dockHomeBubbleScale(.625), inInclusiveRange(1, 1.03));
+    expect(dockHomeBubbleScale(.625), greaterThan(1.04));
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
@@ -140,7 +140,8 @@ void main() {
     await tester.pumpWidget(atProgress(1));
     await tester.pump();
     expect(find.byTooltip('Open queue'), findsNothing);
-    expect(find.text('Transition artist'), findsNothing);
+    expect(find.text('Transition artist'), findsOneWidget,
+        reason: 'BitChord keeps the artist even in its inline accessory');
     expect(find.byTooltip('Pause'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -237,8 +238,8 @@ void main() {
     final lifted = tester.widget<LokalClearLens>(
       find.byKey(const ValueKey('dock-travel-lens')),
     );
-    expect(lifted.lens.amount, greaterThan(8));
-    expect(lifted.lens.dispersion, 1);
+    expect(lifted.lens.amount, greaterThan(4));
+    expect(lifted.lens.dispersion, .12);
     expect(tester.takeException(), isNull);
 
     await tester.pumpAndSettle();
@@ -282,8 +283,7 @@ void main() {
       ),
     );
 
-    // Its independent pulse starts immediately on the discrete collapse
-    // event even while the layout spring is still moving.
+    // Capsule deforms *during* the same collapse spring, never afterwards.
     change(() => collapsed = true);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 70));
@@ -291,7 +291,10 @@ void main() {
     final bubble = tester.widget<Transform>(
       find.byKey(const ValueKey('dock-home-bounce')),
     );
-    expect(bubble.transform.getMaxScaleOnAxis(), greaterThan(1.05));
+    expect(
+      (bubble.transform.getMaxScaleOnAxis() - 1).abs(),
+      greaterThan(.01),
+    );
     // Search receives no Transform.scale in the dock's layout.
     expect(find.bySemanticsLabel('Search'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -303,5 +306,100 @@ void main() {
     expect(settled.transform.getMaxScaleOnAxis(), closeTo(1, .005));
   });
 
+
+  testWidgets('selected icon has one continuous identity and grows when docked',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    Widget build(bool collapsed) => ProviderScope(
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: KonnektedDock(
+              selected: KonnektedTab.listen,
+              onSelect: (_) {},
+              miniPlayer: const SizedBox.expand(),
+              collapsed: collapsed,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(build(false));
+    await tester.pump();
+    final expandedIcon = tester.widget<Transform>(
+      find.byKey(const ValueKey('dock-shared-selected-icon')),
+    );
+    expect(expandedIcon.transform.getMaxScaleOnAxis(), closeTo(1.08, .001));
+    expect(find.byKey(const ValueKey('dock-mini-press')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dock-home-press')), findsOneWidget);
+    await tester.pumpWidget(build(true));
+    await tester.pumpAndSettle();
+    final compactIcon = tester.widget<Transform>(
+      find.byKey(const ValueKey('dock-shared-selected-icon')),
+    );
+    expect(compactIcon.transform.getMaxScaleOnAxis(), closeTo(1.28, .001));
+    expect(find.byKey(const ValueKey('dock-shared-selected-icon')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+
+
+  testWidgets('selection icon follows a physical spring and Search preserves it',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var selected = KonnektedTab.listen;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, update) => Align(
+                alignment: Alignment.bottomCenter,
+                child: KonnektedDock(
+                  selected: selected,
+                  onSelect: (tab) => update(() => selected = tab),
+                  miniPlayer: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    const iconKey = ValueKey('dock-shared-selected-icon');
+    final start = tester.getCenter(find.byKey(iconKey));
+    await tester.tap(find.bySemanticsLabel('Library'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 85));
+    final moving = tester.getCenter(find.byKey(iconKey));
+    await tester.pumpAndSettle();
+    final finished = tester.getCenter(find.byKey(iconKey));
+    expect(moving.dx, greaterThan(start.dx));
+    expect(moving.dx, lessThan(finished.dx));
+    expect(finished.dx - start.dx, greaterThan(40));
+
+    // Search is a separate bubble. It does not reset the current Home
+    // capsule to a different icon as the mini-player docks inline.
+    await tester.tap(find.bySemanticsLabel('Search'));
+    await tester.pumpAndSettle();
+    expect(selected, KonnektedTab.explore);
+    final shownIcons = tester.widgetList<Icon>(
+      find.descendant(of: find.byKey(iconKey), matching: find.byType(Icon)),
+    ).toList();
+    expect(shownIcons.single.icon, Icons.library_music_rounded);
+    expect(tester.takeException(), isNull);
+  });
 
 }

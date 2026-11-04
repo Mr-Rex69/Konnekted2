@@ -104,6 +104,7 @@ void main() {
             source,
             const Rect.fromLTWH(0, 0, 400, 480),
             .5,
+            sheetTravel: 700,
           ).center;
           final pixel =
               (center.dy.round() * image.width + center.dx.round()) * 4;

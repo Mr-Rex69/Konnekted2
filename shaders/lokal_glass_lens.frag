@@ -137,35 +137,35 @@ void main() {
         return;
     }
 
-    float intensity = u_dispersion *
+    // The old seven-channel spectrum split the underlying artwork into
+    // obvious red/cyan/yellow bands. Apple-like glass has a tiny glint on
+    // high-contrast edges, not an RGB prism. Cap *physical-pixel* separation
+    // and keep green and alpha sampled from the true refracted backdrop.
+    float chroma = clamp(u_dispersion, 0.0, 0.25);
+    float intensity = chroma *
         ((centered.x * centered.y) / (halfSize.x * halfSize.y));
     vec2 dispersed = edgeShift * intensity;
+    float fringe = length(dispersed);
+    if (fringe < 0.001) {
+        frag_color = sampleAt(refracted);
+        return;
+    }
+    dispersed *= min(1.0, 0.6 / fringe);
 
-    vec4 color = vec4(0.0);
+    vec4 centre = sampleAt(refracted);
     vec4 red = sampleAt(refracted + dispersed);
-    color.r += red.r / 3.5;
-    color.a += red.a / 7.0;
-    vec4 orange = sampleAt(refracted + dispersed * (2.0 / 3.0));
-    color.r += orange.r / 3.5;
-    color.g += orange.g / 7.0;
-    color.a += orange.a / 7.0;
-    vec4 yellow = sampleAt(refracted + dispersed * (1.0 / 3.0));
-    color.r += yellow.r / 3.5;
-    color.g += yellow.g / 3.5;
-    color.a += yellow.a / 7.0;
-    vec4 green = sampleAt(refracted);
-    color.g += green.g / 3.5;
-    color.a += green.a / 7.0;
-    vec4 cyan = sampleAt(refracted - dispersed * (1.0 / 3.0));
-    color.g += cyan.g / 3.5;
-    color.b += cyan.b / 3.0;
-    color.a += cyan.a / 7.0;
-    vec4 blue = sampleAt(refracted - dispersed * (2.0 / 3.0));
-    color.b += blue.b / 3.0;
-    color.a += blue.a / 7.0;
-    vec4 purple = sampleAt(refracted - dispersed);
-    color.r += purple.r / 7.0;
-    color.b += purple.b / 3.0;
-    color.a += purple.a / 7.0;
-    frag_color = color;
+    vec4 blue = sampleAt(refracted - dispersed);
+    // Fragment shaders output premultiplied color. Offset pixels can have a
+    // different alpha along an image's transparent edge; sampling their
+    // premultiplied RGB alongside centre.a without conversion makes bright
+    // rainbow halos in the composited result. Rebase each fringe onto the
+    // centre pixel's alpha and leave green unchanged.
+    float redStraight = red.a > 1e-5 ? red.r / red.a : 0.0;
+    float blueStraight = blue.a > 1e-5 ? blue.b / blue.a : 0.0;
+    frag_color = vec4(
+        clamp(redStraight, 0.0, 1.0) * centre.a,
+        centre.g,
+        clamp(blueStraight, 0.0, 1.0) * centre.a,
+        centre.a
+    );
 }

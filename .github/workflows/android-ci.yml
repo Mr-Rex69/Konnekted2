@@ -67,6 +67,7 @@ jobs:
         run: >-
           flutter test --no-pub
           test/widgets/lokal/lokal_artwork_flight_test.dart
+          test/widgets/lokal_glass_soft_optics_test.dart
           test/features/player/player_morph_return_test.dart
           test/features/player/full_bleed_artwork_morph_test.dart
       - name: Focused suites from docs/BUILD.md, including share and picker
