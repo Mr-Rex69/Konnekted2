@@ -149,7 +149,9 @@ class _KonnektedDockState extends State<KonnektedDock>
     // without any GPU-heavy backdrop passes during the geometry change.
     if ((status == AnimationStatus.completed ||
          status == AnimationStatus.dismissed) && mounted) {
-      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
     }
   }
 
