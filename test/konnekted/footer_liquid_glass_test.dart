@@ -100,15 +100,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('scrolling and folding suspend only transient backdrop work',
+  testWidgets('footer keeps identical one-pass optical rendering throughout collapse',
       (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     var collapsed = false;
-    var scrolling = false;
-    late StateSetter update;
+    late StateSetter change;
 
     await tester.pumpWidget(ProviderScope(
       child: MaterialApp(
@@ -116,7 +115,7 @@ void main() {
         home: Scaffold(
           body: StatefulBuilder(
             builder: (context, setState) {
-              update = setState;
+              change = setState;
               return Align(
                 alignment: Alignment.bottomCenter,
                 child: KonnektedDock(
@@ -124,7 +123,6 @@ void main() {
                   onSelect: (_) {},
                   miniPlayer: const SizedBox.expand(),
                   collapsed: collapsed,
-                  scrollActive: scrolling,
                 ),
               );
             },
@@ -133,43 +131,47 @@ void main() {
       ),
     ));
 
-    void allSurfaces(bool suspended) {
+    void assertContinuous() {
       final glass = tester.widgetList<LokalGlass>(
         find.byType(LokalGlass),
       ).toList();
       expect(glass, hasLength(3));
       for (final capsule in glass) {
-        expect(capsule.suspendBackdrop, suspended);
+        expect(capsule.singlePassLens, isTrue);
+        expect(capsule.staticSurface, isFalse);
+        expect(capsule.suspendBackdrop, isFalse);
         expect(capsule.lens?.magnification, closeTo(.023, .001));
         expect(capsule.pronouncedRim, isTrue);
       }
+      // Extra refractive selection layers added CPU/GPU passes and made
+      // navigation feel overanimated. Only the parent glass is optical.
+      expect(find.byType(LokalClearLens), findsNothing);
     }
 
-    allSurfaces(false);
-    update(() => scrolling = true);
+    assertContinuous();
+    change(() => collapsed = true);
     await tester.pump();
-    allSurfaces(true);
-    update(() => collapsed = true);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 75));
-    allSurfaces(true);
-    update(() => scrolling = false);
-    await tester.pump();
-    allSurfaces(true);
+    await tester.pump(const Duration(milliseconds: 90));
+    assertContinuous();
     await tester.pumpAndSettle();
-    allSurfaces(false);
+    assertContinuous();
+    change(() => collapsed = false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 70));
+    assertContinuous();
+    await tester.pumpAndSettle();
+    assertContinuous();
     expect(tester.takeException(), isNull);
   });
 
-  test('Home capsule flex follows spring progress with no independent timer', () {
-    expect(dockHomeBubbleScale(0), 1);
-    expect(dockHomeBubbleScale(1), 1);
-    // Lift is visible for multiple frames even at a high refresh rate.
-    expect(dockHomeBubbleScale(.125), greaterThan(1.003));
-    expect(dockHomeBubbleScale(.375), greaterThan(1.02));
-    expect(dockHomeBubbleScale(.625), greaterThan(1.02));
-    expect(dockHomeBubbleScale(.875), greaterThan(1));
-    expect(dockHomeBubbleScale(.5), lessThan(1.04));
+  test('selected Home, Library and You recoil left, never enlarge', () {
+    expect(dockSelectedLeftBounce(0), 0);
+    expect(dockSelectedLeftBounce(1), closeTo(0, .0001));
+    expect(dockSelectedLeftBounce(.25), lessThan(-3));
+    expect(dockSelectedLeftBounce(.5), closeTo(-7, .0001));
+    expect(dockSelectedLeftBounce(.75), lessThan(-3));
+    expect(dockSelectedLeftBounce(-1), 0);
+    expect(dockSelectedLeftBounce(2), closeTo(0, .0001));
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
@@ -300,7 +302,7 @@ void main() {
   });
 
 
-  testWidgets('changing tabs lifts a refractive lens above the tab row',
+  testWidgets('tab selection uses one cheap moving highlight, no second lens',
       (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
@@ -328,22 +330,17 @@ void main() {
       ),
     );
 
+    const indicator = ValueKey('dock-selection-indicator');
+    final startX = tester.getCenter(find.byKey(indicator)).dx;
     await tester.tap(find.bySemanticsLabel('Library'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 160));
+    await tester.pump(const Duration(milliseconds: 70));
     expect(selected, KonnektedTab.library);
-    final lifted = tester.widget<LokalClearLens>(
-      find.byKey(const ValueKey('dock-travel-lens')),
-    );
-    expect(lifted.lens.amount, greaterThan(4));
-    expect(lifted.lens.dispersion, .12);
-    expect(tester.takeException(), isNull);
-
+    final movingX = tester.getCenter(find.byKey(indicator)).dx;
+    expect(movingX, greaterThan(startX));
+    expect(find.byType(LokalClearLens), findsNothing);
     await tester.pumpAndSettle();
-    final settled = tester.widget<LokalClearLens>(
-      find.byKey(const ValueKey('dock-travel-lens')),
-    );
-    expect(settled.lens.amount, closeTo(0, .0001));
+    expect(tester.getCenter(find.byKey(indicator)).dx, greaterThan(movingX));
     expect(tester.takeException(), isNull);
   });
 
@@ -388,11 +385,9 @@ void main() {
     final bubble = tester.widget<Transform>(
       find.byKey(const ValueKey('dock-home-bounce')),
     );
-    expect(
-      (bubble.transform.getMaxScaleOnAxis() - 1).abs(),
-      greaterThan(.01),
-    );
-    // Search receives no Transform.scale in the dock's layout.
+    expect(bubble.transform.getTranslation().x, lessThan(-1));
+    expect(bubble.transform.getMaxScaleOnAxis(), closeTo(1, .001));
+    // Search receives no directional recoil or scale in the dock layout.
     expect(find.bySemanticsLabel('Search'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -400,7 +395,8 @@ void main() {
     final settled = tester.widget<Transform>(
       find.byKey(const ValueKey('dock-home-bounce')),
     );
-    expect(settled.transform.getMaxScaleOnAxis(), closeTo(1, .005));
+    expect(settled.transform.getTranslation().x, closeTo(0, .005));
+    expect(settled.transform.getMaxScaleOnAxis(), closeTo(1, .001));
   });
 
 
