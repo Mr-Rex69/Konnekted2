@@ -59,26 +59,14 @@ const _dockGlassLens = LokalLens(
 
 const _dockBlurRadius = 1.2;
 
-/// A small deformation tied to the *same spring* that folds the navigation
-/// pill. BitChord's life comes from connected shared-element movement, not
-/// an unrelated timer running after the bar has already finished shrinking.
-
+/// All selected Home/Library/You icons recoil left as the bar folds.
 @visibleForTesting
-double dockHomeBubbleScale(double progress) {
-  final p = progress.clamp(0.0, 1.0);
-  if (p <= 0 || p >= 1) return 1;
-  // One small deformation, not two opposing oscillations. The previous
-  // double sine caused repeated grow/shrink while the bar was already
-  // resizing, amplifying GPU work and looking like frame jitter.
-  final wave = math.sin(math.pi * p);
-  return 1 + .03 * wave * wave;
+double dockSelectedLeftBounce(double progress) {
+  final t = progress.clamp(0.0, 1.0);
+  final wave = math.sin(math.pi * t);
+  return -7.0 * wave * wave;
 }
 
-/// Apple Music's iOS 26 tab bar in Lokal glass.
-///
-/// A mini-player capsule floats above a tab capsule with a sliding lens and
-/// a separate search circle. Scrolling down ([collapsed]) shrinks the tabs
-/// to the current one and tucks the mini player between it and search.
 class KonnektedDock extends StatefulWidget {
   const KonnektedDock({
     super.key,
@@ -87,7 +75,6 @@ class KonnektedDock extends StatefulWidget {
     required this.miniPlayer,
     this.hasMiniPlayer = true,
     this.collapsed = false,
-    this.scrollActive = false,
     this.onExpand,
   });
 
@@ -99,10 +86,6 @@ class KonnektedDock extends StatefulWidget {
   /// single row and never collapses.
   final bool hasMiniPlayer;
   final bool collapsed;
-
-  /// True while content is actively scrolling; prevents repeated GPU
-  /// backdrop captures behind the three moving footer surfaces.
-  final bool scrollActive;
 
   /// Tapping the shrunken tab capsule asks for the full dock back.
   final VoidCallback? onExpand;
@@ -139,21 +122,11 @@ class _KonnektedDockState extends State<KonnektedDock>
     vsync: this,
     duration: const Duration(milliseconds: 420),
     value: _wantsCollapse ? 1 : 0,
-  )..addStatusListener(_onCollapseStatus);
+  );
 
-  bool _miniPressed = false;
-
-  void _onCollapseStatus(AnimationStatus status) {
-    // The final animation tick may fire while isAnimating is still true.
-    // Repaint *once* after the spring settles to restore the optical lens,
-    // without any GPU-heavy backdrop passes during the geometry change.
-    if ((status == AnimationStatus.completed ||
-         status == AnimationStatus.dismissed) && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
-    }
-  }
+  // Play/pause press feedback must move only the content, not the refractive
+  // mini-player capsule. Updating the notifier avoids rebuilding the dock.
+  final _miniPressed = ValueNotifier<bool>(false);
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
 
@@ -196,9 +169,8 @@ class _KonnektedDockState extends State<KonnektedDock>
 
   @override
   void dispose() {
-    _collapse
-      ..removeStatusListener(_onCollapseStatus)
-      ..dispose();
+    _collapse.dispose();
+    _miniPressed.dispose();
     super.dispose();
   }
 
@@ -236,7 +208,6 @@ class _KonnektedDockState extends State<KonnektedDock>
     // another easeInOutCubic made the icons stop/start twice and obscured the
     // spring's response on rapid direction reversals.
     final t = _collapse.value.clamp(0.0, 1.0);
-    final suspendGlass = widget.scrollActive || _collapse.isAnimating;
     final hasMini = widget.hasMiniPlayer;
     final top = hasMini ? mini + gap : 0.0;
 
@@ -270,39 +241,39 @@ class _KonnektedDockState extends State<KonnektedDock>
                   rect: Rect.lerp(miniOpen, miniShut, t)!,
                   child: Listener(
                     behavior: HitTestBehavior.translucent,
-                    onPointerDown: (_) {
-                      if (!_miniPressed) setState(() => _miniPressed = true);
-                    },
-                    onPointerUp: (_) {
-                      if (_miniPressed) setState(() => _miniPressed = false);
-                    },
-                    onPointerCancel: (_) {
-                      if (_miniPressed) setState(() => _miniPressed = false);
-                    },
-                    child: AnimatedScale(
-                      key: const ValueKey('dock-mini-press'),
-                      scale: _miniPressed &&
-                              !MediaQuery.disableAnimationsOf(context)
-                          ? 1.035
-                          : 1,
-                      duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOutBack,
-                      child: LokalGlass.capsule(
-                    key: const ValueKey('dock-mini-glass'),
-                    grouped: true,
-                    lens: _dockGlassLens,
-                    liquidTintOpacity: lerpDouble(.09, .13, t)!,
-                    liquidBlurRadius: _dockBlurRadius,
-                    suspendBackdrop: suspendGlass,
-                    fallbackTintOpacity: lerpDouble(.16, .20, t)!,
-                    fallbackBlurSigma: 2,
-                    pronouncedRim: true,
-                    rimStrength: .82,
-                    child: KonnektedMiniPlayerScope(
-                      collapsed: t >= 1,
-                      progress: t,
-                      child: widget.miniPlayer,
-                    ),
+                    onPointerDown: (_) => _miniPressed.value = true,
+                    onPointerUp: (_) => _miniPressed.value = false,
+                    onPointerCancel: (_) => _miniPressed.value = false,
+                    // Fixed outer glass dimensions, layer and shader origins.
+                    // Only the content inside responds to touch.
+                    child: LokalGlass.capsule(
+                      key: const ValueKey('dock-mini-glass'),
+                      grouped: true,
+                      lens: _dockGlassLens,
+                      liquidTintOpacity: lerpDouble(.09, .13, t)!,
+                      liquidBlurRadius: _dockBlurRadius,
+                      singlePassLens: true,
+                      fallbackTintOpacity: lerpDouble(.16, .20, t)!,
+                      fallbackBlurSigma: 2,
+                      pronouncedRim: true,
+                      rimStrength: .82,
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _miniPressed,
+                        child: KonnektedMiniPlayerScope(
+                          collapsed: t >= 1,
+                          progress: t,
+                          child: widget.miniPlayer,
+                        ),
+                        builder: (context, pressed, child) => AnimatedScale(
+                          key: const ValueKey('dock-mini-press'),
+                          scale: pressed &&
+                                  !MediaQuery.disableAnimationsOf(context)
+                              ? 1.035
+                              : 1,
+                          duration: const Duration(milliseconds: 160),
+                          curve: Curves.easeOutBack,
+                          child: child,
+                        ),
                       ),
                     ),
                   ),
@@ -311,16 +282,17 @@ class _KonnektedDockState extends State<KonnektedDock>
                 rect: Rect.lerp(tabsOpen, tabsShut, t)!,
                 // The Home bubble flexes *with* the dock spring. It doesn't
                 // continue bouncing after the mini player has docked.
-                child: Transform.scale(
+                child: Transform.translate(
                   key: const ValueKey('dock-home-bounce'),
-                  alignment: Alignment.center,
-                  scale: hasMini && !MediaQuery.disableAnimationsOf(context)
-                      ? dockHomeBubbleScale(t)
-                      : 1,
+                  offset: Offset(
+                    hasMini && !MediaQuery.disableAnimationsOf(context)
+                        ? dockSelectedLeftBounce(t)
+                        : 0,
+                    0,
+                  ),
                   child: _TabCapsule(
                     width: tabsOpen.width,
                     collapse: t,
-                    suspendBackdrop: suspendGlass,
                     selected: widget.selected,
                     onSelect: widget.onSelect,
                     onExpand: widget.onExpand,
@@ -332,7 +304,6 @@ class _KonnektedDockState extends State<KonnektedDock>
                 child: _SearchCircle(
                   selected: widget.selected == KonnektedTab.explore,
                   collapse: t,
-                  suspendBackdrop: suspendGlass,
                   onTap: () => widget.onSelect(KonnektedTab.explore),
                 ),
               ),
@@ -379,7 +350,6 @@ class _TabCapsule extends StatefulWidget {
   const _TabCapsule({
     required this.width,
     required this.collapse,
-    required this.suspendBackdrop,
     required this.selected,
     required this.onSelect,
     required this.onExpand,
@@ -388,7 +358,6 @@ class _TabCapsule extends StatefulWidget {
   /// The open capsule's width; the tabs keep it while the capsule shrinks.
   final double width;
   final double collapse;
-  final bool suspendBackdrop;
   final KonnektedTab selected;
   final ValueChanged<KonnektedTab> onSelect;
   final VoidCallback? onExpand;
@@ -398,15 +367,7 @@ class _TabCapsule extends StatefulWidget {
 }
 
 class _TabCapsuleState extends State<_TabCapsule>
-    with TickerProviderStateMixin {
-  // The selected tab rises as an independent glass lens on navigation and
-  // drag, then settles into a flat selected pane. The lens sits OVER the tab
-  // row so it refracts the real icons/labels beneath it, not only the page.
-  late final _selectionTravel = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 430),
-  );
-
+    with SingleTickerProviderStateMixin {
   // BitChord keeps the selected glass travelling on its own physical spring
   // and preserves velocity when the user retargets a tab before it settles.
   late final AnimationController _selectionPosition;
@@ -432,25 +393,23 @@ class _TabCapsuleState extends State<_TabCapsule>
     _lastCapsuleTab = widget.selected;
     if (MediaQuery.disableAnimationsOf(context)) {
       _selectionPosition.value = newIndex.toDouble();
-      _selectionTravel.value = 1;
       return;
     }
     _selectionPosition.animateWith(
       SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 280, damping: 31.4),
+        const SpringDescription(mass: 1, stiffness: 620, damping: 48),
         _selectionPosition.value,
         newIndex.toDouble(),
         _selectionPosition.velocity,
         snapToEnd: true,
       ),
     );
-    if (widget.collapse < .5) _selectionTravel.forward(from: 0);
   }
 
   @override
   void dispose() {
-    _selectionTravel.dispose();
     _selectionPosition.dispose();
+    _pressed.dispose();
     super.dispose();
   }
 
@@ -460,30 +419,9 @@ class _TabCapsuleState extends State<_TabCapsule>
   /// The lens follows a dragging finger, like iOS 26's tab bar.
   double? _dragX;
   int? _dragIndex;
-  bool _pressed = false;
+  final _pressed = ValueNotifier<bool>(false);
 
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
-
-  @visibleForTesting
-  static double liftedLensProgress(double progress) {
-    final t = progress.clamp(0.0, 1.0);
-    if (t <= 0 || t >= 1) return 0;
-    // BitChord lifts its pill immediately on the first touch, holds it up
-    // throughout its spring travel, and releases it only after 92% of the
-    // journey. The previous sin(pi*t) deflated it halfway through the move.
-    final rise = (1 - math.exp(-17 * t)) *
-        (1 + .055 * math.exp(-4 * t) * math.sin(23 * t));
-    final landing = Curves.easeInOut.transform(
-      ((1 - t) / .20).clamp(0.0, 1.0),
-    );
-    return (rise * landing).clamp(0.0, 1.10);
-  }
-
-  @visibleForTesting
-  static double selectionSquash(double progress) {
-    final t = progress.clamp(0.0, 1.0);
-    return .115 * math.sin(2 * math.pi * t) * math.sin(math.pi * t);
-  }
 
   int _indexAt(double x) =>
       ((x - _inset) / _slot).floor().clamp(0, _tabs.length - 1);
@@ -516,14 +454,13 @@ class _TabCapsuleState extends State<_TabCapsule>
     } else if (position != null) {
       _selectionPosition.animateWith(
         SpringSimulation(
-          const SpringDescription(mass: 1, stiffness: 280, damping: 31.4),
+          const SpringDescription(mass: 1, stiffness: 620, damping: 48),
           _selectionPosition.value,
           _tabs.indexOf(_lastCapsuleTab).toDouble(),
           0,
           snapToEnd: true,
         ),
       );
-      _selectionTravel.forward(from: 0);
     }
   }
 
@@ -535,8 +472,9 @@ class _TabCapsuleState extends State<_TabCapsule>
     final shown = _lastCapsuleTab;
     final open = 1 - widget.collapse;
 
-    // The whole lens responds to touch like BitChord's material, squashing
-    // gently before the lift. Search stays a separate, non-bouncing sphere.
+    // The glass capsule must never scale on pointer down. Animate only
+    // selected icon/tab content *inside* it; searching and transport taps
+    // similarly leave their outer optical surfaces stationary.
     return AnimatedBuilder(
       animation: _selectionPosition,
       builder: (context, _) {
@@ -548,34 +486,25 @@ class _TabCapsuleState extends State<_TabCapsule>
                 );
         return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) {
-        if (!_pressed) setState(() => _pressed = true);
-      },
-      onPointerUp: (_) {
-        if (_pressed) setState(() => _pressed = false);
-      },
-      onPointerCancel: (_) {
-        if (_pressed) setState(() => _pressed = false);
-      },
-      child: AnimatedScale(
-      key: const ValueKey('dock-home-press'),
-      scale: reduceMotion ? 1 :
-          _dragX != null ? 1 + 16 / widget.width :
-          _pressed ? .975 : 1,
-      duration: const Duration(milliseconds: 190),
-      curve: Curves.easeOutBack,
+      onPointerDown: (_) => _pressed.value = true,
+      onPointerUp: (_) => _pressed.value = false,
+      onPointerCancel: (_) => _pressed.value = false,
       child: LokalGlass.capsule(
         key: const ValueKey('dock-tab-glass'),
         grouped: true,
         lens: _dockGlassLens,
         liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
-        suspendBackdrop: widget.suspendBackdrop,
+        singlePassLens: true,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
         pronouncedRim: true,
         rimStrength: .82,
-        child: Stack(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _pressed,
+          // Reuse the complete tab subtree during press/release; only the
+          // icon/content transform needs to animate, not the glass or layout.
+          child: Stack(
           fit: StackFit.expand,
           children: [
             // Keep the whole expanded subtree mounted at both endpoints.
@@ -615,8 +544,8 @@ class _TabCapsuleState extends State<_TabCapsule>
                                       ? 1.08
                                       : 1,
                                   child: _Lens(
+                                    key: const ValueKey('dock-selection-indicator'),
                                     color: t.accent,
-                                    suspendBackdrop: widget.suspendBackdrop,
                                     active: _dragX != null && !reduceMotion,
                                   ),
                                 ),
@@ -640,75 +569,8 @@ class _TabCapsuleState extends State<_TabCapsule>
                                 ],
                               ),
                             ),
-                            // Raised chromatic lens over the recorded tab
-                            // content (same optical layering as BitChord's
-                            // GlassSelectionPill), not another opaque fill.
-                            // Keep the transparent overlay mounted so its
-                            // AnimatedPositioned travels from the previous
-                            // tab instead of materializing at the destination.
-                            // At rest it paints nothing and captures no lens.
-                            if (!reduceMotion)
-                              Positioned(
-                                left: lensLeft,
-                                top: _inset,
-                                bottom: _inset,
-                                width: _slot,
-                                child: IgnorePointer(
-                                  child: AnimatedBuilder(
-                                    animation: _selectionTravel,
-                                    builder: (context, _) {
-                                      final lift = _dragX != null
-                                          ? 1.0
-                                          : liftedLensProgress(_selectionTravel.value);
-                                      return Transform.translate(
-                                        offset: Offset(0, -9 * lift),
-                                        child: Transform.scale(
-                                          // Widen on launch and narrow while
-                                          // braking (reversed for left travel).
-                                          scaleX: 1 + .18 * lift +
-                                              selectionSquash(_selectionTravel.value),
-                                          scaleY: 1 + .12 * lift -
-                                              selectionSquash(_selectionTravel.value),
-                                          // Never put a BackdropFilter inside an
-                                          // Opacity saveLayer: it can obscure
-                                          // the recorded tab pixels that the
-                                          // lens is supposed to refract.
-                                          child: LokalClearLens(
-                                              key: const ValueKey('dock-travel-lens'),
-                                              suspendBackdrop: widget.suspendBackdrop,
-                                              lens: LokalLens(
-                                                height: 9,
-                                                amount: 8,
-                                                dispersion: .12,
-                                                profile: LokalLensProfile.circular,
-                                              ).scale(lift),
-                                              child: DecoratedBox(
-                                                decoration: ShapeDecoration(
-                                                  shape: StadiumBorder(
-                                                    side: BorderSide(
-                                                      color: Colors.white.withValues(
-                                                        alpha: .36 * lift,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  shadows: [
-                                                    BoxShadow(
-                                                      color: Colors.black.withValues(
-                                                        alpha: .24 * lift,
-                                                      ),
-                                                      blurRadius: 12,
-                                                      offset: const Offset(0, 2),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
+                            // One moving selection indicator; no second
+                            // expensive refractive layer over the tab row.
                           ],
                         ),
                       ),
@@ -790,8 +652,19 @@ class _TabCapsuleState extends State<_TabCapsule>
                 },
               ),
           ],
+          ),
+          builder: (context, pressed, child) => AnimatedScale(
+            key: const ValueKey('dock-home-press'),
+            scale: reduceMotion
+                ? 1
+                : _dragX != null
+                    ? 1 + 16 / widget.width
+                    : pressed ? .975 : 1,
+            duration: const Duration(milliseconds: 190),
+            curve: Curves.easeOutBack,
+            child: child,
+          ),
         ),
-      ),
       ),
       );
       },
@@ -799,62 +672,23 @@ class _TabCapsuleState extends State<_TabCapsule>
   }
 }
 
-/// The selection lens: a brighter pane of glass under the current tab.
+/// Plain, tinted selection indicator on Home / Library / You.
+/// The enclosing capsule already provides the real refractive glass,
+/// including its border. This must not add a second lens, gradient rim,
+/// or independently filtered material on top.
 class _Lens extends StatelessWidget {
-  const _Lens({
-    required this.color,
-    this.active = false,
-    this.suspendBackdrop = false,
-  });
+  const _Lens({super.key, required this.color, this.active = false});
 
   final Color color;
-  final bool suspendBackdrop;
-
-  /// While a finger drags it, the lens turns clear and refracts the tabs
-  /// under it with a rainbow fringe, as in iOS 26.
   final bool active;
 
   @override
-  Widget build(BuildContext context) {
-    final light = context.lokal.isLight;
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: active ? 1.0 : .45),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      builder: (context, t, _) => LokalClearLens(
-        suspendBackdrop: suspendBackdrop,
-        // Keep the selected glass optically alive even when not dragging.
-        lens: const LokalLens(
-          // The moving selection is a shallow clear lens, never a rainbow.
-          height: 9,
-          amount: 8,
-          dispersion: .12,
-          profile: LokalLensProfile.circular,
-        ).scale(t),
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            shape: StadiumBorder(
-              side: BorderSide(
-                color: Colors.white.withValues(alpha: light ? .7 : .12),
-              ),
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color.lerp(
-                  color,
-                  Colors.white,
-                  .25,
-                )!.withValues(alpha: .20 * (1 - t)),
-                color.withValues(alpha: .12 * (1 - t)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: active ? .20 : .14),
+      borderRadius: BorderRadius.circular(999),
+    ),
+  );
 }
 
 class _TabButton extends StatelessWidget {
@@ -942,13 +776,11 @@ class _SearchCircle extends StatelessWidget {
   const _SearchCircle({
     required this.selected,
     required this.collapse,
-    required this.suspendBackdrop,
     required this.onTap,
   });
 
   final bool selected;
   final double collapse;
-  final bool suspendBackdrop;
   final VoidCallback onTap;
 
   @override
@@ -969,7 +801,7 @@ class _SearchCircle extends StatelessWidget {
           lens: _dockGlassLens,
           liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
-          suspendBackdrop: suspendBackdrop,
+          singlePassLens: true,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
           pronouncedRim: true,
@@ -984,7 +816,6 @@ class _SearchCircle extends StatelessWidget {
                   padding: const EdgeInsets.all(4),
                   child: _Lens(
                     color: t.accent,
-                    suspendBackdrop: suspendBackdrop,
                   ),
                 ),
               ),

@@ -89,9 +89,6 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   // The lazy Search page observes this without forcing a shell rebuild.
   final _searchFocusRequests = ValueNotifier<int>(0);
   final _dockCollapsed = ValueNotifier(false);
-  final _dockScrollActive = ValueNotifier(false);
-  final _tabTransitionActive = ValueNotifier(false);
-  Timer? _tabTransitionTimer;
   final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   DateTime? _lastBack;
@@ -118,28 +115,15 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
 
   void _select(KonnektedTab tab) {
     LokalPerformanceAdvisor.noteNavigation(surface: 'tabs');
-    AppHaptics.doublePulse();
+    AppHaptics.selection();
     nestedNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     if (_tab.value != tab) {
-      // The cached page is moving beneath the glass during this interval.
-      // Keep the dock's live refraction off until the single incoming-page
-      // transition has finished to avoid an expensive backdrop re-raster.
-      _tabTransitionTimer?.cancel();
-      _tabTransitionActive.value = true;
-      _tabTransitionTimer = Timer(
-        LokalNavigationSwitcher.efficientDuration +
-            const Duration(milliseconds: 40),
-        () {
-          if (mounted) _tabTransitionActive.value = false;
-        },
-      );
       // Match PixelPlayer's order-aware root navigation: Library -> Home
       // returns from the left, Home -> Library advances from the right.
       _tabMotionDirection = tab.index > _tab.value.index ? 1 : -1;
       _tab.value = tab;
     }
     _dockScroll.reset();
-    _dockScrollActive.value = false;
     _dockCollapsed.value = false;
     if (tab == KonnektedTab.explore) _searchFocusRequests.value++;
   }
@@ -154,22 +138,21 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     if (n is ScrollUpdateNotification ||
         n is OverscrollNotification ||
         (n is UserScrollNotification && n.direction != ScrollDirection.idle)) {
-      LokalPerformanceAdvisor.noteScroll();
+      LokalPerformanceAdvisor.noteScroll(
+        surface: switch (_tab.value) {
+          KonnektedTab.listen => 'Home',
+          KonnektedTab.library => 'Library',
+          KonnektedTab.settings => 'You',
+          KonnektedTab.explore => 'Search',
+        },
+      );
     }
 
     if (n is ScrollEndNotification ||
         (n is UserScrollNotification && n.direction == ScrollDirection.idle)) {
       _dockScroll.reset();
-      _dockScrollActive.value = false;
       return false;
     }
-    // One change per gesture, not one rebuild per pixel of content. During
-    // a fling this stays true until ScrollEndNotification, allowing the
-    // underlying image-heavy pages to scroll without three active shaders.
-    if (n is ScrollUpdateNotification || n is OverscrollNotification) {
-      _dockScrollActive.value = true;
-    }
-
     double? delta;
     if (n is ScrollUpdateNotification && n.dragDetails != null) {
       delta = n.scrollDelta;
@@ -387,10 +370,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     disposeArtworkGate();
     _tab.dispose();
     _searchFocusRequests.dispose();
-    _tabTransitionTimer?.cancel();
     _dockCollapsed.dispose();
-    _dockScrollActive.dispose();
-    _tabTransitionActive.dispose();
     super.dispose();
   }
 
@@ -461,11 +441,8 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                                       // Keep only recently visited Home/Library/You
                                       // views alive for smooth return entries.
                                       retainVisitedTabs: true,
-                                      // Only the incoming cached page slides a
-                                      // short distance; painting both full
-                                      // pages was too expensive over You and
-                                      // Library's image-heavy shelves.
-                                      efficientMotion: true,
+                                       // No full-page motion; retain tab state offstage.
+                                      instantNavigation: true,
                                       child: KeyedSubtree(
                                         key: ValueKey(tab),
                                         child: switch (tab) {
@@ -498,17 +475,12 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         right: 0,
                         bottom: 0,
                         child: ListenableBuilder(
-                          listenable: Listenable.merge([
-                            _tab, _dockCollapsed, _dockScrollActive,
-                            _tabTransitionActive,
-                          ]),
+                          listenable: Listenable.merge([_tab, _dockCollapsed]),
                           builder: (_, _) => KonnektedDock(
                             selected: _tab.value,
                             onSelect: _select,
                             hasMiniPlayer: hasSong,
                             collapsed: _dockCollapsed.value,
-                            scrollActive:
-                                _dockScrollActive.value || _tabTransitionActive.value,
                             onExpand: () => _dockCollapsed.value = false,
                             miniPlayer: hasRadio
                                 ? KonnektedRadioMiniPlayer(

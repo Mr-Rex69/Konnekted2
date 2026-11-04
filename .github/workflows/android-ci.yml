@@ -47,6 +47,19 @@ jobs:
             lib/features/discovery/youtube_music_playlist_cache.dart; do
             dart analyze --no-fatal-warnings "$source"
           done
+      - name: Analyze glass dock, navigation and Library/You performance changes
+        run: |
+          set -euo pipefail
+          for source in \
+            lib/widgets/lokal/lokal_glass.dart \
+            lib/features/konnekted/konnekted_dock.dart \
+            lib/features/konnekted/konnekted_shell.dart \
+            lib/features/konnekted/konnekted_you.dart \
+            lib/features/konnekted/konnekted_library.dart \
+            lib/core/navigation/lokal_navigation_switcher.dart \
+            lib/features/appearance/lokal_performance_advisor.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
       - name: Analyze desktop remote player, lyrics and queue integration
         run: |
           set -euo pipefail
@@ -81,7 +94,8 @@ jobs:
           test/features/player/picked_lyrics_file_test.dart
           test/features/player/lyrics_search_sheet_test.dart
           test/classipod test/services test/providers test/core test/data
-          test/widgets/lokal test/widgets/overflow_marquee_title_test.dart
+          test/widgets/lokal test/features/appearance/lokal_frame_bottleneck_test.dart
+          test/widgets/overflow_marquee_title_test.dart
           test/features/player/usb_dac_quick_status_sheet_test.dart
           test/features/player/full_player_overflow_actions_test.dart
           test/features/link/lokal_ghost_availability_test.dart
