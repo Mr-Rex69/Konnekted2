@@ -14,7 +14,6 @@ import 'package:flick/providers/lokal_remote_provider.dart';
 
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
-import 'package:flick/core/navigation/lokal_navigation_switcher.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
@@ -185,13 +184,38 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
   ListeningRecapPeriod _statsPeriod = ListeningRecapPeriod.weekly;
   Timer? _entryTimer;
   bool _richContentReady = false;
+  bool _scrolling = false;
+  bool _hydrateAfterScroll = false;
+
+  void _hydrateIfIdle() {
+    if (!mounted || !TickerMode.of(context) || _richContentReady) return;
+    if (_scrolling) {
+      _hydrateAfterScroll = true;
+      return;
+    }
+    setState(() => _richContentReady = true);
+  }
+
+  bool _onPageScroll(ScrollNotification notice) {
+    if (notice.metrics.axis != Axis.vertical) return false;
+    if (notice is ScrollStartNotification ||
+        notice is ScrollUpdateNotification) {
+      _scrolling = true;
+    } else if (notice is ScrollEndNotification) {
+      _scrolling = false;
+      if (_hydrateAfterScroll) {
+        _hydrateAfterScroll = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _hydrateIfIdle());
+      }
+    }
+    return false;
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // The tab switcher keeps visited tabs alive offstage. Never kick off a
-    // cold recap query while You is hidden, or during the incoming 330ms
-    // translation: both compete with the navigation raster budget.
+    // Cached tabs stay mounted offstage. Avoid starting cold recap queries
+    // while hidden, or rebuilding them halfway through a vertical fling.
     if (!TickerMode.of(context)) {
       _entryTimer?.cancel();
       _entryTimer = null;
@@ -199,15 +223,10 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
         _entryTimer == null &&
         !MediaQuery.disableAnimationsOf(context) &&
         AppConstants.animationNormal != Duration.zero) {
-      _entryTimer = Timer(
-        LokalNavigationSwitcher.enterDuration +
-            const Duration(milliseconds: 64),
-        () {
-          _entryTimer = null;
-          if (!mounted || !TickerMode.of(context)) return;
-          setState(() => _richContentReady = true);
-        },
-      );
+      _entryTimer = Timer(const Duration(milliseconds: 90), () {
+        _entryTimer = null;
+        _hydrateIfIdle();
+      });
     }
   }
 
@@ -288,7 +307,9 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
     final navigate = widget.onNavigate;
     return SafeArea(
       bottom: false,
-      child: ListView(
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onPageScroll,
+        child: ListView(
         key: const PageStorageKey('konnekted-you'),
         padding: EdgeInsets.only(
           bottom: 28 + MediaQuery.paddingOf(context).bottom,
@@ -401,6 +422,7 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
             ],
           ),
         ],
+        ),
       ),
     );
   }
