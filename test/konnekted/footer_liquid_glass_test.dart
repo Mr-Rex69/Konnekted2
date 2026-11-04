@@ -164,14 +164,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('selected Home, Library and You recoil left, never enlarge', () {
-    expect(dockSelectedLeftBounce(0), 0);
-    expect(dockSelectedLeftBounce(1), closeTo(0, .0001));
-    expect(dockSelectedLeftBounce(.25), lessThan(-3));
-    expect(dockSelectedLeftBounce(.5), closeTo(-7, .0001));
-    expect(dockSelectedLeftBounce(.75), lessThan(-3));
-    expect(dockSelectedLeftBounce(-1), 0);
-    expect(dockSelectedLeftBounce(2), closeTo(0, .0001));
+  test('selected icon compresses only vertically with one brief pulse', () {
+    expect(dockSelectedIconVerticalScale(0), 1);
+    expect(dockSelectedIconVerticalScale(1), closeTo(1, .0001));
+    expect(dockSelectedIconVerticalScale(.25), closeTo(.955, .001));
+    expect(dockSelectedIconVerticalScale(.5), closeTo(.82, .001));
+    expect(dockSelectedIconVerticalScale(.75), closeTo(.955, .001));
+    expect(dockSelectedIconVerticalScale(-1), 1);
+    expect(dockSelectedIconVerticalScale(2), closeTo(1, .0001));
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
@@ -344,7 +344,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Home bounce actually fires when dock collapses; Search does not',
+  testWidgets('house glyph squashes vertically; glass and Search never bounce',
       (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
@@ -377,28 +377,30 @@ void main() {
       ),
     );
 
-    // Capsule deforms *during* the same collapse spring, never afterwards.
+    const glyph = ValueKey('dock-shared-selected-icon');
+    final original = tester.widget<Transform>(find.byKey(glyph)).transform;
+    expect(original.storage[0], closeTo(original.storage[5], .001));
+    expect(find.byKey(const ValueKey('dock-home-bounce')), findsNothing);
+
     change(() => collapsed = true);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 70));
+    await tester.pump(const Duration(milliseconds: 90));
 
-    final bubble = tester.widget<Transform>(
-      find.byKey(const ValueKey('dock-home-bounce')),
-    );
-    expect(bubble.transform.getTranslation().x, lessThan(-1));
-    expect(bubble.transform.getMaxScaleOnAxis(), closeTo(1, .001));
-    // Search receives no directional recoil or scale in the dock layout.
+    final mid = tester.widget<Transform>(find.byKey(glyph)).transform;
+    expect(mid.storage[0], closeTo(1.08, .001),
+        reason: 'The house width must never change');
+    expect(mid.storage[5], lessThan(mid.storage[0] - .03),
+        reason: 'Only a brief vertical compression is permitted');
+    expect(find.byKey(const ValueKey('dock-home-bounce')), findsNothing);
     expect(find.bySemanticsLabel('Search'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.pumpAndSettle();
-    final settled = tester.widget<Transform>(
-      find.byKey(const ValueKey('dock-home-bounce')),
-    );
-    expect(settled.transform.getTranslation().x, closeTo(0, .005));
-    expect(settled.transform.getMaxScaleOnAxis(), closeTo(1, .001));
+    final settled = tester.widget<Transform>(find.byKey(glyph)).transform;
+    expect(settled.storage[5], closeTo(settled.storage[0], .001));
+    expect(settled.storage[0], closeTo(1.08, .001));
+    expect(find.byKey(const ValueKey('dock-tab-glass')), findsOneWidget);
   });
-
 
   testWidgets('pressing any player control moves content, never its glass',
       (tester) async {
