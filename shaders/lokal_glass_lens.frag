@@ -26,6 +26,8 @@ uniform float u_amount;
 uniform float u_depth;
 // Strength of the rainbow fringe at the rim (0 = none).
 uniform float u_dispersion;
+// 1 opts into the physical squircle profile; 0 keeps existing circle.
+uniform float u_profile;
 
 uniform sampler2D u_texture;
 
@@ -49,6 +51,23 @@ vec2 gradSdRoundedRect(vec2 coord, vec2 halfSize, float radius) {
 
 float circleMap(float x) {
     return 1.0 - sqrt(max(1.0 - x * x, 0.0));
+}
+
+// Convex squircle surface: h(x)=(1-(1-x)^4)^(1/4). Its slope determines
+// refraction via Snell's law, n_air=1, n_glass=1.5. A single-interface
+// estimate is sufficient for the lightweight footer lens.
+float squircleBend(float x) {
+    float q = 1.0 - clamp(x, 0.0, 1.0);
+    float q2 = q * q;
+    float slope = (q2 * q) / pow(max(1.0 - q2 * q2, 1e-5), 0.75);
+    float cosI = inversesqrt(1.0 + slope * slope);
+    float sinI = slope * cosI;
+    float sinT = sinI / 1.5;
+    float cosT = sqrt(max(1.0 - sinT * sinT, 0.0));
+    float sinD = sinI * cosT - cosI * sinT;
+    float cosD = cosI * cosT + sinI * sinT;
+    // tan(90deg-asin(1/1.5)) = 1.11803399 at the outer edge.
+    return clamp((sinD / max(cosD, 1e-5)) / 1.11803399, 0.0, 1.0);
 }
 
 vec4 sampleAt(vec2 coord) {
@@ -79,8 +98,12 @@ void main() {
     }
     sd = min(sd, 0.0);
 
-    // Negative: sample from further in, so the edge magnifies the inside.
-    float d = circleMap(1.0 - -sd / u_height) * -u_amount;
+    // Keep the opt-in footer effect smooth without changing existing glass.
+    float inset = clamp(-sd / u_height, 0.0, 1.0);
+    float bend = u_profile > 0.5
+        ? squircleBend(inset)
+        : circleMap(1.0 - inset);
+    float d = -u_amount * bend;
     float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
     vec2 toCentre = length(centered) > 1e-3 ? normalize(centered) : vec2(0.0);
     vec2 grad = normalize(
