@@ -124,7 +124,9 @@ class _KonnektedDockState extends State<KonnektedDock>
     value: _wantsCollapse ? 1 : 0,
   );
 
-  bool _miniPressed = false;
+  // Play/pause press feedback must move only the content, not the refractive
+  // mini-player capsule. Updating the notifier avoids rebuilding the dock.
+  final _miniPressed = ValueNotifier<bool>(false);
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
 
@@ -168,6 +170,7 @@ class _KonnektedDockState extends State<KonnektedDock>
   @override
   void dispose() {
     _collapse.dispose();
+    _miniPressed.dispose();
     super.dispose();
   }
 
@@ -238,39 +241,39 @@ class _KonnektedDockState extends State<KonnektedDock>
                   rect: Rect.lerp(miniOpen, miniShut, t)!,
                   child: Listener(
                     behavior: HitTestBehavior.translucent,
-                    onPointerDown: (_) {
-                      if (!_miniPressed) setState(() => _miniPressed = true);
-                    },
-                    onPointerUp: (_) {
-                      if (_miniPressed) setState(() => _miniPressed = false);
-                    },
-                    onPointerCancel: (_) {
-                      if (_miniPressed) setState(() => _miniPressed = false);
-                    },
-                    child: AnimatedScale(
-                      key: const ValueKey('dock-mini-press'),
-                      scale: _miniPressed &&
-                              !MediaQuery.disableAnimationsOf(context)
-                          ? 1.035
-                          : 1,
-                      duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOutBack,
-                      child: LokalGlass.capsule(
-                    key: const ValueKey('dock-mini-glass'),
-                    grouped: true,
-                    lens: _dockGlassLens,
-                    liquidTintOpacity: lerpDouble(.09, .13, t)!,
-                    liquidBlurRadius: _dockBlurRadius,
-                    singlePassLens: true,
-                    fallbackTintOpacity: lerpDouble(.16, .20, t)!,
-                    fallbackBlurSigma: 2,
-                    pronouncedRim: true,
-                    rimStrength: .82,
-                    child: KonnektedMiniPlayerScope(
-                      collapsed: t >= 1,
-                      progress: t,
-                      child: widget.miniPlayer,
-                    ),
+                    onPointerDown: (_) => _miniPressed.value = true,
+                    onPointerUp: (_) => _miniPressed.value = false,
+                    onPointerCancel: (_) => _miniPressed.value = false,
+                    // Fixed outer glass dimensions, layer and shader origins.
+                    // Only the content inside responds to touch.
+                    child: LokalGlass.capsule(
+                      key: const ValueKey('dock-mini-glass'),
+                      grouped: true,
+                      lens: _dockGlassLens,
+                      liquidTintOpacity: lerpDouble(.09, .13, t)!,
+                      liquidBlurRadius: _dockBlurRadius,
+                      singlePassLens: true,
+                      fallbackTintOpacity: lerpDouble(.16, .20, t)!,
+                      fallbackBlurSigma: 2,
+                      pronouncedRim: true,
+                      rimStrength: .82,
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _miniPressed,
+                        child: KonnektedMiniPlayerScope(
+                          collapsed: t >= 1,
+                          progress: t,
+                          child: widget.miniPlayer,
+                        ),
+                        builder: (context, pressed, child) => AnimatedScale(
+                          key: const ValueKey('dock-mini-press'),
+                          scale: pressed &&
+                                  !MediaQuery.disableAnimationsOf(context)
+                              ? 1.035
+                              : 1,
+                          duration: const Duration(milliseconds: 160),
+                          curve: Curves.easeOutBack,
+                          child: child,
+                        ),
                       ),
                     ),
                   ),
