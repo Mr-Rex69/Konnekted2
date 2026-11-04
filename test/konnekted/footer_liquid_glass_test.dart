@@ -404,7 +404,7 @@ void main() {
   });
 
 
-  testWidgets('selected icon has one continuous identity and grows when docked',
+  testWidgets('selected house icon keeps a steady size during dock collapse',
       (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
@@ -440,7 +440,16 @@ void main() {
     final compactIcon = tester.widget<Transform>(
       find.byKey(const ValueKey('dock-shared-selected-icon')),
     );
-    expect(compactIcon.transform.getMaxScaleOnAxis(), closeTo(1.28, .001));
+    expect(compactIcon.transform.getMaxScaleOnAxis(), closeTo(1.08, .001));
+    // No second transition/crossfade re-renders the house at the same time
+    // as the capsule's physical fold.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('dock-shared-selected-icon')),
+        matching: find.byType(AnimatedSwitcher),
+      ),
+      findsNothing,
+    );
     expect(find.byKey(const ValueKey('dock-shared-selected-icon')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
