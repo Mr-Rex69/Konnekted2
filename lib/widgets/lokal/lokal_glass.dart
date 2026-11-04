@@ -58,6 +58,7 @@ class LokalLens {
     required this.amount,
     this.depth = 0,
     this.dispersion = 0,
+    this.magnification = 0,
     this.fraction = 1,
     this.profile = LokalLensProfile.circular,
   });
@@ -74,6 +75,11 @@ class LokalLens {
   /// Rainbow fringe at the rim, 0 to 1.
   final double dispersion;
 
+  /// Magnifies the backdrop across the flat centre of the glass.
+  /// 0.05 corresponds to a gentle ~1.05x apparent zoom and is separate
+  /// from the edge displacement. This never magnifies icons or labels.
+  final double magnification;
+
   /// Caps [height] and [amount] at this share of the shape's shorter side,
   /// so a lens scales with the shape (BitChord's bars use half).
   final double fraction;
@@ -88,6 +94,7 @@ class LokalLens {
     amount: amount * t,
     depth: depth,
     dispersion: dispersion,
+    magnification: magnification * t,
     fraction: fraction,
     profile: profile,
   );
@@ -99,11 +106,14 @@ class LokalLens {
       other.amount == amount &&
       other.depth == depth &&
       other.dispersion == dispersion &&
+      other.magnification == magnification &&
       other.fraction == fraction &&
       other.profile == profile;
 
   @override
-  int get hashCode => Object.hash(height, amount, depth, dispersion, fraction, profile);
+  int get hashCode => Object.hash(
+    height, amount, depth, dispersion, magnification, fraction, profile,
+  );
 }
 
 /// How much a [LokalGlass] hides what is behind it.
@@ -535,6 +545,7 @@ class RenderLokalLensBackdrop extends RenderProxyBox {
       _lens.depth,
       _lens.dispersion,
       _lens.profile == LokalLensProfile.squircle ? 1.0 : 0.0,
+      _lens.magnification,
     ];
     if (_filter == null || !listEquals(uniforms, _uniforms)) {
       final shader = _program.fragmentShader();

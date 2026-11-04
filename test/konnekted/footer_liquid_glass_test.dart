@@ -43,21 +43,22 @@ void main() {
       // Mini player, navigation capsule and separate Search button.
       expect(glasses, hasLength(3));
       for (final glass in glasses) {
-        expect(glass.pronouncedRim, isTrue);
+        expect(glass.pronouncedRim, isFalse);
         expect(glass.lens?.profile, LokalLensProfile.squircle);
-        expect(glass.liquidBlurRadius, 1.5);
+        expect(glass.liquidBlurRadius, .45);
+        expect(glass.lens?.magnification, closeTo(.055, .001));
         expect(glass.liquidTintOpacity, closeTo(expectedOpacity, .001));
       }
     }
 
     await tester.pumpWidget(dock(collapsed: false));
     await tester.pump();
-    checkGlass(.20);
+    checkGlass(.09);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(dock(collapsed: true));
     await tester.pump();
-    checkGlass(.28);
+    checkGlass(.12);
     expect(tester.takeException(), isNull);
   });
 

@@ -28,6 +28,8 @@ uniform float u_depth;
 uniform float u_dispersion;
 // 1 opts into the physical squircle profile; 0 keeps existing circle.
 uniform float u_profile;
+// Magnification of the flat interior, independent of rim displacement.
+uniform float u_magnification;
 
 uniform sampler2D u_texture;
 
@@ -91,9 +93,14 @@ void main() {
     vec2 centered = coord - origin - halfSize;
     float radius = min(u_radius, min(halfSize.x, halfSize.y));
 
+    // Shift the backdrop toward the centre, magnifying it without
+    // affecting any text or artwork painted above the glass.
+    vec2 magnified = origin + halfSize +
+        centered / (1.0 + max(u_magnification, 0.0));
+
     float sd = sdRoundedRect(centered, halfSize, radius);
     if (u_amount <= 0.0 || u_height <= 0.0 || -sd >= u_height) {
-        frag_color = sampleAt(coord);
+        frag_color = sampleAt(magnified);
         return;
     }
     sd = min(sd, 0.0);
@@ -109,7 +116,7 @@ void main() {
     vec2 grad = normalize(
         gradSdRoundedRect(centered, halfSize, gradRadius) + u_depth * toCentre
     );
-    vec2 refracted = coord + d * grad;
+    vec2 refracted = magnified + d * grad;
 
     if (u_dispersion <= 0.0) {
         frag_color = sampleAt(refracted);

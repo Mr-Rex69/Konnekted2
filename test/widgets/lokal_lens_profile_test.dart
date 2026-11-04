@@ -23,6 +23,23 @@ void main() {
       expect(scaled.profile, LokalLensProfile.squircle);
     });
 
+    test('central magnification preserves intensity and scales with lens', () {
+      const transparent = LokalLens(
+        height: 26,
+        amount: 34,
+        profile: LokalLensProfile.squircle,
+        magnification: .055,
+      );
+      expect(transparent.magnification, closeTo(.055, .0001));
+      expect(transparent.scale(.5).magnification, closeTo(.0275, .0001));
+      expect(transparent.scale(0).magnification, 0);
+      expect(transparent, isNot(const LokalLens(
+        height: 26,
+        amount: 34,
+        profile: LokalLensProfile.squircle,
+      )));
+    });
+
     test('profile participates in identity and equality', () {
       const circular = LokalLens(height: 16, amount: 18);
       const squircle = LokalLens(

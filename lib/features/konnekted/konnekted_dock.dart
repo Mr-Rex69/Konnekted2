@@ -49,10 +49,11 @@ const _dockGlassLens = LokalLens(
   fraction: .49,
   // Avoid seven-tap chromatic sampling across the entire moving footer.
   dispersion: 0,
+  magnification: .055,
   profile: LokalLensProfile.squircle,
 );
 
-const _dockBlurRadius = 1.5;
+const _dockBlurRadius = .45;
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
 ///
@@ -213,10 +214,10 @@ class _KonnektedDockState extends State<KonnektedDock>
                   child: LokalGlass.capsule(
                     grouped: true,
                     lens: _dockGlassLens,
-                    liquidTintOpacity: lerpDouble(.20, .28, t)!,
+                    liquidTintOpacity: lerpDouble(.09, .12, t)!,
                     liquidBlurRadius: _dockBlurRadius,
-                    pronouncedRim: true,
-                    rimStrength: 1.0 + .04 * t,
+                    // Refraction and zoom are the material, not a thick rim.
+                    rimStrength: .72,
                     child: KonnektedMiniPlayerScope(
                       collapsed: t >= 1,
                       progress: t,
@@ -301,7 +302,34 @@ class _TabCapsule extends StatefulWidget {
   State<_TabCapsule> createState() => _TabCapsuleState();
 }
 
-class _TabCapsuleState extends State<_TabCapsule> {
+class _TabCapsuleState extends State<_TabCapsule>
+    with SingleTickerProviderStateMixin {
+  // Only the Home/tab bubble gets a settling pulse as it docks. Search keeps
+  // its unmodified interpolated position and size.
+  late final AnimationController _homeBounce = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 440),
+  );
+
+  @override
+  void didUpdateWidget(_TabCapsule old) {
+    super.didUpdateWidget(old);
+    if (old.collapse < .78 &&
+        widget.collapse >= .78 &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      _homeBounce.forward(from: 0);
+    }
+    if (old.collapse > .78 && widget.collapse <= .78) {
+      _homeBounce.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _homeBounce.dispose();
+    super.dispose();
+  }
+
   static const _tabs = KonnektedTab.capsule;
   static const _inset = 4.0;
 
@@ -347,17 +375,27 @@ class _TabCapsuleState extends State<_TabCapsule> {
 
     // The bar swells by 16 px while the lens is dragged: glass you can
     // push on.
-    return AnimatedScale(
+    return AnimatedBuilder(
+      animation: _homeBounce,
+      builder: (context, child) {
+        final phase = _homeBounce.value;
+        // Short underdamped settle: one outward pulse, smaller inward recoil
+        // and no permanent scaling of the collapsed Home bubble.
+        final scale = reduceMotion
+            ? 1.0
+            : 1 + .14 * math.sin(phase * 2 * math.pi) * (1 - phase);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: AnimatedScale(
       scale: _dragX != null && !reduceMotion ? 1 + 16 / widget.width : 1,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       child: LokalGlass.capsule(
         grouped: true,
         lens: _dockGlassLens,
-        liquidTintOpacity: lerpDouble(.20, .28, widget.collapse)!,
+        liquidTintOpacity: lerpDouble(.09, .12, widget.collapse)!,
         liquidBlurRadius: _dockBlurRadius,
-        pronouncedRim: true,
-        rimStrength: 1.0 + .04 * widget.collapse,
+        rimStrength: .72,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -456,6 +494,7 @@ class _TabCapsuleState extends State<_TabCapsule> {
               ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -590,10 +629,9 @@ class _SearchCircle extends StatelessWidget {
         child: LokalGlass.capsule(
           grouped: true,
           lens: _dockGlassLens,
-          liquidTintOpacity: lerpDouble(.20, .28, collapse)!,
+          liquidTintOpacity: lerpDouble(.09, .12, collapse)!,
           liquidBlurRadius: _dockBlurRadius,
-          pronouncedRim: true,
-          rimStrength: 1.0 + .04 * collapse,
+          rimStrength: .72,
           child: Stack(
             fit: StackFit.expand,
             children: [
