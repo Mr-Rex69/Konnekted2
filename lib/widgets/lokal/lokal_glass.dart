@@ -289,6 +289,27 @@ class LokalGlass extends ConsumerWidget {
 
   static const _vibrancy = 1.5;
 
+  // A morphing dock rebuilds each capsule every frame. Re-creating an
+  // identical native blur + color-matrix image filter on each frame causes
+  // avoidable GPU filter invalidation and allocation churn, which users see
+  // as stutter while its dimensions change. The optical shader still updates
+  // for moving geometry; its blur/vibrancy input is constant and shareable.
+  static final _liquidFilterCache = <double, ui.ImageFilter>{};
+
+  static ui.ImageFilter _liquidInnerFilter(double sigma) {
+    return _liquidFilterCache.putIfAbsent(sigma, () {
+      if (_liquidFilterCache.length > 48) _liquidFilterCache.clear();
+      return ui.ImageFilter.compose(
+        outer: ui.ImageFilter.blur(
+          sigmaX: sigma,
+          sigmaY: sigma,
+          tileMode: TileMode.mirror,
+        ),
+        inner: const ColorFilter.matrix(_vibrancyMatrix),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.lokal;
@@ -343,17 +364,10 @@ class LokalGlass extends ConsumerWidget {
               program: program,
               radius: _radius(borderRadius),
               lens: lens ?? thickness.lens,
-              inner: ui.ImageFilter.compose(
-                outer: ui.ImageFilter.blur(
-                  sigmaX: liquidBlurRadius == null
-                      ? thickness.blurSigma
-                      : math.max(0, liquidBlurRadius!) * .57735 + .5,
-                  sigmaY: liquidBlurRadius == null
-                      ? thickness.blurSigma
-                      : math.max(0, liquidBlurRadius!) * .57735 + .5,
-                  tileMode: TileMode.mirror,
-                ),
-                inner: const ColorFilter.matrix(_vibrancyMatrix),
+              inner: _liquidInnerFilter(
+                liquidBlurRadius == null
+                    ? thickness.blurSigma
+                    : math.max(0, liquidBlurRadius!) * .57735 + .5,
               ),
               child: surface,
             );
