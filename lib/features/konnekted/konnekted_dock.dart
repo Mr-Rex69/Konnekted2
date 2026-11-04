@@ -265,6 +265,7 @@ class _KonnektedDockState extends State<KonnektedDock>
                       duration: const Duration(milliseconds: 160),
                       curve: Curves.easeOutBack,
                       child: LokalGlass.capsule(
+                    key: const ValueKey('dock-mini-glass'),
                     grouped: true,
                     lens: _dockGlassLens,
                     liquidTintOpacity: lerpDouble(.09, .13, t)!,
@@ -536,6 +537,7 @@ class _TabCapsuleState extends State<_TabCapsule>
       duration: const Duration(milliseconds: 190),
       curve: Curves.easeOutBack,
       child: LokalGlass.capsule(
+        key: const ValueKey('dock-tab-glass'),
         grouped: true,
         lens: _dockGlassLens,
         liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
@@ -906,6 +908,7 @@ class _SearchCircle extends StatelessWidget {
         message: tab.label,
         excludeFromSemantics: true,
         child: LokalGlass.capsule(
+          key: const ValueKey('dock-search-glass'),
           grouped: true,
           lens: _dockGlassLens,
           liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
