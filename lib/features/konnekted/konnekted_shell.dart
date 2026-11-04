@@ -90,6 +90,8 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   final _searchFocusRequests = ValueNotifier<int>(0);
   final _dockCollapsed = ValueNotifier(false);
   final _dockScrollActive = ValueNotifier(false);
+  final _tabTransitionActive = ValueNotifier(false);
+  Timer? _tabTransitionTimer;
   final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   DateTime? _lastBack;
@@ -119,6 +121,18 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     AppHaptics.doublePulse();
     nestedNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     if (_tab.value != tab) {
+      // The cached page is moving beneath the glass during this interval.
+      // Keep the dock's live refraction off until the single incoming-page
+      // transition has finished to avoid an expensive backdrop re-raster.
+      _tabTransitionTimer?.cancel();
+      _tabTransitionActive.value = true;
+      _tabTransitionTimer = Timer(
+        LokalNavigationSwitcher.efficientDuration +
+            const Duration(milliseconds: 40),
+        () {
+          if (mounted) _tabTransitionActive.value = false;
+        },
+      );
       // Match PixelPlayer's order-aware root navigation: Library -> Home
       // returns from the left, Home -> Library advances from the right.
       _tabMotionDirection = tab.index > _tab.value.index ? 1 : -1;
@@ -373,8 +387,10 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     disposeArtworkGate();
     _tab.dispose();
     _searchFocusRequests.dispose();
+    _tabTransitionTimer?.cancel();
     _dockCollapsed.dispose();
     _dockScrollActive.dispose();
+    _tabTransitionActive.dispose();
     super.dispose();
   }
 
@@ -484,13 +500,15 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         child: ListenableBuilder(
                           listenable: Listenable.merge([
                             _tab, _dockCollapsed, _dockScrollActive,
+                            _tabTransitionActive,
                           ]),
                           builder: (_, _) => KonnektedDock(
                             selected: _tab.value,
                             onSelect: _select,
                             hasMiniPlayer: hasSong,
                             collapsed: _dockCollapsed.value,
-                            scrollActive: _dockScrollActive.value,
+                            scrollActive:
+                                _dockScrollActive.value || _tabTransitionActive.value,
                             onExpand: () => _dockCollapsed.value = false,
                             miniPlayer: hasRadio
                                 ? KonnektedRadioMiniPlayer(
