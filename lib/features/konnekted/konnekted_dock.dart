@@ -631,8 +631,7 @@ class _TabCapsuleState extends State<_TabCapsule>
             // a crossfade between two separate icons, this is always one
             // drawable. Its centre follows the capsule as it shrinks and the
             // icon grows from the expanded 22dp to a readable compact ~28dp.
-            IgnorePointer(
-              child: TweenAnimationBuilder<double>(
+            TweenAnimationBuilder<double>(
                 tween: Tween(end: _tabs.indexOf(shown).toDouble()),
                 duration: reduceMotion
                     ? Duration.zero
@@ -660,7 +659,8 @@ class _TabCapsuleState extends State<_TabCapsule>
                     top: centreY - 11,
                     width: 22,
                     height: 22,
-                    child: Transform.scale(
+                    child: IgnorePointer(
+                      child: Transform.scale(
                       key: const ValueKey('dock-shared-selected-icon'),
                       scale: 1.08 + .20 * widget.collapse,
                       child: AnimatedSwitcher(
@@ -674,11 +674,11 @@ class _TabCapsuleState extends State<_TabCapsule>
                           size: 22,
                         ),
                       ),
+                      ),
                     ),
                   );
                 },
               ),
-            ),
           ],
         ),
       ),
