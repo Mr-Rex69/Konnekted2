@@ -42,30 +42,33 @@ enum KonnektedTab {
   static const capsule = [listen, library, settings];
 }
 
-// The bezel bends strong backdrop edges and the center magnifies what is
-// behind the glass by ~6.5%. Foreground artwork/buttons remain sharp.
-// kube.io's Music Player uses a convex bezel, refraction 1 and blur 1;
-// these are tuned equivalents for Flutter's different shader pipeline.
+// Optical behaviour follows BitChord's actual Kyant0/backdrop lens:
+// 24dp circular bezel, 24dp refraction, depth and chromatic aberration.
+// Lokal additionally retains a gently magnified centre for Apple's lens look.
+// Reference: kushagrasinghx/BitChord, LiquidGlass.kt (GPL-3.0) and
+// Kyant0/backdrop v2.0.0 (Apache-2.0).
 const _dockGlassLens = LokalLens(
   height: 24,
-  amount: 32,
-  fraction: .49,
-  dispersion: 0, // Single texture sample on moving capsules.
+  amount: 24,
+  fraction: .5,
+  depth: 1,
+  dispersion: 1,
   magnification: .065,
-  profile: LokalLensProfile.squircle,
+  profile: LokalLensProfile.circular,
 );
 
 const _dockBlurRadius = .8;
 
-/// Subtle elastic response only on the *left* navigation bubble when the
-/// mini player docks into the footer. Search stays at scale 1 throughout.
-/// This curve is anchored at the endpoints, so fast reversal is continuous.
+/// A damped spring pulse with its own timeline. The previous implementation
+/// sampled the already-eased collapse progress, making its tiny pulse
+/// practically invisible at 120 Hz. Here Home visibly lifts, recoils and
+/// settles, whether a user scrolls quickly or slowly. Search never pulses.
 @visibleForTesting
-double dockHomeBubbleScale(double collapse) {
-  final phase = ((collapse - .64) / .36).clamp(0.0, 1.0);
-  if (phase <= 0 || phase >= 1) return 1;
-  return 1 + .075 * math.sin(2 * math.pi * phase) *
-      math.sin(math.pi * phase);
+double dockHomeBubbleScale(double progress) {
+  final p = progress.clamp(0.0, 1.0);
+  if (p <= 0 || p >= 1) return 1;
+  return 1 + .18 * math.exp(-2.8 * p) * (1 - p) *
+      math.sin(4 * math.pi * p);
 }
 
 /// Apple Music's iOS 26 tab bar in Lokal glass.
@@ -117,11 +120,20 @@ class KonnektedDock extends StatefulWidget {
 }
 
 class _KonnektedDockState extends State<KonnektedDock>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final _collapse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
     value: _wantsCollapse ? 1 : 0,
+  );
+
+  // Independent bounce on the LEFT Home/tab bubble, not on Search or the
+  // mini-player. It starts on the collapse event instead of being evaluated
+  // only during the tiny end-of-collapse interval.
+  late final _homeBounce = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 560),
+    value: 1,
   );
 
   bool get _wantsCollapse => widget.collapsed && widget.hasMiniPlayer;
@@ -138,6 +150,16 @@ class _KonnektedDockState extends State<KonnektedDock>
   void didUpdateWidget(KonnektedDock old) {
     super.didUpdateWidget(old);
     final target = _wantsCollapse ? 1.0 : 0.0;
+    final wasCollapsed = old.collapsed && old.hasMiniPlayer;
+    if (!wasCollapsed && _wantsCollapse) {
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _homeBounce.value = 1;
+      } else {
+        _homeBounce.forward(from: 0);
+      }
+    } else if (wasCollapsed && !_wantsCollapse) {
+      _homeBounce.value = 1;
+    }
     if (old.collapsed == widget.collapsed &&
         old.hasMiniPlayer == widget.hasMiniPlayer)
       return;
@@ -166,6 +188,7 @@ class _KonnektedDockState extends State<KonnektedDock>
   @override
   void dispose() {
     _collapse.dispose();
+    _homeBounce.dispose();
     super.dispose();
   }
 
@@ -183,7 +206,7 @@ class _KonnektedDockState extends State<KonnektedDock>
           constraints: const BoxConstraints(maxWidth: 560),
           child: LayoutBuilder(
             builder: (context, constraints) => AnimatedBuilder(
-              animation: _collapse,
+              animation: Listenable.merge([_collapse, _homeBounce]),
               builder: (context, _) => _layout(constraints.maxWidth),
             ),
           ),
@@ -242,12 +265,14 @@ class _KonnektedDockState extends State<KonnektedDock>
                 ),
               Positioned.fromRect(
                 rect: Rect.lerp(tabsOpen, tabsShut, t)!,
-                // Only this bubble flexes/settles like Apple Music's
-                // compact Home control; the Search circle does not bounce.
+                // Physical bounce follows its own 560ms spring timeline.
+                // Unlike the previous .64–1 collapse window it cannot vanish
+                // into the collapse easing curve.
                 child: Transform.scale(
+                  key: const ValueKey('dock-home-bounce'),
                   alignment: Alignment.center,
                   scale: hasMini && !MediaQuery.disableAnimationsOf(context)
-                      ? dockHomeBubbleScale(t)
+                      ? dockHomeBubbleScale(_homeBounce.value)
                       : 1,
                   child: _TabCapsule(
                     width: tabsOpen.width,
@@ -325,7 +350,32 @@ class _TabCapsule extends StatefulWidget {
   State<_TabCapsule> createState() => _TabCapsuleState();
 }
 
-class _TabCapsuleState extends State<_TabCapsule> {
+class _TabCapsuleState extends State<_TabCapsule>
+    with SingleTickerProviderStateMixin {
+  // The selected tab rises as an independent glass lens on navigation and
+  // drag, then settles into a flat selected pane. The lens sits OVER the tab
+  // row so it refracts the real icons/labels beneath it, not only the page.
+  late final _selectionTravel = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 430),
+  );
+
+  @override
+  void didUpdateWidget(_TabCapsule old) {
+    super.didUpdateWidget(old);
+    if (old.selected != widget.selected &&
+        widget.collapse < .5 &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      _selectionTravel.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _selectionTravel.dispose();
+    super.dispose();
+  }
+
   static const _tabs = KonnektedTab.capsule;
   static const _inset = 4.0;
 
@@ -334,6 +384,16 @@ class _TabCapsuleState extends State<_TabCapsule> {
   int? _dragIndex;
 
   double get _slot => (widget.width - 2 * _inset) / _tabs.length;
+
+  @visibleForTesting
+  static double liftedLensProgress(double progress) {
+    final t = progress.clamp(0.0, 1.0);
+    // Important: return exact zero on landing, so LokalClearLens drops its
+    // shader layer instead of retaining a nearly-zero optical filter.
+    if (t <= 0 || t >= 1) return 0;
+    // Rise quickly, stay clear in flight, then shed the glass on landing.
+    return math.sin(math.pi * t).clamp(0.0, 1.0);
+  }
 
   int _indexAt(double x) =>
       ((x - _inset) / _slot).floor().clamp(0, _tabs.length - 1);
@@ -449,6 +509,74 @@ class _TabCapsuleState extends State<_TabCapsule> {
                                 ],
                               ),
                             ),
+                            // Raised chromatic lens over the recorded tab
+                            // content (same optical layering as BitChord's
+                            // GlassSelectionPill), not another opaque fill.
+                            // Keep the transparent overlay mounted so its
+                            // AnimatedPositioned travels from the previous
+                            // tab instead of materializing at the destination.
+                            // At rest it paints nothing and captures no lens.
+                            if (!reduceMotion)
+                              AnimatedPositioned(
+                                duration: _dragX != null
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 380),
+                                curve: Curves.easeOutBack,
+                                left: lensLeft,
+                                top: _inset,
+                                bottom: _inset,
+                                width: _slot,
+                                child: IgnorePointer(
+                                  child: AnimatedBuilder(
+                                    animation: _selectionTravel,
+                                    builder: (context, _) {
+                                      final lift = _dragX != null
+                                          ? 1.0
+                                          : liftedLensProgress(_selectionTravel.value);
+                                      return Transform.translate(
+                                        offset: Offset(0, -5 * lift),
+                                        child: Transform.scale(
+                                          scaleX: 1 + .18 * lift,
+                                          scaleY: 1 + .10 * lift,
+                                          // Never put a BackdropFilter inside an
+                                          // Opacity saveLayer: it can obscure
+                                          // the recorded tab pixels that the
+                                          // lens is supposed to refract.
+                                          child: LokalClearLens(
+                                              key: const ValueKey('dock-travel-lens'),
+                                              lens: LokalLens(
+                                                height: 12,
+                                                amount: 14,
+                                                dispersion: 1,
+                                                profile: LokalLensProfile.circular,
+                                              ).scale(lift),
+                                              child: DecoratedBox(
+                                                decoration: ShapeDecoration(
+                                                  shape: StadiumBorder(
+                                                    side: BorderSide(
+                                                      color: Colors.white.withValues(
+                                                        alpha: .36 * lift,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  shadows: [
+                                                    BoxShadow(
+                                                      color: Colors.black.withValues(
+                                                        alpha: .24 * lift,
+                                                      ),
+                                                      blurRadius: 12,
+                                                      offset: const Offset(0, 2),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -507,10 +635,11 @@ class _Lens extends StatelessWidget {
       builder: (context, t, _) => LokalClearLens(
         // Keep the selected glass optically alive even when not dragging.
         lens: const LokalLens(
+          // BitChord's raised selection uses a 12dp/14dp chromatic lens.
           height: 12,
-          amount: 22,
-          dispersion: .15,
-          profile: LokalLensProfile.squircle,
+          amount: 14,
+          dispersion: 1,
+          profile: LokalLensProfile.circular,
         ).scale(t),
         child: DecoratedBox(
           decoration: ShapeDecoration(

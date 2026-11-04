@@ -44,7 +44,11 @@ void main() {
       expect(glasses, hasLength(3));
       for (final glass in glasses) {
         expect(glass.pronouncedRim, isFalse);
-        expect(glass.lens?.profile, LokalLensProfile.squircle);
+        expect(glass.lens?.profile, LokalLensProfile.circular);
+        expect(glass.lens?.height, 24);
+        expect(glass.lens?.amount, 24);
+        expect(glass.lens?.depth, 1);
+        expect(glass.lens?.dispersion, 1);
         expect(glass.liquidBlurRadius, .8);
         expect(glass.fallbackBlurSigma, 2);
         expect(glass.fallbackTintOpacity, closeTo(fallbackOpacity, .001));
@@ -66,11 +70,11 @@ void main() {
 
   test('Home bubble flexes and settles only during the last stage of collapse', () {
     expect(dockHomeBubbleScale(0), 1);
-    expect(dockHomeBubbleScale(.64), 1);
     expect(dockHomeBubbleScale(1), 1);
-    expect(dockHomeBubbleScale(.72), greaterThan(1));
-    expect(dockHomeBubbleScale(.92), lessThan(1));
-    expect(dockHomeBubbleScale(.82), inInclusiveRange(.94, 1.06));
+    // Lift is visible for multiple frames even at a high refresh rate.
+    expect(dockHomeBubbleScale(.125), greaterThan(1.08));
+    expect(dockHomeBubbleScale(.375), lessThan(.97));
+    expect(dockHomeBubbleScale(.625), inInclusiveRange(1, 1.03));
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
@@ -196,5 +200,108 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+
+  testWidgets('changing tabs lifts a refractive lens above the tab row',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var selected = KonnektedTab.listen;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, update) => Align(
+                alignment: Alignment.bottomCenter,
+                child: KonnektedDock(
+                  selected: selected,
+                  onSelect: (tab) => update(() => selected = tab),
+                  miniPlayer: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Library'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(selected, KonnektedTab.library);
+    final lifted = tester.widget<LokalClearLens>(
+      find.byKey(const ValueKey('dock-travel-lens')),
+    );
+    expect(lifted.lens.amount, greaterThan(8));
+    expect(lifted.lens.dispersion, 1);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpAndSettle();
+    final settled = tester.widget<LokalClearLens>(
+      find.byKey(const ValueKey('dock-travel-lens')),
+    );
+    expect(settled.lens.amount, closeTo(0, .0001));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Home bounce actually fires when dock collapses; Search does not',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var collapsed = false;
+    late StateSetter change;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                change = setState;
+                return Align(
+                  alignment: Alignment.bottomCenter,
+                  child: KonnektedDock(
+                    selected: KonnektedTab.listen,
+                    onSelect: (_) {},
+                    collapsed: collapsed,
+                    miniPlayer: const SizedBox.expand(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Its independent pulse starts immediately on the discrete collapse
+    // event even while the layout spring is still moving.
+    change(() => collapsed = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 70));
+
+    final bubble = tester.widget<Transform>(
+      find.byKey(const ValueKey('dock-home-bounce')),
+    );
+    expect(bubble.transform.getMaxScaleOnAxis(), greaterThan(1.05));
+    // Search receives no Transform.scale in the dock's layout.
+    expect(find.bySemanticsLabel('Search'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpAndSettle();
+    final settled = tester.widget<Transform>(
+      find.byKey(const ValueKey('dock-home-bounce')),
+    );
+    expect(settled.transform.getMaxScaleOnAxis(), closeTo(1, .005));
+  });
+
 
 }
