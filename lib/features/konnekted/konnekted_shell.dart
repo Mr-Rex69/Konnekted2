@@ -445,6 +445,11 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                                       // Keep only recently visited Home/Library/You
                                       // views alive for smooth return entries.
                                       retainVisitedTabs: true,
+                                      // Only the incoming cached page slides a
+                                      // short distance; painting both full
+                                      // pages was too expensive over You and
+                                      // Library's image-heavy shelves.
+                                      efficientMotion: true,
                                       child: KeyedSubtree(
                                         key: ValueKey(tab),
                                         child: switch (tab) {
