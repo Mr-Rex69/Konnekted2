@@ -59,12 +59,19 @@ const _dockGlassLens = LokalLens(
 
 const _dockBlurRadius = 1.2;
 
-/// All selected Home/Library/You icons recoil left as the bar folds.
+/// The selected Home/Library/You icon compresses briefly along its *vertical
+/// axis* while the footer folds. This is the sole icon deformation: the
+/// surrounding glass capsule is never moved, stretched, or bounced.
+///
+/// A sin^4 envelope has identical endpoints and a short, smooth compression
+/// around the midpoint, without the lateral overshoot previously applied to
+/// the entire refractive tab surface.
 @visibleForTesting
-double dockSelectedLeftBounce(double progress) {
+double dockSelectedIconVerticalScale(double progress) {
   final t = progress.clamp(0.0, 1.0);
   final wave = math.sin(math.pi * t);
-  return -7.0 * wave * wave;
+  final pulse = wave * wave;
+  return 1.0 - .18 * pulse * pulse;
 }
 
 class KonnektedDock extends StatefulWidget {
@@ -280,23 +287,15 @@ class _KonnektedDockState extends State<KonnektedDock>
                 ),
               Positioned.fromRect(
                 rect: Rect.lerp(tabsOpen, tabsShut, t)!,
-                // The Home bubble flexes *with* the dock spring. It doesn't
-                // continue bouncing after the mini player has docked.
-                child: Transform.translate(
-                  key: const ValueKey('dock-home-bounce'),
-                  offset: Offset(
-                    hasMini && !MediaQuery.disableAnimationsOf(context)
-                        ? dockSelectedLeftBounce(t)
-                        : 0,
-                    0,
-                  ),
-                  child: _TabCapsule(
-                    width: tabsOpen.width,
-                    collapse: t,
-                    selected: widget.selected,
-                    onSelect: widget.onSelect,
-                    onExpand: widget.onExpand,
-                  ),
+                // The optical capsule follows its layout bounds only.
+                // The single selected glyph, rendered inside _TabCapsule,
+                // supplies the brief Apple-style vertical squash.
+                child: _TabCapsule(
+                  width: tabsOpen.width,
+                  collapse: t,
+                  selected: widget.selected,
+                  onSelect: widget.onSelect,
+                  onExpand: widget.onExpand,
                 ),
               ),
               Positioned.fromRect(
@@ -636,11 +635,17 @@ class _TabCapsuleState extends State<_TabCapsule>
                     child: IgnorePointer(
                       child: Transform.scale(
                         key: const ValueKey('dock-shared-selected-icon'),
-                        // Keep the house glyph steady. The dock already
-                        // shrinks 58→48dp, so enlarging the icon another 20%
-                        // and crossfading a second copy added noisy motion
-                        // without improving its visibility.
-                        scale: 1.08,
+                        alignment: Alignment.center,
+                        // Only the glyph compresses vertically. X stays
+                        // constant, so the icon does not slide left, stretch
+                        // sideways or alter the glass sampling origin.
+                        scaleX: 1.08,
+                        scaleY: 1.08 *
+                            (reduceMotion
+                                ? 1.0
+                                : dockSelectedIconVerticalScale(
+                                    widget.collapse,
+                                  )),
                         child: Icon(
                           shown.icon,
                           color: t.accent,
