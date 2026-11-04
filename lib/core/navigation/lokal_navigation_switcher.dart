@@ -21,6 +21,7 @@ class LokalNavigationSwitcher extends StatefulWidget {
     this.direction = 1,
     this.retainVisitedTabs = false,
     this.efficientMotion = false,
+    this.instantNavigation = false,
   });
 
   /// Each destination must carry its stable identity key.
@@ -38,6 +39,11 @@ class LokalNavigationSwitcher extends StatefulWidget {
   /// small distance. The previous whole-screen adjacent slide rasterized
   /// both the departing Library/You page and the incoming one at once.
   final bool efficientMotion;
+
+  /// Keep already-visited tabs in the offstage cache but replace the visible
+  /// page immediately. No two-page raster, full-screen translation, or
+  /// temporary unpainted strip. The footer indicator handles tab feedback.
+  final bool instantNavigation;
 
   static const efficientDuration = Duration(milliseconds: 180);
   static const enterDuration = Duration(milliseconds: 330);
@@ -110,7 +116,7 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
     if (oldWidget.child.key == widget.child.key) return;
 
     _travel = widget.direction < 0 ? -1 : 1;
-    if (_reduceMotion) {
+    if (_reduceMotion || widget.instantNavigation) {
       _outgoing = null;
       _progress.value = 1;
     } else if (_useEfficientMotion) {
@@ -205,7 +211,7 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
   @override
   Widget build(BuildContext context) {
     final reduceMotion = _reduceMotion;
-    final animating = !reduceMotion &&
+    final animating = !reduceMotion && !widget.instantNavigation &&
         (_useEfficientMotion ? _progress.isAnimating : _outgoing != null);
     final direction =
         (Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0) *
