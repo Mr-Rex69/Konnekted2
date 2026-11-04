@@ -234,6 +234,7 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.suspendBackdrop = false,
     this.fallbackTintOpacity,
     this.fallbackBlurSigma,
     this.pronouncedRim = false,
@@ -252,6 +253,7 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.suspendBackdrop = false,
     this.fallbackTintOpacity,
     this.fallbackBlurSigma,
     this.pronouncedRim = false,
@@ -277,6 +279,12 @@ class LokalGlass extends ConsumerWidget {
 
   /// Clarity for the liquid shader alone; normal fallback retains frost.
   final double? liquidBlurRadius;
+
+  /// Avoid three expensive full-screen backdrop captures while the dock is
+  /// moving over scrolling artwork. Draw the same clear tint and specular
+  /// border until scrolling / geometry settle, then restore the real lens.
+  /// Does not alter the user's Performance Mode or static glass elsewhere.
+  final bool suspendBackdrop;
 
   /// Light frosted fallback for devices without shader image filters.
   /// Kept separate from Performance Mode's intentionally solid surface.
@@ -320,10 +328,11 @@ class LokalGlass extends ConsumerWidget {
       child: ValueListenableBuilder<ui.FragmentProgram?>(
         valueListenable: LokalGlassShaders.lens,
         builder: (context, program, _) {
-          final liquid = !solid && program != null;
+          final lensReady = !solid && program != null;
+          final liquid = lensReady && !suspendBackdrop;
           final light = t.isLight;
           final double alpha;
-          if (liquid) {
+          if (lensReady) {
             alpha = liquidTintOpacity?.clamp(0.0, 1.0) ?? thickness.tint;
           } else {
             final frost = light ? thickness.frostLight : thickness.frostDark;
@@ -335,7 +344,7 @@ class LokalGlass extends ConsumerWidget {
           }
           final base =
               tint ??
-              (liquid
+              (lensReady
                   ? (light ? const Color(0xFFFAFAFA) : const Color(0xFF121212))
                   : (light ? Colors.white : t.surface));
 
@@ -371,7 +380,7 @@ class LokalGlass extends ConsumerWidget {
               ),
               child: surface,
             );
-          } else if (!solid) {
+          } else if (!solid && !suspendBackdrop) {
             final filter = ui.ImageFilter.compose(
               outer: const ColorFilter.matrix(_vibrancyMatrix),
               inner: ui.ImageFilter.blur(
