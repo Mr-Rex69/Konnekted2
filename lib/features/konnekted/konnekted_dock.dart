@@ -488,17 +488,20 @@ class _TabCapsuleState extends State<_TabCapsule>
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final selectedIndex = _tabs.indexOf(widget.selected);
     final shown = _lastCapsuleTab;
-    final lensLeft = _dragX != null
-        ? (_dragX! - _slot / 2).clamp(_inset, widget.width - _inset - _slot)
-        : _inset + _slot *
-            _selectionPosition.value.clamp(0.0, (_tabs.length - 1).toDouble());
     final open = 1 - widget.collapse;
 
     // The whole lens responds to touch like BitChord's material, squashing
     // gently before the lift. Search stays a separate, non-bouncing sphere.
     return AnimatedBuilder(
       animation: _selectionPosition,
-      builder: (context, _) => Listener(
+      builder: (context, _) {
+        final lensLeft = _dragX != null
+            ? (_dragX! - _slot / 2).clamp(_inset, widget.width - _inset - _slot)
+            : _inset + _slot *
+                _selectionPosition.value.clamp(
+                  0.0, (_tabs.length - 1).toDouble(),
+                );
+        return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) {
         if (!_pressed) setState(() => _pressed = true);
@@ -742,7 +745,8 @@ class _TabCapsuleState extends State<_TabCapsule>
         ),
       ),
       ),
-      ),
+      );
+      },
     );
   }
 }
