@@ -89,6 +89,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   // The lazy Search page observes this without forcing a shell rebuild.
   final _searchFocusRequests = ValueNotifier<int>(0);
   final _dockCollapsed = ValueNotifier(false);
+  final _dockScrollActive = ValueNotifier(false);
   final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   DateTime? _lastBack;
@@ -124,6 +125,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       _tab.value = tab;
     }
     _dockScroll.reset();
+    _dockScrollActive.value = false;
     _dockCollapsed.value = false;
     if (tab == KonnektedTab.explore) _searchFocusRequests.value++;
   }
@@ -144,7 +146,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     if (n is ScrollEndNotification ||
         (n is UserScrollNotification && n.direction == ScrollDirection.idle)) {
       _dockScroll.reset();
+      _dockScrollActive.value = false;
       return false;
+    }
+    // One change per gesture, not one rebuild per pixel of content. During
+    // a fling this stays true until ScrollEndNotification, allowing the
+    // underlying image-heavy pages to scroll without three active shaders.
+    if (n is ScrollUpdateNotification || n is OverscrollNotification) {
+      _dockScrollActive.value = true;
     }
 
     double? delta;
@@ -365,6 +374,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     _tab.dispose();
     _searchFocusRequests.dispose();
     _dockCollapsed.dispose();
+    _dockScrollActive.dispose();
     super.dispose();
   }
 
@@ -467,12 +477,15 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         right: 0,
                         bottom: 0,
                         child: ListenableBuilder(
-                          listenable: Listenable.merge([_tab, _dockCollapsed]),
+                          listenable: Listenable.merge([
+                            _tab, _dockCollapsed, _dockScrollActive,
+                          ]),
                           builder: (_, _) => KonnektedDock(
                             selected: _tab.value,
                             onSelect: _select,
                             hasMiniPlayer: hasSong,
                             collapsed: _dockCollapsed.value,
+                            scrollActive: _dockScrollActive.value,
                             onExpand: () => _dockCollapsed.value = false,
                             miniPlayer: hasRadio
                                 ? KonnektedRadioMiniPlayer(
