@@ -411,6 +411,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   }) {
     final line = widget.lyrics.lines[index];
     final isActive = index == _activeLineIndex;
+    final isSupportingVoice = line.voice == 'bg';
 
     final content = isActive && karaokeEnabled
         ? Padding(
@@ -421,8 +422,13 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               lyrics: widget.lyrics,
               lineIndex: index,
               textAlign: alignment.textAlign,
-              style: _textStyle(true, 1),
-              sungColor: _sungColor,
+              style: isSupportingVoice
+                  ? _textStyle(true, 1).copyWith(
+                      fontSize: 16, fontStyle: FontStyle.italic,
+                    )
+                  : _textStyle(true, 1),
+              sungColor: isSupportingVoice
+                  ? _sungColor.withValues(alpha: .83) : _sungColor,
               unsungColor: Colors.white.withValues(alpha: 0.30),
               positionNotifier: _positionNotifier,
               playingNotifier: widget.playingNotifier,
@@ -442,6 +448,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               style: _textStyle(
                 isActive,
                 isActive ? 1 : _opacityForIndex(index),
+              ).copyWith(
+                fontSize: isSupportingVoice ? 16 : null,
+                fontStyle: isSupportingVoice ? FontStyle.italic : null,
               ),
               strutStyle: _strutStyle(isActive),
             ),
