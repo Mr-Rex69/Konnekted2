@@ -1565,6 +1565,15 @@ Future<List<OnlineSource>> _playbackSources(
           final audio = await registry.resolve(
             found, cancel: sourceCancel, forDownload: forDownload,
           );
+          // Never log signed URLs, raw manifest XML or the CENC key. The
+          // transport classification is enough to troubleshoot the actual
+          // path used rather than guessing from a generic exception.
+          final transport = audio.hybridPlan != null ? 'hybrid_cenc'
+              : audio.dashMedia != null ? 'dash_mpd'
+              : audio.requiresStaging ? 'opaque_verified' : 'progressive';
+          AppLog.instance.add(
+            '[HttpAddon] resolved source=w-${addon.configId} transport=$transport',
+          );
           final selectedSpatial = await addon.requestedSpatialCodec(
             cancel: sourceCancel,
           );
