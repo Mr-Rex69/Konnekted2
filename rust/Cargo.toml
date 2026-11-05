@@ -16,6 +16,8 @@ uac2 = ["rusb", "libusb1-sys"]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
+# Pinned upstream Android protocol engine; iPhone product access remains gated.
+soulseek-rs-lib = { git = "https://github.com/michel/soulseek-rs", rev = "3c5f1d12f25f98730ad8f1ca57621250d7c3bd41" }
 lofty = "0.25.4"
 dsf-meta = "0.3.0"
 dff-meta = "0.2.0"

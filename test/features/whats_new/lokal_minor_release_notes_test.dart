@@ -31,10 +31,10 @@ void main() {
           'body': """Intro
 
 ## What's Changed
-* Improve playback by @dev in https://github.com/lokal-music/lokal-mobile/pull/1
-* Redesign queue by @dev in https://github.com/lokal-music/lokal-mobile/pull/2
+* Improve playback by @dev in https://github.com/lokal-music/Mobile/pull/1
+* Redesign queue by @dev in https://github.com/lokal-music/Mobile/pull/2
 
-**Full Changelog**: https://github.com/lokal-music/lokal-mobile/compare/v4.2.7...v4.3.0
+**Full Changelog**: https://github.com/lokal-music/Mobile/compare/v4.2.7...v4.3.0
 """,
           'published_at': '2026-11-04T10:00:00Z',
         }),

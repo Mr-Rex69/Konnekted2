@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import '../../services/ios_library_scan_epoch.dart';
 import '../../services/ios_transfer_song_identity.dart';
 import '../../services/ios_transfer_cue_mapping.dart';
@@ -45,8 +46,8 @@ class SongRepository {
   // The optional policy lets isolated native-database tests exercise iPhone
   // writer guards on the host. App callers use the actual platform default.
   SongRepository({Isar? isar, bool? iosImportSafety})
-      : _isar = isar ?? Database.instance,
-        _iosImportSafety = iosImportSafety ?? Platform.isIOS;
+    : _isar = isar ?? Database.instance,
+      _iosImportSafety = iosImportSafety ?? Platform.isIOS;
   final bool _iosImportSafety;
 
   Isar get isar => _isar;
@@ -262,8 +263,11 @@ class SongRepository {
     required List<SongEntity> expected,
   }) async {
     if (!_iosImportSafety) return false;
-    return _isar.writeTxn(() => IosTransferCueMapping(_isar)
-        .replaceInTransaction(path, tracks, expected: expected));
+    return _isar.writeTxn(
+      () =>
+          IosTransferCueMapping(_isar)
+              .replaceInTransaction(path, tracks, expected: expected),
+    );
   }
 
   /// Persist ReplayGain metadata for a path (written by the ReplayGain
@@ -506,6 +510,30 @@ class SongRepository {
         await _isar.songEntitys.put(existing);
       }
     });
+  }
+
+  /// Install a refreshed cover only if the song still points at the artwork
+  /// measured before its online lookup. A concurrent manual selection or scan
+  /// must win over this asynchronous maintenance operation.
+  Future<List<String>> updateAlbumArtPathsIfUnchanged(
+    Map<String, String?> expectedPaths,
+    String newArtworkPath,
+  ) async {
+    if (expectedPaths.isEmpty) return const [];
+    final changed = <String>[];
+    await _isar.writeTxn(() async {
+      for (final entry in expectedPaths.entries) {
+        final row = await _isar.songEntitys
+            .filter()
+            .filePathEqualTo(entry.key)
+            .findFirst();
+        if (row == null || row.albumArtPath != entry.value) continue;
+        row.albumArtPath = newArtworkPath;
+        await _isar.songEntitys.put(row);
+        changed.add(entry.key);
+      }
+    });
+    return changed;
   }
 
   Future<Set<String>> getReferencedAlbumArtPaths() async {
@@ -773,6 +801,7 @@ class SongRepository {
       year: entity.year,
       genre: entity.genre,
       filePath: entity.filePath,
+      fileSizeBytes: entity.fileSize,
       folderUri: entity.folderUri,
       relativeFolderPath: entity.relativeFolderPath,
       dateAdded: entity.dateAdded,

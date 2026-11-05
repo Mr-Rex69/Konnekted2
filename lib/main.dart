@@ -1,4 +1,6 @@
 import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
+import 'package:flick/services/apple_music/apple_artist_logo_cache.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -109,6 +111,10 @@ Future<void> _bootstrapApp({
     initialAppearance.tokens.accent.toARGB32(),
   );
 
+  // Draw detail-page artwork behind Android's status bar instead of leaving
+  // an opaque system-colored strip above the hero. Individual pages continue
+  // to apply SafeArea to controls, not to their full-bleed backgrounds.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   await AppLog.instance.initializePersistence();
@@ -146,6 +152,8 @@ Future<void> _bootstrapApp({
 
   await Database.init();
   await IosLibraryStorage.initialize();
+  // Hydrate saved logos before artist pages can paint their first frame.
+  await AppleArtistLogoCache.instance.restore();
 
   final externalPlaybackHandled = await ExternalPlaybackService().initialize();
   if (!externalPlaybackHandled) {

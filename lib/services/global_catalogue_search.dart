@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flick/features/discovery/recommendation_match.dart';
 import 'package:flick/features/spotify/spotify_api.dart';
 import 'package:flick/features/spotify/spotify_oauth.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
@@ -35,6 +36,37 @@ class GlobalCatalogueArtist {
   const GlobalCatalogueArtist({required this.name, this.artworkUrl = ''});
   final String name;
   final String artworkUrl;
+}
+
+/// Artist search rows are displayed and opened by name, not by catalogue ID.
+/// Providers can return multiple catalog records for the same visible artist
+/// (Apple in particular may assign different artist IDs to those records).
+/// Retain the first result's ranking and spelling, but upgrade its portrait
+/// when another entry has artwork. Do not merge different *names*, and never
+/// deduplicate albums or song recordings using artist-only identity.
+List<GlobalCatalogueArtist> deduplicateCatalogueArtists(
+  Iterable<GlobalCatalogueArtist> artists,
+) {
+  final seen = <String, GlobalCatalogueArtist>{};
+  for (final artist in artists) {
+    final name = artist.name.trim();
+    final key = recommendationKey(name);
+    if (key.isEmpty) continue;
+    final incoming = GlobalCatalogueArtist(
+      name: name,
+      artworkUrl: artist.artworkUrl,
+    );
+    final previous = seen[key];
+    if (previous == null) {
+      seen[key] = incoming;
+    } else if (previous.artworkUrl.isEmpty && incoming.artworkUrl.isNotEmpty) {
+      seen[key] = GlobalCatalogueArtist(
+        name: previous.name,
+        artworkUrl: incoming.artworkUrl,
+      );
+    }
+  }
+  return seen.values.toList(growable: false);
 }
 
 class GlobalCatalogueMatches {
@@ -115,12 +147,12 @@ GlobalCatalogueMatches parseSpotifyGlobal(Map<String, dynamic> json) {
             artworkUrl: _bestArtwork(item['images']),
           ),
     ],
-    artists: [
+    artists: deduplicateCatalogueArtists([
       for (final item in _items(artists))
         if (item['name'] is String)
           GlobalCatalogueArtist(name: item['name'] as String,
             artworkUrl: _bestArtwork(item['images'])),
-    ],
+    ]),
   );
 }
 
@@ -262,10 +294,10 @@ class GlobalCatalogueSearchService {
           GlobalCatalogueAlbum(name: album.name, artist: album.artistName,
             artworkUrl: album.artworkUrl ?? ''),
       ],
-      artists: [
+      artists: deduplicateCatalogueArtists([
         for (final artist in artists)
           GlobalCatalogueArtist(name: artist.name),
-      ],
+      ]),
     );
   }
 }

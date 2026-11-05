@@ -359,12 +359,14 @@ class IosTransferJob {
     this.receivedSha256,
     this.resultOriginalId,
     this.lastFailure,
+    this.uploadProtocolVersion,
   });
   final IosTransferIntent intent;
   final int revision, updatedMs;
   final IosTransferPhase phase;
   final String direction;
   final int? receivedBytes;
+  final int? uploadProtocolVersion;
   final String? receivedSha256, resultOriginalId, lastFailure;
   String get id => intent.id;
 
@@ -387,6 +389,7 @@ class IosTransferJob {
       'responseBytes',
       'responseSHA256',
       'lastFailure',
+      'uploadProtocolVersion',
     });
     final intent = _intent(json);
     final phase = IosTransferPhase.values
@@ -466,6 +469,8 @@ class IosTransferJob {
         }.contains(phase)) {
       _invalid();
     }
+    final uploadProtocolVersion = _optionalInteger(json['uploadProtocolVersion'], minimum: 1, maximum: 1);
+    if (uploadProtocolVersion != null && json['direction'] != 'upload') _invalid();
     final originalId = json['resultOriginalID'] == null
         ? null
         : _stable(json['resultOriginalID']);
@@ -497,6 +502,7 @@ class IosTransferJob {
       receivedSha256: hash,
       resultOriginalId: originalId,
       lastFailure: failure,
+      uploadProtocolVersion: uploadProtocolVersion,
     );
   }
 }

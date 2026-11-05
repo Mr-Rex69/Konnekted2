@@ -9,6 +9,7 @@ import '../../data/repositories/song_repository.dart';
 import '../library_scanner_service.dart' show ScanProgress;
 import '../network_cache_service.dart';
 import 'native_smb_transport.dart';
+import 'network_embedded_artwork.dart';
 import 'network_source_service.dart';
 import '../ios_library_scan_epoch.dart';
 import 'local_network_access.dart';
@@ -22,16 +23,16 @@ import 'local_network_access.dart';
 /// derived from the filename, album from the parent folder, artist from the
 /// grandparent (or Unknown). Full tag extraction would require downloading each
 /// file, out of scope for the first cut.
-class SmbService implements NetworkSourceService {
+class SmbService implements NetworkSourceService, NetworkEmbeddedArtworkSource {
   SmbService._({
     SongRepository? songRepository,
     NetworkCacheService? networkCache,
     NativeSmbConnector? connector,
     bool? iosScanSafety,
-  })  : _songRepository = songRepository,
-        _networkCache = networkCache,
-        _connector = connector ?? Libsmb2Transport.connect,
-        _iosScanSafety = iosScanSafety ?? Platform.isIOS;
+  }) : _songRepository = songRepository,
+       _networkCache = networkCache,
+       _connector = connector ?? Libsmb2Transport.connect,
+       _iosScanSafety = iosScanSafety ?? Platform.isIOS;
 
   /// Allows a mock SMB transport in tests without native libraries or NAS.
   static SmbService create({
@@ -49,8 +50,19 @@ class SmbService implements NetworkSourceService {
   static SmbService instance = SmbService._();
 
   static const _audioExtensions = {
-    'flac', 'mp3', 'm4a', 'wav', 'ogg', 'opus', 'aac', 'wv', 'ape', 'mpc',
-    'aiff', 'dsf', 'dff',
+    'flac',
+    'mp3',
+    'm4a',
+    'wav',
+    'ogg',
+    'opus',
+    'aac',
+    'wv',
+    'ape',
+    'mpc',
+    'aiff',
+    'dsf',
+    'dff',
   };
   static const _imageExtensions = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'};
   static const _coverNames = ['cover', 'folder', 'album', 'albumart', 'front'];
@@ -107,22 +119,23 @@ class SmbService implements NetworkSourceService {
 
   ({String host, int port, String share, String rootPath}) _parseServer(
     NetworkServerEntity server,
-  ) =>
-      parseServerUrl(server.baseUrl);
+  ) => parseServerUrl(server.baseUrl);
 
   /// Parse a saved server URL into host/port/share/root. Accepts both
   /// `smb://host/share/path` and the Windows form `\\host\share\path`.
   /// Throws [FormatException] with user-facing text when the host or share is
   /// missing; the edit screen shows it in the failure banner.
   static ({String host, int port, String share, String rootPath})
-      parseServerUrl(String url) {
+  parseServerUrl(String url) {
     var source = url.trim();
     if (source.startsWith(r'\\')) {
       source = 'smb://${source.substring(2).replaceAll(r'\', '/')}';
     }
     final uri = Uri.parse(source);
-    if (uri.scheme.toLowerCase() != 'smb' || uri.userInfo.isNotEmpty ||
-        uri.hasQuery || uri.hasFragment) {
+    if (uri.scheme.toLowerCase() != 'smb' ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
       throw const FormatException(
         'Use an SMB share URL like smb://nas/Music — not an HTTP address.',
       );
@@ -142,9 +155,7 @@ class SmbService implements NetworkSourceService {
       host: uri.host,
       port: uri.port == 0 ? 445 : uri.port,
       share: segments.first,
-      rootPath: segments.length > 1
-          ? segments.skip(1).join('/')
-          : '',
+      rootPath: segments.length > 1 ? segments.skip(1).join('/') : '',
     );
   }
 
@@ -189,11 +200,18 @@ class SmbService implements NetworkSourceService {
       return 'The server rejected the username or password. Check the '
           'account — Samba may map unknown users to guest.';
     }
-    if (lower.contains('bad_network_name') || lower.contains('name_not_found')) {
+    if (lower.contains('bad_network_name') ||
+        lower.contains('name_not_found')) {
       return 'The server answered but the share was not found. Check the '
           'share name in the URL.';
     }
     if (lower.contains('access_denied') || lower.contains('access denied')) {
+      if (lower.contains('sessionsetup') || lower.contains('session setup')) {
+        return 'The SMB server denied login during SessionSetup, before the '
+            'share was opened. Re-enter the NAS username and password; if '
+            'the account requires a domain, use DOMAIN\\\\username. '
+            'Check SMB2/3 authentication and signing on the NAS.';
+      }
       if (lower.contains('directory listing')) {
         return 'SMB login succeeded, but this account cannot list the share '
             'folder. Check NAS folder read/list permissions.';
@@ -251,20 +269,49 @@ class SmbService implements NetworkSourceService {
   }
 
   @override
+  Future<List<int>> getEmbeddedCoverArt(
+    NetworkServerEntity server,
+    String remoteId,
+  ) async {
+    final lower = remoteId.toLowerCase();
+    if (!lower.endsWith('.flac') && !lower.endsWith('.mp3')) {
+      return const [];
+    }
+    final s = _parseServer(server);
+    await _ensureLanAccess(s);
+    final session = await _connect(s, server);
+    try {
+      final prefix = await session.readPrefix(
+        remoteId,
+        maxBytes: networkArtworkPrefixBytes,
+      );
+      return extractNetworkEmbeddedArtwork(prefix)?.toList() ?? const [];
+    } finally {
+      await session.close();
+    }
+  }
+
+  @override
   Future<String> stream(
     NetworkServerEntity server,
     String remoteId, {
     String? extension,
     void Function(double progress)? onProgress,
   }) async {
-    final cached =
-        await _cache.getPath(server.id, remoteId, extension: extension);
+    final cached = await _cache.getPath(
+      server.id,
+      remoteId,
+      extension: extension,
+    );
     if (cached != null) return cached;
 
     final s = _parseServer(server);
     await _ensureLanAccess(s);
-    final destPath =
-        await _cache.pathFor(server.id, remoteId, extension: extension);
+    final destPath = await _cache.pathFor(
+      server.id,
+      remoteId,
+      extension: extension,
+    );
     final session = await _connect(s, server);
     try {
       await session.download(
@@ -338,6 +385,15 @@ class SmbService implements NetworkSourceService {
       await session.close();
     }
 
+    // Avoid excessive library observer notifications while playback runs.
+    final pendingSongs = <SongEntity>[];
+    Future<void> flushSongs() async {
+      if (pendingSongs.isEmpty) return;
+      if (_iosScanSafety) { await _repo.upsertScannedSongs(pendingSongs); } else { await _repo.upsertSongs(pendingSongs); }
+      pendingSongs.clear();
+      await Future<void>.delayed(Duration.zero);
+    }
+
     final syncedRemoteIds = <String>{};
     var songsFound = 0;
     for (final dirPath in byDir.keys) {
@@ -356,26 +412,32 @@ class SmbService implements NetworkSourceService {
       final album = _lastPathSegment(dirPath);
       final artist = _grandparentSegment(dirPath);
       final entities = songEntries
-          .map((e) => _songEntity(
-                server: server,
-                entry: e,
-                remoteId: e.path,
-                album: album,
-                artist: artist,
-                coverPath: coverPath,
-              ))
+          .map(
+            (e) => _songEntity(
+              server: server,
+              entry: e,
+              remoteId: e.path,
+              album: album,
+              artist: artist,
+              coverPath: coverPath,
+            ),
+          )
           .toList();
-      if (_iosScanSafety) {
-        await _repo.upsertScannedSongs(entities);
-      } else {
-        await _repo.upsertSongs(entities);
+      for (final entity in entities) {
+        pendingSongs.add(entity);
+        if (pendingSongs.length >= 128) await flushSongs();
       }
       syncedRemoteIds.addAll(entities.map((e) => e.remoteId!));
       songsFound += entities.length;
     }
 
-    await purgeAndStampNetworkSync(server, syncedRemoteIds, repo: _songRepository,
-        enforceScanEpoch: _iosScanSafety);
+    await flushSongs();
+    await purgeAndStampNetworkSync(
+      server,
+      syncedRemoteIds,
+      repo: _songRepository,
+      enforceScanEpoch: _iosScanSafety,
+    );
 
     yield ScanProgress(
       songsFound: songsFound,
@@ -430,8 +492,9 @@ class SmbService implements NetworkSourceService {
     final ext = _extension(name);
     if (ext == null || !_imageExtensions.contains(ext)) return false;
     final dot = name.lastIndexOf('.');
-    final stem =
-        dot > 0 ? name.substring(0, dot).toLowerCase() : name.toLowerCase();
+    final stem = dot > 0
+        ? name.substring(0, dot).toLowerCase()
+        : name.toLowerCase();
     return _coverNames.any((c) => stem == c || stem.startsWith('$c.'));
   }
 

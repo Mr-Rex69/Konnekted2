@@ -5,22 +5,37 @@ import 'package:flick/features/konnekted/konnekted_destination.dart';
 import 'package:flick/features/konnekted/konnekted_home.dart';
 import 'package:flick/features/konnekted/konnekted_library.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
+import 'package:flick/features/konnekted/library/lokal_library_pages.dart';
+import 'package:flick/features/konnekted/library/lokal_song_browser.dart';
 import 'package:flick/models/song.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Song _song(String id) => Song(
+Song _song(String id, {Duration duration = const Duration(minutes: 3)}) => Song(
   id: id,
   title: 'Track $id',
   artist: 'Artist $id',
-  duration: const Duration(minutes: 3),
+  duration: duration,
   fileType: 'FLAC',
 );
 
 void main() {
+  test('Full Library browser is labelled Library and shows total duration', () {
+    final page = lokalLibraryPage('songs') as LokalSongListPage;
+    expect(page.title, 'Library');
+    expect(page.showTotalDuration, isTrue);
+    expect(page.preferencesKey, 'lokal.library.songs.song_browser_view.v1');
+    final added = lokalLibraryPage('recentlyAdded') as LokalSongListPage;
+    expect(added.title, 'Library');
+    expect(added.showTotalDuration, isTrue);
+    // The You tab's history navigation retains a distinct, truthful page.
+    final history = lokalLibraryPage('recentlyPlayed') as LokalSongListPage;
+    expect(history.title, 'Recently played');
+  });
+
   testWidgets(
-    'Library shows recently played as a horizontal shelf below More',
+    'Recently Added becomes Library; Recently Played remains intact',
     (tester) async {
       tester.view
         ..physicalSize = const Size(393, 852)
@@ -28,13 +43,15 @@ void main() {
       addTearDown(tester.view.reset);
 
       final opened = <KonnektedDestination>[];
+      final library = [
+        _song('library', duration: const Duration(minutes: 65)),
+        _song('library2', duration: const Duration(minutes: 5)),
+      ];
       final history = [_song('r1'), _song('r2')];
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            konnektedLibraryProvider.overrideWithValue(
-              AsyncData([_song('library')]),
-            ),
+            konnektedLibraryProvider.overrideWithValue(AsyncData(library)),
             konnektedRecentSongsProvider.overrideWith(
               (ref) => Stream.value(history),
             ),
@@ -53,27 +70,48 @@ void main() {
         180,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.byType(LokalNavRow), findsNWidgets(6));
+      expect(find.byType(LokalNavRow), findsNWidgets(8));
+      expect(find.text('Spotify playlists'), findsOneWidget);
+      expect(find.text('YouTube Music playlists'), findsOneWidget);
       expect(find.byIcon(Icons.history_rounded), findsNothing);
       expect(find.text('Songs'), findsOneWidget);
       expect(find.text('Downloads'), findsOneWidget);
 
-      final recentShelf = find.byWidgetPredicate(
-        (widget) =>
-            widget is KonnektedSongShelf && widget.title == 'Recently played',
+      final libraryShelf = find.byWidgetPredicate(
+        (widget) => widget is KonnektedSongShelf && widget.title == 'Library',
       );
       await tester.scrollUntilVisible(
-        recentShelf,
+        libraryShelf,
         180,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Recently played'), findsOneWidget);
-      expect(find.text('Track r1'), findsOneWidget);
-      expect(find.text('Track r2'), findsOneWidget);
+      expect(
+        find.descendant(of: libraryShelf, matching: find.text('Library')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: libraryShelf, matching: find.text('Track library')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: libraryShelf,
+          matching: find.text('Track library2'),
+        ),
+        findsOneWidget,
+      );
+      final widget = tester.widget<KonnektedSongShelf>(libraryShelf);
+      expect(widget.showTotalDuration, isTrue);
+      expect(widget.summarySongs?.value?.length, library.length);
+      expect(
+        find.descendant(of: libraryShelf, matching: find.text('Track r1')),
+        findsNothing,
+      );
+      expect(find.text('2 songs · 1 hr 10 min'), findsOneWidget);
       final horizontalList = tester.widget<ListView>(
-        find.descendant(of: recentShelf, matching: find.byType(ListView)),
+        find.descendant(of: libraryShelf, matching: find.byType(ListView)),
       );
       expect(horizontalList.scrollDirection, Axis.horizontal);
 
@@ -90,15 +128,43 @@ void main() {
       expect(tester.widget<SizedBox>(clearance).height, 12 + bottomInsets);
 
       await tester.scrollUntilVisible(
-        recentShelf,
+        libraryShelf,
         -180,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.descendant(of: recentShelf, matching: find.text('See all')),
+        find.descendant(of: libraryShelf, matching: find.text('See all')),
       );
-      expect(opened, [KonnektedDestination.recentlyPlayed]);
+      expect(opened, [KonnektedDestination.recentlyAdded]);
+      final playedShelf = find.byWidgetPredicate(
+        (widget) =>
+            widget is KonnektedSongShelf && widget.title == 'Recently played',
+      );
+      await tester.scrollUntilVisible(
+        playedShelf,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      final playedWidget = tester.widget<KonnektedSongShelf>(playedShelf);
+      expect(playedWidget.showTotalDuration, isFalse);
+      expect(playedWidget.summarySongs, isNull);
+      expect(
+        find.descendant(of: playedShelf, matching: find.text('Track r1')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: playedShelf, matching: find.text('Track r2')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.descendant(of: playedShelf, matching: find.text('See all')),
+      );
+      expect(opened, [
+        KonnektedDestination.recentlyAdded,
+        KonnektedDestination.recentlyPlayed,
+      ]);
       expect(tester.takeException(), isNull);
     },
   );

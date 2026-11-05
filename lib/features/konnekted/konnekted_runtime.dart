@@ -1,6 +1,11 @@
 import 'package:flick/core/theme/lokal_appearance.dart';
+import 'package:flick/models/song.dart';
+import 'package:flick/providers/automatic_update_preference.dart';
+import 'package:flick/providers/connectivity_provider.dart';
 import 'package:flick/features/updates/lokal_update_sheet.dart';
 import 'package:flick/services/library_job_notification.dart';
+import 'package:flick/services/link/lokal_desktop_source.dart';
+import 'package:flick/services/lyrics_playback_prefetch.dart';
 import 'package:flick/features/spotify/spotify_likes_sync_service.dart';
 import 'package:flick/services/queue_pre_resolver.dart';
 import 'package:flick/services/local_metadata_repair.dart';
@@ -105,6 +110,7 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
   String? _offeredUpdate;
 
   void _maybeShowUpdate() {
+    if (ref.read(automaticUpdatePreferenceProvider).value != true) return;
     final release = ref.read(updateCheckProvider).release;
     if (!mounted ||
         _backgrounded ||
@@ -173,6 +179,7 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     _player.isNetworkLoadingNotifier.addListener(_updateIconBusy);
     _player.isNetworkLoadingNotifier.addListener(_onPreparationStatus);
     _player.currentSongNotifier.addListener(_onPreparationStatus);
+    _player.currentSongNotifier.addListener(_onDesktopLyricsTrack);
     _player.onlinePreparationTitleNotifier.addListener(_onPreparationStatus);
     _player.bufferedPositionNotifier.addListener(_onPreparationStatus);
     _player.durationNotifier.addListener(_onPreparationStatus);
@@ -185,6 +192,15 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     ref.read(equalizerProvider);
     ref.listenManual(updateCheckProvider, (_, next) {
       if (next.updateAvailable) _maybeShowUpdate();
+    });
+    ref.listenManual<ConnectivityStatus>(connectivityProvider, (
+      previous,
+      next,
+    ) {
+      if (previous != ConnectivityStatus.online &&
+          next == ConnectivityStatus.online) {
+        unawaited(_retryDesktopLyricsAfterReconnect());
+      }
     });
     ref.read(updateCheckProvider.notifier);
     _widgetSync = installWidgetSync(ref);
@@ -288,6 +304,53 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     });
   }
 
+  String? _lastDesktopLyricsTrack;
+
+  void _onDesktopLyricsTrack() {
+    final song = _player.currentSongNotifier.value;
+    if (song == null || song.sourceType != 'lokal') {
+      _lastDesktopLyricsTrack = null;
+      return;
+    }
+    final key = '${song.remoteServerId}:${song.remoteId}';
+    if (_lastDesktopLyricsTrack == key) return;
+    _lastDesktopLyricsTrack = key;
+    unawaited(_requestDesktopLyrics(song, key));
+  }
+
+  Future<void> _retryDesktopLyricsAfterReconnect() async {
+    final song = _player.currentSongNotifier.value;
+    if (song == null || song.sourceType != 'lokal') return;
+    final key = '${song.remoteServerId}:${song.remoteId}';
+    _lastDesktopLyricsTrack = key;
+    // If an earlier attempt is still in-flight, coalescing waits for it.
+    // An unsuccessful result is retried *after* that attempt has settled,
+    // ensuring reconnection is not silently lost.
+    await _requestDesktopLyrics(song, key, retryAfterFailure: true);
+  }
+
+  Future<void> _requestDesktopLyrics(
+    Song song,
+    String key, {
+    bool retryAfterFailure = false,
+  }) async {
+    var success = await LokalDesktopSource.instance.syncPlayingDesktopLyrics(
+      song,
+    );
+    if (!success && retryAfterFailure) {
+      success = await LokalDesktopSource.instance.syncPlayingDesktopLyrics(
+        song,
+      );
+    }
+    if (!mounted) return;
+    if (success) {
+      _lastDesktopLyricsTrack = key;
+      LyricsPlaybackPrefetch.instance.desktopLyricsArrived(song);
+    } else if (_lastDesktopLyricsTrack == key) {
+      _lastDesktopLyricsTrack = null;
+    }
+  }
+
   void _onOnlinePlaybackError() {
     final message = _player.onlinePlaybackError.value;
     if (!mounted || message == null) return;
@@ -387,6 +450,7 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     _player.isNetworkLoadingNotifier.removeListener(_updateIconBusy);
     _player.isNetworkLoadingNotifier.removeListener(_onPreparationStatus);
     _player.currentSongNotifier.removeListener(_onPreparationStatus);
+    _player.currentSongNotifier.removeListener(_onDesktopLyricsTrack);
     _player.onlinePreparationTitleNotifier.removeListener(_onPreparationStatus);
     _player.bufferedPositionNotifier.removeListener(_onPreparationStatus);
     _player.durationNotifier.removeListener(_onPreparationStatus);

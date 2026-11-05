@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/utils/string_sort_utils.dart';
+import '../core/utils/artist_credits.dart' show splitArtistCredits;
 import '../data/repositories/song_repository.dart';
 import '../models/song.dart';
 import 'album_art_service.dart';
@@ -41,6 +42,49 @@ class AlbumArtCandidate {
   final String? releaseDate;
 }
 
+/// Rank only artwork that plausibly represents this exact album and its
+/// credited lead artist. Search engines often return similarly named tracks,
+/// compilations or other artists ahead of the correct release.
+List<AlbumArtCandidate> relevantAlbumArtwork({
+  required String album,
+  required String artist,
+  required List<AlbumArtCandidate> candidates,
+}) {
+  String normalize(String value) => value.toLowerCase()
+      .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
+      .trim();
+  final title = normalize(album);
+  final lead = normalize(artist);
+  if (title.isEmpty) return const [];
+  int score(AlbumArtCandidate candidate) {
+    final candidateTitle = normalize(candidate.title);
+    final candidateArtist = normalize(candidate.artist);
+    final titleExact = candidateTitle == title;
+    final suffix = candidateTitle.startsWith('$title ')
+        ? candidateTitle.substring(title.length).trim() : '';
+    final titleVariant = suffix.isNotEmpty &&
+        RegExp(r'^(?:(?:super )?deluxe|expanded|anniversary|remaster(?:ed)?|edition|bonus|special|digital|reissue)(?: .+)?$')
+            .hasMatch(suffix);
+    if (!titleExact && !titleVariant) return -1;
+    final artistExact = candidateArtist == lead;
+    final artistCredited = splitArtistCredits(candidate.artist).any(
+      (credit) => normalize(credit) == lead,
+    );
+    if (lead.isNotEmpty && !artistExact && !artistCredited) return -1;
+    return (titleExact ? 100 : 50) + (artistExact ? 40 : 15);
+  }
+  final scored = [
+    for (final candidate in candidates)
+      if (score(candidate) >= 0)
+        (candidate: candidate, score: score(candidate)),
+  ]..sort((a,b) => b.score.compareTo(a.score));
+  final seen = <String>{};
+  return [
+    for (final item in scored)
+      if (seen.add(item.candidate.imageUrl)) item.candidate,
+  ].take(20).toList(growable: false);
+}
+
 enum AlbumArtScope { wholeAlbum, songOnly }
 
 class AlbumArtUpdateResult {
@@ -59,7 +103,7 @@ class AlbumArtUpdateResult {
 
 class AlbumArtImportService {
   AlbumArtImportService._({SongRepository? songRepository, http.Client? client})
-    : _songRepository = songRepository ?? SongRepository(),
+    : _songRepositoryOverride = songRepository,
       _client = client ?? http.Client();
 
   static final AlbumArtImportService instance = AlbumArtImportService._();
@@ -68,7 +112,8 @@ class AlbumArtImportService {
   static const String _musicBrainzHost = 'musicbrainz.org';
   static const String _coverArtHost = 'coverartarchive.org';
 
-  final SongRepository _songRepository;
+  final SongRepository? _songRepositoryOverride;
+  late final SongRepository _songRepository = _songRepositoryOverride ?? SongRepository();
   final http.Client _client;
 
   bool isCustomArtworkPath(String? path) {
@@ -103,7 +148,7 @@ class AlbumArtImportService {
       lastError = error;
     }
 
-    if (candidates.length < 8) {
+    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 8) {
       try {
         candidates.addAll(
           await _searchCoverArtArchive(
@@ -118,7 +163,7 @@ class AlbumArtImportService {
       }
     }
 
-    if (candidates.length < 12) {
+    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 12) {
       try {
         candidates.addAll(await _searchITunes(album: album, artist: artist));
       } catch (error) {
@@ -126,7 +171,19 @@ class AlbumArtImportService {
       }
     }
 
-    if (candidates.length < 12) {
+    // iTunes editions are region-dependent. GB may have a cover absent in US
+    // and vice versa, so ask the second storefront only if needed.
+    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 8) {
+      try {
+        candidates.addAll(await _searchITunes(
+          album: album, artist: artist, country: 'US',
+        ));
+      } catch (error) {
+        lastError ??= error;
+      }
+    }
+
+    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 12) {
       try {
         candidates.addAll(await _searchDeezer(album: album, artist: artist));
       } catch (error) {
@@ -134,7 +191,9 @@ class AlbumArtImportService {
       }
     }
 
-    final deduped = _dedupeCandidates(candidates);
+    final deduped = relevantAlbumArtwork(
+      album: album, artist: artist, candidates: candidates,
+    );
     if (deduped.isEmpty && lastError != null) {
       throw _asImportException(lastError);
     }
@@ -257,6 +316,68 @@ class AlbumArtImportService {
       albumArtist: song.albumArtist ?? song.artist,
       albumArtPath: file.path,
       filePaths: [filePath],
+    );
+  }
+
+  /// A maintenance upgrade is not a manually chosen cover. Keep it in the
+  /// durable support directory rather than album_art_overrides, so future
+  /// low-resolution refreshes remain eligible and manual covers stay protected.
+  /// A single content-addressed file is shared by all repaired album tracks.
+  Future<AlbumArtUpdateResult> applyAutomaticRepair({
+    required List<Song> songs,
+    required Uint8List bytes,
+  }) async {
+    if (songs.isEmpty || !_looksLikeImage(bytes)) {
+      throw const AlbumArtImportException('No valid album artwork to repair.');
+    }
+    final filePaths = songs.map((song) => song.filePath)
+        .whereType<String>().where((path) => path.isNotEmpty).toSet().toList();
+    if (filePaths.isEmpty) {
+      throw const AlbumArtImportException('Album has no local files.');
+    }
+    final support = await getApplicationSupportDirectory();
+    final directory = Directory(
+      '${support.path}${Platform.pathSeparator}album_art_repairs',
+    );
+    await directory.create(recursive: true);
+    final digest = sha256.convert(bytes).toString();
+    final file = File('${directory.path}${Platform.pathSeparator}$digest.cover');
+    if (!await file.exists()) {
+      final temporary = File('${file.path}.part');
+      await temporary.writeAsBytes(bytes, flush: true);
+      try {
+        await temporary.rename(file.path);
+      } on FileSystemException {
+        if (!await file.exists()) rethrow;
+        await temporary.delete();
+      }
+    }
+    final expected = {
+      for (final song in songs)
+        if (song.filePath != null && song.filePath!.isNotEmpty)
+          song.filePath!: song.albumArt,
+    };
+    final applied = await _songRepository.updateAlbumArtPathsIfUnchanged(
+      expected, file.path,
+    );
+    if (applied.isNotEmpty) {
+      PlayerService().syncAlbumArtPaths(
+        filePaths: applied,
+        albumArtPath: file.path,
+      );
+      // Best effort: writable files carry their upgraded embedded image to
+      // other devices. Scoped-storage tracks keep the durable in-app cover.
+      final updatedPaths = applied.toSet();
+      await _embedInFiles(
+        songs.where((song) => updatedPaths.contains(song.filePath)).toList(),
+        bytes,
+      );
+    }
+    return AlbumArtUpdateResult(
+      albumName: songs.first.album ?? songs.first.title,
+      albumArtist: songs.first.albumArtist ?? songs.first.artist,
+      albumArtPath: file.path,
+      filePaths: applied,
     );
   }
 
@@ -458,6 +579,7 @@ class AlbumArtImportService {
   Future<List<AlbumArtCandidate>> _searchITunes({
     required String album,
     required String artist,
+    String country = 'GB',
   }) async {
     final query = '$album $artist';
     final response = await _getJson(
@@ -465,7 +587,7 @@ class AlbumArtImportService {
         'term': query,
         'entity': 'album',
         'limit': '10',
-        'country': 'US',
+        'country': country,
       }),
     );
 
@@ -704,16 +826,6 @@ class AlbumArtImportService {
     return file;
   }
 
-  List<AlbumArtCandidate> _dedupeCandidates(
-    List<AlbumArtCandidate> candidates,
-  ) {
-    final deduped = <String, AlbumArtCandidate>{};
-    for (final candidate in candidates) {
-      deduped.putIfAbsent(candidate.imageUrl, () => candidate);
-    }
-    return deduped.values.take(12).toList(growable: false);
-  }
-
   String _buildMusicBrainzQuery({
     required String titleField,
     required String album,
@@ -805,10 +917,12 @@ class AlbumArtImportService {
 
   String _searchArtistName(Song song) {
     final albumArtist = song.albumArtist?.trim();
-    if (albumArtist != null && albumArtist.isNotEmpty) {
-      return albumArtist;
-    }
-    return song.artist.trim();
+    final credit = albumArtist != null && albumArtist.isNotEmpty
+        ? albumArtist
+        : song.artist.trim();
+    // A combined album credit such as "SZA feat. Kendrick Lamar" produces
+    // fewer relevant MusicBrainz/iTunes covers than its actual lead artist.
+    return splitArtistCredits(credit).firstOrNull ?? credit;
   }
 
   bool _looksLikeImage(Uint8List bytes) {

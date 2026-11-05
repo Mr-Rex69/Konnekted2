@@ -64,6 +64,16 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
   void initState() {
     super.initState();
     _loadLyricsForSong(widget.song);
+    LyricsPlaybackPrefetch.instance.linkedLyricsUpdated.addListener(
+      _onLinkedLyrics,
+    );
+  }
+
+  void _onLinkedLyrics() {
+    if (LyricsPlaybackPrefetch.instance.linkedLyricsUpdated.value ==
+        widget.song.id) {
+      unawaited(_loadLyricsForSong(widget.song));
+    }
   }
 
   @override
@@ -78,6 +88,9 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
 
   @override
   void dispose() {
+    LyricsPlaybackPrefetch.instance.linkedLyricsUpdated.removeListener(
+      _onLinkedLyrics,
+    );
     _scrollController.dispose();
     super.dispose();
   }
@@ -104,11 +117,13 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
           : warm
           ? await LyricsPlaybackPrefetch.instance.local(song)
           : await widget.lyricsService.loadLyricsForSong(
-              song, forceRefresh: refreshOnline, fetchOnline: false,
+              song,
+              forceRefresh: refreshOnline,
+              fetchOnline: false,
               source: selected,
             );
-      if (!mounted || request != _lyricsRequest ||
-          widget.song.id != song.id) return;
+      if (!mounted || request != _lyricsRequest || widget.song.id != song.id)
+        return;
       setState(() {
         _lyricsData = local;
         _loadedSongId = song.id;
@@ -123,16 +138,18 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
           : warm
           ? await LyricsPlaybackPrefetch.instance.enhanced(song)
           : await widget.lyricsService.loadLyricsForSong(
-              song, forceRefresh: refreshOnline,
+              song,
+              forceRefresh: refreshOnline,
               refreshOnline: refreshOnline,
               source: _selectedLyricsSource,
               stillCurrent: () => mounted && request == _lyricsRequest,
-              fetchOnline: refreshOnline ||
+              fetchOnline:
+                  refreshOnline ||
                   ref.read(appPreferencesProvider).lyricsAutoFetch,
             );
       final manualPath = await manual;
-      if (!mounted || request != _lyricsRequest ||
-          widget.song.id != song.id) return;
+      if (!mounted || request != _lyricsRequest || widget.song.id != song.id)
+        return;
       setState(() {
         // A manual source choice is intentional, even if its timing quality
         // is lower than Automatic's. A miss still retains the previous words.
@@ -143,8 +160,7 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
         } else {
           _lyricsData ??= best;
         }
-        _hasManualLyricsSelection =
-            manualPath != null && manualPath.isNotEmpty;
+        _hasManualLyricsSelection = manualPath != null && manualPath.isNotEmpty;
         _isLoading = false;
       });
     } catch (_) {
@@ -161,9 +177,10 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
   }
 
   void _showMessage(String message) {
-    LokalToast.fromSnackBar(context, 
-        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-      );
+    LokalToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
   }
 
   Future<void> _saveLyricsFile(
@@ -197,18 +214,18 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
 
   VoidCallback _saveOriginalLyricsAction(LyricsData lyrics) {
     final songId = widget.song.id;
-    return () => unawaited(
-      _saveLyricsFile(lyrics, expectedSongId: songId),
-    );
+    return () => unawaited(_saveLyricsFile(lyrics, expectedSongId: songId));
   }
 
   VoidCallback? _saveTranslatedLyricsAction() {
     final selected = _sublineLyrics;
     final songId = widget.song.id;
     if (selected == null ||
-        !selected.lines.any((line) =>
-            line.translation?.trim().isNotEmpty == true &&
-            line.translation!.trim() != line.text.trim())) {
+        !selected.lines.any(
+          (line) =>
+              line.translation?.trim().isNotEmpty == true &&
+              line.translation!.trim() != line.text.trim(),
+        )) {
       return null;
     }
     // Capture the selected result; a subsequent translation change must not

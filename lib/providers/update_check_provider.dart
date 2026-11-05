@@ -6,6 +6,7 @@ import 'package:flick/features/updates/github_update_service.dart';
 import 'package:flick/services/build_info_service.dart';
 
 import 'app_build_info_provider.dart';
+import 'automatic_update_preference.dart';
 import 'connectivity_provider.dart';
 
 class UpdateCheckState {
@@ -46,6 +47,8 @@ class UpdateCheckNotifier extends Notifier<UpdateCheckState> {
 
   Future<void> refreshIfOnline({bool force = false}) async {
     if (state.isChecking) return;
+    if (!force &&
+        !await ref.read(automaticUpdatePreferenceProvider.future)) return;
     if (!force &&
         state.lastCheckedAt != null &&
         DateTime.now().difference(state.lastCheckedAt!) <

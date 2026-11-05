@@ -176,10 +176,19 @@ class DiscoveryArtworkResolver {
     }
   }
 
-  Future<List<Map>> _rows(Uri url, String field) async {
+  Future<List<Map>> _rows(Uri url, String field) async =>
+      (await _rowsWithStatus(url, field)).rows;
+
+  /// A successful empty search differs from a timeout or unavailable provider:
+  /// only the latter should stop trying additional artist credits.
+  Future<({List<Map> rows, bool failed})> _rowsWithStatus(
+    Uri url, String field,
+  ) async {
     try {
-      final data = (await _http.json(url))[field];
-      return data is List ? data.whereType<Map>().toList() : const [];
+      final data = (await _http.json(url)
+          .timeout(const Duration(seconds: 5)))[field];
+      return (rows: data is List ? data.whereType<Map>().toList() : <Map>[],
+          failed: false);
     } catch (error) {
       final failure = error.toString();
       onSourceFailure?.call(
@@ -192,7 +201,7 @@ class DiscoveryArtworkResolver {
             ? 'timed out'
             : 'request failed',
       );
-      return const [];
+      return (rows: <Map>[], failed: true);
     }
   }
 
@@ -281,6 +290,37 @@ class DiscoveryArtworkResolver {
           matchingArtist(nameOf(row['artist'])) &&
           cover.isNotEmpty) {
         return cover;
+      }
+    }
+
+    // Desktop can resolve album artwork under the album/primary artist when
+    // a track credits a featured performer first. Try one additional credited
+    // artist only after the strict first lookup fails, and still require an
+    // exact album/title match. Never accept the first unrelated search hit.
+    // Do not treat production/remix roles as alternate release owners.
+    // Such credits are intentionally parseable for navigation, but they
+    // must not authorize album cover replacements from another producer.
+    final hasProductionCredit = RegExp(
+      r'\b(?:prod(?:uced)?\.?|remix(?:ed)?|instrumental by)\b',
+      caseSensitive: false,
+    ).hasMatch(request.artist);
+    if (album && !hasProductionCredit) {
+      final credits = splitArtistCredits(request.artist);
+      for (final credit in credits.skip(1).take(2)) {
+        final alternate = await _rowsWithStatus(
+          Uri.https('api.deezer.com', '/search/album', {
+            'q': 'artist:"$credit" album:"${request.title}"',
+            'limit': '15',
+          }),
+          'data',
+        );
+        if (alternate.failed) break;
+        for (final row in alternate.rows) {
+          if (!matchingTitle(row['title']) ||
+              !same(nameOf(row['artist']), credit)) continue;
+          final cover = first([row['cover_xl'], row['cover_big']]);
+          if (cover.isNotEmpty) return cover;
+        }
       }
     }
 
@@ -556,12 +596,14 @@ class DiscoveryArtwork extends StatelessWidget {
     required this.placeholder,
     this.width,
     this.height,
+    this.revealOnLoad = false,
   });
 
   final DiscoveryArtworkKind kind;
   final String title;
   final String artist;
   final String url;
+  final bool revealOnLoad;
   final Widget placeholder;
   final double? width;
   final double? height;
@@ -579,12 +621,14 @@ class DiscoveryArtwork extends StatelessWidget {
       placeholder: placeholder,
       width: width,
       height: height,
+      revealOnLoad: revealOnLoad,
     );
     if (image.isEmpty) return fallback;
     return CachedImageWidget(
       imagePath: image,
       width: width,
       height: height,
+      revealOnLoad: revealOnLoad,
       placeholder: placeholder,
       errorWidget: fallback,
     );
@@ -598,6 +642,7 @@ class _DiscoveryArtworkFallback extends ConsumerStatefulWidget {
     this.width,
     this.height,
     this.skipLocal = false,
+    this.revealOnLoad = false,
   });
 
   final DiscoveryArtworkRequest request;
@@ -605,6 +650,7 @@ class _DiscoveryArtworkFallback extends ConsumerStatefulWidget {
   final double? width;
   final double? height;
   final bool skipLocal;
+  final bool revealOnLoad;
 
   @override
   ConsumerState<_DiscoveryArtworkFallback> createState() =>
@@ -625,6 +671,7 @@ class _DiscoveryArtworkFallbackState
     imagePath: path,
     width: widget.width,
     height: widget.height,
+    revealOnLoad: widget.revealOnLoad,
     placeholder: widget.placeholder,
     errorWidget: onError,
   );
@@ -650,6 +697,7 @@ class _DiscoveryArtworkFallbackState
             width: widget.width,
             height: widget.height,
             skipLocal: true,
+            revealOnLoad: widget.revealOnLoad,
           ),
         );
       }
@@ -665,6 +713,7 @@ class _DiscoveryArtworkFallbackState
             width: widget.width,
             height: widget.height,
             skipLocal: true,
+            revealOnLoad: widget.revealOnLoad,
           ),
         );
       }

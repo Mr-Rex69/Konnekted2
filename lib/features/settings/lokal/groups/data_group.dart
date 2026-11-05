@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flick/features/settings/widgets/battery_optimization_setting.dart';
 import 'package:flick/features/settings/widgets/eco_data_mode_toggle.dart';
 import 'package:flick/features/settings/library_scan/library_scan_flow.dart';
@@ -11,6 +12,7 @@ import '../lokal_settings_group.dart';
 import 'package:flick/features/settings/widgets/discord_presence_settings_tile.dart';
 import 'package:flick/features/settings/widgets/youtube_music_settings_tile.dart';
 import 'package:flick/features/settings/widgets/spotify_account_settings_tile.dart';
+import 'package:flick/features/settings/widgets/soulseek_account_settings_tile.dart';
 import 'package:flick/features/settings/widgets/lastfm_settings_tile.dart';
 import 'package:flick/features/settings/widgets/listenbrainz_settings_tile.dart';
 
@@ -97,7 +99,14 @@ List<LokalSettingsSection> dataSettings(
   LokalSettingsSection(
     title: LokalDataSections.accounts,
     children: [
-      // Keep Spotify sign-in and likes sync together as the first Data control.
+      if (defaultTargetPlatform == TargetPlatform.android) LokalSettingCustom(
+        label: lokalText('Soulseek'),
+        description: lokalText(
+          'Search, download and optionally share your main music folder.',
+        ),
+        child: const SoulseekAccountSettingsTile(),
+      ),
+      // Keep Spotify sign-in and likes sync together.
       LokalSettingCustom(
         label: lokalText('Spotify'),
         description: lokalText(
@@ -144,9 +153,7 @@ List<LokalSettingsSection> dataSettings(
   ),
   LokalSettingsSection(
     title: lokalText('Mobile data'),
-    children: const [
-      EcoDataModeToggle(),
-    ],
+    children: const [EcoDataModeToggle()],
   ),
   if (Platform.isAndroid)
     LokalSettingsSection(

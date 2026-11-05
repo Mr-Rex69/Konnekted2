@@ -126,6 +126,113 @@ class OnlineRadioRecommendations {
     }
   }
 
+  /// Artist radio: use real Last.fm similar-artist/top-track data, with a
+  /// YouTube Music search for users without a configured Last.fm integration.
+  /// Return the same pending songs as song radio, so normal playback sources
+  /// and per-provider quality settings resolve the audio on demand.
+  Future<List<Song>> recommendArtist(
+    String artist, {
+    int count = 12,
+    Iterable<Song> existing = const [],
+  }) async {
+    if (artist.trim().isEmpty || count <= 0) return const [];
+    final candidates = <LokalDiscoveryTrack>[];
+    final client = http.Client();
+    try {
+      final artists = <String>[artist];
+      try {
+        final response = await LastFmApiClient().get({
+          'method': 'artist.getSimilar',
+          'artist': artist,
+          'autocorrect': '1',
+          'limit': '8',
+        }).timeout(const Duration(seconds: 6));
+        final related = (response['similarartists'] as Map?)?['artist'];
+        if (related is List) {
+          for (final entry in related) {
+            if (entry is! Map) continue;
+            final name = (entry['name'] ?? '').toString().trim();
+            if (name.isNotEmpty && !artists.contains(name)) artists.add(name);
+            if (artists.length >= 6) break;
+          }
+        }
+      } catch (_) {
+        // Similar artists are optional; the seed artist is still searchable.
+      }
+
+      // Keep the result varied: interleave real top tracks of the seed and
+      // nearby artists, rather than exhausting one artist's catalogue first.
+      final groups = await Future.wait(artists.map((name) async {
+        try {
+          final response = await LastFmApiClient().get({
+            'method': 'artist.getTopTracks',
+            'artist': name,
+            'autocorrect': '1',
+            'limit': '12',
+          }).timeout(const Duration(seconds: 6));
+          final tracks = (response['toptracks'] as Map?)?['track'];
+          if (tracks is! List) return <LokalDiscoveryTrack>[];
+          return [
+            for (final entry in tracks)
+              if (entry is Map && (entry['name'] ?? '').toString().isNotEmpty)
+                LokalDiscoveryTrack(
+                  title: (entry['name'] ?? '').toString(),
+                  artist: _lastFmArtist(entry['artist']).isEmpty
+                      ? name : _lastFmArtist(entry['artist']),
+                ),
+          ];
+        } catch (_) {
+          return <LokalDiscoveryTrack>[];
+        }
+      }));
+      for (var i = 0; i < 12; i++) {
+        for (final group in groups) {
+          if (i < group.length) candidates.add(group[i]);
+        }
+      }
+
+      if (candidates.length < count) {
+        try {
+          YoutubeMusicSession? session;
+          try {
+            session = await YoutubeMusicSessionStore().read();
+          } catch (_) {}
+          final Object? root = session != null && session.signedIn
+              ? await YoutubeMusicAccount(client, session)
+                  .request('search', {'query': artist})
+                  .timeout(const Duration(seconds: 7))
+              : await _guestRequest(client, 'search', {'query': artist});
+          final requested = _radioNormalize(artist);
+          candidates.addAll(parseYoutubeMusicTracks(root, limit: 50).where(
+            (track) => _radioNormalize(track.artist) == requested,
+          ));
+        } catch (_) {
+          // The Last.fm suggestions remain usable without YouTube search.
+        }
+      }
+      final chosen = pickOnlineRadio(
+        seed: Song(
+          id: 'radio:artist',
+          artist: artist,
+          title: 'Radio',
+          duration: Duration.zero,
+          fileType: 'Unknown',
+        ),
+        existing: existing,
+        candidates: candidates,
+        count: count.clamp(0, _maxBatch),
+      );
+      return [
+        for (final track in chosen)
+          discoveryPendingSong(track).copyWith(
+            remoteId: track.videoId == null ? null : 'yt:${track.videoId}',
+          ),
+      ];
+    } finally {
+      client.close();
+    }
+  }
+
   String? _seedId(Song seed) {
     for (final raw in [seed.remoteId, seed.id]) {
       if (raw == null) continue;

@@ -72,6 +72,17 @@ abstract class NetworkSourceService {
   Stream<ScanProgress> syncLibrary(NetworkServerEntity server);
 }
 
+/// Optional capability implemented only by NAS protocols that can read an
+/// audio-file prefix without downloading the whole remote media item.
+/// Keeping this separate from NetworkSourceService avoids breaking existing
+/// classes that implement the general source interface.
+abstract interface class NetworkEmbeddedArtworkSource {
+  Future<List<int>> getEmbeddedCoverArt(
+    NetworkServerEntity server,
+    String remoteId,
+  );
+}
+
 /// Protocol ids supported by the app.
 class NetworkProtocol {
   static const subsonic = 'subsonic';

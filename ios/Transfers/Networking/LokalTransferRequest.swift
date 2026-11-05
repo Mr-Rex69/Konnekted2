@@ -92,6 +92,13 @@ struct LokalTransferAuthorization: Sendable, CustomStringConvertible, CustomDebu
     return request
   }
 
+  func transferUploadRequest(for job: LokalTransferJob) throws -> URLRequest {
+    if job.uploadProtocolVersion == 1 {
+      return try LokalTransferUploadOperation.uploadRequest(self, job: job)
+    }
+    return try uploadRequest(for: job)
+  }
+
 }
 
 struct LokalTransferTaskBinding: Equatable, Sendable {
@@ -157,6 +164,13 @@ enum LokalTransferRequest {
 
   static func uploadOriginalID(_ body: Data, response: HTTPURLResponse, job: LokalTransferJob) throws -> String {
     try checkUploadResponse(response, job: job)
+    if job.uploadProtocolVersion == 1 {
+      let receipt = try LokalTransferUploadOperation.outcome(body, status: response.statusCode, job: job)
+      guard receipt.state == .committed, receipt.available == true, let id = receipt.originalID else {
+        throw LokalTransferError.invalidRecord
+      }
+      return id
+    }
     struct Receipt: Decodable {
       let ok: Bool
       let trackId: String
@@ -243,18 +257,26 @@ enum LokalTransferRequest {
 /// Foreground read-only content query, deliberately separate from daemon audio
 /// POSTs. Bound bytes while receiving, refuse redirects/cookies, and acknowledge
 /// cancellation only after the ephemeral session invalidates its delegates.
-final class LokalTransferUploadMatchProbe: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+protocol LokalTransferCancellableProbe: AnyObject, Sendable {
+  func start()
+  func cancel()
+}
+
+final class LokalTransferHTTPProbe: NSObject, URLSessionDataDelegate, LokalTransferCancellableProbe, @unchecked Sendable {
   private var session: URLSession!
   private var task: URLSessionDataTask!
   private var body = Data()
   private var failure: Error?
-  private var acceptedResponse = false
-  private var result: Result<String?, Error>?
-  private var completion: LokalTransferCompletion<String?>?
+  struct Exchange: Sendable { let status: Int; let body: Data }
+  private var status: Int?
+  private let statuses: Set<Int>
+  private var result: Result<Exchange, Error>?
+  private var completion: LokalTransferCompletion<Exchange>?
   private let endpoint: URL
 
-  init(request: URLRequest, queue: DispatchQueue, completion: @escaping LokalTransferCompletion<String?>) {
+  init(request: URLRequest, statuses: Set<Int> = [200], queue: DispatchQueue, completion: @escaping LokalTransferCompletion<Exchange>) {
     endpoint = request.url!
+    self.statuses = statuses
     self.completion = completion
     super.init()
     let config = URLSessionConfiguration.ephemeral
@@ -275,18 +297,18 @@ final class LokalTransferUploadMatchProbe: NSObject, URLSessionDataDelegate, @un
 
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                   completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-    guard let http = response as? HTTPURLResponse, http.url == endpoint, http.statusCode == 200,
+    guard let http = response as? HTTPURLResponse, http.url == endpoint, statuses.contains(http.statusCode),
           http.value(forHTTPHeaderField: "Content-Type")?.split(separator: ";").first?
             .trimmingCharacters(in: .whitespaces).lowercased() == "application/json",
           http.expectedContentLength < 0 || http.expectedContentLength <= Int64(LokalTransferRequest.maximumUploadResponseBytes) else {
       failure = LokalTransferError.invalidRecord; completionHandler(.cancel); return
     }
-    acceptedResponse = true
+    status = http.statusCode
     completionHandler(.allow)
   }
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
     guard failure == nil else { return }
-    guard acceptedResponse else { failure = LokalTransferError.invalidRecord; dataTask.cancel(); return }
+    guard status != nil else { failure = LokalTransferError.invalidRecord; dataTask.cancel(); return }
     guard data.count <= LokalTransferRequest.maximumUploadResponseBytes - body.count else {
       failure = LokalTransferError.limitExceeded; dataTask.cancel(); return
     }
@@ -296,8 +318,8 @@ final class LokalTransferUploadMatchProbe: NSObject, URLSessionDataDelegate, @un
     result = Result {
       if let failure { throw failure }
       if let error { throw error }
-      guard acceptedResponse else { throw LokalTransferError.invalidRecord }
-      return try LokalTransferRequest.matchedUploadOriginalID(body)
+      guard status != nil else { throw LokalTransferError.invalidRecord }
+      return Exchange(status: status!, body: body)
     }
     session.finishTasksAndInvalidate()
   }
@@ -309,5 +331,139 @@ final class LokalTransferUploadMatchProbe: NSObject, URLSessionDataDelegate, @un
   func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                   newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
     completionHandler(nil)
+  }
+}
+
+/// Matching and operation queries share the same bounded, no-redirect HTTP
+/// lifecycle. The wrapper preserves the existing read-only match API.
+final class LokalTransferUploadMatchProbe: LokalTransferCancellableProbe, @unchecked Sendable {
+  private let probe: LokalTransferHTTPProbe
+  init(request: URLRequest, queue: DispatchQueue, completion: @escaping LokalTransferCompletion<String?>) {
+    probe = LokalTransferHTTPProbe(request: request, queue: queue) { result in
+      completion(result.flatMap { exchange in Result { try LokalTransferRequest.matchedUploadOriginalID(exchange.body) } })
+    }
+  }
+  func start() { probe.start() }
+  func cancel() { probe.cancel() }
+}
+
+/// The desktop's immutable operation contract. It is deliberately separate
+/// from legacy upload receipts: an absent operation can only speak for a POST
+/// which actually carried this operation ID and protocol version.
+enum LokalTransferUploadOperation {
+  enum State: String, Decodable, Sendable { case absent, receiving, retryable, cancelled, committed }
+  struct Outcome: Sendable, Equatable {
+    let state: State
+    let originalID: String?
+    let available: Bool?
+  }
+
+  static func fingerprint(_ job: LokalTransferJob) throws -> String {
+    try job.validate()
+    guard job.direction == .upload, let bytes = job.expectedBytes,
+          bytes <= LokalTransferFiles.maximumUploadBytes, let sha = job.expectedSHA256 else {
+      throw LokalTransferError.invalidRecord
+    }
+    let fields = [job.metadata.title, job.metadata.artist, job.metadata.album ?? "",
+      job.metadata.fileExtension, ""]
+    let document = "lokal.upload.v1\n\(bytes)\n\(sha)\n" + fields.map { "\($0.utf8.count):\($0)" }.joined()
+    return try LokalTransferFiles.digestIntent(Data(document.utf8))
+  }
+
+  static func uploadRequest(_ authorization: LokalTransferAuthorization, job: LokalTransferJob) throws -> URLRequest {
+    var request = try authorization.uploadRequest(for: job)
+    request.setValue("1", forHTTPHeaderField: "x-link-upload-version")
+    request.setValue(job.id, forHTTPHeaderField: "x-link-upload-id")
+    return request
+  }
+
+  static func capabilityRequest(_ authorization: LokalTransferAuthorization, job: LokalTransferJob) throws -> URLRequest {
+    var request = try authorization.uploadRequest(for: job)
+    request.url = request.url!.appendingPathComponent("operations")
+    request.httpMethod = "GET"
+    for key in ["Content-Type", "Content-Length", "x-link-metadata"] { request.setValue(nil, forHTTPHeaderField: key) }
+    return request
+  }
+
+  static func statusRequest(_ authorization: LokalTransferAuthorization, job: LokalTransferJob) throws -> URLRequest {
+    var request = try capabilityRequest(authorization, job: job)
+    request.url = request.url!.appendingPathComponent(job.id)
+    return request
+  }
+
+  static func cancellationRequest(_ authorization: LokalTransferAuthorization, job: LokalTransferJob) throws -> URLRequest {
+    // Derive exactly the metadata sent by the upload constructor, including
+    // omission of originalFilename. No independent normalization can change it.
+    let upload = try authorization.uploadRequest(for: job)
+    guard var encoded = upload.value(forHTTPHeaderField: "x-link-metadata") else { throw LokalTransferError.invalidRecord }
+    encoded = encoded.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+    guard let data = Data(base64Encoded: encoded) else { throw LokalTransferError.invalidRecord }
+    let metadata = try JSONSerialization.jsonObject(with: data)
+    var request = try statusRequest(authorization, job: job)
+    request.url = request.url!.appendingPathComponent("cancel")
+    request.httpMethod = "POST"
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["bytes": job.expectedBytes!, "metadata": metadata], options: [.sortedKeys])
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(String(request.httpBody!.count), forHTTPHeaderField: "Content-Length")
+    return request
+  }
+
+  static func acceptsCapability(_ body: Data) throws -> Bool {
+    struct Capability: Decodable { let protocolVersion: Int; let uploadOperations: Int }
+    try keys(body, allowed: ["protocolVersion", "uploadOperations"])
+    let capability = try JSONDecoder().decode(Capability.self, from: body)
+    guard capability.protocolVersion == 1 else { throw LokalTransferError.invalidRecord }
+    return capability.uploadOperations == 1
+  }
+
+  static func outcome(_ body: Data, status: Int, job: LokalTransferJob) throws -> Outcome {
+    struct Receipt: Decodable {
+      let protocolVersion: Int
+      let operationID: String
+      let state: State
+      let bytes: Int64?
+      let sha256: String?
+      let fingerprint: String?
+      let trackId: String?
+      let file_hash: String?
+      let available: Bool?
+      let ok: Bool?
+    }
+    try keys(body, allowed: ["protocolVersion", "operationID", "state", "bytes", "sha256", "fingerprint",
+      "trackId", "file_hash", "available", "ok"])
+    let receipt = try JSONDecoder().decode(Receipt.self, from: body)
+    guard receipt.protocolVersion == 1, receipt.operationID == job.id else { throw LokalTransferError.invalidRecord }
+    if receipt.state == .absent {
+      guard status == 404, receipt.bytes == nil, receipt.sha256 == nil, receipt.fingerprint == nil,
+            receipt.trackId == nil, receipt.file_hash == nil, receipt.available == nil, receipt.ok == nil else {
+        throw LokalTransferError.invalidRecord
+      }
+      return Outcome(state: .absent, originalID: nil, available: nil)
+    }
+    guard [200, 201, 410].contains(status), receipt.bytes == job.expectedBytes,
+          receipt.sha256 == job.expectedSHA256, receipt.fingerprint == (try fingerprint(job)) else {
+      throw LokalTransferError.invalidRecord
+    }
+    if receipt.state == .committed {
+      guard let id = receipt.trackId, !id.isEmpty, id.utf8.count <= 512,
+            !id.contains("://"), !id.contains("?"), !id.contains("#"),
+            !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+            receipt.file_hash == job.expectedSHA256, let available = receipt.available,
+            status != 410 || !available, receipt.ok == nil || receipt.ok == available else {
+        throw LokalTransferError.invalidRecord
+      }
+      return Outcome(state: .committed, originalID: id, available: available)
+    }
+    guard receipt.trackId == nil, receipt.file_hash == nil, receipt.available == nil,
+          receipt.ok == nil || receipt.ok == false,
+          status == 200 || (status == 410 && receipt.state == .cancelled) else { throw LokalTransferError.invalidRecord }
+    return Outcome(state: receipt.state, originalID: nil, available: nil)
+  }
+
+  private static func keys(_ body: Data, allowed: Set<String>) throws {
+    guard !body.isEmpty, body.count <= LokalTransferRequest.maximumUploadResponseBytes,
+          let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+          Set(object.keys).isSubset(of: allowed) else { throw LokalTransferError.invalidRecord }
   }
 }

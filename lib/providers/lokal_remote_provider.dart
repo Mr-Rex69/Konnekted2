@@ -64,6 +64,40 @@ final lokalRemoteControllerProvider =
       LokalRemoteController.new,
     );
 
+/// The desktop can publish a new track before its playback engine updates
+/// the top-level duration. Prefer the recording's own metadata when present,
+/// then correct Android again as fresh snapshots arrive.
+Duration desktopNotificationDuration(LokalRemoteSnapshot snapshot) {
+  final trackSeconds = snapshot.currentTrack?.duration ?? 0;
+  final seconds = trackSeconds.isFinite && trackSeconds > 0
+      ? trackSeconds
+      : snapshot.duration;
+  return Duration(milliseconds: (seconds * 1000).round());
+}
+
+/// A passive paired socket may be suspended to conserve resources. An active
+/// remote-control session must not be treated as idle merely because the phone
+/// itself is not playing: the desktop owns playback in that mode.
+///
+/// Pure predicate shared by the link timer and its timeout regression tests.
+bool shouldSuspendIdleDesktopLink({
+  required Duration idleFor,
+  required bool controlsDesktop,
+  required bool desktopPlaying,
+  required bool phonePlaying,
+  required bool statsSyncBusy,
+  required bool fileCopyBusy,
+  required bool outboxBusy,
+}) {
+  return !controlsDesktop &&
+      !desktopPlaying &&
+      !phonePlaying &&
+      !statsSyncBusy &&
+      !fileCopyBusy &&
+      !outboxBusy &&
+      idleFor > const Duration(minutes: 3);
+}
+
 /// Owns one authenticated desktop connection, including polling and bounded
 /// reconnects. Paired desktop state is kept separate from the local engine.
 class LokalRemoteController extends Notifier<LokalRemoteControllerState>
@@ -265,6 +299,8 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       commandInFlight: false,
       socketConnected: false,
       controlsDesktop: false,
+      clearRemoteArtwork: true,
+      clearArtworkServer: true,
     );
   }
 
@@ -516,13 +552,49 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       await PlayerService().pause();
     }
     if (_disposed) return;
-    state = state.copyWith(controlsDesktop: value);
+    state = state.copyWith(
+      controlsDesktop: value,
+      clearRemoteArtwork: !value,
+      clearArtworkServer: !value,
+    );
     if (!value) {
       NotificationService().release(_notificationOwner);
       _notificationTrack = null;
+      _notificationArtworkKey = null;
+      _notificationArtwork = null;
       PlayerService().refreshNotificationState();
     } else {
       _updateRemoteNotification();
+      // The now-playing artwork fetch already registers the network-source
+      // row. Avoid two concurrent ensureServer writes during first pairing.
+      // Register separately only if there is no current PC track to fetch.
+      if (state.snapshot?.currentTrack?.id == null) {
+        unawaited(_registerRemoteArtworkSource());
+      }
+    }
+  }
+
+  /// Register the paired desktop as an artwork source even if it is paused or
+  /// its current song has no cover. Queue rows require a resolvable server ID.
+  Future<void> _registerRemoteArtworkSource() async {
+    final credentials = _credentials;
+    if (credentials == null ||
+        credentials.desktopId == null ||
+        !Database.isInitialized)
+      return;
+    final generation = _generation;
+    try {
+      final server = await LokalDesktopSource.instance.ensureServer(
+        credentials,
+      );
+      if (!_disposed &&
+          state.controlsDesktop &&
+          generation == _generation &&
+          identical(_credentials, credentials)) {
+        state = state.copyWith(artworkServerId: server.id);
+      }
+    } catch (_) {
+      // A missing or offline cover must never block remote playback controls.
     }
   }
 
@@ -533,6 +605,25 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
         'action': action,
         'value': value,
       });
+      return;
+    }
+    // A connected desktop can remain reachable over HTTP after the paired
+    // socket closes. Preserve exact recording IDs and queue payloads instead
+    // of discarding them through the scalar-only transport action enum.
+    if (action == 'playLibraryTrack' || action == 'queueTracks') {
+      final credentials = _credentials;
+      if (credentials == null || value is! Map) {
+        throw const LokalRemoteProtocolException(
+          'The paired desktop library command is unavailable.',
+        );
+      }
+      await ref
+          .read(lokalRemoteServiceProvider)
+          .sendLibraryCommand(
+            credentials,
+            action,
+            Map<String, dynamic>.from(value),
+          );
       return;
     }
     final actions = LokalRemoteAction.values.where(
@@ -728,11 +819,15 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
 
   void _tickLink() {
     if (_disposed || !state.socketConnected) return;
-    if (!state.syncProgress.busy &&
-        !state.fileCopyProgress.busy &&
-        !_downloadOutbox.busy &&
-        !PlayerService().isPlayingNotifier.value &&
-        DateTime.now().difference(_lastActivity) > const Duration(minutes: 3)) {
+    if (shouldSuspendIdleDesktopLink(
+      idleFor: DateTime.now().difference(_lastActivity),
+      controlsDesktop: state.controlsDesktop,
+      desktopPlaying: state.snapshot?.isPlaying == true,
+      phonePlaying: PlayerService().isPlayingNotifier.value,
+      statsSyncBusy: state.syncProgress.busy,
+      fileCopyBusy: state.fileCopyProgress.busy,
+      outboxBusy: _downloadOutbox.busy,
+    )) {
       disconnect();
       state = state.copyWith(
         error: 'Desktop link paused after 3 minutes without interaction. Reconnect when you need it.',
@@ -800,7 +895,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           !state.socketConnected ||
           coordinator == null ||
           !ref.read(lokalLinkServiceProvider).connected) {
-        throw StateError('Desktop disconnected before library sync. Reconnect and retry.');
+        throw StateError(
+          'Desktop disconnected before library sync. Reconnect and retry.',
+        );
       }
       await coordinator.synchronize();
       if (_disposed ||
@@ -808,7 +905,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           !state.socketConnected ||
           !ref.read(lokalLinkServiceProvider).connected ||
           !identical(_linkSync, coordinator)) {
-        throw StateError('Desktop disconnected during library sync. Reconnect and retry.');
+        throw StateError(
+          'Desktop disconnected during library sync. Reconnect and retry.',
+        );
       }
     } catch (_) {
       if (!_disposed && generation == _generation) {
@@ -993,10 +1092,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     await sendRawCommand('fadePause');
   }
 
-  Future<void> _receiveHandoff(Map<String, dynamic> value) =>
-      LokalDesktopSource.instance.runLibraryTransfer(
-        () => _receiveHandoffTracked(value),
-      );
+  Future<void> _receiveHandoff(Map<String, dynamic> value) => LokalDesktopSource
+      .instance
+      .runLibraryTransfer(() => _receiveHandoffTracked(value));
 
   Future<void> _receiveHandoffTracked(Map<String, dynamic> value) async {
     final raw = value['queue'], index = value['index'];
@@ -1054,9 +1152,15 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     if (_notificationArtworkKey != artworkKey) {
       _notificationArtworkKey = artworkKey;
       _notificationArtwork = null;
+      // Don't flash the previous desktop recording's cover when the queue
+      // advances; replace it only after the new image has been resolved.
+      if (state.remoteArtworkPath != null) {
+        state = state.copyWith(clearRemoteArtwork: true);
+      }
       unawaited(_loadNotificationArtwork(artworkKey, track.id));
     }
     final position = Duration(milliseconds: (snapshot.progress * 1000).round());
+    final duration = desktopNotificationDuration(snapshot);
     if (_notificationTrack == track.id &&
         _notificationPlaying == snapshot.isPlaying &&
         _notificationFavorite == track.liked &&
@@ -1066,6 +1170,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           _notificationOwner,
           position: position,
           isPlaying: snapshot.isPlaying,
+          duration: duration,
         ),
       );
       return;
@@ -1083,7 +1188,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           artist: track.artist,
           album: track.album,
           albumArt: _notificationArtwork,
-          duration: Duration(milliseconds: (snapshot.duration * 1000).round()),
+          duration: duration,
           fileType: track.fileType,
         ),
         isPlaying: snapshot.isPlaying,
@@ -1106,16 +1211,26 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       final server = await LokalDesktopSource.instance.ensureServer(
         credentials,
       );
+      if (_disposed || !state.controlsDesktop || _notificationArtworkKey != key)
+        return;
+      if (state.artworkServerId != server.id) {
+        state = state.copyWith(artworkServerId: server.id);
+      }
       final path = await AlbumArtService.instance.resolveArtworkPath(
         existingPath: 'lokal-cover://$trackId',
-        audioSourcePath: 'lokal://${server.id}/$trackId',
+        audioSourcePath: 'lokal://${server.id}/${Uri.encodeComponent(trackId)}',
       );
       if (_disposed ||
           !state.controlsDesktop ||
           _notificationArtworkKey != key ||
           path == null)
         return;
+      if (state.snapshot?.currentTrack?.id != trackId) return;
       _notificationArtwork = path;
+      // The same cached file drives Android media metadata, the miniplayer,
+      // and the desktop-controlled full player. The image is never loaded
+      // from an inaccessible Windows/Linux filesystem path.
+      state = state.copyWith(remoteArtworkPath: path);
       _notificationTrack = null; // Publish the local image to Android metadata.
       _updateRemoteNotification();
     } catch (_) {

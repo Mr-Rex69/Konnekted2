@@ -1,4 +1,9 @@
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:flick/features/discovery/discovery_http.dart';
+import 'package:flick/features/discovery/discovery_artwork.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
@@ -15,6 +20,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class _NoRemoteArtwork extends DiscoveryArtworkResolver {
+  _NoRemoteArtwork() : super(DiscoveryHttp(MockClient((_) async => http.Response('{}', 200))));
+  @override
+  Future<String> resolve(DiscoveryArtworkRequest request) async => '';
+}
+
 const _song = Song(
   id: '1',
   title: 'Midnight City',
@@ -23,7 +34,11 @@ const _song = Song(
   fileType: 'FLAC',
 );
 
-ListeningRecap _recap(ListeningRecapPeriod period, {int plays = 12}) {
+ListeningRecap _recap(
+  ListeningRecapPeriod period, {
+  int plays = 12,
+  String artist = 'M83',
+}) {
   final now = DateTime(2026, 10, 20, 21);
   final range = period.rangeFor(now);
   return ListeningRecap(
@@ -38,7 +53,7 @@ ListeningRecap _recap(ListeningRecapPeriod period, {int plays = 12}) {
     peakHour: 21,
     topSong: null,
     topArtist: RankedRecapArtist(
-      artist: 'M83',
+      artist: artist,
       plays: plays,
       uniqueSongs: 1,
       listeningTime: Duration(minutes: plays * 4),
@@ -55,7 +70,7 @@ ListeningRecap _recap(ListeningRecapPeriod period, {int plays = 12}) {
     ],
     topArtists: [
       RankedRecapArtist(
-        artist: 'M83',
+        artist: artist,
         plays: plays,
         uniqueSongs: 1,
         listeningTime: Duration(minutes: plays * 4),
@@ -74,9 +89,11 @@ Widget _app({
   List<MilestoneRecord> milestones = const [],
   bool persistentDock = false,
   double textScale = 1,
+  bool disableAnimations = true,
   VoidCallback? onDockTap,
 }) => ProviderScope(
   overrides: [
+    discoveryArtworkResolverProvider.overrideWithValue(_NoRemoteArtwork()),
     youRecapsProvider.overrideWith((ref) => Stream.value(recaps)),
     youAccountsProvider.overrideWithValue(accounts),
     youStreakProvider.overrideWith((ref) async => streak),
@@ -89,7 +106,7 @@ Widget _app({
         size: const Size(390, 2400),
         padding: const EdgeInsets.only(top: 24, bottom: 24),
         textScaler: TextScaler.linear(textScale),
-        disableAnimations: true,
+        disableAnimations: disableAnimations,
       ),
       child: Scaffold(
         body: persistentDock
@@ -299,6 +316,11 @@ void main() {
     expect(find.text('48'), findsNWidgets(2));
     expect(find.text('6'), findsOneWidget);
     expect(find.text('48 min'), findsOneWidget);
+    // Each listening period paints its top artist behind the recap content.
+    final portraits = tester.widgetList<DiscoveryArtwork>(
+      find.byType(DiscoveryArtwork),
+    );
+    expect(portraits.map((portrait) => portrait.artist), ['M83', 'M83', 'M83']);
     expect(find.text('1,200 min'), findsOneWidget);
     expect(find.text('9:00 PM'), findsOneWidget);
     expect(find.text('Midnight City'), findsOneWidget);
@@ -310,6 +332,115 @@ void main() {
     await tester.tap(find.text('Month'));
     await tester.pump();
     expect(find.text('160'), findsOneWidget);
+  });
+
+  testWidgets('animations-off setting does not delay You stats', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    AppConstants.setAnimationsEnabled(false);
+    addTearDown(() => AppConstants.setAnimationsEnabled(true));
+    _tall(tester);
+    await tester.pumpWidget(
+      _app(
+        onNavigate: (_) {},
+        disableAnimations: false,
+        recaps: {
+          ListeningRecapPeriod.weekly: _recap(
+            ListeningRecapPeriod.weekly,
+            plays: 12,
+          ),
+        },
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(DiscoveryArtwork), findsOneWidget);
+    expect(find.text('48 min'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cold entry paints a responsive You skeleton before recaps', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    _tall(tester);
+    await tester.pumpWidget(
+      _app(
+        onNavigate: (_) {},
+        disableAnimations: false,
+        recaps: {
+          ListeningRecapPeriod.weekly: _recap(
+            ListeningRecapPeriod.weekly,
+            plays: 12,
+          ),
+        },
+      ),
+    );
+    await tester.pump();
+    // The header and navigation remain interactive during the tab slide;
+    // portraits and recap processing do not start until entry is settled.
+    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(find.text('RECAP'), findsOneWidget);
+    expect(find.byType(DiscoveryArtwork), findsNothing);
+    expect(find.text('Nothing yet'), findsNWidgets(3));
+
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.byType(DiscoveryArtwork), findsNothing);
+    // PR #471 restored the full 330ms navigation slide. The old 90ms
+    // hydration timer would start recap/artwork work halfway through it.
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(
+      find.byType(DiscoveryArtwork),
+      findsNothing,
+      reason: 'Recap work must not compete with the 330ms tab slide',
+    );
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pump();
+    expect(find.byType(DiscoveryArtwork), findsOneWidget);
+    expect(find.text('48 min'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recap label and portrait use the same lead artist per period', (
+    tester,
+  ) async {
+    _tall(tester);
+    await tester.pumpWidget(
+      _app(
+        onNavigate: (_) {},
+        recaps: {
+          ListeningRecapPeriod.weekly: _recap(
+            ListeningRecapPeriod.weekly,
+            artist: 'M83, ZHU',
+          ),
+          ListeningRecapPeriod.monthly: _recap(
+            ListeningRecapPeriod.monthly,
+            artist: 'Tyler, the Creator & Kali Uchis',
+          ),
+          ListeningRecapPeriod.yearly: _recap(
+            ListeningRecapPeriod.yearly,
+            artist: 'Asake feat. Wizkid',
+          ),
+        },
+      ),
+    );
+    await tester.pump();
+
+    final portraits = tester.widgetList<DiscoveryArtwork>(
+      find.byType(DiscoveryArtwork),
+    );
+    expect(portraits.map((portrait) => portrait.artist), [
+      'M83',
+      'Tyler, the Creator',
+      'Asake',
+    ]);
+    expect(find.text('M83'), findsWidgets);
+    expect(find.text('Tyler, the Creator'), findsOneWidget);
+    expect(find.text('Asake'), findsOneWidget);
+    expect(find.text('M83, ZHU'), findsNothing);
+    expect(find.text('Tyler, the Creator & Kali Uchis'), findsNothing);
+    expect(find.text('Asake feat. Wizkid'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the gear, chips and rows open Settings where they belong', (

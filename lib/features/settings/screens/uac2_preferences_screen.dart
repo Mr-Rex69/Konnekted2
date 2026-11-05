@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -146,7 +147,12 @@ class _Uac2PreferencesSectionsState
               l10n.bitPerfectUsbDac,
               (enabled) => LokalSettingRow.toggle(
                 label: l10n.bitPerfectUsbDac,
-                description: l10n.useTheVerifiedDirectUsbPath,
+                description:
+                    audioEngineAsync.asData?.value ==
+                        AudioEnginePreference.androidMixerUsb
+                    ? 'Android 14+ native bit-perfect mixer. Only enabled for '
+                          'USB DACs and exact formats verified by Android.'
+                    : l10n.useTheVerifiedDirectUsbPath,
                 value: enabled,
                 onChanged: (value) =>
                     _setBitPerfect(context, value, enabled, audioEngineAsync),
@@ -455,7 +461,9 @@ class _Uac2PreferencesSectionsState
     final changed = value != enabled;
     if (value) {
       final engine = audioEngineAsync.asData?.value;
-      if (engine != null && engine != AudioEnginePreference.isochronousUsb) {
+      if (engine != null &&
+          engine != AudioEnginePreference.isochronousUsb &&
+          engine != AudioEnginePreference.androidMixerUsb) {
         await PlayerService().setAudioEnginePreference(
           AudioEnginePreference.isochronousUsb,
         );
@@ -495,6 +503,10 @@ class _Uac2PreferencesSectionsState
     final modeDescription = switch (diagnostics?.pathManagement) {
       AudioPathManagement.directUsbExperimental =>
         l10n.exclusiveUsbIsActiveAndBypassing,
+      AudioPathManagement.androidMixerBitPerfect =>
+        'Android 14+ bit-perfect USB mixer is active. '
+            'The USB DAC and sample rate were verified; audio bypasses '
+            'Android mixing, DSP and software volume.',
       AudioPathManagement.alsaDirectDap => l10n.directAlsaOutputIsActiveAnd,
       AudioPathManagement.managedDirectExclusive =>
         l10n.exclusiveDirectPcmIsActiveAnd,
@@ -572,6 +584,8 @@ class _Uac2PreferencesSectionsState
       AudioEnginePreference.exoPlayer => l10n.justAudioExoplayerDefault,
       AudioEnginePreference.rustOboe => l10n.rustViaOboe,
       AudioEnginePreference.isochronousUsb => l10n.isochronousUsb,
+      AudioEnginePreference.androidMixerUsb =>
+        'Android 14+ USB bit-perfect mixer',
     };
   }
 
@@ -629,6 +643,10 @@ class _Uac2PreferencesSectionsState
     AudioEnginePreference current, {
     AudioOutputDiagnostics? diagnostics,
   }) async {
+    final supportsAndroidUsbMixer =
+        Platform.isAndroid &&
+        await ref.read(uac2ServiceProvider).supportsAndroidUsbMixer();
+    if (!mounted || !context.mounted) return;
     final dapBothOff =
         diagnostics?.detectedDap == true &&
         !(await service.getBitPerfectEnabled()) &&
@@ -701,6 +719,22 @@ class _Uac2PreferencesSectionsState
             dropBitPerfect: false,
           ),
         ),
+        if (supportsAndroidUsbMixer)
+          _Choice(
+            label: 'Android 14+ USB bit-perfect mixer',
+            description:
+                'Uses Android’s native AudioTrack and mixer API. '
+                'Requires Android 14+ and a DAC advertising bit-perfect mixer '
+                'attributes. Exact PCM up to 24 significant bits only. '
+                'Android volume is bypassed: lower the DAC hardware volume '
+                'before playback. Unsupported content plays normally.',
+            selected: effective == AudioEnginePreference.androidMixerUsb,
+            onTap: (sheet) => select(
+              sheet,
+              AudioEnginePreference.androidMixerUsb,
+              dropBitPerfect: false,
+            ),
+          ),
       ],
     );
   }

@@ -7,6 +7,7 @@ Song song(
   String title,
   String path, {
   String artist = 'Artist',
+  String? albumArtist,
   String? album = 'Album',
   String? source,
   Duration duration = const Duration(minutes: 3),
@@ -14,6 +15,7 @@ Song song(
   id: id,
   title: title,
   artist: artist,
+  albumArtist: albumArtist,
   album: album,
   duration: duration,
   fileType: 'FLAC',
@@ -22,6 +24,67 @@ Song song(
 );
 
 void main() {
+  test('Mornye FLAC split ARTIST values do not duplicate linked song', () {
+    // Uploaded FLAC: ARTIST=SZA, ARTIST=Kendrick Lamar,
+    // ALBUMARTIST=SZA, DISPLAY ARTIST=SZA; Kendrick Lamar.
+    // Android can expose the second ARTIST value while desktop uses SZA.
+    final phone = song(
+      'phone-30', '30 For 30 (with Kendrick Lamar)',
+      '/storage/Music/SZA - 30 For 30 (with Kendrick Lamar).flac',
+      artist: 'Kendrick Lamar', album: 'SOS Deluxe: LANA',
+      duration: const Duration(milliseconds: 278277),
+    );
+    final desktop = song(
+      'pc-30', '30 For 30 (with Kendrick Lamar)',
+      'lokal://desktop/30', artist: 'SZA', albumArtist: 'SZA',
+      album: 'SOS Deluxe: LANA', source: 'lokal',
+      duration: const Duration(milliseconds: 278000),
+    );
+    for (final entries in [[desktop, phone], [phone, desktop]]) {
+      final index = preferredLibrarySongIndex(entries);
+      expect(index.visible.map((s) => s.id).toList(), ['phone-30']);
+      expect(index.byId['pc-30'], same(phone));
+      expect(index.byId['phone-30'], same(phone));
+    }
+  });
+
+  test('different artists without named featured credit remain independent', () {
+    final phone = song('phone', 'Duet', '/music/duet.flac',
+        artist: 'Kendrick Lamar', album: 'SOS Deluxe: LANA');
+    final pc = song('pc', 'Duet', 'lokal://desktop/duet',
+        artist: 'SZA', albumArtist: 'SZA', album: 'SOS Deluxe: LANA',
+        source: 'lokal');
+    expect(preferLocalLibrarySongs([phone, pc]), [phone, pc]);
+    final otherAlbum = song('pc2', 'Duet (with Kendrick Lamar)',
+        'lokal://desktop/duet2', artist: 'SZA', albumArtist: 'SZA',
+        album: 'Different Album', source: 'lokal');
+    final phoneWithTitle = song('phone2', 'Duet (with Kendrick Lamar)',
+        '/music/other.flac', artist: 'Kendrick Lamar',
+        album: 'SOS Deluxe: LANA');
+    expect(preferLocalLibrarySongs([phoneWithTitle, otherAlbum]),
+        [phoneWithTitle, otherAlbum]);
+  });
+
+  test('album artist wins display when Android exposes only a featured artist', () {
+    final phone = song('phone', '30 For 30 (with Kendrick Lamar)',
+      '/music/sza.flac', artist: 'Kendrick Lamar',
+      albumArtist: 'SZA', album: 'SOS Deluxe: LANA');
+    expect(creditedLeadArtist(phone), 'SZA');
+    // Track credits remain intact; only the presentation changes.
+    expect(phone.artist, 'Kendrick Lamar');
+  });
+
+  test('album owner remains the lead when the full credit lists multiple artists', () {
+    final phone = song('phone', 'All the Stars', '/music/stars.flac',
+      artist: 'SZA', albumArtist: 'SZA');
+    final pc = song('pc', 'All the Stars', 'lokal://1/stars',
+      artist: 'Kendrick Lamar, SZA', albumArtist: 'SZA', source: 'lokal');
+    expect(creditedLeadArtist(pc), 'SZA');
+    final index = preferredLibrarySongIndex([pc, phone]);
+    expect(index.visible.map((s) => s.id), ['phone']);
+    expect(index.byId['pc']?.id, 'phone');
+  });
+
   test(
     '5500 phone songs retain order, identity and lookups without desktop rows',
     () {
@@ -46,6 +109,33 @@ void main() {
     },
   );
 
+
+  test('album owner is the display lead for local and linked featured credits', () {
+    final mobile = song(
+      'local', 'SZA song', '/music/sza.flac',
+      artist: 'Kendrick Lamar, SZA', albumArtist: 'SZA',
+    );
+    final desktop = song(
+      'desktop', 'Seedhe Maut song', 'lokal://1/sm',
+      artist: 'Badshah, Seedhe Maut', albumArtist: 'Seedhe Maut',
+      source: 'lokal',
+    );
+    expect(creditedLeadArtist(mobile), 'SZA');
+    expect(creditedLeadArtist(desktop), 'Seedhe Maut');
+    // The underlying credits are intentionally not rewritten.
+    expect(mobile.artist, 'Kendrick Lamar, SZA');
+    expect(desktop.artist, 'Badshah, Seedhe Maut');
+  });
+
+  test('album owner must be a whole credited name, not a substring', () {
+    final pc = song('pc', 'Track', 'lokal://1/track',
+      artist: 'Annabelle, Bob', albumArtist: 'Anna', source: 'lokal');
+    expect(creditedLeadArtist(pc), 'Anna'); // ALBUMARTIST is the display lead.
+    final phone = song('phone', 'Track', '/music/track.flac',
+      artist: 'Anna', albumArtist: 'Anna');
+    final index = preferredLibrarySongIndex([pc, phone]);
+    expect(index.visible.map((s) => s.id), ['pc', 'phone']);
+  });
 
   test('history ghosts stay hidden, desktop-only songs stay available', () {
     final local = song('1', 'Local', '/music/local.flac');

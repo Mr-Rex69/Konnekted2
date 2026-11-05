@@ -1,3 +1,4 @@
+import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import 'package:flick/core/utils/string_sort_utils.dart';
 import 'package:flick/core/utils/uri_display_utils.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/song_actions_bottom_sheet.dart';
+import 'package:flick/features/player/widgets/add_to_playlist_sheet.dart';
+import 'package:flick/widgets/lokal/lokal_choice_sheet.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
@@ -21,6 +24,42 @@ import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
 import 'package:flick/features/folders/widgets/folder_artwork_mosaic.dart';
+
+/// Context menu for every folder surface. Uses the existing playlist sheet
+/// so the folder's full subtree can be added as one operation.
+Future<void> _showFolderActions(
+  BuildContext context, {
+  required String title,
+  required List<Song> songs,
+  List<Song>? playlistSongs,
+  required Future<void> Function(List<Song>) onPlay,
+}) async {
+  if (songs.isEmpty) return;
+  // Playback follows the visible filter, but adding a folder must include
+  // every song in that folder (including nested subfolders).
+  final songsToAdd = playlistSongs ?? songs;
+  final action = await showLokalChoiceSheet<String>(
+    context: context,
+    title: title,
+    choices: [
+      const LokalChoice(
+        value: 'play', label: 'Play folder', icon: Icons.play_arrow_rounded),
+      const LokalChoice(
+        value: 'shuffle', label: 'Shuffle folder', icon: Icons.shuffle_rounded),
+      LokalChoice(
+        value: 'playlist', label: 'Add to a playlist',
+                  description: '${songsToAdd.length} songs', icon: Icons.playlist_add_rounded),
+    ],
+  );
+  if (!context.mounted || action == null) return;
+  if (action == 'playlist') {
+    await AddToPlaylistSheet.showSongs(context, songsToAdd);
+  } else {
+    final ordered = List<Song>.of(songs);
+    if (action == 'shuffle') ordered.shuffle(Random());
+    await onPlay(ordered);
+  }
+}
 
 /// Groups songs by immediate subfolder relative to [prefix] within [folderUri].
 ({List<FolderGroup> subfolders, List<Song> songs}) groupByImmediateFolder({
@@ -397,6 +436,13 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
           return _RootFolderCard(
             entry: entry,
             onTap: () => _openRootFolder(entry.folder),
+            onLongPress: () => _showFolderActions(
+              context,
+              title: entry.folder.displayName,
+              songs: entry.songs,
+              onPlay: (ordered) => _playFolderSongs(
+                ordered, entry.folder.uri, entry.folder.displayName),
+            ),
           );
         },
       ),
@@ -437,6 +483,13 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
     return _FolderTreeView(
       roots: roots,
       onFolderTap: (node) => _openTreeFolder(node),
+      onFolderLongPress: (node) => _showFolderActions(
+        context,
+        title: node.name,
+        songs: node.allSongs,
+        onPlay: (ordered) =>
+            _playFolderSongs(ordered, node.folderUri, node.name),
+      ),
       onSongTap: (node, song) => _playTreeSong(node, song),
     );
   }
@@ -503,6 +556,26 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
     );
   }
 
+  Future<void> _playFolderSongs(
+    List<Song> songs, String folderUri, String folderName,
+  ) async {
+    if (songs.isEmpty) return;
+    await ref.read(playerProvider.notifier).play(
+      songs.first,
+      playlist: songs,
+      context: PlaybackContext(
+        source: PlaybackSource.folder,
+        sourceId: folderUri,
+        sourceName: folderName,
+      ),
+    );
+    if (mounted) {
+      await NavigationHelper.navigateToFullPlayer(
+        context, heroTag: 'folder_action_${songs.first.id}',
+      );
+    }
+  }
+
   Future<void> _playTreeSong(_FolderTreeNode node, Song song) async {
     final playlist = node.allSongs;
     await ref
@@ -536,8 +609,13 @@ class _RootFolderEntry {
 class _RootFolderCard extends StatefulWidget {
   final _RootFolderEntry entry;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _RootFolderCard({required this.entry, required this.onTap});
+  const _RootFolderCard({
+    required this.entry,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   State<_RootFolderCard> createState() => _RootFolderCardState();
@@ -593,6 +671,7 @@ class _RootFolderCardState extends State<_RootFolderCard>
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
           child: InkWell(
             onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
             onHighlightChanged: (highlighted) =>
                 highlighted ? _controller.forward() : _controller.reverse(),
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -881,6 +960,11 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       folderUri: widget.folderUri,
       prefix: widget.prefix,
     );
+    // Keep the original subfolder contents for playlist actions. The display
+    // filter below replaces FolderGroup.songs with a filtered copy.
+    final unfilteredSubfolderSongs = {
+      for (final folder in grouped.subfolders) folder.key: folder.songs,
+    };
     var subfolders = grouped.subfolders;
     var songs = grouped.songs;
 
@@ -939,7 +1023,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                 : _buildTreeContent(treeNode))
           : subfolders.isEmpty && songs.isEmpty
           ? _buildEmptyState(context)
-          : _buildContent(context, subfolders, songs),
+          : _buildContent(context, subfolders, songs, unfilteredSubfolderSongs),
     );
   }
 
@@ -973,6 +1057,12 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       roots: node.children,
       rootSongs: node.songs,
       onFolderTap: (child) => _openSubfolderKey(child.key),
+      onFolderLongPress: (child) => _showFolderActions(
+        context,
+        title: child.name,
+        songs: child.allSongs,
+        onPlay: (ordered) => _playSong(ordered.first, ordered, const []),
+      ),
       onSongTap: (_, song) => _playSong(song, node.allSongs, const []),
       onRootSongTap: (song) => _playSong(song, node.allSongs, const []),
     );
@@ -1070,6 +1160,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     BuildContext context,
     List<FolderGroup> subfolders,
     List<Song> songs,
+    Map<String, List<Song>> unfilteredSubfolderSongs,
   ) {
     return NotificationListener<ScrollNotification>(
       onNotification: (_) => true,
@@ -1100,6 +1191,14 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   return _SubfolderCard(
                     folder: folder,
                     onTap: () => _openSubfolder(context, folder),
+                    onLongPress: () => _showFolderActions(
+                      context,
+                      title: folder.name,
+                      songs: folder.songs,
+                      playlistSongs: unfilteredSubfolderSongs[folder.key],
+                      onPlay: (ordered) =>
+                          _playSong(ordered.first, ordered, const []),
+                    ),
                   );
                 },
               ),
@@ -1239,8 +1338,13 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 class _SubfolderCard extends StatefulWidget {
   final FolderGroup folder;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _SubfolderCard({required this.folder, required this.onTap});
+  const _SubfolderCard({
+    required this.folder,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   State<_SubfolderCard> createState() => _SubfolderCardState();
@@ -1296,6 +1400,7 @@ class _SubfolderCardState extends State<_SubfolderCard>
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
           child: InkWell(
             onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
             onHighlightChanged: (highlighted) =>
                 highlighted ? _controller.forward() : _controller.reverse(),
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -1430,7 +1535,12 @@ class _SongTile extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
           onTap: onTap,
-          onLongPress: () => SongActionsBottomSheet.show(context, song),
+          onLongPress: () => SongActionsBottomSheet.show(
+                    context,
+                    song,
+                    queueActions: false,
+                    hideMediaActions: true,
+                  ),
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppConstants.spacingMd,
@@ -1501,7 +1611,12 @@ class _SongTile extends StatelessWidget {
                     Icons.more_horiz_rounded,
                     color: context.lokal.muted,
                   ),
-                  onPressed: () => SongActionsBottomSheet.show(context, song),
+                  onPressed: () => SongActionsBottomSheet.show(
+                    context,
+                    song,
+                    queueActions: false,
+                    hideMediaActions: true,
+                  ),
                 ),
               ],
             ),
@@ -1518,6 +1633,7 @@ class _FolderTreeView extends StatefulWidget {
   final List<_FolderTreeNode> roots;
   final List<Song> rootSongs;
   final ValueChanged<_FolderTreeNode> onFolderTap;
+  final ValueChanged<_FolderTreeNode> onFolderLongPress;
   final void Function(_FolderTreeNode, Song) onSongTap;
   final ValueChanged<Song>? onRootSongTap;
 
@@ -1525,6 +1641,7 @@ class _FolderTreeView extends StatefulWidget {
     required this.roots,
     this.rootSongs = const [],
     required this.onFolderTap,
+    required this.onFolderLongPress,
     required this.onSongTap,
     this.onRootSongTap,
   });
@@ -1611,6 +1728,7 @@ class _FolderTreeViewState extends State<_FolderTreeView> {
           guideColor: _guideColor(context),
           onToggle: hasChildren ? () => _toggleNode(node) : null,
           onOpen: () => widget.onFolderTap(node),
+          onLongPress: () => widget.onFolderLongPress(node),
         ),
         AnimatedSize(
           duration: AppConstants.animationNormal,
@@ -1660,6 +1778,7 @@ class _FolderTreeRow extends StatelessWidget {
   final Color guideColor;
   final VoidCallback? onToggle;
   final VoidCallback onOpen;
+  final VoidCallback onLongPress;
 
   const _FolderTreeRow({
     required this.node,
@@ -1671,6 +1790,7 @@ class _FolderTreeRow extends StatelessWidget {
     required this.guideColor,
     required this.onToggle,
     required this.onOpen,
+    required this.onLongPress,
   });
 
   @override
@@ -1694,6 +1814,7 @@ class _FolderTreeRow extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(AppConstants.radiusMd),
             onTap: onOpen,
+            onLongPress: onLongPress,
             child: AnimatedContainer(
               duration: AppConstants.animationFast,
               padding: const EdgeInsets.symmetric(
@@ -2381,29 +2502,5 @@ BoxDecoration _folderSheetDecoration(BuildContext context) => BoxDecoration(
   border: Border.all(color: context.lokal.border),
 );
 
-Route<void> _folderRoute(BuildContext context, Widget page) {
-  final duration = MediaQuery.disableAnimationsOf(context)
-      ? Duration.zero
-      : AppConstants.animationNormal;
-  return PageRouteBuilder<void>(
-    transitionDuration: duration,
-    reverseTransitionDuration: duration,
-    pageBuilder: (_, _, _) => page,
-    transitionsBuilder: (_, animation, _, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeInOutCubic,
-      );
-      return FadeTransition(
-        opacity: curved,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(.04, 0),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        ),
-      );
-    },
-  );
-}
+Route<void> _folderRoute(BuildContext context, Widget page) =>
+    LokalPageRoute<void>(builder: (_) => page);

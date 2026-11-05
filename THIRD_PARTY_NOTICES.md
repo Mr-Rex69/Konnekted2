@@ -75,3 +75,17 @@ Android native bridge adapted from [Mornye](https://github.com/mornyeapp/Mornye)
 ## Native SMB2/3 transport (dart_smb2 / libsmb2)
 
 Lokal uses `dart_smb2` version 0.1.3 (BSD-3-Clause) to communicate with SMB2/SMB3 NAS shares. Its dynamically linked `libsmb2` native binary is LGPL-2.1 licensed. The complete LGPL license appears in the installed application's **About → Licences** page and `assets/licenses/libsmb2.txt`. Corresponding LGPL library source and native build/patch scripts are available at https://github.com/sahlberg/libsmb2 and https://github.com/ales-drnz/libsmb2-scripts . This library is not part of Lokal's application source code and users retain the rights described in LGPL-2.1.
+
+
+## Soulseek embedded protocol engine
+
+Lokal Mobile integrates [soulseek-rs-lib](https://github.com/michel/soulseek-rs)
+version 20.0.0, commit `3c5f1d12f25f98730ad8f1ca57621250d7c3bd41`,
+by Michel de Graaf and contributors under the MIT License. The library is
+compiled into Lokal's existing native Rust library. Source and its MIT license:
+https://github.com/michel/soulseek-rs/blob/3c5f1d12f25f98730ad8f1ca57621250d7c3bd41/LICENSE .
+The complete MIT notice is bundled in `assets/licenses/soulseek-rs-lib.txt`
+and the installed application's **About → Licences** page.
+Lokal's adapter does not include Seeker's .NET sources. Sharing is expressly
+opt-in. Upstream directory scanning exposes **all** files under the selected
+folder; users should enable it only for a folder appropriate for public sharing.

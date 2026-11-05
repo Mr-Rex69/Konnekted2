@@ -72,6 +72,17 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
+  test('native upload protocol proof is readable but rejects unsupported or download values', () {
+    final upload = <String, Object?>{...job(), 'direction': 'upload', 'uploadProtocolVersion': 1};
+    expect(IosTransferJob.fromJson(upload).uploadProtocolVersion, 1);
+    for (final invalid in [0, 2, true, '1']) {
+      expect(() => IosTransferJob.fromJson({...upload, 'uploadProtocolVersion': invalid}), throwsFormatException);
+    }
+    expect(() => IosTransferJob.fromJson({...job(), 'uploadProtocolVersion': 1}), throwsFormatException);
+    expect(IosTransferJob.fromJson(job()).uploadProtocolVersion, isNull);
+  });
+
+
   test(
     'native import leases bind verified revision, target and recovery role',
     () {

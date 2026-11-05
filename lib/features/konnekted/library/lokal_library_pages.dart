@@ -57,7 +57,8 @@ final lokalRecentlyPlayedProvider = StreamProvider.autoDispose<List<Song>>((
 /// The Library page for a destination name, or null when it isn't one.
 Widget? lokalLibraryPage(String name) => switch (name) {
   'songs' => LokalSongListPage(
-    title: lokalText('Songs'),
+    title: lokalText('Library'),
+    showTotalDuration: true,
     preferencesKey: 'lokal.library.songs.song_browser_view.v1',
     source: (ref) => ref.watch(konnektedLibraryProvider),
   ),
@@ -83,6 +84,7 @@ Widget? lokalLibraryPage(String name) => switch (name) {
   ),
   'recentlyPlayed' => LokalSongListPage(
     title: lokalText('Recently played'),
+    showTotalDuration: true,
     preferencesKey: 'lokal.library.recently_played.song_browser_view.v1',
     source: (ref) => ref.watch(lokalRecentlyPlayedProvider),
     initialSort: LokalSongSort.original,
@@ -92,7 +94,8 @@ Widget? lokalLibraryPage(String name) => switch (name) {
     emptyMessage: 'Songs you play show up here.',
   ),
   'recentlyAdded' => LokalSongListPage(
-    title: lokalText('Recently added'),
+    title: lokalText('Library'),
+    showTotalDuration: true,
     preferencesKey: 'lokal.library.recently_added.song_browser_view.v1',
     source: (ref) => ref.watch(konnektedLibraryProvider),
   ),

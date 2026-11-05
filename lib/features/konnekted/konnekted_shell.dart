@@ -7,13 +7,18 @@ import 'dart:async';
 
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/navigation/root_navigator.dart';
+import 'package:flick/core/navigation/lokal_navigation_switcher.dart';
+import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/core/utils/app_haptics.dart';
 import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/features/flow/flow_screen.dart';
+import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/folders/screens/folders_screen.dart';
 import 'package:flick/features/playlist_links/linked_playlists_screen.dart';
+import 'package:flick/features/spotify/spotify_playlists_screen.dart';
+import 'package:flick/features/discovery/youtube_music_playlists_screen.dart';
 import 'package:flick/features/recap/screens/listening_recap_screen.dart';
 import 'package:flick/features/search/screens/search_screen.dart';
 import 'package:flick/features/settings/lokal/lokal_settings_page.dart';
@@ -36,10 +41,41 @@ import 'konnekted_runtime.dart';
 import 'konnekted_you.dart';
 import 'library/lokal_library_pages.dart';
 
+/// A thresholded scroll-direction gate. The previous shell toggled the glass
+/// dock on *every* tiny drag/overscroll, causing its spring and backdrop shader
+/// to repeatedly reverse in the middle of a fold.
+@visibleForTesting
+class DockScrollHysteresis {
+  DockScrollHysteresis({this.threshold = 24});
+
+  final double threshold;
+  double _pending = 0;
+
+  bool? push(double delta, {required bool collapsed}) {
+    if (!delta.isFinite || delta == 0) return null;
+    final requested = delta > 0;
+    if (requested == collapsed) {
+      _pending = 0;
+      return null;
+    }
+    if (_pending != 0 && _pending.sign != delta.sign) _pending = 0;
+    _pending += delta;
+    if (_pending.abs() < threshold) return null;
+    _pending = 0;
+    return requested;
+  }
+
+  void reset() => _pending = 0;
+}
+
 /// The post-onboarding entry point. Keep Flick's existing root navigator and
 /// bootstrap; this shell owns the nested navigator and native shell lifecycle.
 class KonnektedShell extends ConsumerStatefulWidget {
-  const KonnektedShell({super.key});
+  const KonnektedShell({super.key, this.runtimeBuilder});
+
+  /// Allows navigation tests to mount the shell without native services.
+  @visibleForTesting
+  final Widget Function(Widget child)? runtimeBuilder;
 
   @override
   ConsumerState<KonnektedShell> createState() => _KonnektedShellState();
@@ -48,12 +84,15 @@ class KonnektedShell extends ConsumerStatefulWidget {
 class _KonnektedShellState extends ConsumerState<KonnektedShell>
     with ArtworkExtractionScrollGate {
   final _tab = ValueNotifier(KonnektedTab.listen);
+  int _tabMotionDirection = 1;
   // Explicit bottom-bar Search taps, including reselecting an open Search tab.
   // The lazy Search page observes this without forcing a shell rebuild.
   final _searchFocusRequests = ValueNotifier<int>(0);
   final _dockCollapsed = ValueNotifier(false);
+  final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   DateTime? _lastBack;
+  bool _nestedSystemBackHandled = false;
 
   @override
   void initState() {
@@ -75,35 +114,63 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   }
 
   void _select(KonnektedTab tab) {
-    LokalPerformanceAdvisor.noteNavigation();
-    AppHaptics.doublePulse();
+    LokalPerformanceAdvisor.noteNavigation(surface: 'tabs');
+    AppHaptics.selection();
     nestedNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-    _tab.value = tab;
+    if (_tab.value != tab) {
+      // Follow the dock's physical left-to-right order, not the enum order:
+      // Search is to the right of Library and You, despite being declared
+      // before Library in KonnektedTab.
+      _tabMotionDirection =
+          KonnektedTab.dockOrder.indexOf(tab) >
+                  KonnektedTab.dockOrder.indexOf(_tab.value)
+              ? 1
+              : -1;
+      _tab.value = tab;
+    }
+    _dockScroll.reset();
     _dockCollapsed.value = false;
     if (tab == KonnektedTab.explore) _searchFocusRequests.value++;
   }
 
-  /// Follow the first non-zero user scroll delta, including overscroll at
-  /// the top. Ballistic updates cannot undo a deliberate direction reversal.
-  /// Horizontal shelves and the dock's own player gestures are outside this.
+  /// Only a meaningful *accumulated* user drag changes the footer's state.
+  /// Do not also react to UserScrollNotification: those direction changes can
+  /// arrive between minute drag/overscroll deltas and ping-pong the spring.
+  /// Ballistic activity continues without changing the explicit user intent.
   bool _onScroll(ScrollNotification n) {
     onScrollNotification(n);
     if (n.metrics.axis != Axis.vertical) return false;
     if (n is ScrollUpdateNotification ||
         n is OverscrollNotification ||
         (n is UserScrollNotification && n.direction != ScrollDirection.idle)) {
-      LokalPerformanceAdvisor.noteScroll();
+      LokalPerformanceAdvisor.noteScroll(
+        surface: switch (_tab.value) {
+          KonnektedTab.listen => 'Home',
+          KonnektedTab.library => 'Library',
+          KonnektedTab.settings => 'You',
+          KonnektedTab.explore => 'Search',
+        },
+      );
+    }
+
+    if (n is ScrollEndNotification ||
+        (n is UserScrollNotification && n.direction == ScrollDirection.idle)) {
+      _dockScroll.reset();
+      return false;
     }
     double? delta;
     if (n is ScrollUpdateNotification && n.dragDetails != null) {
       delta = n.scrollDelta;
     } else if (n is OverscrollNotification && n.dragDetails != null) {
       delta = n.overscroll;
-    } else if (n is UserScrollNotification) {
-      if (n.direction == ScrollDirection.reverse) _dockCollapsed.value = true;
-      if (n.direction == ScrollDirection.forward) _dockCollapsed.value = false;
     }
-    if (delta != null && delta != 0) _dockCollapsed.value = delta > 0;
+    if (delta != null) {
+      final next = _dockScroll.push(
+        delta,
+        collapsed: _dockCollapsed.value,
+      );
+      if (next != null) _dockCollapsed.value = next;
+    }
     return false;
   }
 
@@ -155,37 +222,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       );
       return;
     }
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : AppConstants.animationNormal;
-    final lightweightTransition =
-        ref.read(lokalAppearanceProvider).performanceMode &&
-        LokalPerformanceAdvisor.samsungRasterMitigations;
+    // Material routes now use LokalPageMotion, including native Android
+    // predictive back. A custom PageRouteBuilder here previously bypassed
+    // that theme and left explicit Back and gesture Back looking different.
     unawaited(
       navigator.push<void>(
-        PageRouteBuilder<void>(
+        LokalPageRoute<void>(
           settings: RouteSettings(name: '/konnekted/${destination.name}'),
-          transitionDuration: duration,
-          reverseTransitionDuration: duration,
-          pageBuilder: (context, _, _) => _destination(destination),
-          // Opacity compositing of two full scrollable pages in the same
-          // transition raises raster pressure on the M05. Use a short
-          // composited translation instead in Performance Mode. Full mode
-          // retains the original fade.
-          transitionsBuilder: (_, animation, _, child) =>
-              lightweightTransition && duration != Duration.zero
-                  ? SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(.035, 0),
-                        end: Offset.zero,
-                      ).animate(CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                        reverseCurve: Curves.easeInCubic,
-                      )),
-                      child: RepaintBoundary(child: child),
-                    )
-                  : FadeTransition(opacity: animation, child: child),
+          builder: (_) => _destination(destination),
         ),
       ),
     );
@@ -199,6 +243,8 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
         'folders' => const FoldersScreen(),
         'recap' => const ListeningRecapScreen(),
         'linkedPlaylists' => const LinkedPlaylistsScreen(),
+        'spotifyPlaylists' => SpotifyPlaylistsScreen(onPlay: _play),
+        'youtubeMusicPlaylists' => YoutubeMusicPlaylistsScreen(onPlay: _play),
         'settings' => lokalSettingsPage(
           group: destination.settingsGroup,
           section: destination.settingsSection,
@@ -281,12 +327,24 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     }
   }
 
-  void _back(bool didPop, Object? result) {
-    if (didPop) return;
+  // Only the child navigator dismisses child routes. This prevents a
+  // committed system-back gesture from also switching the root tab.
+  void _popNestedRoute() {
     final navigator = nestedNavigatorKey.currentState;
-    if (navigator != null && navigator.canPop()) {
-      unawaited(navigator.maybePop());
-    } else if (_tab.value != KonnektedTab.listen) {
+    if (navigator == null || !navigator.canPop()) return;
+    _nestedSystemBackHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _nestedSystemBackHandled = false;
+    });
+    navigator.pop();
+  }
+
+  void _back(bool didPop, Object? result) {
+    if (didPop || _nestedSystemBackHandled) return;
+    // Child Back is owned by NavigatorPopHandler; this callback is for
+    // switching tabs / double-back exit when the child is already at root.
+    if (nestedNavigatorKey.currentState?.canPop() == true) return;
+    if (_tab.value != KonnektedTab.listen) {
       _select(KonnektedTab.listen);
     } else {
       final now = DateTime.now();
@@ -303,6 +361,13 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       }
     }
   }
+
+  Widget _runtime(Widget child) => widget.runtimeBuilder?.call(child) ??
+      KonnektedRuntime(
+        onOpenPlayer: _openPlayer,
+        onOpenQueue: () => _navigate(KonnektedDestination.queue),
+        child: child,
+      );
 
   @override
   void dispose() {
@@ -331,10 +396,8 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
         onPopInvokedWithResult: _back,
         child: Scaffold(
           backgroundColor: context.lokal.bg,
-          body: KonnektedRuntime(
-            onOpenPlayer: _openPlayer,
-            onOpenQueue: () => _navigate(KonnektedDestination.queue),
-            child: DecoratedBox(
+          body: _runtime(
+            DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topRight,
@@ -347,7 +410,10 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
               // refract; pages get its height as bottom padding instead.
               child: Consumer(
                 builder: (context, ref, _) {
-                  final hasSong = ref.watch(
+                  final hasRadio = ref.watch(radioPlayerProvider.select(
+                    (state) => state.station != null,
+                  ));
+                  final hasSong = hasRadio || ref.watch(
                     currentSongProvider.select((song) => song != null),
                   );
                   final media = MediaQuery.of(context);
@@ -365,42 +431,49 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         child: NotificationListener<ScrollNotification>(
                           onNotification: _onScroll,
                           child: RepaintBoundary(
-                            child: Navigator(
-                              key: nestedNavigatorKey,
+                            child: NavigatorPopHandler<void>(
+                              onPopWithResult: (_) => _popNestedRoute(),
+                              child: Navigator(
+                                key: nestedNavigatorKey,
                               onGenerateRoute: (_) => MaterialPageRoute<void>(
                                 settings: const RouteSettings(name: '/'),
                                 builder: (_) => PageStorage(
                                   bucket: _storage,
                                   child: ValueListenableBuilder<KonnektedTab>(
                                     valueListenable: _tab,
-                                    builder: (_, tab, _) => KeyedSubtree(
-                                      key: ValueKey(tab),
-                                      // No IndexedStack/PageView: inactive native-heavy
-                                      // screens are never eagerly created or retained.
-                                      child: switch (tab) {
-                                        KonnektedTab.listen => KonnektedHome(
-                                          onNavigate: _navigate,
-                                          onPlay: _play,
-                                        ),
-                                        KonnektedTab.explore =>
-                                          SearchScreen(
+                                    builder: (_, tab, _) => LokalNavigationSwitcher(
+                                      direction: _tabMotionDirection,
+                                      // Preserve the directional, edge-to-edge
+                                      // screen slide when changing root tabs.
+                                      // Recently visited pages stay cached offstage
+                                      // without sacrificing the transition.
+                                      retainVisitedTabs: true,
+                                      child: KeyedSubtree(
+                                        key: ValueKey(tab),
+                                        child: switch (tab) {
+                                          KonnektedTab.listen => KonnektedHome(
+                                            onNavigate: _navigate,
+                                            onPlay: _play,
+                                          ),
+                                          KonnektedTab.explore => SearchScreen(
                                             footerFocusRequests: _searchFocusRequests,
                                           ),
-                                        KonnektedTab.library =>
-                                          KonnektedLibrary(
+                                          KonnektedTab.library => KonnektedLibrary(
                                             onNavigate: _navigate,
                                           ),
-                                        KonnektedTab.settings => KonnektedYou(
-                                          onNavigate: _navigate,
-                                        ),
-                                      },
+                                          KonnektedTab.settings => KonnektedYou(
+                                            onNavigate: _navigate,
+                                          ),
+                                        },
+                                      ),
                                     ),
-                                  ),
                                 ),
                               ),
                             ),
+                            ),
                           ),
                         ),
+                      ),
                       ),
                       Positioned(
                         left: 0,
@@ -414,7 +487,21 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                             hasMiniPlayer: hasSong,
                             collapsed: _dockCollapsed.value,
                             onExpand: () => _dockCollapsed.value = false,
-                            miniPlayer: KonnektedMiniPlayer(
+                            miniPlayer: hasRadio
+                                ? KonnektedRadioMiniPlayer(
+                                    key: _miniPlayerKey,
+                                    artworkKey: _miniArtworkKey,
+                                    onOpen: () => unawaited(_openPlayer()),
+                                    onQueue: () {
+                                      ref.read(radioPlayerProvider.notifier)
+                                          .requestStationQueue();
+                                      unawaited(_openPlayer());
+                                    },
+                                    onPullUpStart: _pullPlayerStart,
+                                    onPullUpUpdate: (dy) => _pull?.dragBy(dy),
+                                    onPullUpEnd: _pullPlayerEnd,
+                                  )
+                                : KonnektedMiniPlayer(
                               key: _miniPlayerKey,
                               artworkKey: _miniArtworkKey,
                               onOpen: _openPlayer,

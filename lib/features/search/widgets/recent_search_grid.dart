@@ -10,8 +10,13 @@ import 'package:flick/features/discovery/discovery_artwork.dart';
 import '../providers/recent_search_tracks.dart';
 
 class RecentSearchGrid extends ConsumerWidget {
-  const RecentSearchGrid({super.key, required this.onSelected});
+  const RecentSearchGrid({
+    super.key,
+    required this.onSelected,
+    this.headerSlivers = const <Widget>[],
+  });
   final ValueChanged<RecentSearchTrack> onSelected;
+  final List<Widget> headerSlivers;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tracks = ref.watch(recentSearchTracksProvider);
@@ -24,6 +29,7 @@ class RecentSearchGrid extends ConsumerWidget {
         final textScale = MediaQuery.textScalerOf(context).scale(1);
         return CustomScrollView(
           slivers: [
+            ...headerSlivers,
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),

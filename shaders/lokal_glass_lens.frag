@@ -26,6 +26,10 @@ uniform float u_amount;
 uniform float u_depth;
 // Strength of the rainbow fringe at the rim (0 = none).
 uniform float u_dispersion;
+// 1 opts into the physical squircle profile; 0 keeps existing circle.
+uniform float u_profile;
+// Fractional center magnification, separate from the bezel refraction.
+uniform float u_magnification;
 
 uniform sampler2D u_texture;
 
@@ -51,6 +55,23 @@ float circleMap(float x) {
     return 1.0 - sqrt(max(1.0 - x * x, 0.0));
 }
 
+// Convex squircle surface: h(x)=(1-(1-x)^4)^(1/4). Its slope determines
+// refraction via Snell's law, n_air=1, n_glass=1.5. A single-interface
+// estimate is sufficient for the lightweight footer lens.
+float squircleBend(float x) {
+    float q = 1.0 - clamp(x, 0.0, 1.0);
+    float q2 = q * q;
+    float slope = (q2 * q) / pow(max(1.0 - q2 * q2, 1e-5), 0.75);
+    float cosI = inversesqrt(1.0 + slope * slope);
+    float sinI = slope * cosI;
+    float sinT = sinI / 1.5;
+    float cosT = sqrt(max(1.0 - sinT * sinT, 0.0));
+    float sinD = sinI * cosT - cosI * sinT;
+    float cosD = cosI * cosT + sinI * sinT;
+    // tan(90deg-asin(1/1.5)) = 1.11803399 at the outer edge.
+    return clamp((sinD / max(cosD, 1e-5)) / 1.11803399, 0.0, 1.0);
+}
+
 vec4 sampleAt(vec2 coord) {
     vec2 uv = clamp(coord / u_size, vec2(0.0), vec2(1.0));
 #ifdef IMPELLER_TARGET_OPENGLES
@@ -73,55 +94,78 @@ void main() {
     float radius = min(u_radius, min(halfSize.x, halfSize.y));
 
     float sd = sdRoundedRect(centered, halfSize, radius);
-    if (u_amount <= 0.0 || u_height <= 0.0 || -sd >= u_height) {
+    // The old shader returned unmodified pixels at the end of the bezel.
+    // That left the vast middle of each capsule optically flat. Keep the
+    // refraction confined to the rim, but separately magnify the background
+    // through the transparent middle without scaling foreground controls.
+    // Preserve the original fast path for every non-zoom lens.
+    if (u_magnification <= 0.0 &&
+        (u_amount <= 0.0 || u_height <= 0.0 || -sd >= u_height)) {
         frag_color = sampleAt(coord);
         return;
     }
-    sd = min(sd, 0.0);
+    float inside = max(-sd, 0.0);
+    vec2 edgeShift = vec2(0.0);
+    if (u_amount > 0.0 && u_height > 0.0 && inside < u_height) {
+        float inset = clamp(inside / u_height, 0.0, 1.0);
+        float bend = u_profile > 0.5
+            ? squircleBend(inset)
+            : circleMap(1.0 - inset);
+        float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+        vec2 toCentre = length(centered) > 1e-3
+            ? normalize(centered) : vec2(0.0);
+        vec2 normal = gradSdRoundedRect(centered, halfSize, gradRadius) +
+            u_depth * toCentre;
+        float normalLength = length(normal);
+        if (normalLength > 1e-4) {
+            edgeShift = -u_amount * bend * (normal / normalLength);
+        }
+    }
 
-    // Negative: sample from further in, so the edge magnifies the inside.
-    float d = circleMap(1.0 - -sd / u_height) * -u_amount;
-    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-    vec2 toCentre = length(centered) > 1e-3 ? normalize(centered) : vec2(0.0);
-    vec2 grad = normalize(
-        gradSdRoundedRect(centered, halfSize, gradRadius) + u_depth * toCentre
+    // Fade the zoom to zero at the outer edge, joining smoothly with the
+    // squircle refraction. The footer uses a 0.065 background zoom;
+    // foreground controls and artwork are never scaled.
+    float zoomWeight = smoothstep(
+        0.0, max(u_height * 0.85, 1.0), inside
     );
-    vec2 refracted = coord + d * grad;
+    vec2 zoomShift = -centered *
+        clamp(u_magnification, 0.0, 0.18) * zoomWeight;
+    vec2 refracted = coord + edgeShift + zoomShift;
 
     if (u_dispersion <= 0.0) {
         frag_color = sampleAt(refracted);
         return;
     }
 
-    float intensity = u_dispersion *
+    // The old seven-channel spectrum split the underlying artwork into
+    // obvious red/cyan/yellow bands. Apple-like glass has a tiny glint on
+    // high-contrast edges, not an RGB prism. Cap *physical-pixel* separation
+    // and keep green and alpha sampled from the true refracted backdrop.
+    float chroma = clamp(u_dispersion, 0.0, 0.25);
+    float intensity = chroma *
         ((centered.x * centered.y) / (halfSize.x * halfSize.y));
-    vec2 dispersed = d * grad * intensity;
+    vec2 dispersed = edgeShift * intensity;
+    float fringe = length(dispersed);
+    if (fringe < 0.001) {
+        frag_color = sampleAt(refracted);
+        return;
+    }
+    dispersed *= min(1.0, 0.6 / fringe);
 
-    vec4 color = vec4(0.0);
+    vec4 centre = sampleAt(refracted);
     vec4 red = sampleAt(refracted + dispersed);
-    color.r += red.r / 3.5;
-    color.a += red.a / 7.0;
-    vec4 orange = sampleAt(refracted + dispersed * (2.0 / 3.0));
-    color.r += orange.r / 3.5;
-    color.g += orange.g / 7.0;
-    color.a += orange.a / 7.0;
-    vec4 yellow = sampleAt(refracted + dispersed * (1.0 / 3.0));
-    color.r += yellow.r / 3.5;
-    color.g += yellow.g / 3.5;
-    color.a += yellow.a / 7.0;
-    vec4 green = sampleAt(refracted);
-    color.g += green.g / 3.5;
-    color.a += green.a / 7.0;
-    vec4 cyan = sampleAt(refracted - dispersed * (1.0 / 3.0));
-    color.g += cyan.g / 3.5;
-    color.b += cyan.b / 3.0;
-    color.a += cyan.a / 7.0;
-    vec4 blue = sampleAt(refracted - dispersed * (2.0 / 3.0));
-    color.b += blue.b / 3.0;
-    color.a += blue.a / 7.0;
-    vec4 purple = sampleAt(refracted - dispersed);
-    color.r += purple.r / 7.0;
-    color.b += purple.b / 3.0;
-    color.a += purple.a / 7.0;
-    frag_color = color;
+    vec4 blue = sampleAt(refracted - dispersed);
+    // Fragment shaders output premultiplied color. Offset pixels can have a
+    // different alpha along an image's transparent edge; sampling their
+    // premultiplied RGB alongside centre.a without conversion makes bright
+    // rainbow halos in the composited result. Rebase each fringe onto the
+    // centre pixel's alpha and leave green unchanged.
+    float redStraight = red.a > 1e-5 ? red.r / red.a : 0.0;
+    float blueStraight = blue.a > 1e-5 ? blue.b / blue.a : 0.0;
+    frag_color = vec4(
+        clamp(redStraight, 0.0, 1.0) * centre.a,
+        centre.g,
+        clamp(blueStraight, 0.0, 1.0) * centre.a,
+        centre.a
+    );
 }

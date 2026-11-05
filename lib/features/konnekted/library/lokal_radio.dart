@@ -7,11 +7,13 @@ import 'package:flick/features/konnekted/konnekted_data.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/providers/songs_provider.dart';
+import 'package:flick/services/online_radio_recommendations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'lokal_genres.dart';
 import 'lokal_library_kit.dart';
+import 'lokal_radio_session.dart';
 
 /// Desktop's radio length.
 const lokalRadioMax = 50;
@@ -21,10 +23,9 @@ final _featuring = RegExp(r'\s+(feat\.?|ft\.?|featuring|&|,|x)\s+.*$');
 String _artistKey(String artist) =>
     lokalGenreKey(artist.toLowerCase().replaceFirst(_featuring, ''));
 
-/// Song or artist radio from your own library, offline.
+/// Offline fallback when YouTube Music / Last.fm cannot build a radio.
 ///
-/// Desktop builds its radio from YouTube Music and Last.fm; this keeps to the
-/// songs you have: the seed's artist, then songs sharing its genres and era,
+/// Rank playable local recordings by the seed's artist, then songs sharing its genres and era,
 /// liked songs a little ahead. At most [lokalRadioMax] songs, the seed first,
 /// no more than six by one artist and three from one album, shuffled within
 /// how well they match so two radios from one seed differ.
@@ -109,50 +110,89 @@ List<Song> buildLokalRadio({
   return radio;
 }
 
-/// Builds a radio from [seed] (a song) or [artist] and plays it.
+/// Start a station from a song or artist. The selected recording starts
+/// immediately; YouTube Music / Last.fm recommendations then fill the queue
+/// through the same replayable on-demand resolver that Flow uses. The local
+/// similarity builder is only an offline fallback.
 ///
-/// Takes a [context] that outlives the caller (a song's actions sheet closes
-/// before the radio starts), and reads providers through its scope.
+/// The context is the page's root context: the menu that dispatched this
+/// action may already have been dismissed.
 Future<void> startLokalRadio(
   BuildContext context, {
   Song? seed,
   String? artist,
 }) async {
   final container = ProviderScope.containerOf(context, listen: false);
-  var library = container.read(konnektedLibraryProvider).value;
-  if (library == null) {
+
+  Future<List<Song>> loadLibrary() async {
+    final available = container.read(konnektedLibraryProvider).value;
+    if (available != null) return available;
     final sub = container.listen(songsProvider.future, (_, _) {});
     try {
-      library = (await sub.read()).songs;
+      return (await sub.read()).songs;
     } finally {
       sub.close();
     }
   }
-  final liked = {
-    for (final song
-        in container.read(konnektedFavoritesProvider).value ?? const <Song>[])
-      song.id,
-  };
-  final radio = buildLokalRadio(
-    library: library,
-    seed: seed,
-    artist: artist,
-    liked: liked,
-  );
+
+  // Do not scan a large library before starting a song radio. This is only
+  // evaluated if online discovery returns no usable tracks.
+  Future<List<Song>> localFallback() async {
+    final library = await loadLibrary();
+    final liked = {
+      for (final song in
+          container.read(konnektedFavoritesProvider).value ?? const <Song>[])
+        song.id,
+    };
+    final playable = library.where((song) =>
+        !song.isPending &&
+        !song.isNetworkSource &&
+        song.filePath?.isNotEmpty == true &&
+        !(song.filePath?.startsWith('ghost://') ?? false)).toList();
+    return buildLokalRadio(
+      library: playable,
+      seed: seed,
+      artist: artist,
+      liked: liked,
+    );
+  }
+
+  var first = seed;
+  var initialOnline = <Song>[];
+  if (first == null) {
+    if (artist == null || artist.trim().isEmpty) return;
+    // Artist-only radios must work even without a local recording of that
+    // artist. Look up genuine online artist/top-track recommendations first.
+    try {
+      initialOnline = await const OnlineRadioRecommendations()
+          .recommendArtist(artist, count: 12)
+          .timeout(const Duration(seconds: 26), onTimeout: () => <Song>[]);
+      first = initialOnline.firstOrNull;
+    } catch (_) {
+      // Offline artist radios can still open from the local library.
+    }
+    if (first == null) {
+      try {
+        first = (await localFallback()).firstOrNull;
+      } catch (_) {}
+    }
+  }
+
   if (!context.mounted) return;
-  if (radio.length < 2) {
+  if (first == null) {
     LokalToast.show(
       context,
-      lokalText(
-        'Not enough similar songs for a radio yet. Radio uses your library’s artists, genres and years.',
-      ),
+      lokalText('Couldn’t find songs for this radio. Check your online sources.'),
     );
     return;
   }
   try {
-    await container
-        .read(playerProvider.notifier)
-        .play(radio.first, playlist: radio);
+    await container.read(lokalRadioSessionProvider).start(
+      first,
+      artist: seed == null ? artist : null,
+      initialOnline: initialOnline,
+      localFallback: localFallback,
+    );
   } catch (_) {
     if (context.mounted) {
       LokalToast.show(context, lokalText('Couldn’t start this radio.'));
@@ -162,13 +202,7 @@ Future<void> startLokalRadio(
   if (context.mounted) {
     LokalToast.show(
       context,
-      lokalText(
-        "{arg0} Radio: {arg1}",
-        args: {
-          'arg0': seed?.title ?? artist,
-          'arg1': lokalSongCount(radio.length),
-        },
-      ),
+      lokalText('Radio started. Finding online recommendations…'),
     );
   }
 }

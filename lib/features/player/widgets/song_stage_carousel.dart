@@ -23,6 +23,8 @@ class SongStageCarousel extends StatefulWidget {
     this.buttonDissolve = false,
     this.animateButtonDissolve = true,
     this.maskOutgoingOnDissolve = false,
+    this.allowUnresolvedSwipe = false,
+    this.coverGap = 0,
     this.onDragStateChanged,
   });
   final Song currentSong;
@@ -39,6 +41,14 @@ class SongStageCarousel extends StatefulWidget {
 
   /// Complementary outgoing mask for the translucent fullscreen sleeve.
   final bool maskOutgoingOnDissolve;
+
+  /// A remote transport can skip even when the paired desktop has not yet
+  /// published its adjacent queue thumbnails. Local playback stays strict.
+  final bool allowUnresolvedSwipe;
+
+  /// Empty space between adjacent covers during a horizontal swipe.
+  /// Set to zero for full-bleed posters; boxed artwork can use a visible gap.
+  final double coverGap;
   final ValueChanged<bool>? onDragStateChanged;
 
   @override
@@ -130,6 +140,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
   }
 
   double get _width => context.size?.width ?? MediaQuery.sizeOf(context).width;
+  double get _stride =>
+      _width + widget.coverGap.clamp(0.0, _width * .16).toDouble();
 
   Future<bool> _moveTo(double target) async {
     if (!mounted) return false;
@@ -219,7 +231,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
     _committing = true;
     final before = _current.id;
     try {
-      if (!await _moveTo(next ? -_width : _width)) return;
+      if (!await _moveTo(next ? -_stride : _stride)) return;
       HapticFeedback.selectionClick();
       if (next) {
         await widget.onNext();
@@ -261,28 +273,42 @@ class SongStageCarouselState extends State<SongStageCarousel>
     widget.onDragStateChanged?.call(true);
   }
 
-  void _update(DragUpdateDetails details) {
+  void _update(DragUpdateDetails details) => _updateDelta(details.delta.dx);
+
+  // Both the inline cover gesture and the full-bleed chrome gesture use the
+  // same horizontal delta. Do not fabricate DragUpdateDetails: newer Flutter
+  // SDKs require positional fields even for synthetic gesture details.
+  void _updateDelta(double horizontalDelta) {
     if (!_dragging || !widget.enabled) return;
-    var delta = details.delta.dx;
-    if ((delta < 0 && _next == null) || (delta > 0 && _previous == null)) {
+    var delta = horizontalDelta;
+    if (!widget.allowUnresolvedSwipe &&
+        ((delta < 0 && _next == null) || (delta > 0 && _previous == null))) {
       delta *= .32 * math.exp(-_offset.abs() / math.max(_width * .6, 1));
     }
-    setState(() => _offset = (_offset + delta).clamp(-_width, _width));
+    setState(() => _offset = (_offset + delta).clamp(-_stride, _stride));
   }
 
-  Future<void> _end(DragEndDetails details) async {
+  Future<void> _end(DragEndDetails details) =>
+      _finishDrag(details.primaryVelocity ?? 0);
+
+  Future<void> _finishDrag(double velocity) async {
     if (!_dragging) return;
     _dragging = false;
     widget.onDragStateChanged?.call(false);
-    final velocity = details.primaryVelocity ?? 0;
     final goNext =
-        velocity <= -700 || (velocity.abs() < 700 && _offset < -_width * .25);
+        velocity <= -700 || (velocity.abs() < 700 && _offset < -_stride * .25);
     final goPrevious =
-        velocity >= 700 || (velocity.abs() < 700 && _offset > _width * .25);
+        velocity >= 700 || (velocity.abs() < 700 && _offset > _stride * .25);
     if (goNext && _next != null) {
       await _commit(true);
     } else if (goPrevious && _previous != null) {
       await _commit(false);
+    } else if (goNext && widget.allowUnresolvedSwipe) {
+      await widget.onNext();
+      await _moveTo(0);
+    } else if (goPrevious && widget.allowUnresolvedSwipe) {
+      await widget.onPrevious();
+      await _moveTo(0);
     } else {
       await _moveTo(0);
     }
@@ -294,6 +320,14 @@ class SongStageCarouselState extends State<SongStageCarousel>
     widget.onDragStateChanged?.call(false);
     _moveTo(0);
   }
+
+  /// A full-bleed player renders its cover behind the control chrome. Let a
+  /// hit-testable, transparent artwork slot in that chrome forward horizontal
+  /// drag deltas to the *same* carousel, preserving the normal slide physics.
+  void startExternalDrag() => _start(DragStartDetails());
+  void updateExternalDrag(double delta) => _updateDelta(delta);
+  Future<void> endExternalDrag(double velocity) => _finishDrag(velocity);
+  void cancelExternalDrag() => _cancel();
 
   @override
   void dispose() {
@@ -307,6 +341,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
     builder: (context, constraints) {
       final width = constraints.maxWidth;
       if (width <= 0) return const SizedBox.shrink();
+      final stride = width + widget.coverGap.clamp(0.0, width * .16).toDouble();
       Widget stage(Song song, double offset, String slot) {
         final repeated =
             [
@@ -350,8 +385,8 @@ class SongStageCarouselState extends State<SongStageCarousel>
                     : stage(oldSong, 0, 'outgoing')
               else ...[
                 if (_previous != null)
-                  stage(_previous!, -width + _offset, 'previous'),
-                if (_next != null) stage(_next!, width + _offset, 'next'),
+                  stage(_previous!, -stride + _offset, 'previous'),
+                if (_next != null) stage(_next!, stride + _offset, 'next'),
               ],
               if (_dissolveFrom != null)
                 CloudCoverReveal(

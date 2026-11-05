@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flick/services/uac2_service.dart';
@@ -7,7 +8,12 @@ import 'package:flick/src/rust/audio/engine.dart' show AudioApiPreference;
 
 enum Uac2FormatPreference { highestQuality, compatibility, custom }
 
-enum AudioEnginePreference { exoPlayer, rustOboe, isochronousUsb }
+enum AudioEnginePreference {
+  exoPlayer,
+  rustOboe,
+  isochronousUsb,
+  androidMixerUsb,
+}
 
 enum DsdOutputMode { auto, forcePcm, forceDop, native }
 
@@ -23,13 +29,27 @@ enum DsdWireVariant { auto, beMsb, leMsb, beLsb, leLsb }
 enum DsdWireGrouping { auto, u32, u16, u8 }
 
 class Uac2PreferencesService {
+  // Synchronous mirror used when locking DSP/volume on the selected mixer route.
+  static final ValueNotifier<AudioEnginePreference>
+  selectedAudioEngineNotifier = ValueNotifier(AudioEnginePreference.exoPlayer);
+  static bool get isAndroidMixerUsbSelectedSync =>
+      selectedAudioEngineNotifier.value ==
+      AudioEnginePreference.androidMixerUsb;
+
   static final ValueNotifier<bool> developerModeNotifier = ValueNotifier(false);
-  static final ValueNotifier<bool> killIsochronousUsbOnQuitNotifier = ValueNotifier(true);
-  static final ValueNotifier<DsdOutputMode> dsdOutputModeNotifier = ValueNotifier(DsdOutputMode.auto);
-  static final ValueNotifier<DsdByteOrderOverride> dsdByteOrderOverrideNotifier = ValueNotifier(DsdByteOrderOverride.auto);
-  static final ValueNotifier<int?> dsdSubslotOverrideNotifier = ValueNotifier(null);
-  static final ValueNotifier<DsdWireVariant> dsdWireVariantNotifier = ValueNotifier(DsdWireVariant.auto);
-  static final ValueNotifier<DsdWireGrouping> dsdWireGroupingNotifier = ValueNotifier(DsdWireGrouping.auto);
+  static final ValueNotifier<bool> killIsochronousUsbOnQuitNotifier =
+      ValueNotifier(true);
+  static final ValueNotifier<DsdOutputMode> dsdOutputModeNotifier =
+      ValueNotifier(DsdOutputMode.auto);
+  static final ValueNotifier<DsdByteOrderOverride>
+  dsdByteOrderOverrideNotifier = ValueNotifier(DsdByteOrderOverride.auto);
+  static final ValueNotifier<int?> dsdSubslotOverrideNotifier = ValueNotifier(
+    null,
+  );
+  static final ValueNotifier<DsdWireVariant> dsdWireVariantNotifier =
+      ValueNotifier(DsdWireVariant.auto);
+  static final ValueNotifier<DsdWireGrouping> dsdWireGroupingNotifier =
+      ValueNotifier(DsdWireGrouping.auto);
   static const _keySelectedDevice = 'uac2_selected_device';
   static const _keyPreferredFormat = 'uac2_preferred_format';
   static const _keyFormatPreference = 'uac2_format_preference';
@@ -43,7 +63,8 @@ class Uac2PreferencesService {
   static const _keyDeveloperModeEnabled = 'developer_mode_enabled';
   static const _keyAudioFormatEnabled = 'uac2_audio_format_enabled';
   static const _keyUsbSoftwareVolume = 'uac2_usb_software_volume';
-  static const _keyKillIsochronousUsbOnQuit = 'uac2_kill_isochronous_usb_on_quit';
+  static const _keyKillIsochronousUsbOnQuit =
+      'uac2_kill_isochronous_usb_on_quit';
   static const _keyGaplessPlaybackEnabled = 'gapless_playback_enabled';
   static const _keyDuckOnInterruption = 'duck_on_interruption_enabled';
   static const _keyDsdOutputMode = 'dsd_output_mode';
@@ -56,21 +77,31 @@ class Uac2PreferencesService {
   static const _keyDeclinedUsbDevices = 'uac2_declined_usb_devices';
   static const _keyAutoEngageUsbDac = 'uac2_auto_engage_usb_dac';
 
-  static final ValueNotifier<bool> autoEngageUsbDacNotifier = ValueNotifier(true);
-  static bool get isAutoEngageUsbDacEnabledSync => autoEngageUsbDacNotifier.value;
+  static final ValueNotifier<bool> autoEngageUsbDacNotifier = ValueNotifier(
+    true,
+  );
+  static bool get isAutoEngageUsbDacEnabledSync =>
+      autoEngageUsbDacNotifier.value;
 
   static bool get isDeveloperModeEnabledSync => developerModeNotifier.value;
-  static bool get isKillIsochronousUsbOnQuitSync => killIsochronousUsbOnQuitNotifier.value;
+  static bool get isKillIsochronousUsbOnQuitSync =>
+      killIsochronousUsbOnQuitNotifier.value;
   static DsdOutputMode get dsdOutputModeSync => dsdOutputModeNotifier.value;
-  static DsdByteOrderOverride get dsdByteOrderOverrideSync => dsdByteOrderOverrideNotifier.value;
+  static DsdByteOrderOverride get dsdByteOrderOverrideSync =>
+      dsdByteOrderOverrideNotifier.value;
   static int? get dsdSubslotOverrideSync => dsdSubslotOverrideNotifier.value;
   static DsdWireVariant get dsdWireVariantSync => dsdWireVariantNotifier.value;
-  static DsdWireGrouping get dsdWireGroupingSync => dsdWireGroupingNotifier.value;
-  static final ValueNotifier<bool> autoSwitchDsdForVolumeNotifier = ValueNotifier(false);
-  static bool get autoSwitchDsdForVolumeSync => autoSwitchDsdForVolumeNotifier.value;
+  static DsdWireGrouping get dsdWireGroupingSync =>
+      dsdWireGroupingNotifier.value;
+  static final ValueNotifier<bool> autoSwitchDsdForVolumeNotifier =
+      ValueNotifier(false);
+  static bool get autoSwitchDsdForVolumeSync =>
+      autoSwitchDsdForVolumeNotifier.value;
   static final ValueNotifier<bool> tuning432HzNotifier = ValueNotifier(false);
   static bool get is432HzTuningEnabledSync => tuning432HzNotifier.value;
-  static final ValueNotifier<bool> btLowLatencyModeNotifier = ValueNotifier(false);
+  static final ValueNotifier<bool> btLowLatencyModeNotifier = ValueNotifier(
+    false,
+  );
   static bool get isBtLowLatencyModeSync => btLowLatencyModeNotifier.value;
   static const _keyBtLowLatencyMode = 'bt_low_latency_mode';
 
@@ -246,12 +277,23 @@ class Uac2PreferencesService {
     return getBitPerfectEnabled();
   }
 
+  // Source-precision gate: the current Rust float callback is lossless for
+  // 16/24-bit integer PCM, but cannot preserve arbitrary 32-bit samples.
+  Future<void> setAndroidMixerSourceBitDepth(int? depth) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      'android_mixer_source_bits',
+      depth != null && depth > 0 && depth <= 24 ? depth : 0,
+    );
+  }
+
   Future<void> setAudioEnginePreference(
     AudioEnginePreference preference,
   ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_keyAudioEnginePreference, preference.name);
+      selectedAudioEngineNotifier.value = preference;
     } catch (e) {
       devLog('Failed to save audio engine preference: $e');
     }
@@ -261,12 +303,16 @@ class Uac2PreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final value = prefs.getString(_keyAudioEnginePreference);
-      if (value == null) return AudioEnginePreference.exoPlayer;
-
-      return AudioEnginePreference.values.firstWhere(
+      if (value == null) {
+        selectedAudioEngineNotifier.value = AudioEnginePreference.exoPlayer;
+        return AudioEnginePreference.exoPlayer;
+      }
+      final preference = AudioEnginePreference.values.firstWhere(
         (engine) => engine.name == value,
         orElse: () => AudioEnginePreference.exoPlayer,
       );
+      selectedAudioEngineNotifier.value = preference;
+      return preference;
     } catch (e) {
       devLog('Failed to load audio engine preference: $e');
       return AudioEnginePreference.exoPlayer;
@@ -812,23 +858,25 @@ class Uac2PreferencesService {
       await prefs.remove(_keyDapBitPerfectEnabled);
       await prefs.remove(_key432HzTuningEnabled);
       await prefs.remove(_keyExclusiveDacModeEnabled);
-await prefs.remove(_keyAudioEnginePreference);
-    await prefs.remove(_keyAndroidAudioApi);
-    await prefs.remove(_keyDeveloperModeEnabled);
+      await prefs.remove(_keyAudioEnginePreference);
+      await prefs.remove('android_mixer_source_bits');
+      selectedAudioEngineNotifier.value = AudioEnginePreference.exoPlayer;
+      await prefs.remove(_keyAndroidAudioApi);
+      await prefs.remove(_keyDeveloperModeEnabled);
       await prefs.remove(_keyAudioFormatEnabled);
       await prefs.remove(_keyUsbSoftwareVolume);
-    await prefs.remove(_keyKillIsochronousUsbOnQuit);
-    await prefs.remove(_keyGaplessPlaybackEnabled);
-    await prefs.remove(_keyDuckOnInterruption);
-    await prefs.remove(_keyDsdOutputMode);
-    await prefs.remove(_keyAutoSwitchDsdForVolume);
-    await prefs.remove(_keyBtLowLatencyMode);
-    await prefs.remove(_keyBtHiResDirect);
-    await prefs.remove(_keyDsdByteOrderOverride);
-    await prefs.remove(_keyDsdSubslotOverride);
-    await prefs.remove(_keyDsdWireVariant);
-    await prefs.remove(_keyDsdWireGrouping);
-    await prefs.remove(_keyPromptedUsbDevices);
+      await prefs.remove(_keyKillIsochronousUsbOnQuit);
+      await prefs.remove(_keyGaplessPlaybackEnabled);
+      await prefs.remove(_keyDuckOnInterruption);
+      await prefs.remove(_keyDsdOutputMode);
+      await prefs.remove(_keyAutoSwitchDsdForVolume);
+      await prefs.remove(_keyBtLowLatencyMode);
+      await prefs.remove(_keyBtHiResDirect);
+      await prefs.remove(_keyDsdByteOrderOverride);
+      await prefs.remove(_keyDsdSubslotOverride);
+      await prefs.remove(_keyDsdWireVariant);
+      await prefs.remove(_keyDsdWireGrouping);
+      await prefs.remove(_keyPromptedUsbDevices);
       await prefs.remove(_keyDeclinedUsbDevices);
       await prefs.remove(_keyAutoEngageUsbDac);
       dsdOutputModeNotifier.value = DsdOutputMode.auto;

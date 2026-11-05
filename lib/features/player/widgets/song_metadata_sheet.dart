@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/services/link/lokal_desktop_source.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 import 'package:flick/l10n/l10n.dart';
 
@@ -27,18 +28,24 @@ String metadataSourceLabel(Song song) {
   return song.isExternal ? 'External source' : 'Local file';
 }
 
-String? metadataFileSizeMb(int? bytes) =>
-    bytes != null && bytes > 0
-        ? '${(bytes / 1000000).toStringAsFixed(2)} MB'
-        : null;
+String? metadataFileSizeMb(int? bytes) => bytes != null && bytes > 0
+    ? '${(bytes / 1000000).toStringAsFixed(2)} MB'
+    : null;
 
 /// Local files can be measured without network activity. Opaque Morneye and
 /// progressive handles are not ordinary paths and must never be stat'ed.
 Future<int?> metadataFileBytes(Song song) async {
   if (song.fileSizeBytes case final known? when known > 0) return known;
+  // lokal:// is a remote desktop ID, not a local filesystem path.
+  if (song.sourceType == 'lokal') {
+    return LokalDesktopSource.instance.linkedFileSize(song);
+  }
   final path = song.filePath;
-  if (path == null || path.isEmpty ||
-      path.contains('://') || song.isNetworkSource) return null;
+  if (path == null ||
+      path.isEmpty ||
+      path.contains('://') ||
+      song.isNetworkSource)
+    return null;
   try {
     final file = File(path);
     final size = await file.length();
@@ -104,7 +111,8 @@ class SongMetadataSheet extends StatelessWidget {
           FutureBuilder<int?>(
             future: metadataFileBytes(song),
             builder: (context, snapshot) => _buildMetadataRow(
-              context, l10n.size,
+              context,
+              l10n.size,
               metadataFileSizeMb(snapshot.data) ?? l10n.unknown,
             ),
           ),
@@ -117,7 +125,9 @@ class SongMetadataSheet extends StatelessWidget {
           ),
           if (song.atmosEncoded)
             _buildMetadataRow(
-              context, 'Spatial audio source', 'Dolby Atmos (verified E-AC-3 JOC)',
+              context,
+              'Spatial audio source',
+              'Dolby Atmos (verified E-AC-3 JOC)',
             ),
           if (song.resolution != null && !song.isDsd)
             _buildMetadataRow(context, l10n.resolution, song.resolution!),

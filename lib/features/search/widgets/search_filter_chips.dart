@@ -27,66 +27,71 @@ class SearchFilterChips extends StatelessWidget {
   final String query;
   @override
   Widget build(BuildContext context) {
-    final t = context.lokal;
+    final effectiveScope = scope == SearchScope.soulseek && !soulseekScopeAvailable ? SearchScope.all : scope;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: SegmentedButton<SearchScope>(
+            expandedInsets: EdgeInsets.zero,
             showSelectedIcon: false,
             style: SegmentedButton.styleFrom(
               textStyle: Theme.of(context).textTheme.labelLarge
                   ?.copyWith(fontSize: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             ),
             segments: [
               ButtonSegment(
+                value: SearchScope.all,
+                label: Text(l10n.all),
+              ),
+              ButtonSegment(
                 value: SearchScope.library,
-                label: Text(lokalText('Library')),
+                label: Text(lokalText('Local')),
               ),
               ButtonSegment(
                 value: SearchScope.online,
                 label: Text(lokalText('Online')),
               ),
+              if (soulseekScopeAvailable) ButtonSegment(
+                value: SearchScope.soulseek,
+                label: Text('Soulseek'),
+              ),
             ],
-            selected: {scope},
+            selected: {effectiveScope},
             onSelectionChanged: (value) {
               AppHaptics.tap();
               onScopeChanged(value.single);
             },
           ),
         ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              for (final category in visibleSearchCategories)
-                _chip(
-                  context,
-                  category.label,
-                  enabled.contains(category),
-                  () => onToggle(category),
-                  count: scope == SearchScope.library && query.trim().isNotEmpty
-                      ? (counts ?? const <SearchCategory, int>{})[category]
-                      : null,
-                ),
-            ],
-          ),
-        ),
-        if (scope == SearchScope.library)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 2, 16, 0),
-            child: Text(
-              !supportsOnlineCategory(enabled.singleOrNull)
-                  ? lokalText('This category searches your library')
-                  : lokalText('Choose a result type'),
-              style: TextStyle(color: t.muted, fontSize: 11),
+        if (effectiveScope != SearchScope.soulseek) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                for (final category in visibleSearchCategories)
+                  _chip(
+                    context,
+                    category.label,
+                    enabled.contains(category),
+                    () => onToggle(category),
+                    count: effectiveScope != SearchScope.online && query.trim().isNotEmpty
+                        ? (counts ?? const <SearchCategory, int>{})[category]
+                        : null,
+                  ),
+              ],
             ),
           ),
+        ],
+        // The content begins at the same distance below the last control in
+        // every scope, including Soulseek's single-row selector.
+        const SizedBox(height: 16),
       ],
     );
   }

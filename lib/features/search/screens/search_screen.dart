@@ -5,6 +5,7 @@ import '../widgets/artist_search_portrait.dart';
 import 'package:flick/features/library_jobs/artist_metadata.dart';
 import '../widgets/global_catalogue_search_section.dart';
 import '../widgets/recent_search_grid.dart';
+import '../widgets/soulseek_search_section.dart';
 
 import 'dart:async';
 
@@ -31,31 +32,35 @@ import 'package:flick/features/search/providers/search_filter_provider.dart';
 import 'package:flick/features/search/widgets/online_search_section.dart';
 import 'package:flick/features/search/widgets/search_filter_chips.dart';
 import 'package:flick/features/konnekted/library/lokal_albums_artists.dart';
+import 'package:flick/features/konnekted/library/lokal_genres.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
 import 'package:flick/features/konnekted/library/lokal_navigation.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
 import 'package:flick/services/catalogue_quality.dart';
 import 'package:flick/widgets/lokal/lokal_quality.dart';
+import 'package:flick/services/link/library_song_identity.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key, this.footerFocusRequests});
+  const SearchScreen({super.key, this.footerFocusRequests, this.initialQuery});
 
   /// Supplied only by the bottom-bar Search destination. An explicit tap
   /// requests the keyboard even if the optional generic auto-focus preference
   /// is disabled. Other Search entry points keep their existing behavior.
   final ValueListenable<int>? footerFocusRequests;
+  /// Optional prefilled search opened from a live radio song or artist.
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
-  final _controller = TextEditingController();
+  late final _controller = TextEditingController(text: widget.initialQuery);
   final _focusNode = FocusNode();
   SongRepository get _songRepository => ref.read(songRepositoryProvider);
   Timer? _debounce;
-  String _debouncedQuery = '';
+  late String _debouncedQuery = widget.initialQuery?.trim() ?? '';
   final Map<SearchCategory, bool> _expanded = {};
 
   static const int _previewLimit = 4;
@@ -64,6 +69,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void initState() {
     super.initState();
     widget.footerFocusRequests?.addListener(_onFooterSearchTap);
+    if (widget.initialQuery?.trim().isNotEmpty == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.unfocus();
+      });
+    }
     // The footer may have been tapped before this lazily mounted screen
     // exists. Focus after the TextField attaches to the element tree.
     if (widget.footerFocusRequests != null) _focusAfterNavigation();
@@ -150,7 +160,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final repoQuery = _debouncedQuery;
     final hasInput = _controller.text.trim().isNotEmpty;
     final hasQuery = repoQuery.isNotEmpty;
-    final resultsAsync = hasQuery && scope != SearchScope.online &&
+    final resultsAsync = hasQuery && scope != SearchScope.online && scope != SearchScope.soulseek &&
         enabled.singleOrNull != SearchCategory.lyrics
         ? ref.watch(globalSearchResultsProvider(repoQuery))
         : null;
@@ -197,34 +207,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
             // Poweramp-style horizontal chip shelf.
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Builder(
-                builder: (context) {
-                  final counts = resultsAsync?.value?.counts;
-                  return SearchFilterChips(
-                    enabled: enabled,
-                    scope: scope,
-                    onScopeChanged: (value) =>
-                        ref.read(searchScopeProvider.notifier).select(value),
-                    onToggle: (cat) =>
-                        ref.read(searchFilterProvider.notifier).toggle(cat),
-                    counts: counts,
-                    query: repoQuery,
-                  );
-                },
-              ),
+            Builder(
+              builder: (context) {
+                final counts = resultsAsync?.value?.counts;
+                return SearchFilterChips(
+                  enabled: enabled,
+                  scope: scope,
+                  onScopeChanged: (value) =>
+                      ref.read(searchScopeProvider.notifier).select(value),
+                  onToggle: (cat) =>
+                      ref.read(searchFilterProvider.notifier).toggle(cat),
+                  counts: counts,
+                  query: repoQuery,
+                );
+              },
             ),
             Expanded(
-              child: !hasInput
+              child: scope == SearchScope.soulseek
+                  ? SoulseekSearchSection(query: repoQuery)
+                  : !hasInput
                   ? _buildEmptyState(context)
-                  : scope == SearchScope.library &&
+                  : scope != SearchScope.online &&
                           enabled.singleOrNull == SearchCategory.lyrics && hasQuery
-                  ? LyricsSearchSection(
-                      key: ValueKey('library-lyrics:$repoQuery'),
-                      query: repoQuery, online: false,
-                      onPlayLocal: _playSong,
-                    )
+                  ? scope == SearchScope.library
+                      ? LyricsSearchSection(
+                          key: ValueKey('library-lyrics:$repoQuery'),
+                          query: repoQuery, online: false,
+                          onPlayLocal: _playSong,
+                        )
+                      : NestedScrollView(
+                          // Local lyrics owns a scroll view. A plain sliver
+                          // wrapper would give it unbounded height on Android.
+                          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                            if (_onlineSection(repoQuery) case final online?) online,
+                          ],
+                          body: LyricsSearchSection(
+                            key: ValueKey('library-lyrics:$repoQuery'),
+                            query: repoQuery, online: false,
+                            onPlayLocal: _playSong,
+                          ),
+                        )
                   : scope == SearchScope.online && hasQuery
                   ? CustomScrollView(
                       slivers: [
@@ -274,13 +296,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         if (!anyEnabledHasResults) {
           // Nothing in the library: what's online still shows under it.
           return CustomScrollView(
+            key: _resultsScrollKey(enabled),
             slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: _buildNoResults(context, results.query),
+              // In All, online results may still be present. Do not claim
+              // the entire search has no results just because local is empty.
+              if (ref.read(searchScopeProvider) == SearchScope.library)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    child: _buildNoResults(context, results.query),
+                  ),
                 ),
-              ),
               if (_onlineSection(results.query) case final online?) online,
               const SliverToBoxAdapter(child: SizedBox(height: 120)),
             ],
@@ -288,13 +314,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         }
         return _buildGroupedResults(context, results, enabled);
       },
-      loading: () => Center(
-        child: CircularProgressIndicator(
-          color: AppColors.textTertiary,
-          strokeWidth: 2,
-        ),
-      ),
+      loading: () => ref.read(searchScopeProvider) == SearchScope.all
+          ? CustomScrollView(
+              key: _resultsScrollKey(enabled),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator(
+                      color: AppColors.textTertiary, strokeWidth: 2,
+                    )),
+                  ),
+                ),
+                // Online searches should not wait on the local database.
+                if (_onlineSection(_debouncedQuery) case final online?) online,
+                const SliverToBoxAdapter(child: SizedBox(height: 120)),
+              ],
+            )
+          : Center(
+              child: CircularProgressIndicator(
+                color: AppColors.textTertiary,
+                strokeWidth: 2,
+              ),
+            ),
       error: (e, st) => CustomScrollView(
+        key: _resultsScrollKey(enabled),
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
@@ -313,8 +357,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    // Idle Search is a browsing destination, not an empty dead end.
+    // The preview stays deliberately short; all categories remain available
+    // on the dedicated Library > Genres destination.
+    final summary = ref.watch(lokalGenreSummaryProvider).value;
+    final scope = ref.watch(searchScopeProvider);
+    final previewGenres =
+        summary?.genres.take(6).toList() ?? const <LokalGenre>[];
+    final previewUnclassified = previewGenres.length < 6
+        ? (summary?.noGenre ?? const <Song>[])
+        : const <Song>[];
+    final browseGenres = scope != SearchScope.online &&
+        (previewGenres.isNotEmpty || previewUnclassified.isNotEmpty);
+    final genreSlivers = <Widget>[
+      if (browseGenres)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    lokalText('Browse by genre'),
+                    style: const TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.5,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => pushLokal(context, const LokalGenresPage()),
+                  child: Text(lokalText('See all')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      if (browseGenres)
+        LokalGenreGrid(
+          genres: previewGenres,
+          noGenreSongs: previewUnclassified,
+        ),
+    ];
     if (ref.watch(recentSearchTracksProvider).isNotEmpty) {
       return RecentSearchGrid(
+        headerSlivers: genreSlivers,
         onSelected: (track) {
           final song = (ref.read(songsProvider).value?.songs ?? const <Song>[])
               .where((song) => song.id == track.songId)
@@ -326,6 +414,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             _onSearchChanged(track.title);
           }
         },
+      );
+    }
+    if (browseGenres) {
+      return CustomScrollView(
+        slivers: [
+          ...genreSlivers,
+          const SliverToBoxAdapter(child: SizedBox(height: 160)),
+        ],
       );
     }
     return Center(
@@ -658,7 +754,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
 
     return CustomScrollView(
-      key: ValueKey('${enabled.singleOrNull}:${ref.read(searchScopeProvider)}'),
+      key: _resultsScrollKey(enabled),
       slivers: [
         ...slivers,
         if (_onlineSection(results.query) case final online?) online,
@@ -667,12 +763,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  Key _resultsScrollKey(Set<SearchCategory> enabled) =>
+      ValueKey('${enabled.singleOrNull}:${ref.read(searchScopeProvider)}');
+
   Widget? _onlineSection(String query) {
     if (ref.read(searchScopeProvider) == SearchScope.library) return null;
     final category = ref.read(searchFilterProvider).singleOrNull;
     if (!supportsOnlineCategory(category)) return null;
     if (category == SearchCategory.lyrics) {
       return SliverToBoxAdapter(
+        key: ValueKey('online-lyrics-sliver:$query'),
         child: LyricsSearchSection(
           key: ValueKey('online-lyrics:$query'),
           query: query, online: true,
@@ -683,6 +783,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (category == SearchCategory.artists ||
         category == SearchCategory.albums) {
       return SliverToBoxAdapter(
+        key: ValueKey('catalogue-sliver:$category:$query'),
         child: OnlineCatalogueSearchSection(
           key: ValueKey('catalogue:$category:$query'),
           query: query,
@@ -703,7 +804,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       key: ValueKey('songs:$query'),
       query: query,
     );
-    return SliverMainAxisGroup(slivers: [global, songs]);
+    return SliverMainAxisGroup(key: ValueKey('online-sliver:$query'), slivers: [global, songs]);
   }
 
   Future<void> _playSong(Song song, List<Song> playlist) async {
@@ -851,6 +952,7 @@ class _SongTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final album = song.album;
     final suffix = subtitleSuffix;
+    final artistLabel = creditedLeadArtist(song);
     return LokalSwipeToQueue(
       song: song,
       child: ListTile(
@@ -877,25 +979,41 @@ class _SongTile extends ConsumerWidget {
             ),
           ),
         ),
-        title: Text(
-          song.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: 'GoogleSansFlex',
-            fontWeight: FontWeight.w500,
-            fontSize: 14,
-            color: context.adaptiveTextPrimary,
-          ),
+        title: Row(
+          children: [
+            Expanded(child: Text(
+              song.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'GoogleSansFlex',
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                color: context.adaptiveTextPrimary,
+              ),
+            )),
+            if (song.sourceType == 'lokal') ...[
+              const SizedBox(width: 7),
+              Tooltip(
+                message: 'Desktop file · Lokal Link',
+                child: Semantics(
+                  label: 'Desktop file',
+                  child: Icon(Icons.computer_rounded,
+                    color: context.adaptiveTextTertiary, size: 16),
+                ),
+              ),
+            ],
+          ],
         ),
+        // Desktop badge lives beside the search result name.
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               suffix != null && suffix.isNotEmpty
-                  ? '${song.artist}${album != null && album.isNotEmpty ? ' · $album' : ''} · $suffix'
-                  : '${song.artist}${album != null && album.isNotEmpty ? ' · $album' : ''}',
+                  ? '${artistLabel}${album != null && album.isNotEmpty ? ' · $album' : ''} · $suffix'
+                  : '${artistLabel}${album != null && album.isNotEmpty ? ' · $album' : ''}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -935,7 +1053,12 @@ class _SongTile extends ConsumerWidget {
           ],
         ),
         onTap: () => onPlay(song, playlistForMode),
-        onLongPress: () => SongActionsBottomSheet.show(context, song),
+        onLongPress: () => SongActionsBottomSheet.show(
+          context,
+          song,
+          queueActions: false,
+          hideMediaActions: true,
+        ),
       ),
     );
   }

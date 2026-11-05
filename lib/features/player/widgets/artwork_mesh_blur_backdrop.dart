@@ -123,12 +123,29 @@ class _ArtworkMeshBlurBackdropState
     _reduceMotion = MediaQuery.disableAnimationsOf(context);
     final animation = ModalRoute.of(context)?.animation;
     if (!identical(animation, _route)) {
-      _route?.removeStatusListener(_syncMotion);
+      _route?.removeStatusListener(_onRouteStatus);
       _route = animation;
-      _route?.addStatusListener(_syncMotion);
+      _route?.addStatusListener(_onRouteStatus);
     }
-    _resolve();
+    // Decoding and preblurring a cover competes with the first sheet frames.
+    // A cached artwork is still available via the fallback gradient while
+    // opening; start the asynchronous image pipeline only after settling.
+    if (_route == null || _route!.status == AnimationStatus.completed) {
+      _resolve();
+    }
     _syncMotion();
+  }
+
+  void _onRouteStatus(AnimationStatus status) {
+    _syncMotion();
+    if (status == AnimationStatus.completed) {
+      // Never perform image decoding / setState during a route build frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _route?.status == AnimationStatus.completed) {
+          _resolve();
+        }
+      });
+    }
   }
 
   @override
@@ -139,7 +156,8 @@ class _ArtworkMeshBlurBackdropState
       oldWidget.song.albumArt,
       oldWidget.song.filePath,
       oldWidget.preserveArtworkContrast,
-    ].join('|')) {
+    ].join('|') &&
+        (_route == null || _route!.status == AnimationStatus.completed)) {
       _resolve();
     }
   }
@@ -147,7 +165,8 @@ class _ArtworkMeshBlurBackdropState
   void _syncMotion([AnimationStatus? status]) {
     final settled = _route == null ||
         _route!.status == AnimationStatus.completed;
-    if (_ultraPerformance || _reduceMotion || !TickerMode.of(context) || !settled) {
+    if (_ultraPerformance || _reduceMotion || _layers.isEmpty ||
+        !TickerMode.of(context) || !settled) {
       _drift.stop(canceled: false);
     } else if (!_drift.isAnimating) {
       _drift.repeat();
@@ -282,6 +301,7 @@ class _ArtworkMeshBlurBackdropState
       _fade.forward(from: 0);
     }
     if (mounted) {
+      _syncMotion();
       // A first image or Ultra-mode transition may never tick the fade.
       _driftPaint.notifyListeners();
       setState(() {});
@@ -306,7 +326,7 @@ class _ArtworkMeshBlurBackdropState
   void dispose() {
     ++_generation;
     _unsubscribe();
-    _route?.removeStatusListener(_syncMotion);
+    _route?.removeStatusListener(_onRouteStatus);
     _drift.dispose();
     _fade.dispose();
     _driftPaint.dispose();

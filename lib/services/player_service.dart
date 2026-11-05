@@ -108,13 +108,14 @@ enum VolumeTier { hardware, software, system, unavailable }
 VolumeTier determineVolumeTier({
   required bool isBitPerfectVolumePath,
   required Uac2VolumeMode? volumeMode,
+  bool volumeControlWritable = true,
   required bool hwVolumeFailed,
   required bool isDoP,
   required bool autoSwitchDsdForVolume,
   required bool isPassthrough,
   required bool usingRustBackend,
 }) {
-  final hwTrusted = volumeMode == Uac2VolumeMode.hardware && !hwVolumeFailed;
+  final hwTrusted = volumeMode == Uac2VolumeMode.hardware && volumeControlWritable && !hwVolumeFailed;
   // Wire DSD is protected even when the user's PCM bit-perfect toggle is off.
   // `isDoP` also covers USB native DSD: neither may enter the gain path.
   if (isDoP) {
@@ -247,7 +248,8 @@ bool shouldSuppressMotionArt({
 }) {
   if (!bitPerfectEnabled || allowDuringBitPerfect) return false;
   return engine == AudioEngineType.usbDacExperimental ||
-      engine == AudioEngineType.dapInternalHighRes;
+      engine == AudioEngineType.dapInternalHighRes ||
+      engine == AudioEngineType.rustOboe;
 }
 
 /// The Rust engine and its direct backends emit these markers when the output
@@ -889,6 +891,12 @@ class PlayerService {
   /// Finds and downloads a queued placeholder ([Song.isPending]) when
   /// playback reaches it; null when it can't be found. Set by
   /// QueuePreResolver.
+  /// Paired desktop tracks must not hold the automatic queue waiting for
+  /// the LAN when the PC is away/offline. Local cache remains playable.
+  Future<bool> Function(Song song)? linkedDesktopAvailable;
+  final Set<int> _offlineDesktopSkippedSlots = <int>{};
+  List<Song>? _offlineDesktopSkipQueue;
+
   Future<Song?> Function(Song pending)? pendingSongResolver;
   VoidCallback? cancelPendingSongResolution;
   int _pendingPlaybackGeneration = 0;
@@ -1099,6 +1107,9 @@ class PlayerService {
       unawaited(_handleBitPerfectPreferenceChanged());
     });
     selectedPlaybackModeNotifier.addListener(_updateBitPerfectProcessingLocked);
+    Uac2PreferencesService.selectedAudioEngineNotifier.addListener(
+      _updateBitPerfectProcessingLocked,
+    );
     initializedPlaybackModeNotifier.addListener(
       _updateBitPerfectProcessingLocked,
     );
@@ -1365,12 +1376,17 @@ class PlayerService {
     }
     // A mid-song toggle must prepare the successor now, not wait for the
     // following track to start. Avoid replacing an already-prepared crossfade.
-    if (enabled && !wasEnabled && !_isCrossfadeActive &&
-        _shouldQueueNextTrack && _playlist.length > 1 &&
+    if (enabled &&
+        !wasEnabled &&
+        !_isCrossfadeActive &&
+        _shouldQueueNextTrack &&
+        _playlist.length > 1 &&
         isPlayingNotifier.value) {
-      unawaited(_queueNextTrackForGapless().catchError((Object error) {
-        _debugLog('[gapless] Could not prepare successor on enable: $error');
-      }));
+      unawaited(
+        _queueNextTrackForGapless().catchError((Object error) {
+          _debugLog('[gapless] Could not prepare successor on enable: $error');
+        }),
+      );
     }
   }
 
@@ -1769,7 +1785,8 @@ class PlayerService {
           !_usingRustBackend &&
           !requiresOnDemandAndroidSequence(_playlist)) {
         unawaited(_rebuildPlaylist());
-      } else if (!_usingRustBackend && _androidEngine?.isSingleTrackOnly == true) {
+      } else if (!_usingRustBackend &&
+          _androidEngine?.isSingleTrackOnly == true) {
         unawaited(_androidEngine!.invalidateOnDemandGaplessSuccessor());
       }
     });
@@ -2139,6 +2156,9 @@ class PlayerService {
   bool get isBitPerfectModeEnabled =>
       (currentEngineType == AudioEngineType.usbDacExperimental &&
           _uac2Service.isBitPerfectEnabledSync) ||
+      (currentEngineType == AudioEngineType.rustOboe &&
+          Uac2PreferencesService.isAndroidMixerUsbSelectedSync &&
+          _uac2Service.isBitPerfectEnabledSync) ||
       (currentEngineType == AudioEngineType.dapInternalHighRes &&
           _uac2Service.isDapBitPerfectEnabledSync);
   bool get isBitPerfectProcessingLocked =>
@@ -2154,6 +2174,9 @@ class PlayerService {
     final locked =
         switch (currentEngineType) {
           AudioEngineType.usbDacExperimental => true,
+          AudioEngineType.rustOboe =>
+            Uac2PreferencesService.isAndroidMixerUsbSelectedSync &&
+                _uac2Service.isBitPerfectEnabledSync,
           AudioEngineType.dapInternalHighRes =>
             _uac2Service.isDapBitPerfectEnabledSync,
           _ => false,
@@ -2919,7 +2942,9 @@ class PlayerService {
   bool get _isAnchorEligiblePath =>
       Platform.isAndroid &&
       currentEngineType.usesRustBackend &&
-      currentEngineType != AudioEngineType.dapInternalHighRes;
+      currentEngineType != AudioEngineType.dapInternalHighRes &&
+      !(Uac2PreferencesService.isAndroidMixerUsbSelectedSync &&
+          _uac2Service.isBitPerfectEnabledSync);
 
   void _updatePriorityAnchor() {
     final shouldAnchor =
@@ -2979,12 +3004,20 @@ class PlayerService {
     return true;
   }
 
-  /// Bit-perfect volume path: direct USB DAC or DAP internal hi-res engine.
+  bool get _isAndroidMixerBitPerfectPath =>
+      currentEngineType == AudioEngineType.rustOboe &&
+      Uac2PreferencesService.isAndroidMixerUsbSelectedSync &&
+      _uac2Service.isBitPerfectEnabledSync;
+
+  /// True while the selected active engine intends a hardware-protected route.
+  /// On the framework mixer the Android volume slider cannot control the
+  /// output; unlike libusb there is no UAC2 Feature Unit volume ownership.
   bool get _isBitPerfectVolumePath =>
       isBitPerfectModeEnabled &&
       !(_isDirectUsbPath && _currentUsbDsdMode == 'pcm') &&
       (currentEngineType == AudioEngineType.usbDacExperimental ||
-          currentEngineType == AudioEngineType.dapInternalHighRes);
+          currentEngineType == AudioEngineType.dapInternalHighRes ||
+          _isAndroidMixerBitPerfectPath);
 
   String? get _currentUsbDsdMode =>
       _activeUsbDsdSongId == currentSongNotifier.value?.id
@@ -3068,7 +3101,15 @@ class PlayerService {
 
   VolumeTier _determineCurrentTier() => determineVolumeTier(
     isBitPerfectVolumePath: _isBitPerfectVolumePath,
-    volumeMode: _uac2Service.currentDeviceStatus?.volumeMode,
+    // Android's bit-perfect USB mixer does not expose hardware Feature
+    // Unit control through our libusb driver. Never promise app-side volume
+    // adjustment based on USB descriptors from a different transport.
+    volumeMode: _isAndroidMixerBitPerfectPath
+        ? null
+        : _uac2Service.currentDeviceStatus?.volumeMode,
+    volumeControlWritable:
+        !_isAndroidMixerBitPerfectPath &&
+        (_uac2Service.currentDeviceStatus?.volumeControlWritable ?? false),
     hwVolumeFailed: _hwVolumeFailed,
     isDoP: _usbDsdWireActive,
     autoSwitchDsdForVolume: Uac2PreferencesService.autoSwitchDsdForVolumeSync,
@@ -3277,6 +3318,8 @@ class PlayerService {
         ? AudioPathManagement.androidManagedShared
         : directUsbActive
         ? AudioPathManagement.directUsbExperimental
+        : outputSignature?.startsWith('android-mixer-bit-perfect:') == true
+        ? AudioPathManagement.androidMixerBitPerfect
         : outputSignature?.startsWith('android-alsa:') == true
         ? AudioPathManagement.alsaDirectDap
         : outputSignature?.startsWith('android-direct:') == true
@@ -3285,6 +3328,7 @@ class PlayerService {
 
     final isMixerManaged =
         pathManagement != AudioPathManagement.directUsbExperimental &&
+        pathManagement != AudioPathManagement.androidMixerBitPerfect &&
         pathManagement != AudioPathManagement.alsaDirectDap &&
         pathManagement != AudioPathManagement.managedDirectExclusive;
     final requestedOutputSampleRate = Platform.isIOS
@@ -5191,8 +5235,11 @@ class PlayerService {
     await _rustAudioService.setCrossfeed(
       isBitPerfectProcessingLocked ? 0 : crossfeedLevel,
     );
+    // The final policy pass must not restore a stored pitch value after the
+    // earlier bit-perfect branch zeroed it; pitch forces the Rust callback
+    // out of passthrough and invalidates the bit-perfect claim.
     await _rustAudioService.setPitchShiftSemitones(
-      pitchSemitonesNotifier.value,
+      isBitPerfectProcessingLocked ? 0.0 : pitchSemitonesNotifier.value,
     );
     _updatePriorityAnchor();
   }
@@ -5552,6 +5599,25 @@ class PlayerService {
     }
 
     final engineForSong = _routeEngineForSong(normalizedEngine, song);
+
+    if (Uac2PreferencesService.isAndroidMixerUsbSelectedSync) {
+      // Never present a truncated 32-bit or unknown-precision source as
+      // bit-perfect. Probe local files if metadata is incomplete; otherwise
+      // the Android USB mixer will decline and the Rust fallback will play.
+      int? measuredBits = song.bitDepth;
+      if (measuredBits == null || measuredBits <= 0) {
+        final path = await _resolveRustPath(song);
+        if (path != null && path.isNotEmpty) {
+          try {
+            final probed = await rust_audio.audioProbeFormat(path: path);
+            measuredBits = probed.bitsPerSample;
+          } catch (error) {
+            _debugLog('[USB-MIXER] Unable to verify source precision: $error');
+          }
+        }
+      }
+      await _preferencesService.setAndroidMixerSourceBitDepth(measuredBits);
+    }
 
     switch (engineForSong) {
       case AudioEngineType.iosSystem:
@@ -6343,6 +6409,37 @@ class PlayerService {
   Future<void> _playSongAtCurrentIndex() async {
     final song = _songAtCurrentIndex();
     if (song == null) return;
+    if (song.sourceType == 'lokal' && linkedDesktopAvailable != null) {
+      var reachable = false;
+      try {
+        reachable = await linkedDesktopAvailable!(song)
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      } catch (_) {
+        reachable = false;
+      }
+      if (!reachable) {
+        _debugLog(
+          '[Playback] Desktop unavailable; skipping queue entry ${song.title}',
+        );
+        if (!identical(_offlineDesktopSkipQueue, _playlist)) {
+          _offlineDesktopSkipQueue = _playlist;
+          _offlineDesktopSkippedSlots.clear();
+        }
+        _offlineDesktopSkippedSlots.add(_currentIndex);
+        if (_offlineDesktopSkippedSlots.length >= _playlist.length) {
+          _offlineDesktopSkippedSlots.clear();
+          isNetworkLoadingNotifier.value = false;
+          onlinePlaybackError.value = 'Desktop files are unavailable. Reconnect to your PC or copy them for offline playback.';
+          return;
+        }
+        // In random shuffle, excluded slots are never reselected during this
+        // failure cycle. Otherwise a repeated failed random pick could
+        // exhaust the budget before a phone-local song is ever attempted.
+        await _nextInternal();
+        return;
+      }
+    }
+    _offlineDesktopSkippedSlots.clear();
     _markOnlinePreparation(song); // Before initAudio / engine handoff.
     await _playInternal(song);
   }
@@ -6367,6 +6464,19 @@ class PlayerService {
 
     final nextIndex = isLastTrack ? 0 : _currentIndex + 1;
     final nextSong = _playlist[nextIndex];
+    if (nextSong.sourceType == 'lokal' && linkedDesktopAvailable != null) {
+      bool available;
+      try {
+        available = await linkedDesktopAvailable!(nextSong)
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      } catch (_) {
+        available = false;
+      }
+      if (!available) {
+        _debugLog('[crossfade] Desktop successor unavailable; do not preload');
+        return;
+      }
+    }
     _debugLog(
       '[crossfade] queue successor: index=$nextIndex, title=${nextSong.title}, '
       'active=$_isCrossfadeActive, '
@@ -6420,11 +6530,15 @@ class PlayerService {
   Song? _resolveAndroidCrossfadeNext() {
     if (_playlist.isEmpty) return null;
     if (loopModeNotifier.value == LoopMode.one ||
-        loopModeNotifier.value == LoopMode.stopAfterCurrent) return null;
+        loopModeNotifier.value == LoopMode.stopAfterCurrent)
+      return null;
     final isLastTrack = _currentIndex >= _playlist.length - 1;
     if (isLastTrack && loopModeNotifier.value != LoopMode.all) return null;
     final next = _playlist[isLastTrack ? 0 : _currentIndex + 1];
-    // Not downloaded yet: let the track end, then it's looked up and played.
+    // PC streams are checked asynchronously by _playSongAtCurrentIndex.
+    // Do not let the native engine commit an unchecked desktop successor.
+    // Phone-copied files have sourceType=null and remain gapless.
+    if (next.sourceType == 'lokal') return null;
     return next.isPending ? null : next;
   }
 
@@ -7134,12 +7248,18 @@ class PlayerService {
 
     if (shuffleModeNotifier.value == ShuffleMode.random &&
         _playlist.length > 1) {
-      final rng = math.Random();
-      int targetIndex;
-      do {
-        targetIndex = rng.nextInt(_playlist.length);
-      } while (targetIndex == _currentIndex && _playlist.length > 1);
-      _setCurrentIndex(targetIndex);
+      final candidates = <int>[
+        for (var index = 0; index < _playlist.length; index++)
+          if (index != _currentIndex &&
+              !_offlineDesktopSkippedSlots.contains(index))
+            index,
+      ];
+      if (candidates.isEmpty) {
+        _offlineDesktopSkippedSlots.clear();
+        onlinePlaybackError.value = 'Desktop files are unavailable. Reconnect to your PC or copy them for offline playback.';
+        return;
+      }
+      _setCurrentIndex(candidates[math.Random().nextInt(candidates.length)]);
       await _playSongAtCurrentIndex();
       return;
     }
@@ -7414,11 +7534,15 @@ class PlayerService {
       final collapsed = await IosLocalAudioRequests.wait(
         engine.enterOnDemandQueueMode(
           concatenated: _audioSourceSequence,
-          isCurrent: () => selection == _selectionGeneration && identical(engine, _androidEngine),
+          isCurrent: () =>
+              selection == _selectionGeneration &&
+              identical(engine, _androidEngine),
           mayResume: () => playback == _pendingPlaybackGeneration,
         ),
       );
-      if (selection != _selectionGeneration || !identical(engine, _androidEngine)) return;
+      if (selection != _selectionGeneration ||
+          !identical(engine, _androidEngine))
+        return;
       if (collapsed) _audioSourceSequence = null;
       await IosLocalAudioRequests.wait(_updateLoopMode());
     });
@@ -7518,8 +7642,7 @@ class PlayerService {
     // user taps Repeat All can stall the main player, particularly for HTTP
     // and on-demand sources. Keep the current stream, index and position.
     await _updateLoopMode();
-    if (!_usingRustBackend &&
-        _androidEngine?.isSingleTrackOnly == true) {
+    if (!_usingRustBackend && _androidEngine?.isSingleTrackOnly == true) {
       // Stop After Current, Repeat One and Repeat All can all change which
       // successor is legal. Remove any child queued under the old mode.
       await _androidEngine!.invalidateOnDemandGaplessSuccessor();
@@ -7659,6 +7782,12 @@ class PlayerService {
   /// Compute the effective ReplayGain (dB) for [song] from the persisted
   /// settings. 0.0 when the mode is off or tags are missing.
   Future<double> _computeReplayGainDbFor(Song song) async {
+    // ReplayGain is a software multiplication and would silently force the
+    // Rust callback out of bit-perfect passthrough. Suppress it before a
+    // source is queued, not only when updating the live track.
+    if (Uac2PreferencesService.isAndroidMixerUsbSelectedSync &&
+        _uac2Service.isBitPerfectEnabledSync)
+      return 0.0;
     final mode = await _appPreferencesService.getReplayGainMode();
     if (mode == ReplayGainMode.off) return 0.0;
     final preampDb = await _appPreferencesService.getReplayGainPreampDb();
@@ -7691,7 +7820,11 @@ class PlayerService {
     bool pushSpawnDefault = false,
   }) async {
     final mode = await _appPreferencesService.getReplayGainMode();
-    if (mode == ReplayGainMode.off || song == null) {
+    if (mode == ReplayGainMode.off ||
+        song == null ||
+        (currentEngineType == AudioEngineType.rustOboe &&
+            Uac2PreferencesService.isAndroidMixerUsbSelectedSync &&
+            _uac2Service.isBitPerfectEnabledSync)) {
       _replayGainState = ReplayGainAppliedState.neutral;
     } else {
       final preampDb = await _appPreferencesService.getReplayGainPreampDb();
@@ -8385,6 +8518,9 @@ class PlayerService {
     _playbackStateSubscription?.cancel();
     unawaited(_playbackManager.dispose());
     selectedPlaybackModeNotifier.removeListener(
+      _updateBitPerfectProcessingLocked,
+    );
+    Uac2PreferencesService.selectedAudioEngineNotifier.removeListener(
       _updateBitPerfectProcessingLocked,
     );
     initializedPlaybackModeNotifier.removeListener(

@@ -20,6 +20,7 @@ import 'package:flick/widgets/lokal/lokal_choice_sheet.dart';
 
 import 'lokal_library_kit.dart';
 import 'lokal_playlist_order.dart';
+import 'playlist_hero_header.dart';
 import 'lokal_song_browser.dart';
 
 /// A server playlist's cover is independent of its constituent tracks.
@@ -567,7 +568,6 @@ class LokalPlaylistPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.lokal;
     final playlist = ref.watch(playlistProvider(playlistId));
     final libraryIndex = ref.watch(konnektedLibraryIndexProvider).value;
     final libraryById = libraryIndex?.byId ?? const <String, Song>{};
@@ -585,9 +585,23 @@ class LokalPlaylistPage extends ConsumerWidget {
       );
     }
     final songs = ref.watch(lokalResolvedPlaylistSongsProvider(playlistId));
-    final width = MediaQuery.sizeOf(context).width;
+    final coverId = playlist.coverArt?.trim();
+    final serverId = playlist.networkServerId;
+    // Network playlist covers require the authenticated server artwork API.
+    // No cover (or an offline server) falls back to the static collage.
+    final coverBytes = serverId != null && coverId != null && coverId.isNotEmpty
+        ? ref
+              .watch(
+                _subsonicPlaylistCoverProvider((
+                  serverId: serverId,
+                  coverId: coverId,
+                )),
+              )
+              .value
+        : null;
     return LokalLibraryPage(
       title: playlist.name,
+      edgeToEdgeHeader: true,
       actions: [
         LokalRoundAction(
           icon: Icons.more_horiz_rounded,
@@ -596,42 +610,20 @@ class LokalPlaylistPage extends ConsumerWidget {
               unawaited(_showActions(context, ref, playlist, songs)),
         ),
       ],
-      header: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
-        child: Column(
-          children: [
-            SizedBox.square(
-              dimension: (width * .62).clamp(150.0, 300.0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: LokalPlaylistArtwork(playlist: playlist, songs: songs),
-              ),
+      header: PlaylistHeroHeader(
+        playlistId: 'local:${playlist.id}',
+        title: playlist.name,
+        metadata:
+            '${lokalSongCount(songs.length)} · ${lokalRunningTime(songs)}',
+        coverBytes: coverBytes,
+        coverPath: serverId == null ? coverId : null,
+        covers: [
+          for (final song in songs)
+            PlaylistHeroCover(
+              imagePath: song.albumArt ?? '',
+              audioSourcePath: song.filePath,
             ),
-            const SizedBox(height: 16),
-            Semantics(
-              header: true,
-              child: Text(
-                playlist.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              lokalText(
-                "{arg0}, {arg1}",
-                args: {
-                  'arg0': lokalSongCount(songs.length),
-                  'arg1': lokalRunningTime(songs),
-                },
-              ),
-              style: TextStyle(color: t.muted),
-            ),
-          ],
-        ),
+        ],
       ),
       slivers: [
         if (songs.isEmpty)

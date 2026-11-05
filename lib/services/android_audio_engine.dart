@@ -431,7 +431,8 @@ class AndroidAudioEngine implements AudioEngine {
     try {
       await _wait(pending);
     } finally {
-      if (identical(_onDemandNativeMutation, pending)) _onDemandNativeMutation = null;
+      if (identical(_onDemandNativeMutation, pending))
+        _onDemandNativeMutation = null;
     }
   }
 
@@ -442,84 +443,108 @@ class AndroidAudioEngine implements AudioEngine {
     final player = _player;
     final slots = _onDemandGaplessSlots;
     final epoch = _onDemandGaplessEpoch;
-    if (_retired || player == null || slots == null ||
-        _onDemandPreparingEpoch == epoch || _sourceFailed ||
-        !_gaplessEnabledProvider() || isCrossfadeActive ||
-        _restoringFastStartPlaylist || slots.isEmpty) return;
+    if (_retired ||
+        player == null ||
+        slots == null ||
+        _onDemandPreparingEpoch == epoch ||
+        _sourceFailed ||
+        !_gaplessEnabledProvider() ||
+        isCrossfadeActive ||
+        _restoringFastStartPlaylist ||
+        slots.isEmpty)
+      return;
     final index = player.currentIndex;
-    if (index == null || index < 0 || index != slots.length - 1 ||
-        slots.length != player.sequence.length) return;
+    if (index == null ||
+        index < 0 ||
+        index != slots.length - 1 ||
+        slots.length != player.sequence.length)
+      return;
 
     _onDemandPreparingEpoch = epoch;
-    final pending = _run(() async {
-      var appended = false;
-      try {
-        if (index >= 12) {
-          // Remove old playlist entries behind the active decoder in place,
-          // preserving the current source/position and two older entries.
-          final count = index - 2;
-          _restoringFastStartPlaylist = true;
+    final pending =
+        _run(() async {
+          var appended = false;
           try {
-            await _editGaplessSequence(() => player.removeAudioSourceRange(0, count));
+            if (index >= 12) {
+              // Remove old playlist entries behind the active decoder in place,
+              // preserving the current source/position and two older entries.
+              final count = index - 2;
+              _restoringFastStartPlaylist = true;
+              try {
+                await _editGaplessSequence(
+                  () => player.removeAudioSourceRange(0, count),
+                );
+                if (epoch != _onDemandGaplessEpoch ||
+                    !identical(_onDemandGaplessSlots, slots) ||
+                    !identical(_player, player))
+                  return;
+                slots.removeRange(0, count);
+              } finally {
+                _restoringFastStartPlaylist = false;
+              }
+            }
+
             if (epoch != _onDemandGaplessEpoch ||
                 !identical(_onDemandGaplessSlots, slots) ||
-                !identical(_player, player)) return;
-            slots.removeRange(0, count);
+                !identical(_player, player) ||
+                player.currentIndex != slots.length - 1 ||
+                player.processingState == just_audio.ProcessingState.completed)
+              return;
+
+            final next = _onNextSong?.call();
+            if (next == null || next.isPending || next.atmosEncoded) return;
+            final playlist = _playlistProvider();
+            final logicalIndex = slots.last.playlistIndex;
+            if (logicalIndex < 0 || logicalIndex >= playlist.length) return;
+            final nextIndex = logicalIndex + 1 < playlist.length
+                ? logicalIndex + 1
+                : 0;
+            if (androidAudioSourceIdentity(playlist[nextIndex]) !=
+                androidAudioSourceIdentity(next))
+              return;
+
+            final source = await _wait(_sourceBuilder(next));
+            if (epoch != _onDemandGaplessEpoch ||
+                !identical(_onDemandGaplessSlots, slots) ||
+                !identical(_player, player) ||
+                !_gaplessEnabledProvider() ||
+                isCrossfadeActive ||
+                _sourceFailed ||
+                player.currentIndex != slots.length - 1 ||
+                player.processingState == just_audio.ProcessingState.completed)
+              return;
+            await _editGaplessSequence(() => player.addAudioSource(source));
+            if (epoch == _onDemandGaplessEpoch &&
+                identical(_onDemandGaplessSlots, slots) &&
+                identical(_player, player)) {
+              slots.add((song: next, playlistIndex: nextIndex));
+              appended = true;
+            }
+          } catch (error) {
+            // Never stop the current source due to failed speculative preparation.
+            // Manual completion can still load the successor at track end.
+            devLog(
+              '[Playback] On-demand gapless preload failed: ${error.runtimeType}',
+            );
           } finally {
-            _restoringFastStartPlaylist = false;
+            if (_onDemandPreparingEpoch == epoch)
+              _onDemandPreparingEpoch = null;
+            // Media3 can auto-advance while addAudioSource is still completing.
+            // A native index event can precede our mapping insertion, so resync
+            // if the just-appended successor has already become current.
+            if (appended &&
+                epoch == _onDemandGaplessEpoch &&
+                identical(_onDemandGaplessSlots, slots) &&
+                identical(_player, player) &&
+                player.currentIndex == slots.length - 1) {
+              _syncTrackFromIndex(player.currentIndex);
+            }
           }
-        }
-
-        if (epoch != _onDemandGaplessEpoch ||
-            !identical(_onDemandGaplessSlots, slots) ||
-            !identical(_player, player) ||
-            player.currentIndex != slots.length - 1 ||
-            player.processingState == just_audio.ProcessingState.completed) return;
-
-        final next = _onNextSong?.call();
-        if (next == null || next.isPending || next.atmosEncoded) return;
-        final playlist = _playlistProvider();
-        final logicalIndex = slots.last.playlistIndex;
-        if (logicalIndex < 0 || logicalIndex >= playlist.length) return;
-        final nextIndex = logicalIndex + 1 < playlist.length ? logicalIndex + 1 : 0;
-        if (androidAudioSourceIdentity(playlist[nextIndex]) !=
-            androidAudioSourceIdentity(next)) return;
-
-        final source = await _wait(_sourceBuilder(next));
-        if (epoch != _onDemandGaplessEpoch ||
-            !identical(_onDemandGaplessSlots, slots) ||
-            !identical(_player, player) || !_gaplessEnabledProvider() ||
-            isCrossfadeActive || _sourceFailed ||
-            player.currentIndex != slots.length - 1 ||
-            player.processingState == just_audio.ProcessingState.completed) return;
-        await _editGaplessSequence(() => player.addAudioSource(source));
-        if (epoch == _onDemandGaplessEpoch &&
-            identical(_onDemandGaplessSlots, slots) &&
-            identical(_player, player)) {
-          slots.add((song: next, playlistIndex: nextIndex));
-          appended = true;
-        }
-      } catch (error) {
-        // Never stop the current source due to failed speculative preparation.
-        // Manual completion can still load the successor at track end.
-        devLog('[Playback] On-demand gapless preload failed: ${error.runtimeType}');
-      } finally {
-        if (_onDemandPreparingEpoch == epoch) _onDemandPreparingEpoch = null;
-        // Media3 can auto-advance while addAudioSource is still completing.
-        // A native index event can precede our mapping insertion, so resync
-        // if the just-appended successor has already become current.
-        if (appended && epoch == _onDemandGaplessEpoch &&
-            identical(_onDemandGaplessSlots, slots) &&
-            identical(_player, player) &&
-            player.currentIndex == slots.length - 1) {
-          _syncTrackFromIndex(player.currentIndex);
-        }
-      }
-    }).catchError((Object error) {
-      // The request owner can retire after the speculative body returns.
-      // Preparation must never surface an unhandled cancellation.
-      devLog('[Playback] On-demand preload retired: ${error.runtimeType}');
-    });
+        }).catchError((Object error) {
+          // The request owner can retire after the speculative body returns.
+          // Preparation must never surface an unhandled cancellation.
+          devLog('[Playback] On-demand preload retired: ${error.runtimeType}');
+        });
     unawaited(pending);
   }
 
@@ -533,8 +558,8 @@ class AndroidAudioEngine implements AudioEngine {
     ++_onDemandGaplessEpoch;
     final pending = _onDemandNativeMutation;
     if (pending != null) await _wait(pending);
-    if (!identical(_onDemandGaplessSlots, slots) ||
-        !identical(_player, player)) return;
+    if (!identical(_onDemandGaplessSlots, slots) || !identical(_player, player))
+      return;
     if (player.sequence.length > slots.length + 1) {
       // A full native rebuild superseded the one-track look-ahead while an
       // invalidation was pending. Never trim that full sequence as if it
@@ -546,7 +571,10 @@ class AndroidAudioEngine implements AudioEngine {
     final current = player.currentIndex;
     if (current == null || current < 0 || current >= slots.length) return;
     if (player.sequence.length > current + 1) {
-      await _editGaplessSequence(() => player.removeAudioSourceRange(current + 1, player.sequence.length));
+      await _editGaplessSequence(
+        () =>
+            player.removeAudioSourceRange(current + 1, player.sequence.length),
+      );
     }
     slots.removeRange(current + 1, slots.length);
     _prepareOnDemandGaplessNext();
@@ -554,8 +582,11 @@ class AndroidAudioEngine implements AudioEngine {
 
   void _startOnDemandGaplessWindow(Song song, int logicalIndex) {
     ++_onDemandGaplessEpoch;
-    _onDemandGaplessSlots = _gaplessEnabledProvider() &&
-            !song.atmosEncoded && !isCrossfadeActive && logicalIndex >= 0
+    _onDemandGaplessSlots =
+        _gaplessEnabledProvider() &&
+            !song.atmosEncoded &&
+            !isCrossfadeActive &&
+            logicalIndex >= 0
         ? [(song: song, playlistIndex: logicalIndex)]
         : null;
     _prepareOnDemandGaplessNext();
@@ -566,13 +597,17 @@ class AndroidAudioEngine implements AudioEngine {
   void prepareGaplessAfterToggle() {
     final current = _loadedTrack;
     final player = _player;
-    if (current == null || player == null || !_loadedSingleTrackOnly ||
-        _onDemandGaplessSlots != null || player.sequence.length != 1) return;
+    if (current == null ||
+        player == null ||
+        !_loadedSingleTrackOnly ||
+        _onDemandGaplessSlots != null ||
+        player.sequence.length != 1)
+      return;
     _startOnDemandGaplessWindow(
-      current, _selectedPlaylistIndexProvider?.call() ?? -1,
+      current,
+      _selectedPlaylistIndexProvider?.call() ?? -1,
     );
   }
-
 
   Future<void> _queueCollapseTail = Future<void>.value();
 
@@ -593,11 +628,17 @@ class AndroidAudioEngine implements AudioEngine {
     final operation = _run(() async {
       await _wait(previous);
       if (isCurrent?.call() == false) return false;
-      return _collapseNativeQueue(concatenated: concatenated,
-          isCurrent: isCurrent, mayResume: mayResume);
+      return _collapseNativeQueue(
+        concatenated: concatenated,
+        isCurrent: isCurrent,
+        mayResume: mayResume,
+      );
     });
     // Serialize edits without hiding the original error from its own caller.
-    _queueCollapseTail = operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _queueCollapseTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
     return operation;
   }
 
@@ -615,14 +656,20 @@ class AndroidAudioEngine implements AudioEngine {
     final player = _player;
     final active = _loadedTrack;
     if (player == null || active == null) return false;
-    bool current() => !_retired && identical(_player, player) &&
-        identical(_loadedTrack, active) && isCurrent?.call() != false;
+    bool current() =>
+        !_retired &&
+        identical(_player, player) &&
+        identical(_loadedTrack, active) &&
+        isCurrent?.call() != false;
     if (!current()) return false;
     if (player.sequence.isEmpty) return false;
     if (player.sequence.length == 1) {
       _loadedSingleTrackOnly = true;
       _playlistSignature = const <String>[];
-      _startOnDemandGaplessWindow(active, _selectedPlaylistIndexProvider?.call() ?? -1);
+      _startOnDemandGaplessWindow(
+        active,
+        _selectedPlaylistIndexProvider?.call() ?? -1,
+      );
       return true;
     }
 
@@ -671,7 +718,10 @@ class AndroidAudioEngine implements AudioEngine {
         '[Playback] Collapsed native playlist to active track for '
         'on-demand queue',
       );
-      _startOnDemandGaplessWindow(active, _selectedPlaylistIndexProvider?.call() ?? -1);
+      _startOnDemandGaplessWindow(
+        active,
+        _selectedPlaylistIndexProvider?.call() ?? -1,
+      );
       return true;
     } catch (error) {
       if (IosLocalAudioRequests.isRetired(error)) rethrow;
@@ -702,7 +752,10 @@ class AndroidAudioEngine implements AudioEngine {
         }
         _loadedSingleTrackOnly = true;
         _playlistSignature = const <String>[];
-        _startOnDemandGaplessWindow(active, _selectedPlaylistIndexProvider?.call() ?? -1);
+        _startOnDemandGaplessWindow(
+          active,
+          _selectedPlaylistIndexProvider?.call() ?? -1,
+        );
         return true;
       } catch (fallbackError) {
         if (IosLocalAudioRequests.isRetired(fallbackError)) rethrow;
@@ -789,8 +842,10 @@ class AndroidAudioEngine implements AudioEngine {
       if (!isCurrent()) return false;
       if (before.isNotEmpty) await _wait(player.insertAudioSources(0, before));
       if (!isCurrent() ||
-          !listEquals(songs.map(androidAudioSourceIdentity).toList(),
-              _playlistProvider().map(androidAudioSourceIdentity).toList())) {
+          !listEquals(
+            songs.map(androidAudioSourceIdentity).toList(),
+            _playlistProvider().map(androidAudioSourceIdentity).toList(),
+          )) {
         return false;
       }
       _loadedSingleTrackOnly = false;
@@ -814,9 +869,13 @@ class AndroidAudioEngine implements AudioEngine {
         // A failed partial insert cannot be treated as a valid playlist.
         // Retain manual-completion mode and force a fresh sequence on the
         // next track instead of accidentally repeating/skipping wrong songs.
-        if (restored && identical(_player, player) && isCurrent() &&
-            listEquals(songs.map(androidAudioSourceIdentity).toList(),
-                _playlistProvider().map(androidAudioSourceIdentity).toList())) {
+        if (restored &&
+            identical(_player, player) &&
+            isCurrent() &&
+            listEquals(
+              songs.map(androidAudioSourceIdentity).toList(),
+              _playlistProvider().map(androidAudioSourceIdentity).toList(),
+            )) {
           _syncPlaylistStateFromPlayer();
           _syncTrackFromIndex(player.currentIndex);
         } else if (identical(_player, player)) {
@@ -880,9 +939,13 @@ class AndroidAudioEngine implements AudioEngine {
     _checkLive();
     final existing = _player;
     if (existing != null) return existing;
-    unawaited(ProcessExitDiagnosticsService.recordBreadcrumb('audio:engine-init'));
+    unawaited(
+      ProcessExitDiagnosticsService.recordBreadcrumb('audio:engine-init'),
+    );
     final player = await _createPlayer(_playerProvider);
-    unawaited(ProcessExitDiagnosticsService.recordBreadcrumb('audio:engine-ready'));
+    unawaited(
+      ProcessExitDiagnosticsService.recordBreadcrumb('audio:engine-ready'),
+    );
     _player = player;
     _providerPlayer = player;
     _attachListeners(player);
@@ -1136,8 +1199,10 @@ class AndroidAudioEngine implements AudioEngine {
       return;
     // Map native window slots to exact logical occurrences, including duplicates.
     final window = _onDemandGaplessSlots;
-    final slot = window != null && index != null && index >= 0 && index < window.length
-        ? window[index] : null;
+    final slot =
+        window != null && index != null && index >= 0 && index < window.length
+        ? window[index]
+        : null;
     if (slot != null && nextTrack != null) {
       _onNativePlaylistIndex?.call(slot.playlistIndex);
     }
@@ -1178,10 +1243,11 @@ class AndroidAudioEngine implements AudioEngine {
       ++_onDemandGaplessEpoch;
       _onDemandGaplessSlots = null;
     }
-    if (_onDemandGaplessSlots == null && shouldExitSingleTrackMode(
-      loadedSingleTrackOnly: _loadedSingleTrackOnly,
-      playerSequenceLength: player.sequence.length,
-    )) {
+    if (_onDemandGaplessSlots == null &&
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: _loadedSingleTrackOnly,
+          playerSequenceLength: player.sequence.length,
+        )) {
       _loadedSingleTrackOnly = false;
       _playlistSignature = _playlistProvider()
           .map(androidAudioSourceIdentity)
@@ -1193,8 +1259,8 @@ class AndroidAudioEngine implements AudioEngine {
 
   Song? _resolveTrack(int? index) {
     final slots = _onDemandGaplessSlots;
-    if (slots != null && index != null &&
-        index >= 0 && index < slots.length) return slots[index].song;
+    if (slots != null && index != null && index >= 0 && index < slots.length)
+      return slots[index].song;
     if (_loadedSingleTrackOnly) {
       return _loadedTrack;
     }
@@ -1345,7 +1411,9 @@ class AndroidAudioEngine implements AudioEngine {
 
   @override
   Future<void> load(Song track) => _run(() async {
-    unawaited(ProcessExitDiagnosticsService.recordBreadcrumb('audio:load-start'));
+    unawaited(
+      ProcessExitDiagnosticsService.recordBreadcrumb('audio:load-start'),
+    );
     ++_onDemandGaplessEpoch;
     _onDemandGaplessSlots = null;
     final preparing = _onDemandNativeMutation;
@@ -1528,7 +1596,9 @@ class AndroidAudioEngine implements AudioEngine {
 
   @override
   Future<void> play() => _run(() async {
-    unawaited(ProcessExitDiagnosticsService.recordBreadcrumb('audio:play-requested'));
+    unawaited(
+      ProcessExitDiagnosticsService.recordBreadcrumb('audio:play-requested'),
+    );
     final stem = _stemPlayer;
     if (stem != null) {
       _stemPausedByUser = false;

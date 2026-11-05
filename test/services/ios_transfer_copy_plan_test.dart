@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -193,7 +194,11 @@ void main() {
     });
     native = _Native('${root.path}/Music');
     session = _Session(native);
-    adapter = IosTransferCopyAdapter(isar: isar, session: session);
+    adapter = IosTransferCopyAdapter(
+      isar: isar,
+      session: session,
+      supportsUploadOperations: (_) async => true,
+    );
     credentials = LokalRemoteCredentials(
       origin: Uri.parse('https://desktop.example'),
       desktopId: 'desktop',
@@ -342,6 +347,53 @@ void main() {
       });
       await expectLater(prepared.submit(), throwsStateError);
       expect(native.batches, isEmpty);
+    },
+  );
+  test(
+    'older desktop keeps a mixed plan wholly foreground before admission',
+    () async {
+      var queries = 0;
+      final legacy = IosTransferCopyAdapter(
+        isar: isar,
+        session: session,
+        supportsUploadOperations: (_) async {
+          queries++;
+          return false;
+        },
+      );
+      expect(await legacy.prepare(plan(), credentials), isNull);
+      expect(queries, 1);
+      expect(native.batches, isEmpty);
+      expect(session.uploadCalls, 0);
+      // Download-only plans do not depend on the upload extension.
+      expect(
+        await legacy.prepare(plan(uploads: false), credentials),
+        isNotNull,
+      );
+      expect(queries, 1);
+    },
+  );
+  test(
+    'a library mutation during capability lookup retires the preview',
+    () async {
+      final reply = Completer<bool>();
+      final started = Completer<void>();
+      final held = IosTransferCopyAdapter(
+        isar: isar,
+        session: session,
+        supportsUploadOperations: (_) {
+          started.complete();
+          return reply.future;
+        },
+      );
+      final pending = held.prepare(plan(), credentials);
+      final rejected = expectLater(pending, throwsStateError);
+      await started.future;
+      await IosLibraryScanEpoch.withMutation(() async {});
+      reply.complete(false);
+      await rejected;
+      expect(native.batches, isEmpty);
+      expect(session.uploadCalls, 0);
     },
   );
   test('unqualified engine, external files and CUE segments retain whole-plan foreground behavior before admission', () async {

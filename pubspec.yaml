@@ -37,6 +37,7 @@ dependencies:
   connectivity_plus: ^7.0.0
   cupertino_icons: ^2.0.0
   fading_marquee_widget: ^1.2.1
+  ffi: ^2.2.0
   file_picker: ^12.3.0
   ffmpeg_kit_flutter_new_audio: ^2.5.7
   fl_chart: ^1.1.1
@@ -129,6 +130,7 @@ flutter:
 
   assets:
     - assets/licenses/libsmb2.txt
+    - assets/licenses/soulseek-rs-lib.txt
     - assets/spotify/session_hook.js
     - assets/icons/flicklogo.png
     - assets/icons/flicklogo_svg.svg

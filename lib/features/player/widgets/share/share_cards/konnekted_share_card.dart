@@ -138,7 +138,7 @@ class KonnektedShareCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 9),
                         Text(
-                          'KONNEKTED',
+                          'LOKAL',
                           style: TextStyle(
                             color: foreground,
                             fontSize: 11,

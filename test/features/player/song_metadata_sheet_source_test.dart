@@ -55,6 +55,17 @@ void main() {
     )), isNull);
   });
 
+  test('mobile and desktop link metadata use persisted bytes for opaque paths', () async {
+    expect(await metadataFileBytes(makeSong(
+      path: 'content://media/external/audio/media/42',
+      fileSizeBytes: 19500000,
+    )), 19500000);
+    expect(await metadataFileBytes(makeSong(
+      path: 'lokal://1/desktop-track',
+      fileSizeBytes: 28800000,
+    )), 28800000);
+  });
+
   test('local disk length is read when metadata does not have bytes', () async {
     final folder = await Directory.systemTemp.createTemp('lokal_metadata_');
     addTearDown(() async => folder.delete(recursive: true));

@@ -8,7 +8,9 @@ import 'package:path/path.dart' as p;
 import '../data/repositories/song_repository.dart';
 import '../models/song.dart';
 import '../features/discovery/discovery_http.dart';
+import '../core/utils/artist_credits.dart' show splitArtistCredits;
 import 'album_art_import_service.dart';
+import 'album_art_service.dart';
 import 'artwork_pixel_validation.dart';
 import 'graceful_http_client.dart';
 
@@ -37,9 +39,26 @@ class ArtworkRepairProgress {
 String repairIdentity(String value) =>
     value.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
 
+/// Use the album's lead credit instead of searching a combined feature list.
+String repairLeadArtist(Song song) {
+  final raw = song.albumArtist?.trim().isNotEmpty == true
+      ? song.albumArtist!
+      : song.artist;
+  return splitArtistCredits(raw).firstOrNull ?? raw;
+}
+
+/// MediaStore/SAF audio is represented by a content URI, not an absolute
+/// filesystem path. Those tracks must be eligible for cover repair as well.
+bool isRepairableLocalSource(Song song) {
+  final path = song.filePath ?? '';
+  if (path.isEmpty || song.isNetworkSource) return false;
+  final scheme = Uri.tryParse(path)?.scheme ?? '';
+  return p.isAbsolute(path) || scheme == 'content' || scheme == 'file';
+}
+
 bool canRepairAlbum(Song song) {
   final album = repairIdentity(song.album ?? '');
-  final artist = repairIdentity(song.albumArtist ?? song.artist);
+  final artist = repairIdentity(repairLeadArtist(song));
   return album.isNotEmpty &&
       artist.isNotEmpty &&
       !const {
@@ -59,26 +78,45 @@ AlbumArtCandidate? exactRepairCandidate(
   List<AlbumArtCandidate> candidates,
 ) {
   final album = repairIdentity(song.album ?? '');
-  final artist = repairIdentity(song.albumArtist ?? song.artist);
+  final artist = repairIdentity(repairLeadArtist(song));
   if (!canRepairAlbum(song)) return null;
   final exact = candidates
       .where(
         (candidate) =>
             repairIdentity(candidate.title) == album &&
-            repairIdentity(candidate.artist) == artist,
+            repairIdentity(
+                  splitArtistCredits(candidate.artist).firstOrNull ??
+                      candidate.artist,
+                ) ==
+                artist,
       )
       .toList();
+  AlbumArtCandidate? unique(List<AlbumArtCandidate> matches) {
+    final urls = matches.map((candidate) => candidate.imageUrl).toSet();
+    if (urls.length == 1) return matches.first;
+    if (urls.length < 2) return null;
+    // The same album can have multiple editions in iTunes/MusicBrainz. Only
+    // disambiguate when the locally tagged release year agrees with exactly
+    // one candidate; otherwise leave the existing cover unchanged.
+    final year = song.year;
+    if (year == null || year <= 0) return null;
+    final dated = matches
+        .where((item) => item.releaseDate?.startsWith('$year') == true)
+        .toList();
+    return dated.map((item) => item.imageUrl).toSet().length == 1 &&
+            dated.isNotEmpty
+        ? dated.first
+        : null;
+  }
+
   for (final source in ['iTunes', 'Deezer', 'Cover Art Archive']) {
     final matches = exact
         .where((candidate) => candidate.sourceLabel == source)
         .toList();
-    final urls = matches.map((candidate) => candidate.imageUrl).toSet();
-    if (urls.length == 1) return matches.first;
-    if (urls.length > 1) return null; // Multiple editions: do not guess.
+    if (matches.isNotEmpty) return unique(matches);
   }
-  // Other providers are used only if the image is unambiguous.
-  final urls = exact.map((candidate) => candidate.imageUrl).toSet();
-  return urls.length == 1 ? exact.first : null;
+  // Other providers are used only when the edition is unambiguous.
+  return unique(exact);
 }
 
 bool isCoverUpgrade({
@@ -119,20 +157,40 @@ class ArtworkRepairService {
     if (_ownsClient) _client.close();
   }
 
-  Future<int?> _existingShortSide(Song song) async {
-    final path = song.albumArt;
-    if (path == null || path.isEmpty) return 0;
-    if (path.startsWith('http:') ||
-        path.startsWith('https:') ||
-        path.startsWith('content:')) {
-      return null;
+  Future<int?> _existingShortSide(
+    Song song, {
+    Map<String, int?>? measured,
+  }) async {
+    var path = song.albumArt;
+    if (path == null || path.isEmpty || !await File(path).exists()) {
+      // A scanned content:// recording often has no filesystem art pointer
+      // until embedded art is extracted. Resolve it once before deciding that
+      // the original image is missing or low resolution.
+      if (path != null &&
+          (path.startsWith('http:') || path.startsWith('https:'))) {
+        return null; // Unknown remote dimensions: never overwrite blindly.
+      }
+      try {
+        path = await AlbumArtService.instance.resolveArtworkPath(
+          existingPath: song.albumArt,
+          audioSourcePath: song.filePath ?? '',
+        );
+      } catch (_) {
+        return null; // Unreadable source: not evidence of missing art.
+      }
+      if (path == null) return 0;
     }
+    // Multiple songs in an album often point to the same cover. Avoid
+    // decoding the same 3000px image dozens of times during one manual scan.
+    // Rechecks before committing bypass this cache to detect concurrent edits.
+    if (measured != null && measured.containsKey(path)) return measured[path];
     final file = File(path);
     if (!await file.exists()) return 0;
     final length = await file.length();
     if (length <= 0 || length > 5 * 1024 * 1024) return null;
-    return (await validateArtworkBytes(await file.readAsBytes()))?.shortSide ??
-        0;
+    final validated = await validateArtworkBytes(await file.readAsBytes());
+    measured?[path] = validated?.shortSide;
+    return validated?.shortSide;
   }
 
   Future<Uint8List?> _fetchArtwork(String url) async {
@@ -179,16 +237,14 @@ class ArtworkRepairService {
       final songs = await _repository.getAllSongs();
       final eligible = <String, List<Song>>{};
       for (final song in songs) {
-        final path = song.filePath;
-        if (path == null ||
-            !p.isAbsolute(path) ||
+        if (!isRepairableLocalSource(song) ||
             _importer.isCustomArtworkPath(song.albumArt) ||
             !canRepairAlbum(song)) {
           continue;
         }
         final key =
             '${repairIdentity(song.album!)}|'
-            '${repairIdentity(song.albumArtist ?? song.artist)}';
+            '${repairIdentity(repairLeadArtist(song))}';
         eligible.putIfAbsent(key, () => []).add(song);
       }
       total = eligible.values.fold<int>(
@@ -196,23 +252,19 @@ class ArtworkRepairService {
         (sum, tracks) => sum + tracks.length,
       );
       report();
+      final measured = <String, int?>{};
       for (final group in eligible.values) {
         if (_cancel) break;
         final low = <(Song, int)>[];
         for (final song in group) {
           if (_cancel) break;
           try {
-            if (!await File(song.filePath!).exists()) {
+            final side = await _existingShortSide(song, measured: measured);
+            if (side != null && side < 640) {
+              low.add((song, side));
+            } else {
               skipped++;
               checked++;
-            } else {
-              final side = await _existingShortSide(song);
-              if (side != null && side < 640) {
-                low.add((song, side));
-              } else {
-                skipped++;
-                checked++;
-              }
             }
           } catch (_) {
             failed++;
@@ -246,6 +298,7 @@ class ArtworkRepairService {
           continue;
         }
         final newSide = (await validateArtworkBytes(bytes))?.shortSide ?? 0;
+        final replacements = <Song>[];
         for (final (song, currentSide) in low) {
           if (_cancel) break;
           try {
@@ -269,8 +322,7 @@ class ArtworkRepairService {
                 continue;
               }
               if (_cancel) break;
-              await _importer.applyImageBytesToSong(song: latest, bytes: bytes);
-              updated++;
+              replacements.add(latest);
             }
           } catch (_) {
             failed++;
@@ -278,6 +330,21 @@ class ArtworkRepairService {
             checked++;
             report();
           }
+        }
+        if (replacements.isNotEmpty && !_cancel) {
+          try {
+            // One durable image and one DB operation per album, not one
+            // misleading custom override per song in the album.
+            final result = await _importer.applyAutomaticRepair(
+              songs: replacements,
+              bytes: bytes,
+            );
+            updated += result.filePaths.length;
+            skipped += replacements.length - result.filePaths.length;
+          } catch (_) {
+            failed += replacements.length;
+          }
+          report();
         }
         // One album request at a time, to avoid provider rate-limit bursts.
         await Future<void>.delayed(const Duration(milliseconds: 350));

@@ -1,4 +1,5 @@
 import 'package:flick/l10n/l10n.dart';
+import 'package:flick/core/utils/artist_credits.dart';
 
 import '../link/lokal_devices_card.dart';
 
@@ -14,9 +15,12 @@ import 'package:flick/providers/lokal_remote_provider.dart';
 
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/navigation/lokal_navigation_switcher.dart';
+import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 import 'package:flick/features/konnekted/konnekted_discovery.dart';
+import 'package:flick/features/discovery/discovery_artwork.dart';
 import 'package:flick/features/milestone/screens/milestones_screen.dart';
 import 'package:flick/features/recap/screens/listening_recap_screen.dart';
 import 'package:flick/features/settings/lokal/lokal_settings_group.dart';
@@ -42,12 +46,19 @@ final youRecapsProvider =
     StreamProvider<Map<ListeningRecapPeriod, ListeningRecap>>((ref) {
       final repository = ref.watch(konnektedHistoryRepositoryProvider);
       final changes = StreamController<void>();
-      final subscription = repository.watchHistory().listen(
-        changes.add,
-        onError: changes.addError,
-      );
+      Timer? queuedReload;
+      // A single local play can update both the recent-history table and
+      // the linked journal. Batch near-simultaneous notifications so the
+      // year recap is not rebuilt twice on an entering screen.
+      final subscription = repository.watchHistory().listen((_) {
+        queuedReload?.cancel();
+        queuedReload = Timer(const Duration(milliseconds: 160), () {
+          if (!changes.isClosed) changes.add(null);
+        });
+      }, onError: changes.addError);
       changes.add(null);
       ref.onDispose(() {
+        queuedReload?.cancel();
         unawaited(subscription.cancel());
         unawaited(changes.close());
       });
@@ -170,6 +181,66 @@ class KonnektedYou extends ConsumerStatefulWidget {
 
 class _KonnektedYouState extends ConsumerState<KonnektedYou> {
   ListeningRecapPeriod _statsPeriod = ListeningRecapPeriod.weekly;
+  Timer? _entryTimer;
+  bool _richContentReady = false;
+  bool _scrolling = false;
+  bool _hydrateAfterScroll = false;
+
+  void _hydrateIfIdle() {
+    if (!mounted || !TickerMode.of(context) || _richContentReady) return;
+    if (_scrolling) {
+      _hydrateAfterScroll = true;
+      return;
+    }
+    setState(() => _richContentReady = true);
+  }
+
+  bool _onPageScroll(ScrollNotification notice) {
+    if (notice.metrics.axis != Axis.vertical) return false;
+    if (notice is ScrollStartNotification ||
+        notice is ScrollUpdateNotification) {
+      _scrolling = true;
+    } else if (notice is ScrollEndNotification) {
+      _scrolling = false;
+      if (_hydrateAfterScroll) {
+        _hydrateAfterScroll = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _hydrateIfIdle());
+      }
+    }
+    return false;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The main shell uses the full-width 330ms page slide again (PR #471).
+    // PR #466 reduced this delay to 90ms for instant tab switching, which
+    // starts recap subscriptions and artwork decoding in the middle of the
+    // restored animation. Defer cold hydration until after the slide, while
+    // still avoiding rebuilds in the middle of a vertical fling.
+    if (!TickerMode.of(context)) {
+      _entryTimer?.cancel();
+      _entryTimer = null;
+    } else if (!_richContentReady &&
+        _entryTimer == null &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        AppConstants.animationNormal != Duration.zero) {
+      _entryTimer = Timer(
+        LokalNavigationSwitcher.enterDuration +
+            const Duration(milliseconds: 64),
+        () {
+          _entryTimer = null;
+          _hydrateIfIdle();
+        },
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _entryTimer?.cancel();
+    super.dispose();
+  }
 
   void _push(Widget page) => unawaited(
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page)),
@@ -214,7 +285,17 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
 
   @override
   Widget build(BuildContext context) {
-    final recaps = ref.watch(youRecapsProvider).value ?? const {};
+    // Keep the first navigation frame light. Reduced-motion users receive
+    // the entire page immediately; only the data subscription is deferred
+    // for the animated entry, not the profile header or its actions.
+    final showRichContent =
+        _richContentReady ||
+        MediaQuery.disableAnimationsOf(context) ||
+        AppConstants.animationNormal == Duration.zero;
+    final recaps = showRichContent
+        ? (ref.watch(youRecapsProvider).value ??
+              const <ListeningRecapPeriod, ListeningRecap>{})
+        : const <ListeningRecapPeriod, ListeningRecap>{};
     final accounts = ref.watch(youAccountsProvider);
     final profile = ref.watch(linkedDesktopProfileProvider).value;
     final local = ref.watch(localYouProfileProvider).value;
@@ -224,129 +305,130 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
         ? profile!.username
         : accounts.name;
     final name = local?.username ?? defaultName;
-    final streak = ref.watch(youStreakProvider).value;
-    final milestones =
-        ref.watch(youMilestonesProvider).value ?? const <MilestoneRecord>[];
+    final streak = showRichContent ? ref.watch(youStreakProvider).value : null;
+    final milestones = showRichContent
+        ? (ref.watch(youMilestonesProvider).value ?? const <MilestoneRecord>[])
+        : const <MilestoneRecord>[];
     final navigate = widget.onNavigate;
     return SafeArea(
       bottom: false,
-      child: ListView(
-        key: const PageStorageKey('konnekted-you'),
-        padding: EdgeInsets.only(
-          bottom: 28 + MediaQuery.paddingOf(context).bottom,
-        ),
-        children: [
-          _YouHeader(
-            name: name,
-            avatarPath: local?.avatarPath ?? profile?.avatarPath,
-            username: local?.username ?? profile?.username,
-            onEdit: _editProfile,
-            weekMinutes: recaps[ListeningRecapPeriod.weekly]
-                ?.totalListeningTime
-                .inMinutes,
-            streak: streak,
-            onSettings: () => navigate(KonnektedDestination.settings),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onPageScroll,
+        child: ListView(
+          key: const PageStorageKey('konnekted-you'),
+          padding: EdgeInsets.only(
+            bottom: 28 + MediaQuery.paddingOf(context).bottom,
           ),
-          const LokalDevicesCard(),
-          _Label(lokalText('Recap')),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-            child: Text(
-              lokalText(
-                'Your week, month and year in music. Tap one for the story.',
+          children: [
+            _YouHeader(
+              name: name,
+              avatarPath: local?.avatarPath ?? profile?.avatarPath,
+              username: local?.username ?? profile?.username,
+              onEdit: _editProfile,
+              weekMinutes: recaps[ListeningRecapPeriod.weekly]
+                  ?.totalListeningTime
+                  .inMinutes,
+              streak: streak,
+              onSettings: () => navigate(KonnektedDestination.settings),
+            ),
+            const LokalDevicesCard(),
+            _Label(lokalText('Recap')),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(
+                lokalText(
+                  'Your week, month and year in music. Tap one for the story.',
+                ),
+                style: TextStyle(fontSize: 13, color: context.lokal.muted),
               ),
-              style: TextStyle(fontSize: 13, color: context.lokal.muted),
             ),
-          ),
-          SizedBox(
-            height: math.max(
-              136,
-              40 +
-                  MediaQuery.textScalerOf(context).scale(11) * 2 * 1.4 +
-                  MediaQuery.textScalerOf(context).scale(20) * 1.4 +
-                  MediaQuery.textScalerOf(context).scale(12) * 1.4,
+            SizedBox(
+              height: math.max(136, 40 + MediaQuery.textScalerOf(context).scale(11) * 2 * 1.4 + MediaQuery.textScalerOf(context).scale(20) * 1.4 + MediaQuery.textScalerOf(context).scale(12) * 1.4),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: youRecapPeriods.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final period = youRecapPeriods[i];
+                  return RepaintBoundary(
+                    child: _RecapCard(
+                      period: period,
+                      recap: recaps[period],
+                      onTap: () => _openRecap(period),
+                    ),
+                  );
+                },
+              ),
             ),
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
+            _StatsSection(
+              period: _statsPeriod,
+              recap: recaps[_statsPeriod],
+              onPeriod: (period) => setState(() => _statsPeriod = period),
+              onHistory: () => navigate(KonnektedDestination.recentlyPlayed),
+            ),
+            _MilestonesSection(
+              milestones: milestones,
+              onOpen: () => _push(const MilestonesScreen()),
+            ),
+            _Label(lokalText('Accounts')),
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: youRecapPeriods.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (_, i) {
-                final period = youRecapPeriods[i];
-                return _RecapCard(
-                  period: period,
-                  recap: recaps[period],
-                  onTap: () => _openRecap(period),
-                );
-              },
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _AccountChip(
+                    label: lokalText('Last.fm'),
+                    connected: accounts.lastFm != null,
+                    onTap: () => navigate(_scrobblingSection),
+                  ),
+                  _AccountChip(
+                    label: lokalText('ListenBrainz'),
+                    connected: accounts.listenBrainz != null,
+                    onTap: () => navigate(_scrobblingSection),
+                  ),
+                  _AccountChip(
+                    label: lokalText('YouTube'),
+                    connected: accounts.youtubeMusic,
+                    onTap: () => navigate(_accountsSection),
+                  ),
+                ],
+              ),
             ),
-          ),
-          _StatsSection(
-            period: _statsPeriod,
-            recap: recaps[_statsPeriod],
-            onPeriod: (period) => setState(() => _statsPeriod = period),
-            onHistory: () => navigate(KonnektedDestination.recentlyPlayed),
-          ),
-          _MilestonesSection(
-            milestones: milestones,
-            onOpen: () => _push(const MilestonesScreen()),
-          ),
-          _Label(lokalText('Accounts')),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            LokalSettingsSection(
+              title: lokalText('More'),
               children: [
-                _AccountChip(
-                  label: lokalText('Last.fm'),
-                  connected: accounts.lastFm != null,
-                  onTap: () => navigate(_scrobblingSection),
+                LokalSettingLink(
+                  label: lokalText('What’s new'),
+                  description: lokalText('What changed in this version.'),
+                  icon: Icons.auto_awesome_rounded,
+                  onTap: () =>
+                      unawaited(WhatsNewBottomSheet.show<void>(context)),
                 ),
-                _AccountChip(
-                  label: lokalText('ListenBrainz'),
-                  connected: accounts.listenBrainz != null,
-                  onTap: () => navigate(_scrobblingSection),
+                LokalSettingLink(
+                  label: lokalText('Help'),
+                  description: lokalText('Every control, explained.'),
+                  icon: Icons.help_outline_rounded,
+                  onTap: () => _push(const ManualScreen()),
                 ),
-                _AccountChip(
-                  label: lokalText('YouTube'),
-                  connected: accounts.youtubeMusic,
-                  onTap: () => navigate(_accountsSection),
+                LokalSettingLink(
+                  label: lokalText('About'),
+                  description: lokalText(
+                    'Version, updates, licences and privacy.',
+                  ),
+                  icon: Icons.info_outline_rounded,
+                  onTap: () => navigate(
+                    const KonnektedDestination.settingsAt(
+                      LokalSettingsGroup.about,
+                      section: 'About',
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
-          LokalSettingsSection(
-            title: lokalText('More'),
-            children: [
-              LokalSettingLink(
-                label: lokalText('What’s new'),
-                description: lokalText('What changed in this version.'),
-                icon: Icons.auto_awesome_rounded,
-                onTap: () => unawaited(WhatsNewBottomSheet.show<void>(context)),
-              ),
-              LokalSettingLink(
-                label: lokalText('Help'),
-                description: lokalText('Every control, explained.'),
-                icon: Icons.help_outline_rounded,
-                onTap: () => _push(const ManualScreen()),
-              ),
-              LokalSettingLink(
-                label: lokalText('About'),
-                description: lokalText(
-                  'Version, updates, licences and privacy.',
-                ),
-                icon: Icons.info_outline_rounded,
-                onTap: () => navigate(
-                  const KonnektedDestination.settingsAt(
-                    LokalSettingsGroup.about,
-                    section: 'About',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -460,6 +542,24 @@ class _YouHeader extends StatelessWidget {
                                   File(avatarPath!),
                                   width: 44,
                                   height: 44,
+                                  // Never decode a multi-megapixel account
+                                  // avatar for a 44px circle on cold entry.
+                                  cacheWidth:
+                                      (44 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .ceil()
+                                          .clamp(44, 192)
+                                          .toInt(),
+                                  cacheHeight:
+                                      (44 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .ceil()
+                                          .clamp(44, 192)
+                                          .toInt(),
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => Text(
                                     initial,
@@ -773,6 +873,7 @@ class _HeaderStat extends StatelessWidget {
     final t = context.lokal;
     return MergeSemantics(
       child: LokalGlass(
+        staticSurface: true,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
         thickness: LokalGlassThickness.thin,
         shadow: false,
@@ -817,9 +918,24 @@ class _RecapCard extends StatelessWidget {
     final headline = has
         ? '${_count(recap!.totalListeningTime.inMinutes)} min'
         : 'Nothing yet';
+    // Use the same lead artist for the card label and portrait lookup.
+    // Older/synced recaps can still contain unsplit multi-artist credits.
+    final artistName = has ? primaryArtistCredit(recap?.topArtist?.artist) : '';
     final detail = has
-        ? (recap!.topArtist?.artist ?? '${_count(recap.totalPlays)} plays')
+        ? (artistName.isNotEmpty
+              ? artistName
+              : '${_count(recap!.totalPlays)} plays')
         : 'Play a few songs';
+    // Each period uses its own top artist, never the currently selected Stats
+    // period. DiscoveryArtwork prefers cached/local artist portraits and can
+    // resolve a verified remote image when there is no local picture.
+    final hasPortrait = artistName.isNotEmpty;
+    final foreground = hasPortrait ? Colors.white : t.text;
+    final secondary = hasPortrait
+        ? Colors.white.withValues(alpha: .84)
+        : t.muted;
+    final accent = hasPortrait ? Colors.white : t.accent;
+
     return Semantics(
       button: true,
       label: lokalText(
@@ -830,58 +946,88 @@ class _RecapCard extends StatelessWidget {
       child: SizedBox(
         width: 156,
         child: LokalGlass(
+          staticSurface: true,
           borderRadius: const BorderRadius.all(Radius.circular(20)),
           thickness: LokalGlassThickness.thin,
           shadow: false,
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasPortrait) ...[
+                DiscoveryArtwork(
+                  key: ValueKey('recap-portrait:${period.name}:$artistName'),
+                  kind: DiscoveryArtworkKind.artist,
+                  artist: artistName,
+                  width: 156,
+                  height: 136,
+                  placeholder: ColoredBox(color: t.surface2),
+                ),
+                // Protect both the label and the listening stats regardless
+                // of artwork brightness; no blur or aggressive vignette.
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x87000000),
+                        Color(0x6A000000),
+                        Color(0xE0000000),
+                      ],
+                      stops: [0, .40, 1],
+                    ),
+                  ),
+                ),
+              ],
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            _periodLabel(period).toUpperCase(),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: LokalTheme.label(t, color: t.accent),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _periodLabel(period).toUpperCase(),
+                                style: LokalTheme.label(t, color: accent),
+                              ),
+                            ),
+                            Icon(
+                              Icons.play_circle_fill_rounded,
+                              size: 20,
+                              color: accent,
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Text(
+                          headline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: LokalTheme.sans,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: foreground,
                           ),
                         ),
-                        Icon(
-                          Icons.play_circle_fill_rounded,
-                          size: 20,
-                          color: t.accent,
+                        const SizedBox(height: 2),
+                        Text(
+                          detail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: secondary),
                         ),
                       ],
                     ),
-                    const Spacer(),
-                    Text(
-                      headline,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: LokalTheme.sans,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: t.text,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: t.muted),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -924,6 +1070,7 @@ class _StatsSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: LokalGlass(
+            staticSurface: true,
             borderRadius: const BorderRadius.all(Radius.circular(20)),
             thickness: LokalGlassThickness.thin,
             shadow: false,
@@ -978,7 +1125,7 @@ class _StatsSection extends StatelessWidget {
                         title: lokalText('Top artists'),
                         rows: [
                           for (final a in recap.topArtists.take(3))
-                            (a.artist, '${_count(a.plays)} plays'),
+                            (primaryArtistCredit(a.artist), '${_count(a.plays)} plays'),
                         ],
                       ),
                     if (recap.topSongs.isNotEmpty)
@@ -1138,6 +1285,7 @@ class _MilestonesSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: LokalGlass(
+              staticSurface: true,
               borderRadius: const BorderRadius.all(Radius.circular(20)),
               thickness: LokalGlassThickness.thin,
               shadow: false,
@@ -1194,6 +1342,7 @@ class _Badge extends StatelessWidget {
               SizedBox.square(
                 dimension: 60,
                 child: LokalGlass.capsule(
+                  staticSurface: true,
                   thickness: LokalGlassThickness.thin,
                   tint: type.tierColor.withValues(alpha: .22),
                   shadow: false,
@@ -1247,6 +1396,7 @@ class _AccountChip extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: LokalGlass.capsule(
+          staticSurface: true,
           thickness: LokalGlassThickness.thin,
           shadow: false,
           padding: const EdgeInsets.fromLTRB(12, 9, 14, 9),

@@ -178,16 +178,19 @@ class _ShareBottomSheetState extends State<ShareBottomSheet> {
       if (save) {
         await GallerySaveService().saveImage(
           bytes: bytes,
-          fileName: 'konnekted_card_${DateTime.now().millisecondsSinceEpoch}',
+          fileName: 'lokal_card_${DateTime.now().millisecondsSinceEpoch}',
         );
         if (mounted)
-          LokalToast.fromSnackBar(context, SnackBar(content: Text(l10n.savedToGallery)));
+          LokalToast.fromSnackBar(
+            context,
+            SnackBar(content: Text(l10n.savedToGallery)),
+          );
       } else {
         final cache = await getTemporaryDirectory();
         final directory = await Directory('${cache.path}/share_cards')
             .create(recursive: true);
         final output = await directory.createTemp('card-');
-        final file = await File('${output.path}/konnekted-card.png')
+        final file = await File('${output.path}/lokal-card.png')
             .writeAsBytes(bytes, flush: true);
         if (!mounted) return;
         final box = context.findRenderObject();
@@ -197,7 +200,7 @@ class _ShareBottomSheetState extends State<ShareBottomSheet> {
         await SharePlus.instance.share(
           ShareParams(
             files: [XFile(file.path, mimeType: 'image/png')],
-            text: '${widget.song.title} — ${widget.song.artist}\nKonnekted',
+            text: '${widget.song.title} — ${widget.song.artist}\nLokal',
             sharePositionOrigin: origin,
           ),
         );

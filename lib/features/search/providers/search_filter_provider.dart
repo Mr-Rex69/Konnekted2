@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/search_category.dart';
 
-enum SearchScope { library, online }
+enum SearchScope { all, library, online, soulseek }
 
 const visibleSearchCategories = [
   SearchCategory.songs, SearchCategory.artists,
@@ -14,6 +15,13 @@ const visibleSearchCategories = [
 
 bool supportsOnlineCategory(SearchCategory? category) =>
     category != null && visibleSearchCategories.contains(category);
+
+/// Expand only after the bundled iPhone native client and its lifecycle pass
+/// qualification. Shared UI alone does not establish a working P2P backend.
+bool get soulseekScopeAvailable => defaultTargetPlatform == TargetPlatform.android;
+
+SearchScope _availableScope(SearchScope scope) =>
+    scope == SearchScope.soulseek && !soulseekScopeAvailable ? SearchScope.all : scope;
 
 class SearchScopeNotifier extends Notifier<SearchScope> {
   static const _key = 'search_selected_scope_v1';
@@ -32,15 +40,16 @@ class SearchScopeNotifier extends Notifier<SearchScope> {
       if (!ref.mounted || _changed) return;
       final saved = prefs.getString(_key);
       final scope = SearchScope.values.where((s) => s.name == saved).firstOrNull;
-      if (scope != null) state = scope;
+      if (scope != null) state = _availableScope(scope);
     } catch (_) {
       // Keep Search usable when saved preferences are unavailable.
     }
   }
 
-  void select(SearchScope scope) {
+  void select(SearchScope requested) {
+    final scope = _availableScope(requested);
     _changed = true;
-    if (scope == SearchScope.online &&
+    if ((scope == SearchScope.online || scope == SearchScope.soulseek) &&
         !supportsOnlineCategory(ref.read(searchFilterProvider).singleOrNull)) {
       ref.read(searchFilterProvider.notifier).select(SearchCategory.songs);
     }

@@ -51,6 +51,131 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('NAS href interoperability', () {
+    test('sync aborts on TLS handshake failure instead of retrying every folder', () async {
+      var requests = 0;
+      final service = WebdavService.create(
+        client: MockClient((_) async {
+          requests++;
+          throw const HandshakeException('CERTIFICATE_VERIFY_FAILED');
+        }),
+      );
+      await expectLater(
+        service.syncLibrary(_server()).toList(),
+        throwsA(isA<WebdavNetworkException>().having(
+          (error) => error.toString(), 'error',
+          contains('certificate'),
+        )),
+      );
+      expect(requests, 1);
+    });
+
+    test('encoded share roots use decoded segments without double escaping', () {
+      const base = 'https://dav.example.com/Music%20%25%20%C3%89t%C3%A9';
+      final absolute = WebdavService.requestUriForTest(
+        base,
+        '$base/Album%20%231/100%25%20Real.flac',
+      );
+      expect(
+        absolute.toString(),
+        '$base/Album%20%231/100%25%20Real.flac',
+      );
+
+      final decoded = WebdavService.requestUriForTest(
+        base,
+        '/Music % Été/Album #1/100% Real.flac',
+      );
+      expect(decoded, absolute);
+      expect(
+        () => WebdavService.requestUriForTest(
+          base, '/Music % Another/cover.jpg',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('encoded share root and nested cover hrefs compare by decoded name', () {
+      const body = '<D:multistatus xmlns:D="DAV:">'
+          '<D:response><D:href>/Music%20%25/</D:href></D:response>'
+          '<D:response><D:href>/Music%20%25/Album%20%231/</D:href>'
+          '<D:propstat><D:prop><D:resourcetype><D:collection/>'
+          '</D:resourcetype></D:prop></D:propstat></D:response>'
+          '<D:response><D:href>/Music%20%25/Album%20%231/cover.jpg</D:href>'
+          '</D:response>'
+          '</D:multistatus>';
+      final entries = WebdavService.parseMultistatusForTest(
+        body,
+        '/Music %/',
+        requestUrl: 'https://dav.example.com/Music%20%25/',
+        shareRoot: '/Music %/',
+      );
+      expect(entries.map((entry) => entry.href).toList(), [
+        '/Music %/Album #1/',
+        '/Music %/Album #1/cover.jpg',
+      ]);
+    });
+
+    test('sync encodes the server root and nested URL exactly once', () async {
+      final seen = <Uri>[];
+      final server = _server()
+        ..baseUrl = 'https://dav.example.com/Music%20%25';
+      final service = WebdavService.create(
+        client: MockClient((request) async {
+          seen.add(request.url);
+          if (seen.length == 1) {
+            return http.Response(
+              '<D:multistatus xmlns:D="DAV:">'
+              '<D:response><D:href>/Music%20%25/</D:href></D:response>'
+              '<D:response><D:href>Album%20%231/</D:href>'
+              '<D:propstat><D:prop><D:resourcetype><D:collection/>'
+              '</D:resourcetype></D:prop></D:propstat></D:response>'
+              '</D:multistatus>', 207,
+            );
+          }
+          // Deliberately abort the walk before database purge; this test
+          // validates URL construction, not a successful sync transaction.
+          return http.Response('NAS unavailable', 503);
+        }),
+      );
+      await expectLater(
+        service.syncLibrary(server).toList(),
+        throwsA(isA<WebdavNetworkException>()),
+      );
+      expect(seen.map((uri) => uri.toString()).toList(), [
+        'https://dav.example.com/Music%20%25',
+        'https://dav.example.com/Music%20%25/Album%20%231/',
+      ]);
+    });
+
+    test('legacy absolute NAS cover and audio paths never duplicate the origin', () {
+      final cover = WebdavService.requestUriForTest(
+        'https://192.168.8.1:6008/disk1_part1',
+        'https://192.168.8.1:6008/disk1_part1/Album%20One/cover.jpg',
+      );
+      expect(
+        cover.toString(),
+        'https://192.168.8.1:6008/disk1_part1/Album%20One/cover.jpg',
+      );
+      final song = WebdavService.requestUriForTest(
+        'https://192.168.8.1:6008/disk1_part1',
+        '/disk1_part1/100% Real.flac',
+      );
+      expect(song.toString(), contains('100%25%20Real.flac'));
+    });
+
+    test('legacy WebDAV paths may not escape the share or switch origins', () {
+      const root = 'https://192.168.8.1:6008/disk1_part1';
+      for (final invalid in [
+        'https://evil.example/disk1_part1/cover.jpg',
+        'https://192.168.8.1:6009/disk1_part1/cover.jpg',
+        'https://admin:secret@192.168.8.1:6008/disk1_part1/cover.jpg',
+        '/other_share/cover.jpg',
+        '/disk1_part1/../private/cover.jpg',
+      ]) {
+        expect(() => WebdavService.requestUriForTest(root, invalid),
+            throwsA(isA<FormatException>()));
+      }
+    });
+
     test('absolute same-origin WebDAV hrefs resolve as share-relative paths', () {
       const body = '<D:multistatus xmlns:D="DAV:">'
           '<D:response><D:href>https://192.168.8.1:6008/disk1_part1/</D:href>'
@@ -588,5 +713,54 @@ void main() {
       expect(captured.pathSegments.join('/'), 'music/照井順政 - Delirious.flac');
       expect(await File(path).readAsBytes(), [9, 9]);
     });
+    test('embedded FLAC image uses a capped authenticated WebDAV range', () async {
+      final image = [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3];
+      List<int> u32(int x) => [
+        (x >> 24) & 255, (x >> 16) & 255, (x >> 8) & 255, x & 255,
+      ];
+      final mime = utf8.encode('image/jpeg');
+      final picture = [
+        ...u32(3), ...u32(mime.length), ...mime,
+        ...u32(0), ...u32(1), ...u32(1), ...u32(24), ...u32(0),
+        ...u32(image.length), ...image,
+      ];
+      final flac = [
+        ...utf8.encode('fLaC'),
+        0x86, 0, 0, picture.length, ...picture,
+      ];
+      late http.Request request;
+      final service = WebdavService.create(
+        client: MockClient((seen) async {
+          request = seen;
+          return http.Response.bytes(flac, 206, headers: {
+            'content-range': 'bytes 0-${flac.length - 1}/100000000',
+          });
+        }),
+      );
+      final cover = await service.getEmbeddedCoverArt(
+        _server(token: base64Encode(utf8.encode('password'))),
+        Uri.encodeComponent('/music/Album #1/01 Song.flac'),
+      );
+      expect(cover, image);
+      expect(request.headers['range'], 'bytes=0-4194303');
+      expect(request.headers['authorization'], startsWith('Basic '));
+      expect(request.url.pathSegments.last, '01 Song.flac');
+    });
+
+    test('remote prefix declines unsupported audio without network requests',
+        () async {
+      var requests = 0;
+      final service = WebdavService.create(
+        client: MockClient((_) async {
+          requests++;
+          return http.Response('', 200);
+        }),
+      );
+      expect(await service.getEmbeddedCoverArt(
+        _server(), Uri.encodeComponent('/music/Track.wav'),
+      ), isEmpty);
+      expect(requests, 0);
+    });
+
   });
 }

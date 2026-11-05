@@ -38,18 +38,35 @@ class _OfflineNoticeState extends ConsumerState<OfflineNotice>
 
   bool _showBackOnline = false;
   Timer? _backOnlineTimer;
+  Timer? _offlineHideTimer;
+  bool _offlineDismissed = false;
+
+  static const offlineNoticeDuration = Duration(seconds: 5);
+
+  void _briefOfflineNotice() {
+    _offlineHideTimer?.cancel();
+    _offlineDismissed = false;
+    _show();
+    _offlineHideTimer = Timer(offlineNoticeDuration, () {
+      if (!mounted) return;
+      setState(() => _offlineDismissed = true);
+      _controller.reverse();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     if (ref.read(connectivityProvider) == ConnectivityStatus.offline) {
       _controller.value = 1;
+      _briefOfflineNotice();
     }
   }
 
   @override
   void dispose() {
     _backOnlineTimer?.cancel();
+    _offlineHideTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -61,12 +78,14 @@ class _OfflineNoticeState extends ConsumerState<OfflineNotice>
       if (_showBackOnline) {
         setState(() => _showBackOnline = false);
       }
-      _show();
+      _briefOfflineNotice();
       return;
     }
 
     if (next == ConnectivityStatus.online &&
         previous == ConnectivityStatus.offline) {
+      _offlineHideTimer?.cancel();
+      _offlineDismissed = false;
       _show();
       _backOnlineTimer?.cancel();
       setState(() => _showBackOnline = true);
@@ -91,7 +110,7 @@ class _OfflineNoticeState extends ConsumerState<OfflineNotice>
     final status = ref.watch(connectivityProvider);
 
     final isOffline = status == ConnectivityStatus.offline;
-    final visible = isOffline || _showBackOnline;
+    final visible = (isOffline && !_offlineDismissed) || _showBackOnline;
 
     return ExcludeSemantics(
       excluding: !visible,

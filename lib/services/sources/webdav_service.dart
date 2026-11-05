@@ -18,6 +18,7 @@ import '../library_scanner_service.dart' show ScanProgress;
 import '../network_cache_service.dart';
 import 'network_source_service.dart';
 import '../ios_library_scan_epoch.dart';
+import 'network_embedded_artwork.dart';
 import 'local_network_access.dart';
 
 /// WebDAV client. Recursive PROPFIND walk of the share, HTTP Basic auth.
@@ -30,17 +31,18 @@ import 'local_network_access.dart';
 /// derived from the filename, album from the parent folder, artist from the
 /// grandparent (or Unknown). Full tag extraction would require downloading each
 /// file, out of scope for the first cut.
-class WebdavService implements NetworkSourceService {
+class WebdavService
+    implements NetworkSourceService, NetworkEmbeddedArtworkSource {
   WebdavService._({
     http.Client? client,
     SongRepository? songRepository,
     NetworkCacheService? networkCache,
     Future<void> Function(Uri)? ensureLocalAccess,
     bool? iosScanSafety,
-  })  : _songRepository = songRepository,
-        _networkCache = networkCache,
-        _ensureLocalAccess = ensureLocalAccess ?? NetworkLocalAccess.ensure,
-        _iosScanSafety = iosScanSafety ?? Platform.isIOS {
+  }) : _songRepository = songRepository,
+       _networkCache = networkCache,
+       _ensureLocalAccess = ensureLocalAccess ?? NetworkLocalAccess.ensure,
+       _iosScanSafety = iosScanSafety ?? Platform.isIOS {
     if (client != null) {
       _client = client;
     } else {
@@ -61,26 +63,34 @@ class WebdavService implements NetworkSourceService {
     NetworkCacheService? networkCache,
     Future<void> Function(Uri)? ensureLocalAccess,
     bool? iosScanSafety,
-  }) =>
-      WebdavService._(
-        client: client,
-        songRepository: songRepository,
-        networkCache: networkCache,
-        ensureLocalAccess: ensureLocalAccess,
-        iosScanSafety: iosScanSafety,
-      );
+  }) => WebdavService._(
+    client: client,
+    songRepository: songRepository,
+    networkCache: networkCache,
+    ensureLocalAccess: ensureLocalAccess,
+    iosScanSafety: iosScanSafety,
+  );
 
   static const String _coverMarkerScheme = 'webdav-cover://';
 
   static const _audioExtensions = {
-    'flac', 'mp3', 'm4a', 'wav', 'ogg', 'opus', 'aac', 'wv', 'ape', 'mpc',
-    'aiff', 'dsf', 'dff',
+    'flac',
+    'mp3',
+    'm4a',
+    'wav',
+    'ogg',
+    'opus',
+    'aac',
+    'wv',
+    'ape',
+    'mpc',
+    'aiff',
+    'dsf',
+    'dff',
   };
   static const _imageExtensions = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'};
   // Cover filenames scanned per folder, in priority order.
-  static const _coverNames = [
-    'cover', 'folder', 'album', 'albumart', 'front',
-  ];
+  static const _coverNames = ['cover', 'folder', 'album', 'albumart', 'front'];
 
   final Future<void> Function(Uri) _ensureLocalAccess;
   final bool _iosScanSafety;
@@ -107,7 +117,10 @@ class WebdavService implements NetworkSourceService {
       sha256.convert(certificate.der).toString();
 
   bool _validateUntrustedCertificate(
-      X509Certificate certificate, String host, int port) {
+    X509Certificate certificate,
+    String host,
+    int port,
+  ) {
     final origin = Uri(scheme: 'https', host: host, port: port).origin;
     final fingerprint = _fingerprint(certificate);
     _untrustedOrigin = origin;
@@ -157,6 +170,7 @@ class WebdavService implements NetworkSourceService {
     await _loadCertificateTrust(uri);
     return _trusted.containsKey(uri.origin);
   }
+
   SongRepository? _songRepository;
   NetworkCacheService? _networkCache;
 
@@ -198,8 +212,9 @@ class WebdavService implements NetworkSourceService {
     401 => 'The WebDAV server rejected the username or password (HTTP 401).',
     403 => 'This account cannot access the requested WebDAV folder (HTTP 403).',
     404 => 'WebDAV folder not found (HTTP 404). Check the full share path.',
-    405 || 501 => 'This URL does not offer WebDAV PROPFIND (HTTP $status). '
-        'An ordinary HTTPS file server is not necessarily WebDAV.',
+    405 || 501 =>
+      'This URL does not offer WebDAV PROPFIND (HTTP $status). '
+          'An ordinary HTTPS file server is not necessarily WebDAV.',
     _ => 'WebDAV server returned HTTP $status.',
   };
 
@@ -256,12 +271,64 @@ class WebdavService implements NetworkSourceService {
   static String _encodePath(String decodedPath) =>
       decodedPath.split('/').map(Uri.encodeComponent).join('/');
 
+  // Uri.path is still percent-encoded. All paths stored while scanning, and
+  // those compared to configured share roots, use decoded segments instead.
+  static String _decodedUriPath(Uri uri) =>
+      uri.path.isEmpty ? '' : '/${uri.pathSegments.join('/')}';
+
   Uri _requestUri(NetworkServerEntity server, String decodedPath) =>
-      Uri.parse('${_origin(server)}${_encodePath(decodedPath)}');
+      requestUriForTest(server.baseUrl, decodedPath);
+
+  /// Rebuild a request path from a decoded share path. Old syncs sometimes
+  /// saved a complete PROPFIND href as the remote ID; accept that legacy
+  /// same-origin form without turning https://nas into a URL path component.
+  /// Never send Basic credentials to an arbitrary URL from the server.
+  @visibleForTesting
+  static Uri requestUriForTest(String baseUrl, String decodedPath) {
+    final base = Uri.parse(baseUrl);
+    final candidate = Uri.tryParse(decodedPath);
+    if (candidate != null && candidate.hasScheme) {
+      if (candidate.scheme != base.scheme ||
+          candidate.origin != base.origin ||
+          candidate.userInfo.isNotEmpty ||
+          candidate.hasQuery ||
+          candidate.hasFragment ||
+          candidate.pathSegments.any(
+            (s) => s.contains('/') || s.contains('\\'),
+          )) {
+        throw const FormatException(
+          'WebDAV link is outside the configured server',
+        );
+      }
+      // URI path segments are decoded once, unlike Uri.path, which retains
+      // escapes. The marker's original percent signs must not become %25.
+      decodedPath = _decodedUriPath(candidate);
+    }
+    final basePath = _decodedUriPath(base);
+    final root = basePath.endsWith('/') && basePath.length > 1
+        ? basePath.substring(0, basePath.length - 1)
+        : basePath;
+    if (!decodedPath.startsWith('/') ||
+        decodedPath
+            .split('/')
+            .any(
+              (part) => part == '.' || part == '..' || part.contains('\\'),
+            ) ||
+        (root != '/' &&
+            root.isNotEmpty &&
+            decodedPath != root &&
+            !decodedPath.startsWith('$root/'))) {
+      throw const FormatException(
+        'WebDAV path is outside the configured share',
+      );
+    }
+    return Uri.parse('${base.origin}${_encodePath(decodedPath)}');
+  }
 
   // --- PROPFIND -----------------------------------------------------------
 
-  static const _propfindBody = '<?xml version="1.0" encoding="utf-8"?>'
+  static const _propfindBody =
+      '<?xml version="1.0" encoding="utf-8"?>'
       '<D:propfind xmlns:D="DAV:"><D:prop>'
       '<D:resourcetype/><D:getcontentlength/><D:getlastmodified/>'
       '<D:displayname/>'
@@ -286,9 +353,9 @@ class WebdavService implements NetworkSourceService {
         ..headers['Content-Type'] = 'application/xml; charset=utf-8'
         ..headers['Authorization'] = _basicAuth(server)
         ..body = _propfindBody;
-      final streamed = await _client.send(request).timeout(
-        const Duration(seconds: 30),
-      );
+      final streamed = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 30));
       final response = await http.Response.fromStream(streamed);
       final redirect = response.headers['location'];
       if (attempt == 0 &&
@@ -333,8 +400,7 @@ class WebdavService implements NetworkSourceService {
     } catch (_) {
       return results;
     }
-    for (final response
-        in doc.findAllElements('response', namespace: '*')) {
+    for (final response in doc.findAllElements('response', namespace: '*')) {
       final href = response
           .findElements('href', namespace: '*')
           .firstOrNull
@@ -348,19 +414,21 @@ class WebdavService implements NetworkSourceService {
       if (_samePath(decoded, requestedHref)) continue;
 
       final isCollection = response
-              .findAllElements('collection', namespace: '*')
-              .isNotEmpty;
+          .findAllElements('collection', namespace: '*')
+          .isNotEmpty;
       // ponytail: getcontentlength nests under propstat/prop; recursive find
       // keeps this robust to both flattened and nested multistatus bodies.
       final sizeText = response
           .findAllElements('getcontentlength', namespace: '*')
           .firstOrNull
           ?.innerText;
-      results.add(_DavEntry(
-        href: decoded,
-        isCollection: isCollection,
-        size: sizeText == null ? null : int.tryParse(sizeText),
-      ));
+      results.add(
+        _DavEntry(
+          href: decoded,
+          isCollection: isCollection,
+          size: sizeText == null ? null : int.tryParse(sizeText),
+        ),
+      );
     }
     return results;
   }
@@ -379,7 +447,7 @@ class WebdavService implements NetworkSourceService {
     // hrefs are children of that collection, not siblings of its path.
     final collection = parent.path.endsWith('/')
         ? parent
-        : parent.replace(path: '${parent.path}/');
+        : parent.replace(pathSegments: [...parent.pathSegments, '']);
     final resolved = collection.resolve(href);
     if (resolved.origin != parent.origin ||
         resolved.scheme != parent.scheme ||
@@ -389,10 +457,14 @@ class WebdavService implements NetworkSourceService {
       throw const FormatException('Cross-origin or malformed WebDAV href');
     }
     final segments = resolved.pathSegments;
-    if (segments.any((segment) =>
-        segment.contains('/') || segment.contains('\\') ||
-        segment.contains(String.fromCharCode(0)) ||
-        segment == '.' || segment == '..')) {
+    if (segments.any(
+      (segment) =>
+          segment.contains('/') ||
+          segment.contains('\\') ||
+          segment.contains(String.fromCharCode(0)) ||
+          segment == '.' ||
+          segment == '..',
+    )) {
       throw const FormatException('Invalid encoded WebDAV path segment');
     }
     // Uri.pathSegments already includes the trailing empty segment for
@@ -410,16 +482,16 @@ class WebdavService implements NetworkSourceService {
   }
 
   bool _samePath(String a, String b) {
-    String norm(String s) => s.endsWith('/') && s.length > 1
-        ? s.substring(0, s.length - 1)
-        : s;
+    String norm(String s) =>
+        s.endsWith('/') && s.length > 1 ? s.substring(0, s.length - 1) : s;
     return norm(a) == norm(b);
   }
 
   // --- Test surface (pure parse helpers, no network) ----------------------
 
   @visibleForTesting
-  static List<({String href, bool isCollection, int? size})> parseMultistatusForTest(
+  static List<({String href, bool isCollection, int? size})>
+  parseMultistatusForTest(
     String body,
     String requestedHref, {
     String? requestUrl,
@@ -428,13 +500,12 @@ class WebdavService implements NetworkSourceService {
     final svc = WebdavService._();
     return svc
         ._parseMultistatus(
-          body, requestedHref, requestUrl: requestUrl, shareRoot: shareRoot,
+          body,
+          requestedHref,
+          requestUrl: requestUrl,
+          shareRoot: shareRoot,
         )
-        .map((e) => (
-              href: e.href,
-              isCollection: e.isCollection,
-              size: e.size,
-            ))
+        .map((e) => (href: e.href, isCollection: e.isCollection, size: e.size))
         .toList();
   }
 
@@ -459,12 +530,13 @@ class WebdavService implements NetworkSourceService {
           _isMultistatusDocument(response.body)) {
         return true;
       }
-      _lastPingError = response.statusCode == 400 &&
+      _lastPingError =
+          response.statusCode == 400 &&
               response.body.startsWith('WebDAV redirected')
           ? response.body
           : response.statusCode == 200
           ? 'The server answered with HTTP 200 but no WebDAV multistatus. '
-              'Use the WebDAV endpoint, not an ordinary HTTP page.'
+                'Use the WebDAV endpoint, not an ordinary HTTP page.'
           : describeStatus(response.statusCode);
       return false;
     } catch (e) {
@@ -489,7 +561,9 @@ class WebdavService implements NetworkSourceService {
       ..followRedirects = false
       ..headers['Connection'] = 'close'
       ..headers['Authorization'] = _basicAuth(server);
-    final streamed = await _client.send(request).timeout(const Duration(seconds: 30));
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 30));
     if (streamed.statusCode != 200) {
       await streamed.stream.listen(null).cancel();
       throw WebdavNetworkException('HTTP ${streamed.statusCode} for cover');
@@ -516,14 +590,67 @@ class WebdavService implements NetworkSourceService {
   }
 
   @override
+  Future<List<int>> getEmbeddedCoverArt(
+    NetworkServerEntity server,
+    String remoteId,
+  ) async {
+    final href = _tryDecode(remoteId);
+    final lower = href.toLowerCase();
+    if (!lower.endsWith('.flac') && !lower.endsWith('.mp3')) {
+      return const [];
+    }
+    final uri = _requestUri(server, href);
+    await _ensureLocalAccess(uri);
+    await _loadCertificateTrust(uri);
+    // Some WebDAV implementations ignore Range and return 200. In either
+    // case never consume more than the 4 MiB prefix or buffer a whole album.
+    final request = http.Request('GET', uri)
+      ..followRedirects = false
+      ..headers['Range'] = 'bytes=0-${networkArtworkPrefixBytes - 1}'
+      ..headers['Connection'] = 'close'
+      ..headers['Authorization'] = _basicAuth(server);
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200 && response.statusCode != 206) {
+      await response.stream.listen(null).cancel();
+      throw WebdavNetworkException(
+        'HTTP ${response.statusCode} for remote embedded art',
+      );
+    }
+    if (response.statusCode == 206 &&
+        !(response.headers['content-range'] ?? '').startsWith('bytes 0-')) {
+      await response.stream.listen(null).cancel();
+      throw WebdavNetworkException('Invalid range for remote embedded art');
+    }
+    final bytes = BytesBuilder(copy: false);
+    var length = 0;
+    await for (final chunk in response.stream.timeout(
+      const Duration(seconds: 20),
+    )) {
+      final remaining = networkArtworkPrefixBytes - length;
+      if (remaining <= 0) break;
+      final count = chunk.length < remaining ? chunk.length : remaining;
+      bytes.add(count == chunk.length ? chunk : chunk.sublist(0, count));
+      length += count;
+      if (length >= networkArtworkPrefixBytes) break;
+    }
+    return extractNetworkEmbeddedArtwork(bytes.takeBytes())?.toList() ??
+        const [];
+  }
+
+  @override
   Future<String> stream(
     NetworkServerEntity server,
     String remoteId, {
     String? extension,
     void Function(double progress)? onProgress,
   }) async {
-    final cached =
-        await _cache.getPath(server.id, remoteId, extension: extension);
+    final cached = await _cache.getPath(
+      server.id,
+      remoteId,
+      extension: extension,
+    );
     if (cached != null) return cached;
 
     // remoteId is stored url-encoded so the cache key is filesystem-safe;
@@ -536,8 +663,9 @@ class WebdavService implements NetworkSourceService {
       ..followRedirects = false
       ..headers['Connection'] = 'close'
       ..headers['Authorization'] = _basicAuth(server);
-    final response =
-        await _client.send(request).timeout(const Duration(minutes: 5));
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(minutes: 5));
     if (response.statusCode != 200) {
       await response.stream.listen(null).cancel();
       throw WebdavNetworkException('HTTP ${response.statusCode} for stream');
@@ -545,8 +673,14 @@ class WebdavService implements NetworkSourceService {
     // Stream directly to a temporary cache file. Keeping an entire FLAC in a
     // BytesBuilder doubles peak RAM and can kill the app on large albums.
     // Publish atomically: partial transfers must never be returned as hits.
-    final destination = await _cache.pathFor(server.id, remoteId, extension: extension);
-    final partial = File('$destination.part.$pid.${DateTime.now().microsecondsSinceEpoch}');
+    final destination = await _cache.pathFor(
+      server.id,
+      remoteId,
+      extension: extension,
+    );
+    final partial = File(
+      '$destination.part.$pid.${DateTime.now().microsecondsSinceEpoch}',
+    );
     final output = partial.openWrite();
     final total = response.contentLength;
     var received = 0;
@@ -566,14 +700,20 @@ class WebdavService implements NetworkSourceService {
       await output.flush();
       await output.close();
       if (total != null && received != total) {
-        throw WebdavNetworkException('Incomplete WebDAV download: $received of $total bytes');
+        throw WebdavNetworkException(
+          'Incomplete WebDAV download: $received of $total bytes',
+        );
       }
       await partial.rename(destination);
       await _cache.commitDownload(destination);
       return destination;
     } catch (_) {
-      try { await output.close(); } catch (_) {}
-      try { if (await partial.exists()) await partial.delete(); } catch (_) {}
+      try {
+        await output.close();
+      } catch (_) {}
+      try {
+        if (await partial.exists()) await partial.delete();
+      } catch (_) {}
       rethrow;
     }
   }
@@ -595,7 +735,10 @@ class WebdavService implements NetworkSourceService {
     // Direct Media3/Rust playback bypasses this Dart HTTP client. Request
     // Android local-network access before handing off the authenticated URL.
     await _ensureLocalAccess(uri);
-    return (url: uri.toString(), headers: {'Authorization': _basicAuth(server)});
+    return (
+      url: uri.toString(),
+      headers: {'Authorization': _basicAuth(server)},
+    );
   }
 
   // --- Library walk -------------------------------------------------------
@@ -613,13 +756,15 @@ class WebdavService implements NetworkSourceService {
       var hasDescription = false;
       for (final child in root.childElements) {
         if (child.name.local == 'responsedescription' &&
-            child.namespaceUri == 'DAV:' && !hasDescription) {
+            child.namespaceUri == 'DAV:' &&
+            !hasDescription) {
           // RFC 4918 permits one optional description after responses.
           hasDescription = true;
           continue;
         }
         if (child.name.local != 'response' ||
-            child.namespaceUri != 'DAV:' || hasDescription) {
+            child.namespaceUri != 'DAV:' ||
+            hasDescription) {
           return false;
         }
         final hrefs = child.findElements('href', namespaceUri: 'DAV:').toList();
@@ -658,12 +803,24 @@ class WebdavService implements NetworkSourceService {
 
     String rootPath;
     try {
-      rootPath = _tryDecode(Uri.parse(server.baseUrl).path);
+      // WebDAV hrefs are resolved into decoded path segments, so the root
+      // must use the same representation (including spaces, % and Unicode).
+      rootPath = _decodedUriPath(Uri.parse(server.baseUrl));
     } catch (_) {
       rootPath = '';
     }
     queue.add(_DavDir(url: server.baseUrl, path: rootPath));
     allDirs.add(rootPath);
+
+    // Batch library notifications; playback and media-service callbacks
+    // must not compete with an Isar write for each individual NAS folder.
+    final pendingSongs = <SongEntity>[];
+    Future<void> flushSongs() async {
+      if (pendingSongs.isEmpty) return;
+      if (_iosScanSafety) { await _repo.upsertScannedSongs(pendingSongs); } else { await _repo.upsertSongs(pendingSongs); }
+      pendingSongs.clear();
+      await Future<void>.delayed(Duration.zero);
+    }
 
     var filesProcessed = 0;
     var scanIncomplete = false;
@@ -687,22 +844,47 @@ class WebdavService implements NetworkSourceService {
             '${server.label}: $detail',
           );
           filesProcessed++;
-          yield _progress(server, songsFound, allDirs.length, filesProcessed,
-              dir.path);
+          yield _progress(
+            server,
+            songsFound,
+            allDirs.length,
+            filesProcessed,
+            dir.path,
+          );
           continue;
         }
         entries = _parseMultistatus(
-          response.body, dir.path,
-          requestUrl: dir.url, shareRoot: rootPath,
+          response.body,
+          dir.path,
+          requestUrl: dir.url,
+          shareRoot: rootPath,
         );
       } catch (e) {
+        // TLS/auth/URL failures affect the entire connection, not just one
+        // folder. Stop immediately instead of issuing the same broken request
+        // for every queued directory and hiding the actionable root cause.
+        if (e is HandshakeException ||
+            e is FormatException ||
+            e is SocketException) {
+          final reason = describePingFailure(e);
+          AppLog.instance.add(
+            'WebDAV sync connection failed on ${server.label}: $reason',
+          );
+          throw WebdavNetworkException(reason);
+        }
         scanIncomplete = true;
         scanErrors.add('${dir.path}: $e');
-        AppLog.instance
-            .add('WebDAV sync skipped "${dir.path}" on ${server.label}: $e');
+        AppLog.instance.add(
+          'WebDAV sync skipped "${dir.path}" on ${server.label}: $e',
+        );
         filesProcessed++;
         yield _progress(
-            server, songsFound, allDirs.length, filesProcessed, dir.path);
+          server,
+          songsFound,
+          allDirs.length,
+          filesProcessed,
+          dir.path,
+        );
         continue;
       }
 
@@ -711,7 +893,9 @@ class WebdavService implements NetworkSourceService {
       for (final e in entries) {
         if (e.isCollection) {
           allDirs.add(e.href);
-          queue.add(_DavDir(url: '$origin${_encodePath(e.href)}', path: e.href));
+          queue.add(
+            _DavDir(url: '$origin${_encodePath(e.href)}', path: e.href),
+          );
         } else if (_isCoverName(e.href)) {
           coverHref ??= e.href;
         } else if (_isAudio(e.href)) {
@@ -734,10 +918,9 @@ class WebdavService implements NetworkSourceService {
             coverHref: coverHref,
           );
         }).toList();
-        if (_iosScanSafety) {
-          await _repo.upsertScannedSongs(entities);
-        } else {
-          await _repo.upsertSongs(entities);
+        for (final entity in entities) {
+          pendingSongs.add(entity);
+          if (pendingSongs.length >= 128) await flushSongs();
         }
         syncedRemoteIds.addAll(entities.map((e) => e.remoteId!));
         songsFound += entities.length;
@@ -745,8 +928,15 @@ class WebdavService implements NetworkSourceService {
 
       filesProcessed++;
       yield _progress(
-          server, songsFound, allDirs.length, filesProcessed, dir.path);
+        server,
+        songsFound,
+        allDirs.length,
+        filesProcessed,
+        dir.path,
+      );
     }
+
+    await flushSongs();
 
     // A single failed folder can hide hundreds of previously indexed
     // tracks. Never interpret missing responses as deleted files or advance
@@ -831,7 +1021,9 @@ class WebdavService implements NetworkSourceService {
     if (ext == null || !_imageExtensions.contains(ext)) return false;
     final name = _lastPathSegment(href);
     final dot = name.lastIndexOf('.');
-    final stem = dot > 0 ? name.substring(0, dot).toLowerCase() : name.toLowerCase();
+    final stem = dot > 0
+        ? name.substring(0, dot).toLowerCase()
+        : name.toLowerCase();
     return _coverNames.any((c) => stem == c || stem.startsWith('$c.'));
   }
 
@@ -866,11 +1058,7 @@ class WebdavService implements NetworkSourceService {
 }
 
 class _DavEntry {
-  const _DavEntry({
-    required this.href,
-    required this.isCollection,
-    this.size,
-  });
+  const _DavEntry({required this.href, required this.isCollection, this.size});
   final String href;
   final bool isCollection;
   final int? size;

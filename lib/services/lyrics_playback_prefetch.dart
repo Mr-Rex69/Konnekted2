@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:flick/models/song.dart';
 import 'package:flick/services/app_preferences_service.dart';
@@ -10,6 +11,17 @@ import 'package:flick/services/lyrics_service.dart';
 class LyricsPlaybackPrefetch {
   LyricsPlaybackPrefetch._();
   static final instance = LyricsPlaybackPrefetch._();
+
+  /// A streamed desktop track's saved lyrics may arrive *after* the player
+  /// initially displayed a local miss; notify open lyric panels to refresh.
+  final ValueNotifier<String?> linkedLyricsUpdated = ValueNotifier(null);
+
+  void desktopLyricsArrived(Song song) {
+    invalidate(song);
+    // Force a fresh event even if the same desktop song receives new lyrics.
+    linkedLyricsUpdated.value = null;
+    linkedLyricsUpdated.value = song.id;
+  }
 
   final LyricsService _service = LyricsService();
   final _local = <String, Future<LyricsData?>>{};

@@ -1,10 +1,8 @@
 import 'package:flick/core/utils/artist_credits.dart';
 
-import 'dart:async';
 
-import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/navigation/root_navigator.dart';
-import 'package:flick/core/utils/navigation_helper.dart';
+import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/features/konnekted/konnekted_data.dart';
 import 'package:flick/l10n/l10n.dart';
@@ -70,20 +68,28 @@ Future<void> pushLokalPage(BuildContext context, Widget page) async {
   if (!context.mounted) return;
   final nested = nestedNavigatorKey.currentState;
   final here = Navigator.maybeOf(context);
-  final route = MaterialPageRoute<void>(builder: (_) => page);
+  final route = LokalPageRoute<void>(builder: (_) => page);
   if (nested == null || here == null || identical(here, nested)) {
     await (here ?? nested)?.push(route);
     return;
   }
   final root = rootNavigatorKey.currentState ?? here;
+  final closingRoute = ModalRoute.of(context);
+  // Opening an artist/album from Now Playing used to overlap the player's
+  // reverse transition with a new route after an arbitrary 16/210ms delay.
+  // That overlap caused expensive simultaneous compositing and black frames.
+  // Wait until the route is *removed from the overlay*, not merely popped.
+  final waitForClose = closingRoute != null &&
+      identical(closingRoute.navigator, root) &&
+      !closingRoute.isFirst;
   root.popUntil((r) => r.isFirst);
-  final delay = NavigationHelper.isFullPlayerOpen
-      ? AppConstants.animationNormal
-      : Duration.zero;
-  await Future<void>.delayed(
-    delay == Duration.zero ? const Duration(milliseconds: 16) : delay,
-  );
-  await (nestedNavigatorKey.currentState ?? root).push(route);
+  if (waitForClose && closingRoute != null) {
+    await closingRoute.completed;
+  }
+  final destination = nestedNavigatorKey.currentState ??
+      (root.mounted ? root : null);
+  if (destination == null || !destination.mounted) return;
+  await destination.push(route);
 }
 
 /// Opens the Library page of [song]'s album.

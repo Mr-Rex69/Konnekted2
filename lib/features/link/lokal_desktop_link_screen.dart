@@ -7,6 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../services/music_folder_service.dart';
+import '../../services/link/desktop_music_storage.dart';
+
 import '../../core/theme/lokal_tokens.dart';
 import '../../l10n/l10n.dart';
 import '../../models/lokal_remote_state.dart';
@@ -37,6 +40,8 @@ class _LokalDesktopLinkScreenState
   String? _error;
   int? _preparingTotal;
   int _queuedFiles = 0;
+  String? _copyFolderUri;
+  List<MusicFolder> _copyFolders = const [];
   @override
   void initState() {
     super.initState();
@@ -47,8 +52,11 @@ class _LokalDesktopLinkScreenState
     final prefs = await SharedPreferences.getInstance();
     final id =
         (await ref.read(lokalRemoteCredentialsStoreProvider).read())?.desktopId;
+    final folders = await MusicFolderService().getSavedFolders();
     if (mounted)
       setState(() {
+        _copyFolders = folders;
+        _copyFolderUri = prefs.getString(DesktopMusicStorage.destinationKey);
         _theme = prefs.getBool('lokal.link.$id.theme') ?? false;
         _sendDownloads =
             prefs.getBool('lokal.link.$id.send_downloads') ?? false;
@@ -121,36 +129,57 @@ class _LokalDesktopLinkScreenState
     try {
       final plan = await controller.prepareFileCopy();
       if (!mounted) return;
-      final adapter = Platform.isIOS ? ref.read(iosTransferCopyAdapterProvider) : null;
-      final credentials = adapter == null ? null : await ref.read(lokalRemoteCredentialsStoreProvider).read();
-      final nativePlan = adapter == null || credentials == null ? null : await adapter.prepare(plan, credentials);
+      final adapter = Platform.isIOS
+          ? ref.read(iosTransferCopyAdapterProvider)
+          : null;
+      final credentials = adapter == null
+          ? null
+          : await ref.read(lokalRemoteCredentialsStoreProvider).read();
+      final nativePlan = adapter == null || credentials == null
+          ? null
+          : await adapter.prepare(plan, credentials);
       if (!mounted) return;
       final confirmed = await showLokalConfirmSheet(
         context: context,
         title: lokalText('Copy missing songs both ways?'),
-        message: nativePlan != null ? lokalText(
-          '{count} song files will be prepared and queued. Keep Lokal open until preparation finishes, and keep the desktop awake on Wi-Fi. Originals stay on their source device. Follow progress and recovery in File transfers.',
-          args: {'count': nativePlan.total},
-        ) : lokalText(
-          '{send} songs to your PC, {receive} new songs to this phone, and {recover} existing private copies to your selected music folder under Lokal Desktop. Recovery uses files already on your phone; no re-download. Existing files are kept. Keep both apps open on Wi-Fi; check again to retry unfinished copies.',
-          args: {
-            'send': plan.toDesktop.length,
-            'receive': plan.toPhone.length,
-            'recover': plan.toMusicFolder.length,
-          },
-        ),
+        message: nativePlan != null
+            ? lokalText(
+                '{count} song files will be prepared and queued. Keep Lokal open until preparation finishes, and keep the desktop awake on Wi-Fi. Originals stay on their source device. Follow progress and recovery in File transfers.',
+                args: {'count': nativePlan.total},
+              )
+            : lokalText(
+                '{send} songs to your PC, {receive} new songs to this phone, and {recover} existing private copies to your selected music folder under Lokal Desktop. Recovery uses files already on your phone; no re-download. Existing files are kept. Keep both apps open on Wi-Fi; check again to retry unfinished copies.',
+                args: {
+                  'send': plan.toDesktop.length,
+                  'receive': plan.toPhone.length,
+                  'recover': plan.toMusicFolder.length,
+                },
+              ),
         confirmLabel: lokalText('Copy files'),
       );
       if (!confirmed || !mounted) return;
       if (nativePlan != null) {
-        setState(() { _preparingTotal = nativePlan.total; _queuedFiles = 0; });
-        try { await nativePlan.submit(onProgress: (queued, _) {
-          if (mounted) setState(() => _queuedFiles = queued);
-        }); }
-        catch (_) {
+        setState(() {
+          _preparingTotal = nativePlan.total;
+          _queuedFiles = 0;
+        });
+        try {
+          await nativePlan.submit(
+            onProgress: (queued, _) {
+              if (mounted) setState(() => _queuedFiles = queued);
+            },
+          );
+        } catch (_) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(lokalText(
-              'Some files could not be queued. Review File transfers before trying again. Submitted transfers are kept.'))));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  lokalText(
+                    'Some files could not be queued. Review File transfers before trying again. Submitted transfers are kept.',
+                  ),
+                ),
+              ),
+            );
           }
         }
         if (mounted) {
@@ -162,7 +191,8 @@ class _LokalDesktopLinkScreenState
         await controller.copyMissingFiles(plan);
       }
     } finally {
-      if (mounted && _preparingTotal != null) setState(() => _preparingTotal = null);
+      if (mounted && _preparingTotal != null)
+        setState(() => _preparingTotal = null);
       controller.cancelFileCopyPlan();
     }
   });
@@ -171,15 +201,32 @@ class _LokalDesktopLinkScreenState
     final progress = link.fileCopyProgress;
     final t = context.lokal;
     if (_preparingTotal case final total?) {
-      return LokalSettingsBlock(child: LokalSettingsCard(padding: const EdgeInsets.all(18),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(lokalText('Preparing file transfers'), style: TextStyle(color: t.text, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Text(lokalText('{queued} of {total} files queued. Keep Lokal open until preparation finishes.',
-            args: {'queued': _queuedFiles, 'total': total}), style: TextStyle(color: t.muted)),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(value: total > 0 ? _queuedFiles / total : null),
-        ])));
+      return LokalSettingsBlock(
+        child: LokalSettingsCard(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                lokalText('Preparing file transfers'),
+                style: TextStyle(color: t.text, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                lokalText(
+                  '{queued} of {total} files queued. Keep Lokal open until preparation finishes.',
+                  args: {'queued': _queuedFiles, 'total': total},
+                ),
+                style: TextStyle(color: t.muted),
+              ),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: total > 0 ? _queuedFiles / total : null,
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     final title = switch (progress.phase) {
@@ -255,6 +302,68 @@ class _LokalDesktopLinkScreenState
                 style: TextStyle(color: t.muted),
               ),
             ],
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey(_copyFolderUri),
+              initialValue: _copyFolderUri ?? '',
+              decoration: InputDecoration(
+                labelText: lokalText('Save PC files to'),
+                helperText:
+                    _copyFolderUri != null &&
+                        !_copyFolders.any((f) => f.uri == _copyFolderUri)
+                    ? lokalText(
+                        'Selected folder is no longer available. Choose another.',
+                      )
+                    : lokalText('Choose a folder in Library settings first.'),
+              ),
+              isExpanded: true,
+              items: [
+                DropdownMenuItem<String>(
+                  value: '',
+                  child: Text(lokalText('First available music folder')),
+                ),
+                if (_copyFolderUri != null &&
+                    !_copyFolders.any((f) => f.uri == _copyFolderUri))
+                  DropdownMenuItem<String>(
+                    value: _copyFolderUri!,
+                    child: Text(
+                      lokalText(
+                        'Previously selected folder unavailable — choose another',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                for (final folder in _copyFolders)
+                  DropdownMenuItem<String>(
+                    value: folder.uri,
+                    child: Text(
+                      folder.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: progress.busy
+                  ? null
+                  : (uri) async {
+                      final prefs = await SharedPreferences.getInstance();
+                      if (uri == null || uri.isEmpty) {
+                        await prefs.remove(DesktopMusicStorage.destinationKey);
+                      } else {
+                        await prefs.setString(
+                          DesktopMusicStorage.destinationKey,
+                          uri,
+                        );
+                      }
+                      if (mounted)
+                        setState(
+                          () => _copyFolderUri = uri?.isEmpty == true
+                              ? null
+                              : uri,
+                        );
+                    },
+            ),
             const SizedBox(height: 12),
             if (progress.phase == LinkCopyPhase.checking)
               TextButton.icon(
@@ -391,9 +500,7 @@ class _LokalDesktopLinkScreenState
     final origin =
         qr?.origin.toString() ??
         (address.contains('://') ? address : 'http://$address');
-    final expected = await ref
-        .read(lokalRemoteCredentialsStoreProvider)
-        .read();
+    final expected = await ref.read(lokalRemoteCredentialsStoreProvider).read();
     if (!mounted) return;
     await IosTransferRoot.withPairingRetirement(
       context,
@@ -486,19 +593,37 @@ class _LokalDesktopLinkScreenState
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  // Keep connection management in one row on small phones.
+                  Row(
                     children: [
-                      FilledButton.tonal(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(controller.connect),
-                        child: Text(l10n.linkReconnect),
+                      Expanded(
+                        child: FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            minimumSize: const Size(0, 44),
+                          ),
+                          onPressed: _busy
+                              ? null
+                              : () => _run(controller.connect),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(l10n.linkReconnect, maxLines: 1),
+                          ),
+                        ),
                       ),
-                      TextButton(
-                        onPressed: _busy ? null : controller.disconnect,
-                        child: Text(l10n.linkDisconnect),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            minimumSize: const Size(0, 44),
+                          ),
+                          onPressed: _busy ? null : controller.disconnect,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(l10n.linkDisconnect, maxLines: 1),
+                          ),
+                        ),
                       ),
                       TextButton(
                         onPressed: _busy
@@ -519,9 +644,10 @@ class _LokalDesktopLinkScreenState
                                   await IosTransferRoot.withPairingRetirement(
                                     context,
                                     expected: expected,
-                                    mutation: () => controller.forgetConfiguration(
-                                      expected: expected,
-                                    ),
+                                    mutation: () =>
+                                        controller.forgetConfiguration(
+                                          expected: expected,
+                                        ),
                                   );
                                 }
                               }),
@@ -533,89 +659,6 @@ class _LokalDesktopLinkScreenState
               ),
             ),
           ),
-          if (link.reachable)
-            LokalSettingsBlock(
-              child: LokalSettingsCard(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.linkPlayback,
-                      style: TextStyle(
-                        color: t.text,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.linkControlDesktop),
-                      value: link.controlsDesktop,
-                      onChanged: _busy
-                          ? null
-                          : (value) =>
-                                _run(() => controller.setDesktopTarget(value)),
-                    ),
-                    if (link.snapshot?.currentTrack case final track?)
-                      Text(
-                        '${track.title} · ${track.artist}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: t.muted),
-                      ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final entry in [
-                          (Icons.skip_previous_rounded, LokalRemoteAction.prev),
-                          (
-                            link.snapshot?.isPlaying == true
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            LokalRemoteAction.togglePlay,
-                          ),
-                          (Icons.skip_next_rounded, LokalRemoteAction.next),
-                        ])
-                          IconButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(
-                                    () => controller.sendCommand(entry.$2),
-                                  ),
-                            icon: Icon(entry.$1),
-                          ),
-                      ],
-                    ),
-                    if (link.socketConnected)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton.tonal(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(controller.playOnDesktop),
-                            child: Text(l10n.linkPlayOnDesktop),
-                          ),
-                          FilledButton.tonal(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(controller.playOnPhone),
-                            child: Text(l10n.linkPlayOnPhone),
-                          ),
-                        ],
-                      ),
-                    if (!link.socketConnected)
-                      Text(
-                        l10n.linkUpdateDesktop,
-                        style: TextStyle(color: t.muted),
-                      ),
-                  ],
-                ),
-              ),
-            ),
           if (link.mergeApproved ||
               link.syncProgress.phase != LinkSyncPhase.idle)
             _mergeStatus(link),

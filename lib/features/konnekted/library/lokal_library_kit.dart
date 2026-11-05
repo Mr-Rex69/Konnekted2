@@ -3,9 +3,13 @@ import 'package:flick/widgets/lokal/lokal_page_geometry.dart';
 
 import '../../link/lokal_ghost_availability.dart';
 
+import 'package:flick/services/link/library_song_identity.dart';
+
 import 'dart:async';
 
 import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/navigation/lokal_page_motion.dart';
+import 'package:flick/core/theme/lokal_interaction.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/konnekted_data.dart';
 import 'package:flick/features/konnekted/konnekted_home.dart';
@@ -17,6 +21,7 @@ import 'package:flick/services/player_service.dart' show PlayerService;
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
 
@@ -160,7 +165,7 @@ Future<void> lokalQueueAll(
 
 /// Pushes a Library page on the navigator the caller lives in.
 Future<void> pushLokal(BuildContext context, Widget page) =>
-    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page));
+    Navigator.of(context).push<void>(LokalPageRoute(builder: (_) => page));
 
 /// Total running time, "1 hr 12 min" or "42 min".
 String lokalRunningTime(Iterable<Song> songs) {
@@ -184,6 +189,7 @@ class LokalLibraryPage extends StatelessWidget {
     this.actions = const [],
     this.header,
     this.showBack = true,
+    this.edgeToEdgeHeader = false,
   });
 
   final String title;
@@ -195,27 +201,71 @@ class LokalLibraryPage extends StatelessWidget {
   final Widget? header;
   final bool showBack;
 
+  /// Place playlist artwork behind the status bar, with back/menu buttons
+  /// floating above it. Default library pages keep their current SafeArea.
+  final bool edgeToEdgeHeader;
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: context.lokal.bg,
-    body: SafeArea(
-      bottom: false,
-      child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: LokalPageBar(showBack: showBack, actions: actions),
+  Widget build(BuildContext context) {
+    if (edgeToEdgeHeader && header != null) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          backgroundColor: context.lokal.bg,
+          body: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Stack(
+                  children: [
+                    header!,
+                    Positioned(
+                      top: MediaQuery.paddingOf(context).top,
+                      left: 0,
+                      right: 0,
+                      child: LokalPageBar(showBack: showBack, actions: actions),
+                    ),
+                  ],
+                ),
+              ),
+              ...slivers,
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 150 + MediaQuery.paddingOf(context).bottom,
+                ),
+              ),
+            ],
           ),
-          SliverToBoxAdapter(
-            child: header ?? LokalLargeTitle(title: title, subtitle: subtitle),
-          ),
-          ...slivers,
-          SliverToBoxAdapter(
-            child: SizedBox(height: 150 + MediaQuery.paddingOf(context).bottom),
-          ),
-        ],
+        ),
+      );
+    }
+    return Scaffold(
+      backgroundColor: context.lokal.bg,
+      body: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: LokalPageBar(showBack: showBack, actions: actions),
+            ),
+            SliverToBoxAdapter(
+              child:
+                  header ?? LokalLargeTitle(title: title, subtitle: subtitle),
+            ),
+            ...slivers,
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 150 + MediaQuery.paddingOf(context).bottom,
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// The row of round glass buttons at the top of a page.
@@ -342,10 +392,18 @@ class LokalLargeTitle extends StatelessWidget {
 
 /// A section title inside a page, with an optional "See all".
 class LokalSectionTitle extends StatelessWidget {
-  const LokalSectionTitle({super.key, required this.title, this.onSeeAll});
+  const LokalSectionTitle({
+    super.key,
+    required this.title,
+    this.onSeeAll,
+    this.actionLabel,
+  });
 
   final String title;
   final VoidCallback? onSeeAll;
+
+  /// Optional action text for expandable sections (e.g. See all / Hide).
+  final String? actionLabel;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -368,7 +426,10 @@ class LokalSectionTitle extends StatelessWidget {
         if (onSeeAll != null)
           TextButton(
             onPressed: onSeeAll,
-            child: Text(lokalText('See all'), semanticsLabel: 'See all $title'),
+            child: Text(
+              actionLabel ?? lokalText('See all'),
+              semanticsLabel: '${actionLabel ?? lokalText('See all')} $title',
+            ),
           ),
       ],
     ),
@@ -494,13 +555,19 @@ class LokalTrackRow extends ConsumerWidget {
   final Widget? trailing;
 
   void _actions(BuildContext context) => unawaited(
-    SongActionsBottomSheet.show(context, song, onRemoveFromPlaylist: onRemove),
+    SongActionsBottomSheet.show(
+      context,
+      song,
+      onRemoveFromPlaylist: onRemove,
+      queueActions: false,
+      hideMediaActions: true,
+    ),
   );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.lokal;
-    final second = subtitle ?? song.artist;
+    final second = subtitle ?? creditedLeadArtist(song);
     final available =
         song.sourceType != 'lokal' ||
         (ref.watch(lokalSongAvailableProvider(song)).value ?? false);
@@ -614,7 +681,7 @@ class LokalTrackRow extends ConsumerWidget {
   }
 }
 
-/// A square cover with a title and a second line, for grids and shelves.
+/// A square cover with a tactile press/release and predictable focus.
 class LokalCoverCard extends StatelessWidget {
   const LokalCoverCard({
     super.key,
@@ -623,53 +690,53 @@ class LokalCoverCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.round = false,
+    this.heroTag,
   });
 
   final Widget art;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-
-  /// An artist's round portrait.
   final bool round;
+  final String? heroTag;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: lokalText("{arg0}, {arg1}", args: {'arg0': title, 'arg1': subtitle}),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      excludeFromSemantics: true,
-      child: ExcludeSemantics(
-        child: Column(
-          crossAxisAlignment: round
-              ? CrossAxisAlignment.center
-              : CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(round ? 999 : 10),
-                child: art,
-              ),
+  Widget build(BuildContext context) => LokalPressable(
+    radius: round ? 100 : 14,
+    semanticLabel: lokalText(
+      "{arg0}, {arg1}",
+      args: {'arg0': title, 'arg1': subtitle},
+    ),
+    onTap: onTap,
+    child: ExcludeSemantics(
+      child: Column(
+        crossAxisAlignment: round
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(round ? 999 : 14),
+              child: heroTag == null ? art : Hero(tag: heroTag!, child: art),
             ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: round ? TextAlign.center : TextAlign.start,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: context.lokal.muted),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 9),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: round ? TextAlign.center : TextAlign.start,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: round ? TextAlign.center : TextAlign.start,
+            style: TextStyle(fontSize: 12, color: context.lokal.muted),
+          ),
+        ],
       ),
     ),
   );

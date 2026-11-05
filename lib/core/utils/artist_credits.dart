@@ -196,6 +196,12 @@ List<String> splitArtistCredits(
   return names.toList();
 }
 
+/// The lead credited artist used for single-artist presentation and recap
+/// grouping. Preserve names with internal commas (e.g. Tyler, the Creator)
+/// using the same parser as the Artists library.
+String primaryArtistCredit(String? raw) =>
+    splitArtistCredits(raw).firstOrNull ?? '';
+
 /// Every credited performer, once per song. Album artist placeholders are not
 /// extra artists, and a collaboration never becomes an additional combined row.
 List<String> songArtistNames(Song song) {

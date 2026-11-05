@@ -67,6 +67,7 @@ class LinkJournal {
     'title': song.title,
     'artist': song.artist,
     'album': song.album ?? '',
+    'album_artist': song.albumArtist ?? '',
     'duration': song.duration.inMilliseconds / 1000,
     'track_key':
         _trackKeys[song.id] ??
@@ -77,9 +78,10 @@ class LinkJournal {
         song.id.startsWith('pending:playlist:') &&
         RegExp(r'^yt:[A-Za-z0-9_-]{11}$').hasMatch(song.remoteId ?? ''))
       'source_ref': song.remoteId,
-    if (song.isPending &&
-        song.id.startsWith('pending:playlist:') &&
-        (song.albumArt ?? '').startsWith('https://'))
+    // Remote, public covers may be linked directly. A phone-local file URI
+    // and an expiring provider-signed URL must never leave the device.
+    if ((song.albumArt ?? '').startsWith('https://') &&
+        !song.albumArt!.contains('?'))
       'artwork_url': song.albumArt,
   };
   Future<Song?> match(

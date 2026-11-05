@@ -283,6 +283,102 @@ class SpotifyWebApi implements SpotifyLibraryApi {
     return result;
   }
 
+  /// The saved/followed playlists in the listener's Spotify library.
+  /// Discovery's getPlaylists() deliberately remains the Home mixes shelf.
+  /// Flatten nested folders so this list includes playlists saved in folders.
+  Future<List<SpotifyPlaylist>> getLibraryPlaylists({
+    void Function(int)? onProgress,
+    SpotifyCancellation? cancellation,
+    int maxPlaylists = 2000,
+  }) async {
+    const pageSize = 50;
+    final max = maxPlaylists.clamp(pageSize, 5000).toInt();
+    final playlists = <String, SpotifyPlaylist>{};
+    for (var offset = 0; offset < max; offset += pageSize) {
+      cancellation?.check();
+      final data = await query('libraryV3', {
+        'filters': ['Playlists'],
+        'order': null,
+        'textFilter': '',
+        'features': [
+          'LIKED_SONGS',
+          'YOUR_EPISODES_V2',
+          'PRERELEASES',
+          'EVENTS',
+        ],
+        'limit': pageSize,
+        'offset': offset,
+        'flatten': true,
+        'expandedFolders': <String>[],
+        'folderUri': null,
+        'includeFoldersWhenFlattening': false,
+      }, cancellation: cancellation);
+      final me = data['me'];
+      final library = me is Map ? me['libraryV3'] : null;
+      if (library is! Map || library['items'] is! List) {
+        throw const SpotifyApiException(
+          'Spotify could not read your playlists. Reconnect and retry.',
+        );
+      }
+      final items = library['items'] as List;
+      for (final playlist in parseLibraryPlaylistItems(items)) {
+        playlists.putIfAbsent(playlist.id, () => playlist);
+      }
+      onProgress?.call(playlists.length);
+      final total = (library['totalCount'] as num?)?.toInt();
+      if (items.isEmpty ||
+          items.length < pageSize ||
+          (total != null && offset + pageSize >= total)) {
+        return playlists.values.toList(growable: false);
+      }
+    }
+    throw const SpotifyApiException(
+      'Spotify playlist library exceeds the supported limit. No partial list was shown.',
+    );
+  }
+
+  /// Parser kept separate from the web session for deterministic regression
+  /// tests. Skip folders and other library items, but include collaborative
+  /// PlaylistResponseWrapper variants and playlists nested in folders.
+  static List<SpotifyPlaylist> parseLibraryPlaylistItems(Object? raw) {
+    if (raw is! List) return const [];
+    final playlists = <SpotifyPlaylist>[];
+    for (final entry in raw.whereType<Map>()) {
+      final wrapper = entry['item'];
+      if (wrapper is! Map ||
+          !'${wrapper['__typename'] ?? ''}'.contains('Playlist'))
+        continue;
+      final playlist = wrapper['data'];
+      if (playlist is! Map) continue;
+      final uri = '${wrapper['_uri'] ?? playlist['uri'] ?? ''}';
+      if (!RegExp(r'^spotify:playlist:[A-Za-z0-9]{22}$').hasMatch(uri))
+        continue;
+      final name = playlist['name']?.toString() ?? '';
+      if (name.isEmpty) continue;
+      final images = playlist['images'];
+      final entries = images is Map ? images['items'] : null;
+      final first = entries is List && entries.isNotEmpty
+          ? entries.first
+          : null;
+      final sources = first is Map ? first['sources'] : null;
+      final ownerV2 = playlist['ownerV2'];
+      final ownerData = ownerV2 is Map ? ownerV2['data'] : null;
+      final content = playlist['content'];
+      playlists.add(
+        SpotifyPlaylist(
+          id: uri.split(':').last,
+          name: name,
+          owner: ownerData is Map ? ownerData['name']?.toString() : null,
+          imageUrl: biggestImage(sources),
+          tracksTotal: content is Map
+              ? ((content['totalCount'] as num?)?.toInt() ?? 0)
+              : 0,
+        ),
+      );
+    }
+    return playlists;
+  }
+
   static String? biggestImage(Object? sources) {
     if (sources is! List) return null;
     final images = sources.whereType<Map>().toList()

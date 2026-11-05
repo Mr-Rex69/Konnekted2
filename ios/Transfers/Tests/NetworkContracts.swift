@@ -1609,8 +1609,8 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   let ticket = try ownership.captureSubmission(owner)
   let context: LokalTransferUploadSourceContext = try native { runtime.uploadSourceContext(submission: ticket, reply: $0) }
   try require(context.rootPath == music.path && context.canonicalRootPath == music.path, "source root comes only from native library")
-  func grant(_ path: String = "Café/recording.wav") throws -> LokalTransferUploadSourceGrant {
-    try native { runtime.authorizeUploadSource(contextID: context.contextID, relativePath: path, songID: "42", submission: ticket, reply: $0) }
+  func grant(_ path: String = "Café/recording.wav", song: String = "42") throws -> LokalTransferUploadSourceGrant {
+    try native { runtime.authorizeUploadSource(contextID: context.contextID, relativePath: path, songID: song, submission: ticket, reply: $0) }
   }
   for path in ["../outside.wav", "/absolute.wav", "Café//recording.wav", "Café/./recording.wav"] {
     try rejects("unsafe relative source is refused") { _ = try grant(path) }
@@ -1624,11 +1624,11 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   try manager.removeItem(at: hardlink)
   let source = try grant()
   try require(source.songID == "42" && source.bytes == length && source.sha256 == checksum, "actual source hash bound to current song")
-  func job(_ song: String = "42") throws -> LokalTransferJob {
+  func job(_ song: String = "42", _ title: String = "upload-success") throws -> LokalTransferJob {
     try LokalTransferJob(direction: .upload,
       identity: LokalTransferIdentity(desktopID: auth.desktopID, sourceID: "authorized-source-" + song, localSongID: song,
         origin: origin, pairingID: auth.pairingID, desktopUserID: auth.desktopUserID),
-      metadata: LokalTransferMetadata(title: "upload-success", artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
+      metadata: LokalTransferMetadata(title: title, artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
       nowMs: 1000, expectedBytes: length, expectedSHA256: checksum)
   }
   try rejects("grant cannot authorize another library song") {
@@ -1645,13 +1645,55 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   try rejects("Flutter cannot choose upload durable phase") {
     _ = try LokalTransferProtocol.uploadSubmission(JSONSerialization.data(withJSONObject: envelope))
   }
+  forged = intentDocument; forged["uploadProtocolVersion"] = 1; envelope["intent"] = forged
+  try rejects("Flutter cannot forge native peer negotiation proof") {
+    _ = try LokalTransferProtocol.uploadSubmission(JSONSerialization.data(withJSONObject: envelope))
+  }
   forged = intentDocument; forged["sourcePath"] = original.path; envelope["intent"] = forged
   try rejects("Flutter cannot pass arbitrary upload absolute source") {
     _ = try LokalTransferProtocol.uploadSubmission(JSONSerialization.data(withJSONObject: envelope))
   }
+  func capabilityMode(_ name: String) throws {
+    let _: Data = try native { reply in
+      URLSession.shared.dataTask(with: URL(string: origin + "/__upload_capability?mode=" + name)!) { data, _, error in
+        if let error { reply(.failure(error)) } else { reply(.success(data ?? Data())) }
+      }.resume()
+    }
+  }
+  let uploadsBeforeNegotiation = try state(origin)["uploadRequests"] as! [String: Int]
+  for mode in ["unsupported", "future", "redirect"] {
+    try capabilityMode(mode)
+    try rejects("unqualified desktop capability never admits audio: " + mode) {
+      let _: LokalTransferSummary = try native {
+        runtime.enqueueAuthorizedUpload(request, grantID: source.grantID, submission: ticket, reply: $0)
+      }
+    }
+    let jobs: [LokalTransferJob] = try native { runtime.page(offset: 0, limit: 100, reply: $0) }
+    try require(jobs.isEmpty, "failed negotiation does not persist consent as queued audio")
+  }
+  try require(try state(origin)["uploadRequests"] as! [String: Int] == uploadsBeforeNegotiation,
+    "unsupported/future/redirect capability probes never POST audio")
+  try capabilityMode("supported")
   let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(request, grantID: source.grantID, submission: ticket, reply: $0) }
-  _ = try awaitJob(runtime, id: request.id, phase: [.complete])
+  let completed = try awaitJob(runtime, id: request.id, phase: [.complete])
+  try require(completed.uploadProtocolVersion == 1, "negotiated protocol is durable in the actual completed job")
+  let stored = try LokalTransferJournal(container: root).snapshot().jobs.first(where: { $0.id == request.id })
+  try require(stored?.uploadProtocolVersion == 1, "negotiation proof survives an independent journal reopen")
   try require(try Data(contentsOf: original) == bytes, "source authorization and POST preserve original bytes")
+  let lostGrant = try grant(song: "43")
+  let lost = try job("43", "upload-lost")
+  let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(lost, grantID: lostGrant.grantID, submission: ticket, reply: $0) }
+  _ = try awaitJob(runtime, id: lost.id, phase: [.interrupted])
+  let audioRequestsBeforeRecovery = try state(origin)["uploadRequests"] as! [String: Int]
+  let recovered: LokalTransferJob? = try native { runtime.matchUploadedOriginal(id: lost.id, revision: 1, submission: ticket, reply: $0) }
+  try require(recovered?.phase == .complete && recovered?.resultOriginalID == "desktop-upload-lost",
+    "qualified lost reply recovers its exact original through operation status")
+  try require(try state(origin)["uploadRequests"] as! [String: Int] == audioRequestsBeforeRecovery,
+    "qualified recovery never POSTs audio again")
+  let reopened = try LokalTransferJournal(container: root).snapshot().jobs.first(where: { $0.id == lost.id })
+  try require(reopened?.uploadProtocolVersion == 1 && reopened?.resultOriginalID == "desktop-upload-lost",
+    "exact operation receipt and native negotiation proof survive recovery/reopen")
+
   let replaced = try grant()
   try manager.moveItem(at: original, to: album.appendingPathComponent("old.wav"))
   try bytes.write(to: original)
@@ -1661,8 +1703,32 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   let _: Bool = try native { runtime.releaseUploadSource(context.contextID, reply: $0) }
   try rejects("released context cannot create new grants") { _ = try grant() }
   let fresh: LokalTransferUploadSourceContext = try native { runtime.uploadSourceContext(submission: ticket, reply: $0) }
+  let slowGrant: LokalTransferUploadSourceGrant = try native {
+    runtime.authorizeUploadSource(contextID: fresh.contextID, relativePath: "Café/recording.wav",
+      songID: "44", submission: ticket, reply: $0)
+  }
+  try capabilityMode("slow")
+  let capabilityBefore = try state(origin)["uploadCapabilityRequests"] as! Int
+  let audioBefore = try state(origin)["uploadRequests"] as! [String: Int]
+  let slowIntent = try job("44")
+  let pending = NativeResult<LokalTransferSummary>()
+  let pendingDone = DispatchSemaphore(value: 0)
+  runtime.enqueueAuthorizedUpload(slowIntent, grantID: slowGrant.grantID, submission: ticket) {
+    pending.set($0); pendingDone.signal()
+  }
+  let capabilityDeadline = Date().addingTimeInterval(5)
+  while try Date() < capabilityDeadline && (state(origin)["uploadCapabilityRequests"] as! Int) == capabilityBefore {
+    Thread.sleep(forTimeInterval: 0.01)
+  }
+  try require(try state(origin)["uploadCapabilityRequests"] as! Int > capabilityBefore, "actual capability request is held before retirement")
   try ownership.retireSubmissions(owner)
   let _: Bool = try native { runtime.drainUploadSources($0) }
+  try require(pendingDone.wait(timeout: .now() + 2) == .success, "source retirement drains the held capability delegate without waiting for its peer")
+  try rejects("retired capability cannot admit its captured source") { _ = try pending.get() }
+  let afterRetirement: [LokalTransferJob] = try native { runtime.page(offset: 0, limit: 100, reply: $0) }
+  try require(!afterRetirement.contains(where: { $0.id == slowIntent.id }), "cancelled negotiation never creates a job")
+  try require(try state(origin)["uploadRequests"] as! [String: Int] == audioBefore, "retired negotiation cannot send any audio")
+  try capabilityMode("supported")
   try rejects("retired source context cannot reauthorize with a fresh ticket") {
     let newTicket = try ownership.captureSubmission(owner)
     let _: LokalTransferUploadSourceGrant = try native { runtime.authorizeUploadSource(contextID: fresh.contextID,
@@ -1673,7 +1739,7 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   try manager.moveItem(at: music, to: displacedRoot)
   try manager.createDirectory(at: music, withIntermediateDirectories: false)
   try rejects("replaced Music root invalidates all pinned source access") { try reader.validateRoot() }
-  print("Native source admission passed: actual Music hash and HTTP POST, Unicode paths, song binding, symlink/hardlink/traversal refusal, same-byte/root replacement, strict envelope and released/retired context refusal. Apple source/lifecycle acceptance pending.")
+  print("Native source admission passed: actual Music hash and HTTP POST, Unicode paths, song binding, symlink/hardlink/traversal refusal, same-byte/root replacement, strict envelope, qualified/unsupported/future/redirect negotiation, durable protocol proof and held-capability retirement drainage. Apple source/lifecycle acceptance pending.")
 }
 
 private func runOwnedQueueContracts(origin: String, length: Int64, checksum: String) throws {
@@ -1840,4 +1906,91 @@ private func runStorageFailureContracts(origin: String, length: Int64, checksum:
     try require(jobs.allSatisfy({ counts[$0.identity.sourceID] == 1 }), "storage recovery never resends either held request")
   }
   print("Storage-failure contracts passed: two actual held download tasks and two actual upload tasks cancel on replaced journal, failed recovery stays fenced, late callbacks preserve durable truth, restored recovery interrupts without resend, original and private upload bytes preserved. Apple daemon/lifecycle acceptance pending.")
+}
+
+func runUploadOperationDocumentContracts() throws {
+  let job = try LokalTransferJob(direction: .upload,
+    identity: LokalTransferIdentity(desktopID: "operation-pc", sourceID: "phone-song-42", localSongID: "42",
+      origin: "http://127.0.0.1:5443", pairingID: "33333333-3333-4333-8333-333333333333", desktopUserID: "guest"),
+    metadata: LokalTransferMetadata(title: "曲 — Café", artist: "Native fixture — Café", album: "Album", fileExtension: "wav"),
+    nowMs: 1000, expectedBytes: 32044, expectedSHA256: String(repeating: "a", count: 64))
+  let auth = try LokalTransferAuthorization(desktopID: job.identity.desktopID, origin: job.identity.origin,
+    token: "operation-contract-test-token", pairingID: job.identity.pairingID, desktopUserID: "guest")
+  let request = try LokalTransferUploadOperation.uploadRequest(auth, job: job)
+  try require(request.value(forHTTPHeaderField: "x-link-upload-id") == job.id, "operation uses immutable job ID")
+  let cancellation = try LokalTransferUploadOperation.cancellationRequest(auth, job: job)
+  try require(cancellation.url?.path == "/api/remote/files/operations/\(job.id)/cancel", "cancel endpoint derives only own ID")
+  let body = try JSONSerialization.jsonObject(with: cancellation.httpBody!) as! [String: Any]
+  let meta = body["metadata"] as! [String: Any]
+  try require(meta["originalFilename"] == nil && meta["title"] as? String == job.metadata.title, "cancel preserves exact upload metadata")
+  var valid: [String: Any] = ["protocolVersion": 1, "operationID": job.id, "state": "committed",
+    "bytes": job.expectedBytes!, "sha256": job.expectedSHA256!, "fingerprint": try LokalTransferUploadOperation.fingerprint(job),
+    "trackId": "original-42", "file_hash": job.expectedSHA256!, "available": true, "ok": true]
+  func decode(_ value: [String: Any], status: Int = 200) throws -> LokalTransferUploadOperation.Outcome {
+    try LokalTransferUploadOperation.outcome(JSONSerialization.data(withJSONObject: value), status: status, job: job)
+  }
+  try require(decode(valid).originalID == "original-42", "scoped receipt accepted")
+  for (field, changed) in [("operationID", UUID().uuidString.lowercased() as Any), ("bytes", 1),
+    ("sha256", String(repeating: "b", count: 64)), ("fingerprint", String(repeating: "c", count: 64)),
+    ("available", 1), ("protocolVersion", true), ("trackId", "https://credential.invalid/token")] {
+    var corrupt = valid; corrupt[field] = changed
+    try rejects("operation receipt rejects changed \(field)") { _ = try decode(corrupt) }
+  }
+  try rejects("410 cannot acknowledge an available committed original") { _ = try decode(valid, status: 410) }
+  valid["available"] = false;valid["ok"] = false
+  try require(decode(valid, status: 410).available == false, "deleted original stays historical and unavailable")
+  let absent: [String: Any] = ["protocolVersion": 1, "operationID": job.id, "state": "absent"]
+  try require(decode(absent, status: 404).state == .absent, "absence is separate from durable cancellation")
+  try rejects("200 absence is not a cancellation proof") { _ = try decode(absent) }
+  try rejects("capability boolean cannot impersonate protocol integer") {
+    _ = try LokalTransferUploadOperation.acceptsCapability(Data("{\"protocolVersion\":true,\"uploadOperations\":1}".utf8))
+  }
+}
+
+/// A real desktop service is provided by scripts/phone-upload-native-peer.test.cjs
+/// in the companion desktop change. These requests use production constructors,
+/// bounded HTTP probes and strict receipt decoding, rather than a second mock wire format.
+func runDesktopUploadPeer(origin: String, token: String, audio: URL) throws {
+  let data = try Data(contentsOf: audio)
+  let checksum = try LokalTransferFiles.digestIntent(data)
+  func job() throws -> LokalTransferJob {
+    try LokalTransferJob(direction: .upload,
+      identity: LokalTransferIdentity(desktopID: "operation-pc", sourceID: "phone-song-42", localSongID: "42",
+        origin: origin, pairingID: "33333333-3333-4333-8333-333333333333", desktopUserID: "guest"),
+      metadata: LokalTransferMetadata(title: "曲 — Café", artist: "Native fixture — Café", album: "Album", fileExtension: "wav"),
+      nowMs: 1000, expectedBytes: Int64(data.count), expectedSHA256: checksum)
+  }
+  let intent = try job()
+  let auth = try LokalTransferAuthorization(desktopID: intent.identity.desktopID, origin: origin,
+    token: token, pairingID: intent.identity.pairingID, desktopUserID: "guest")
+  let queue = DispatchQueue(label: "lokal.actual-desktop-peer")
+  func exchange(_ request: URLRequest, statuses: Set<Int> = [200]) throws -> LokalTransferHTTPProbe.Exchange {
+    try native { reply in
+      let probe = LokalTransferHTTPProbe(request: request, statuses: statuses, queue: queue, completion: reply)
+      probe.start()
+    }
+  }
+  let capability = try exchange(LokalTransferUploadOperation.capabilityRequest(auth, job: intent))
+  try require(LokalTransferUploadOperation.acceptsCapability(capability.body), "actual peer advertises operation capability")
+  func outcome(_ request: URLRequest, job: LokalTransferJob, statuses: Set<Int> = [200]) throws -> LokalTransferUploadOperation.Outcome {
+    let response = try exchange(request, statuses: statuses)
+    return try LokalTransferUploadOperation.outcome(response.body, status: response.status, job: job)
+  }
+  var request = try LokalTransferUploadOperation.uploadRequest(auth, job: intent)
+  request.httpBody = data
+  let committed = try outcome(request, job: intent)
+  try require(committed.state == .committed && committed.available == true, "real peer commits native Unicode intent and audio")
+  let recovered = try outcome(LokalTransferUploadOperation.statusRequest(auth, job: intent), job: intent)
+  try require(recovered == committed, "read-only native status recovers exact desktop outcome")
+  try require(outcome(request, job: intent) == committed, "same native operation replays stable receipt")
+  try require(outcome(LokalTransferUploadOperation.cancellationRequest(auth, job: intent), job: intent) == committed,
+    "cancelling committed upload preserves desktop original")
+  let cancelled = try job()
+  let absence = try outcome(LokalTransferUploadOperation.statusRequest(auth, job: cancelled), job: cancelled, statuses: [404])
+  try require(absence.state == .absent, "native sees genuinely absent new key")
+  let tombstone = try outcome(LokalTransferUploadOperation.cancellationRequest(auth, job: cancelled), job: cancelled)
+  try require(tombstone.state == .cancelled, "native receives durable pre-body cancellation")
+  var late = try LokalTransferUploadOperation.uploadRequest(auth, job: cancelled);late.httpBody = data
+  try require(outcome(late, job: cancelled, statuses: [410]).state == .cancelled, "late native body cannot cross cancellation fence")
+  print("Actual desktop/native upload contract passed: Unicode fingerprint, playable commit, stable replay, read-only recovery and cancellation fencing.")
 }

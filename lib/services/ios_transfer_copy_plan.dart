@@ -11,13 +11,21 @@ import 'ios_library_scan_epoch.dart';
 import 'ios_pairing_retirement.dart';
 import 'ios_transfer_session.dart';
 import 'link/link_file_copy.dart';
+import 'link/lokal_desktop_source.dart';
 import 'link/link_protocol.dart' show linkUuid;
 import 'link/desktop_genre_reconciliation.dart';
 
 /// Adapts the existing explicit desktop copy preview. It never silently falls
 /// back after any native submission, nor labels queued work as completed work.
 class IosTransferCopyAdapter {
-  IosTransferCopyAdapter({required this.isar, required this.session});
+  IosTransferCopyAdapter({
+    required this.isar,
+    required this.session,
+    Future<bool> Function(LokalRemoteCredentials)? supportsUploadOperations,
+  }) : _supportsUploadOperations =
+           supportsUploadOperations ??
+           LokalDesktopSource.instance.supportsDurableUploadOperations;
+  final Future<bool> Function(LokalRemoteCredentials) _supportsUploadOperations;
   final Isar isar;
   final IosTransferSession session;
 
@@ -46,6 +54,11 @@ class IosTransferCopyAdapter {
         credentials.desktopId == null ||
         credentials.pairingID == null) {
       throw StateError('This copy plan cannot use background transfers.');
+    }
+    if (plan.toDesktop.isNotEmpty) {
+      final supported = await _supportsUploadOperations(credentials);
+      check();
+      if (!supported) return null;
     }
     await session.start();
     check();

@@ -9,6 +9,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:flick/core/utils/app_haptics.dart';
+import 'package:flick/core/utils/app_log.dart';
+import 'package:flick/core/theme/lokal_interaction.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 
@@ -21,28 +24,61 @@ abstract final class LokalGlassShaders {
   static final rim = ValueNotifier<ui.FragmentProgram?>(null);
 
   static Future<void> load() async {
+    // The outline is decoration, not a prerequisite for the actual lens.
+    // Previously a rim compile/load failure prevented loading the lens at
+    // all and the footer silently fell back to opaque frosted glass.
     try {
       rim.value ??= await ui.FragmentProgram.fromAsset(
         'shaders/lokal_glass_rim.frag',
       );
-      if (ui.ImageFilter.isShaderFilterSupported) {
-        lens.value ??= await ui.FragmentProgram.fromAsset(
-          'shaders/lokal_glass_lens.frag',
-        );
-      }
     } catch (error, stack) {
-      // Glass still works without them; it just isn't liquid.
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
           stack: stack,
           library: 'lokal glass',
-          context: ErrorDescription('loading the glass shaders'),
+          context: ErrorDescription('loading the optional rim shader'),
+        ),
+      );
+    }
+
+    if (!ui.ImageFilter.isShaderFilterSupported) {
+      final reason = 'Lokal glass: shader backdrop filters unsupported '
+          'by active renderer; using frosted fallback (Impeller required).';
+      debugPrint(reason);
+      AppLog.instance.add(reason, source: LogSource.platform);
+      return;
+    }
+    try {
+      lens.value ??= await ui.FragmentProgram.fromAsset(
+        'shaders/lokal_glass_lens.frag',
+      );
+      debugPrint('Lokal glass: Impeller refractive lens ready');
+      AppLog.instance.add(
+        'Lokal glass: liquid lens shader loaded; '
+        'shaderFilterSupported=true.',
+        source: LogSource.platform,
+      );
+    } catch (error, stack) {
+      AppLog.instance.add(
+        'Lokal glass: liquid lens shader failed: $error',
+        source: LogSource.platform,
+      );
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'lokal glass',
+          context: ErrorDescription('loading the refractive lens shader'),
         ),
       );
     }
   }
 }
+
+/// Lens surface profile. The squircle uses a convex fourth-root surface
+/// (as described by kube.io's Liquid Glass optics study).
+enum LokalLensProfile { circular, squircle }
 
 /// How a glass shape bends what is behind it (Kyant0/backdrop's lens).
 @immutable
@@ -52,7 +88,9 @@ class LokalLens {
     required this.amount,
     this.depth = 0,
     this.dispersion = 0,
+    this.magnification = 0,
     this.fraction = 1,
+    this.profile = LokalLensProfile.circular,
   });
 
   /// How far in from the edge the bending reaches, in logical pixels.
@@ -67,9 +105,17 @@ class LokalLens {
   /// Rainbow fringe at the rim, 0 to 1.
   final double dispersion;
 
+  /// Magnifies the backdrop across the flat centre of the glass.
+  /// 0.05 corresponds to a gentle ~1.05x apparent zoom and is separate
+  /// from the edge displacement. This never magnifies icons or labels.
+  final double magnification;
+
   /// Caps [height] and [amount] at this share of the shape's shorter side,
   /// so a lens scales with the shape (BitChord's bars use half).
   final double fraction;
+
+  /// Optical curve at the bezel; circular maintains the original effect.
+  final LokalLensProfile profile;
 
   static const none = LokalLens(height: 0, amount: 0);
 
@@ -78,7 +124,9 @@ class LokalLens {
     amount: amount * t,
     depth: depth,
     dispersion: dispersion,
+    magnification: magnification * t,
     fraction: fraction,
+    profile: profile,
   );
 
   @override
@@ -88,10 +136,14 @@ class LokalLens {
       other.amount == amount &&
       other.depth == depth &&
       other.dispersion == dispersion &&
-      other.fraction == fraction;
+      other.magnification == magnification &&
+      other.fraction == fraction &&
+      other.profile == profile;
 
   @override
-  int get hashCode => Object.hash(height, amount, depth, dispersion, fraction);
+  int get hashCode => Object.hash(
+    height, amount, depth, dispersion, magnification, fraction, profile,
+  );
 }
 
 /// How much a [LokalGlass] hides what is behind it.
@@ -180,6 +232,15 @@ class LokalGlass extends ConsumerWidget {
     this.shadow = true,
     this.grouped = false,
     this.lens,
+    this.liquidTintOpacity,
+    this.liquidBlurRadius,
+    this.singlePassLens = false,
+    this.staticSurface = false,
+    this.suspendBackdrop = false,
+    this.fallbackTintOpacity,
+    this.fallbackBlurSigma,
+    this.pronouncedRim = false,
+    this.rimStrength = 1,
   });
 
   /// A fully rounded capsule or circle (`StadiumBorder`-like radius).
@@ -192,6 +253,15 @@ class LokalGlass extends ConsumerWidget {
     this.shadow = true,
     this.grouped = false,
     this.lens,
+    this.liquidTintOpacity,
+    this.liquidBlurRadius,
+    this.singlePassLens = false,
+    this.staticSurface = false,
+    this.suspendBackdrop = false,
+    this.fallbackTintOpacity,
+    this.fallbackBlurSigma,
+    this.pronouncedRim = false,
+    this.rimStrength = 1,
   }) : borderRadius = const BorderRadius.all(Radius.circular(999));
 
   final Widget child;
@@ -207,7 +277,61 @@ class LokalGlass extends ConsumerWidget {
   /// Overrides the thickness's lens.
   final LokalLens? lens;
 
+  /// Optional clearer liquid fill. Frosted/performance fallbacks retain
+  /// their original opacity for legibility.
+  final double? liquidTintOpacity;
+
+  /// Clarity for the liquid shader alone; normal fallback retains frost.
+  final double? liquidBlurRadius;
+
+  /// Keep the refractive lens permanently active, but skip the separate
+  /// pre-blur/vibrancy backdrop pass. For the floating footer this preserves
+  /// optical motion during scrolling while halving the number of backdrop
+  /// layers. Other glass surfaces retain the original treatment.
+  final bool singlePassLens;
+
+  /// Fixed page content cards should not sample the backdrop on every frame
+  /// of an image-heavy scroll. Preserve tint, shape and specular rim; draw
+  /// these cards without a backdrop shader at all, including at rest.
+  final bool staticSurface;
+
+  /// Avoid three expensive full-screen backdrop captures while the dock is
+  /// moving over scrolling artwork. Draw the same clear tint and specular
+  /// border until scrolling / geometry settle, then restore the real lens.
+  /// Does not alter the user's Performance Mode or static glass elsewhere.
+  final bool suspendBackdrop;
+
+  /// Light frosted fallback for devices without shader image filters.
+  /// Kept separate from Performance Mode's intentionally solid surface.
+  final double? fallbackTintOpacity;
+  final double? fallbackBlurSigma;
+
+  /// Opt-in internal reflection and focused bright rim for floating chrome.
+  final bool pronouncedRim;
+  final double rimStrength;
+
   static const _vibrancy = 1.5;
+
+  // A morphing dock rebuilds each capsule every frame. Re-creating an
+  // identical native blur + color-matrix image filter on each frame causes
+  // avoidable GPU filter invalidation and allocation churn, which users see
+  // as stutter while its dimensions change. The optical shader still updates
+  // for moving geometry; its blur/vibrancy input is constant and shareable.
+  static final _liquidFilterCache = <double, ui.ImageFilter>{};
+
+  static ui.ImageFilter _liquidInnerFilter(double sigma) {
+    if (_liquidFilterCache.length > 48) _liquidFilterCache.clear();
+    return _liquidFilterCache.putIfAbsent(sigma, () {
+      return ui.ImageFilter.compose(
+        outer: ui.ImageFilter.blur(
+          sigmaX: sigma,
+          sigmaY: sigma,
+          tileMode: TileMode.mirror,
+        ),
+        inner: const ColorFilter.matrix(_vibrancyMatrix),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -219,20 +343,23 @@ class LokalGlass extends ConsumerWidget {
       child: ValueListenableBuilder<ui.FragmentProgram?>(
         valueListenable: LokalGlassShaders.lens,
         builder: (context, program, _) {
-          final liquid = !solid && program != null;
+          final lensReady = !solid && program != null;
+          final liquid = lensReady && !suspendBackdrop && !staticSurface;
           final light = t.isLight;
           final double alpha;
-          if (liquid) {
-            alpha = thickness.tint;
+          if (lensReady) {
+            alpha = liquidTintOpacity?.clamp(0.0, 1.0) ?? thickness.tint;
           } else {
             final frost = light ? thickness.frostLight : thickness.frostDark;
             // Solid glass gets 20 % more opacity so text keeps its contrast
             // without the blur behind it.
-            alpha = solid ? (frost + .2).clamp(0.0, .96) : frost;
+            alpha = solid
+                ? (frost + .2).clamp(0.0, .96)
+                : (fallbackTintOpacity?.clamp(0.0, 1.0) ?? frost);
           }
           final base =
               tint ??
-              (liquid
+              (lensReady
                   ? (light ? const Color(0xFFFAFAFA) : const Color(0xFF121212))
                   : (light ? Colors.white : t.surface));
 
@@ -246,7 +373,8 @@ class LokalGlass extends ConsumerWidget {
               foregroundPainter: LokalGlassRimPainter(
                 borderRadius: borderRadius,
                 light: light,
-                strength: solid ? .6 : 1,
+                strength: (solid ? .6 : 1) * rimStrength,
+                pronounced: pronouncedRim,
                 program: LokalGlassShaders.rim.value,
               ),
               child: padding == null
@@ -260,22 +388,21 @@ class LokalGlass extends ConsumerWidget {
               program: program,
               radius: _radius(borderRadius),
               lens: lens ?? thickness.lens,
-              inner: ui.ImageFilter.compose(
-                outer: ui.ImageFilter.blur(
-                  sigmaX: thickness.blurSigma,
-                  sigmaY: thickness.blurSigma,
-                  tileMode: TileMode.mirror,
-                ),
-                inner: const ColorFilter.matrix(_vibrancyMatrix),
-              ),
+              inner: singlePassLens
+                  ? null
+                  : _liquidInnerFilter(
+                      liquidBlurRadius == null
+                          ? thickness.blurSigma
+                          : math.max(0, liquidBlurRadius!) * .57735 + .5,
+                    ),
               child: surface,
             );
-          } else if (!solid) {
+          } else if (!solid && !suspendBackdrop && !staticSurface) {
             final filter = ui.ImageFilter.compose(
               outer: const ColorFilter.matrix(_vibrancyMatrix),
               inner: ui.ImageFilter.blur(
-                sigmaX: thickness.frostSigma,
-                sigmaY: thickness.frostSigma,
+                sigmaX: fallbackBlurSigma ?? thickness.frostSigma,
+                sigmaY: fallbackBlurSigma ?? thickness.frostSigma,
                 tileMode: TileMode.mirror,
               ),
             );
@@ -344,11 +471,16 @@ class LokalClearLens extends StatelessWidget {
     super.key,
     required this.lens,
     required this.child,
+    this.suspendBackdrop = false,
     this.borderRadius = const BorderRadius.all(Radius.circular(999)),
   });
 
   final LokalLens lens;
   final BorderRadius borderRadius;
+
+  /// Skip only the backdrop filter during high-frequency dock motion;
+  /// preserve the fill/outline and the selected-tab semantics.
+  final bool suspendBackdrop;
 
   /// Painted on top of the lens: its fill and rim.
   final Widget child;
@@ -358,7 +490,8 @@ class LokalClearLens extends StatelessWidget {
       ValueListenableBuilder<ui.FragmentProgram?>(
         valueListenable: LokalGlassShaders.lens,
         builder: (context, program, _) {
-          if (program == null || lens.amount <= 0 || lens.height <= 0) {
+          if (suspendBackdrop ||
+              program == null || lens.amount <= 0 || lens.height <= 0) {
             return child;
           }
           return ClipRRect(
@@ -498,6 +631,8 @@ class RenderLokalLensBackdrop extends RenderProxyBox {
       amount * dpr,
       _lens.depth,
       _lens.dispersion,
+      _lens.profile == LokalLensProfile.squircle ? 1.0 : 0.0,
+      _lens.magnification,
     ];
     if (_filter == null || !listEquals(uniforms, _uniforms)) {
       final shader = _program.fragmentShader();
@@ -546,12 +681,14 @@ class LokalGlassRimPainter extends CustomPainter {
     required this.borderRadius,
     required this.light,
     required this.strength,
+    this.pronounced = false,
     this.program,
   });
 
   final BorderRadius borderRadius;
   final bool light;
   final double strength;
+  final bool pronounced;
   final ui.FragmentProgram? program;
 
   @override
@@ -587,6 +724,41 @@ class LokalGlassRimPainter extends CustomPainter {
       ).createShader(rect);
     }
     canvas.drawRRect(rrect, paint);
+    if (pronounced) {
+      // BitChord has two reflections: a thin crisp perimeter and a softer
+      // internal return. The old 3.5px white bloom looked like thick painted
+      // edges. These strokes provide definition without restoring rainbow
+      // or overwhelming the real backdrop lens.
+      final bloom = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          stops: const [0, .48, 1],
+          colors: [
+            Colors.white.withValues(alpha: (light ? .14 : .22) * strength),
+            Colors.white.withValues(alpha: .025 * strength),
+            Colors.white.withValues(alpha: (light ? .09 : .13) * strength),
+          ],
+        ).createShader(rect);
+      canvas.drawRRect(rrect.deflate(1.25), bloom);
+
+      final glint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = .85
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          stops: const [0, .38, 1],
+          colors: [
+            Colors.white.withValues(alpha: (light ? .46 : .55) * strength),
+            Colors.white.withValues(alpha: .08 * strength),
+            Colors.white.withValues(alpha: (light ? .20 : .30) * strength),
+          ],
+        ).createShader(rect);
+      canvas.drawRRect(rrect.deflate(.65), glint);
+    }
     // The 0.5 px hairline that gives glass an edge against a page the same
     // colour as its tint.
     canvas.drawRRect(
@@ -605,6 +777,7 @@ class LokalGlassRimPainter extends CustomPainter {
       old.borderRadius != borderRadius ||
       old.light != light ||
       old.strength != strength ||
+      old.pronounced != pronounced ||
       old.program != program;
 }
 
@@ -645,14 +818,19 @@ class _LokalGlassButtonState extends State<LokalGlassButton> {
       button: true,
       label: widget.semanticLabel,
       child: GestureDetector(
-        onTapDown: (_) => _set(true),
-        onTapUp: (_) => _set(false),
-        onTapCancel: () => _set(false),
-        onTap: widget.onPressed,
+        onTapDown: widget.onPressed == null ? null : (_) => _set(true),
+        onTapUp: widget.onPressed == null ? null : (_) => _set(false),
+        onTapCancel: widget.onPressed == null ? null : () => _set(false),
+        onTap: widget.onPressed == null ? null : () {
+          AppHaptics.tap();
+          widget.onPressed!();
+        },
         child: AnimatedScale(
-          scale: _pressed && !reduceMotion ? 1.06 : 1,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutBack,
+          scale: _pressed && !reduceMotion ? LokalMotion.pressedScale : 1,
+          duration: reduceMotion
+              ? Duration.zero
+              : (_pressed ? LokalMotion.press : LokalMotion.release),
+          curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
           child: SizedBox.square(
             dimension: widget.size,
             child: LokalGlass.capsule(

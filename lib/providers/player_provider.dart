@@ -5,8 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'lastfm_provider.dart';
 import 'lokal_remote_provider.dart';
+
+import 'package:flick/features/link/lokal_ghost_availability.dart';
+
 import '../models/lokal_remote_state.dart';
 import '../services/link/remote_playback_target.dart';
+import '../services/link/library_song_identity.dart';
+import '../services/link/lokal_desktop_source.dart';
+import '../services/lokal_remote_service.dart';
+import 'songs_provider.dart';
 import 'listenbrainz_provider.dart';
 import '../models/playback_context.dart';
 import '../models/shuffle_mode.dart';
@@ -119,6 +126,37 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
   return PlayerService();
 });
 
+/// Convert a desktop snapshot without reading the phone audio engine. Only
+/// Android-private cached images are passed here, never PC filesystem paths.
+@visibleForTesting
+Song songFromDesktopRemoteTrack(
+  LokalRemoteTrack track, {
+  String? artworkPath,
+  int? artworkServerId,
+}) {
+  final id = track.id;
+  final hasCoverSource = artworkServerId != null && id != null && id.isNotEmpty;
+  return Song(
+    id: 'desktop:$id',
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    // The current track can reuse the already downloaded notification cover.
+    // Queue items resolve their own covers through the *same* paired, bounded
+    // Lokal artwork loader. Never interpret desktop artwork_path as an
+    // Android filesystem path.
+    albumArt: artworkPath ?? (hasCoverSource ? 'lokal-cover://$id' : null),
+    filePath: hasCoverSource
+        ? 'lokal://$artworkServerId/${Uri.encodeComponent(id!)}'
+        : null,
+    duration: Duration(milliseconds: (track.duration * 1000).round()),
+    fileType: track.fileType,
+    sourceType: 'lokal',
+    remoteId: id,
+    remoteServerId: artworkServerId,
+  );
+}
+
 /// Notifier that bridges PlayerService ValueNotifiers to Riverpod state.
 class PlayerNotifier extends Notifier<PlayerState> {
   late PlayerService _service;
@@ -134,6 +172,101 @@ class PlayerNotifier extends Notifier<PlayerState> {
         : null;
   }
 
+  SongsState? _desktopLibrarySnapshot;
+  PreferredLibrarySongIndex? _desktopLibraryIndex;
+
+  /// Resolve a phone-library selection to real desktop IDs using the *same*
+  /// recording matches that suppress duplicated desktop rows in Mobile.
+  /// Never send mobile-only IDs/files to the PC or use a title-only guess.
+  Future<DesktopLibrarySelection> _resolveDesktopSelection(
+    Song selected, {
+    List<Song>? playlist,
+  }) async {
+    final connection = ref.read(lokalRemoteControllerProvider);
+    if (!connection.controlsDesktop || !connection.reachable) {
+      throw const LokalRemoteNetworkException(
+        'Connect to the desktop before selecting a remote song.',
+      );
+    }
+    final credentials = await ref
+        .read(lokalRemoteCredentialsStoreProvider)
+        .read();
+    if (credentials == null ||
+        credentials.desktopId == null ||
+        credentials.origin != connection.config?.origin) {
+      throw const LokalRemoteProtocolException(
+        'Pair this desktop and sync its library before playing shared songs.',
+      );
+    }
+    final serverId =
+        connection.artworkServerId ??
+        (await LokalDesktopSource.instance.ensureServer(credentials)).id;
+
+    final library = await ref.read(songsProvider.future);
+    if (!identical(_desktopLibrarySnapshot, library)) {
+      _desktopLibrarySnapshot = library;
+      _desktopLibraryIndex = preferredLibrarySongIndex(library.songs);
+    }
+    var result = desktopLibrarySelection(
+      selected: selected,
+      playlist: playlist,
+      index: _desktopLibraryIndex!,
+      desktopServerId: serverId,
+    );
+
+    // Older catalogue merges deliberately skipped importing a separate PC
+    // row when the song already existed on Android. #429's reverse index
+    // cannot find a remote ID that was never stored. Resolve that selected
+    // recording from the desktop's bounded library search instead, without
+    // another whole-library sync or title-only handoff.
+    if (result == null &&
+        selected.sourceType == null &&
+        selected.filePath?.isNotEmpty == true &&
+        selected.duration > Duration.zero) {
+      final candidates = await ref
+          .read(lokalRemoteServiceProvider)
+          .findDesktopTrackCandidates(credentials, selected.title);
+      final trackId = matchedDesktopIdFromCandidates(
+        selected: selected,
+        candidates: candidates,
+        desktopServerId: serverId,
+      );
+      if (trackId != null) {
+        final ids = <String>[];
+        final seen = <String>{};
+        for (final song in playlist ?? <Song>[selected]) {
+          final id = song.id == selected.id
+              ? trackId
+              : desktopLibrarySelection(
+                  selected: song,
+                  playlist: null,
+                  index: _desktopLibraryIndex!,
+                  desktopServerId: serverId,
+                )?.trackId;
+          if (id != null && seen.add(id)) ids.add(id);
+        }
+        if (seen.add(trackId)) ids.insert(0, trackId);
+        result = DesktopLibrarySelection(trackId: trackId, trackIds: ids);
+      }
+    }
+    // Async library/credential reads cannot dispatch an obsolete selection
+    // after the listener switches back to the phone or a different desktop.
+    final latest = ref.read(lokalRemoteControllerProvider);
+    if (!latest.controlsDesktop ||
+        !latest.reachable ||
+        latest.config?.origin != connection.config?.origin) {
+      throw const LokalRemoteNetworkException(
+        'The selected desktop changed during playback.',
+      );
+    }
+    if (result == null) {
+      throw const LokalRemoteProtocolException(
+        'This recording has no unique, available copy on the selected desktop.',
+      );
+    }
+    return result;
+  }
+
   Song? _lastTrackedSong;
   int _lastTrackedPositionSeconds = 0;
   int _lastTrackedDurationSeconds = 0;
@@ -147,6 +280,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   @override
   PlayerState build() {
     _service = ref.watch(playerServiceProvider);
+    _service.linkedDesktopAvailable = (song) =>
+        ref.read(lokalSongAvailableProvider(song).future);
 
     // Sync initial state from service
     final initial = PlayerState(
@@ -278,21 +413,31 @@ class PlayerNotifier extends Notifier<PlayerState> {
     ref.listen(lokalRemoteControllerProvider, (previous, next) {
       if (next.controlsDesktop) {
         final remote = next.snapshot;
-        if (remote == null) return;
-        Song convert(LokalRemoteTrack track) => Song(
-          id: 'desktop:${track.id}',
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration: Duration(milliseconds: (track.duration * 1000).round()),
-          fileType: track.fileType,
-          sourceType: 'lokal',
-          remoteId: track.id,
-        );
+        if (remote == null) {
+          // The PC target takes ownership immediately, even if its first
+          // state snapshot is still connecting. Never flash the last mobile
+          // recording in either player during this handoff.
+          state = state.copyWith(
+            clearSong: true,
+            isPlaying: false,
+            position: Duration.zero,
+            duration: Duration.zero,
+            queue: const [],
+            playlist: const [],
+            currentIndex: -1,
+          );
+          return;
+        }
+        Song convert(LokalRemoteTrack track, {bool current = false}) =>
+            songFromDesktopRemoteTrack(
+              track,
+              artworkPath: current ? next.remoteArtworkPath : null,
+              artworkServerId: next.artworkServerId,
+            );
         state = state.copyWith(
           currentSong: remote.currentTrack == null
               ? null
-              : convert(remote.currentTrack!),
+              : convert(remote.currentTrack!, current: true),
           clearSong: remote.currentTrack == null,
           isPlaying: remote.isPlaying,
           isBuffering: false,
@@ -432,7 +577,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }) async {
     final desktop = _desktop;
     if (desktop != null) {
-      await desktop.play(song, queue: playlist);
+      final selection = await _resolveDesktopSelection(
+        song,
+        playlist: playlist,
+      );
+      await desktop.playLibrarySelection(selection);
       return;
     }
     await _service.play(
@@ -526,7 +675,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<int> addToQueue(Song song) async {
     final desktop = _desktop;
     if (desktop != null) {
-      await desktop.addToQueue(song);
+      final selection = await _resolveDesktopSelection(song);
+      await desktop.queueDesktopTrack(selection.trackId);
       return state.queue.length;
     }
     return _service.addToQueue(song);

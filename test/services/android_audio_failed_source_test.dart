@@ -587,90 +587,101 @@ void main() {
   });
 
   for (final ios in [false, true]) {
-  testWidgets('${ios ? 'iPhone' : 'Android'} on-demand gapless preloads one source and maps logical indices',
+    testWidgets(
+      '${ios ? 'iPhone' : 'Android'} on-demand gapless preloads one source and maps logical indices',
       (tester) async {
-    final library = List<Song>.generate(
-      80,
-      (i) => Song(
-        id: 'song-$i', title: 'Recording $i', artist: 'Artist',
-        duration: const Duration(minutes: 3), fileType: 'FLAC',
-        filePath: '/music/song-$i.flac',
-      ),
-    );
-    final player = _Player();
-    var logicalIndex = 30;
-    var sourcesBuilt = 0;
-    final played = <Song>[];
-    final engine = AndroidAudioEngine(
-      guardRetirement: ios,
-      engineType: ios ? AudioEngineType.iosSystem : AudioEngineType.normalAndroid,
-      playerProvider: () async => player,
-      sourcesBuilder: () async =>
-          throw StateError('Do not construct the whole large playlist'),
-      sourceBuilder: (song) async {
-        sourcesBuilt++;
-        return ja.AudioSource.uri(Uri.file(song.filePath!));
+        final library = List<Song>.generate(
+          80,
+          (i) => Song(
+            id: 'song-$i',
+            title: 'Recording $i',
+            artist: 'Artist',
+            duration: const Duration(minutes: 3),
+            fileType: 'FLAC',
+            filePath: '/music/song-$i.flac',
+          ),
+        );
+        final player = _Player();
+        var logicalIndex = 30;
+        var sourcesBuilt = 0;
+        final played = <Song>[];
+        final engine = AndroidAudioEngine(
+          guardRetirement: ios,
+          engineType: ios
+              ? AudioEngineType.iosSystem
+              : AudioEngineType.normalAndroid,
+          playerProvider: () async => player,
+          sourcesBuilder: () async =>
+              throw StateError('Do not construct the whole large playlist'),
+          sourceBuilder: (song) async {
+            sourcesBuilt++;
+            return ja.AudioSource.uri(Uri.file(song.filePath!));
+          },
+          playlistProvider: () => library,
+          selectedPlaylistIndexProvider: () => logicalIndex,
+          onNativePlaylistIndex: (i) => logicalIndex = i,
+          onNextSong: () => logicalIndex + 1 < library.length
+              ? library[logicalIndex + 1]
+              : null,
+          gaplessEnabledProvider: () => true,
+          configurePlayer: (_) async {},
+          disposeEngine: () async {},
+          shouldSuppressTrackSync: () => false,
+          shouldIgnoreTrack: (_) => false,
+          shouldFastStartCurrentTrackOnly: () => false,
+        );
+        final subscription = engine.playbackStateStream.listen((state) {
+          if (state.currentTrack != null) played.add(state.currentTrack!);
+        });
+        addTearDown(() async {
+          await subscription.cancel();
+          await engine.dispose();
+          await player.errors.close();
+          await player.positions.close();
+          await player.indices.close();
+          await player.durations.close();
+          await player.processing.close();
+        });
+
+        await engine.load(library[30]);
+        await tester.pump();
+        await tester.pump();
+        expect(player.sources.length, 2);
+        expect(sourcesBuilt, 2);
+        expect(
+          engine.isSingleTrackOnly,
+          isTrue,
+          reason: 'logical queue still uses manual end-of-list completion',
+        );
+
+        player.activeIndex = 1;
+        player.indices.add(1);
+        await tester.pump();
+        await tester.pump();
+        expect(logicalIndex, 31);
+        expect(played.last.id, 'song-31');
+        expect(player.sources.length, 3);
+        expect(sourcesBuilt, 3);
+
+        // Advance far enough to require dropping already played slots. The
+        // full 80-item Library must never be materialized in Media3.
+        for (var i = 32; i <= 46; i++) {
+          player.activeIndex = player.sources.length - 1;
+          player.indices.add(player.activeIndex);
+          await tester.pump();
+          await tester.pump();
+          expect(logicalIndex, i);
+        }
+        expect(player.sources.length, lessThan(16));
+        expect(sourcesBuilt, 18);
+        expect(played.last.id, 'song-46');
       },
-      playlistProvider: () => library,
-      selectedPlaylistIndexProvider: () => logicalIndex,
-      onNativePlaylistIndex: (i) => logicalIndex = i,
-      onNextSong: () => logicalIndex + 1 < library.length
-          ? library[logicalIndex + 1] : null,
-      gaplessEnabledProvider: () => true,
-      configurePlayer: (_) async {},
-      disposeEngine: () async {},
-      shouldSuppressTrackSync: () => false,
-      shouldIgnoreTrack: (_) => false,
-      shouldFastStartCurrentTrackOnly: () => false,
     );
-    final subscription = engine.playbackStateStream.listen((state) {
-      if (state.currentTrack != null) played.add(state.currentTrack!);
-    });
-    addTearDown(() async {
-      await subscription.cancel();
-      await engine.dispose();
-      await player.errors.close();
-      await player.positions.close();
-      await player.indices.close();
-      await player.durations.close();
-      await player.processing.close();
-    });
-
-    await engine.load(library[30]);
-    await tester.pump();
-    await tester.pump();
-    expect(player.sources.length, 2);
-    expect(sourcesBuilt, 2);
-    expect(engine.isSingleTrackOnly, isTrue,
-        reason: 'logical queue still uses manual end-of-list completion');
-
-    player.activeIndex = 1;
-    player.indices.add(1);
-    await tester.pump();
-    await tester.pump();
-    expect(logicalIndex, 31);
-    expect(played.last.id, 'song-31');
-    expect(player.sources.length, 3);
-    expect(sourcesBuilt, 3);
-
-    // Advance far enough to require dropping already played slots. The
-    // full 80-item Library must never be materialized in Media3.
-    for (var i = 32; i <= 46; i++) {
-      player.activeIndex = player.sources.length - 1;
-      player.indices.add(player.activeIndex);
-      await tester.pump();
-      await tester.pump();
-      expect(logicalIndex, i);
-    }
-    expect(player.sources.length, lessThan(16));
-    expect(sourcesBuilt, 18);
-    expect(played.last.id, 'song-46');
-  });
-
   }
 
-  testWidgets('on-demand queue mutation invalidates stale native successor',
-      (tester) async {
+  testWidgets('on-demand queue mutation invalidates stale native successor', (
+    tester,
+  ) async {
     final songs = List<Song>.generate(
       70,
       (index) => Song(
@@ -720,8 +731,11 @@ void main() {
 
     // Queue edit: the new logical successor must replace the old native one.
     songs[1] = Song(
-      id: 'replacement', title: 'Replacement', artist: 'Artist',
-      duration: const Duration(minutes: 3), fileType: 'FLAC',
+      id: 'replacement',
+      title: 'Replacement',
+      artist: 'Artist',
+      duration: const Duration(minutes: 3),
+      fileType: 'FLAC',
       filePath: '/music/replacement.flac',
     );
     allowNext = true;
@@ -731,11 +745,17 @@ void main() {
   });
 
   test('iPhone selection and retirement refuse a pending gapless resolver without blocking', () async {
-    final songs = List<Song>.generate(70, (i) => Song(
-      id: '$i', title: '$i', artist: 'Artist',
-      duration: const Duration(minutes: 3), fileType: 'FLAC',
-      filePath: '/music/$i.flac',
-    ));
+    final songs = List<Song>.generate(
+      70,
+      (i) => Song(
+        id: '$i',
+        title: '$i',
+        artist: 'Artist',
+        duration: const Duration(minutes: 3),
+        fileType: 'FLAC',
+        filePath: '/music/$i.flac',
+      ),
+    );
     final player = _Player();
     final source = Completer<ja.AudioSource>();
     final entered = Completer<void>();
@@ -1223,13 +1243,13 @@ void main() {
     // Crossfade has made the internally created fade player the active
     // player, while PlayerService still owns the original in _secondary.
     stalledFade.hungLoad = Completer<Duration?>();
-    final timeout = expectLater(
-      engine.load(second),
-      throwsA(isA<TimeoutException>()),
+    // Let the source timeout and retirement complete on the real clock.
+    await tester.runAsync(
+      () => expectLater(engine.load(second), throwsA(isA<TimeoutException>())),
     );
     await tester.pump();
     await tester.pump(const Duration(seconds: 34));
-    await finishCleanup(tester, timeout);
+
     expect(retired, [same(stalledFade)]);
 
     // The surviving provider player is reused as the sole active player,
@@ -1631,13 +1651,12 @@ void main() {
         await stale.closeFixture();
         await healthy.closeFixture();
       });
-      final first = expectLater(
-        engine.load(song),
-        throwsA(isA<TimeoutException>()),
+      await tester.runAsync(
+        () => expectLater(engine.load(song), throwsA(isA<TimeoutException>())),
       );
       await tester.pump();
       await tester.pump(const Duration(seconds: 34));
-      await finishCleanup(tester, first);
+
       expect(retired, [same(stale)]);
       await engine.load(song);
       expect(healthy.loads, 1);

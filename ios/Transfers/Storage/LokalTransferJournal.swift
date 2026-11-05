@@ -592,7 +592,8 @@ final class LokalTransferJournal: @unchecked Sendable {
       guard job.id == previous.id, job.direction == previous.direction,
             job.identity == previous.identity, job.metadata == previous.metadata,
             job.createdMs == previous.createdMs, job.expectedBytes == previous.expectedBytes,
-            job.expectedSHA256 == previous.expectedSHA256, job.revision >= previous.revision,
+            job.expectedSHA256 == previous.expectedSHA256,
+            job.uploadProtocolVersion == previous.uploadProtocolVersion, job.revision >= previous.revision,
             job.revision <= previous.revision + 1, job.updatedMs >= previous.updatedMs else {
         throw LokalTransferError.invalidRecord
       }

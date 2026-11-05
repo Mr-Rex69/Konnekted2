@@ -219,7 +219,7 @@ String catalogueAudioDetails({
       int.tryParse(RegExp(r'(?<!\d)(?:16|24|32)\s*-?\s*bits?', caseSensitive: false)
               .firstMatch(advertised ?? '')?.group(0)
               ?.replaceAll(RegExp(r'[^0-9]'), '') ?? '');
-  final rawRate = RegExp(r'(?<![\d.])(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?',
+  final rawRate = RegExp(r'(?<![\d.])(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?\b',
           caseSensitive: false)
       .firstMatch(advertised ?? '')?.group(1);
   final hz = sampleRate ?? compact?.sampleRate ??

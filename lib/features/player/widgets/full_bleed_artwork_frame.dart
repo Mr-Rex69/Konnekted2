@@ -11,10 +11,18 @@ class FullBleedArtworkFrame extends StatelessWidget {
     this.bannerBottom,
     this.morphEnabled = true,
     this.controlsOpacity = 1,
+    this.dimOnExpand = true,
+    this.fadeOutCompletely = false,
   });
 
   final bool canvas;
   final double controlsOpacity;
+  /// The remote player should not darken a settled cover at the end of the
+  /// route lift. Local player retains its existing morph contrast policy.
+  final bool dimOnExpand;
+  /// Keep the poster edge transparent when the mesh backdrop is continuous.
+  /// Independent of the route's cover-dimming treatment.
+  final bool fadeOutCompletely;
   final bool morphEnabled;
   final Widget child;
   final double? bannerBottom;
@@ -28,7 +36,7 @@ class FullBleedArtworkFrame extends StatelessWidget {
       child: CustomPaint(
         foregroundPainter: _ArtworkContrast(
           viewportHeight,
-          progress * controlsOpacity,
+          dimOnExpand ? progress * controlsOpacity : 0,
         ),
         child: child,
       ),
@@ -58,30 +66,38 @@ class FullBleedArtworkFrame extends StatelessWidget {
             child: LokalPlayerArtwork(
               enabled: morphEnabled,
               expandedRadius: 0,
-              child: OverflowBox(
-                alignment: Alignment.center,
-                minWidth: constraints.maxWidth,
-                maxWidth: constraints.maxWidth,
-                minHeight: LokalPlayerMorph.artworkViewportHeight(
-                  context,
-                  Size(constraints.maxWidth, height),
-                ),
-                maxHeight: LokalPlayerMorph.artworkViewportHeight(
-                  context,
-                  Size(constraints.maxWidth, height),
-                ),
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white,
-                      Colors.white,
-                      Colors.white.withValues(alpha: 1 - progress),
-                    ],
-                    stops: [0, .68, 1],
-                  ).createShader(rect),
+              // Apply the dissolve in *banner coordinates*, outside the
+              // morphing viewport. Masking the taller inner OverflowBox
+              // leaves a partially opaque edge where the banner clips it,
+              // visibly separating the cover from the ambient blur.
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white,
+                    Colors.white,
+                    Colors.white.withValues(
+                      alpha: fadeOutCompletely
+                          ? 0
+                          : 1 - (dimOnExpand ? progress : .85),
+                    ),
+                  ],
+                  stops: const [0, .58, 1],
+                ).createShader(rect),
+                child: OverflowBox(
+                  alignment: Alignment.center,
+                  minWidth: constraints.maxWidth,
+                  maxWidth: constraints.maxWidth,
+                  minHeight: LokalPlayerMorph.artworkViewportHeight(
+                    context,
+                    Size(constraints.maxWidth, height),
+                  ),
+                  maxHeight: LokalPlayerMorph.artworkViewportHeight(
+                    context,
+                    Size(constraints.maxWidth, height),
+                  ),
                   child: SizedBox.expand(child: child),
                 ),
               ),

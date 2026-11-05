@@ -1,45 +1,58 @@
 // Generated Lokal presentation phrases. Music metadata and route IDs are not localized here.
 const Map<String, String> _uifr = {
+  "Forget": "Oublier",
   "Reverse song swipe actions": "Inverser les gestes sur les morceaux",
-  "Swipe right to Play next, left to Add to queue.": "Balayez à droite pour lire ensuite, à gauche pour ajouter à la file.",
-  "Swipe right to Add to queue, left to Play next.": "Balayez à droite pour ajouter à la file, à gauche pour lire ensuite.",
+  "Swipe right to Play next, left to Add to queue.":
+      "Balayez à droite pour lire ensuite, à gauche pour ajouter à la file.",
+  "Swipe right to Add to queue, left to Play next.":
+      "Balayez à droite pour ajouter à la file, à gauche pour lire ensuite.",
   "Couldn’t play this song next.": "Impossible de lire ce morceau ensuite.",
   "Matching recording on {source}…": "Recherche du morceau sur {source}…",
-  "Checking matched recording on {source}…": "Vérification du morceau trouvé sur {source}…",
+  "Checking matched recording on {source}…":
+      "Vérification du morceau trouvé sur {source}…",
   "Fetching audio from {source}…": "Récupération de l’audio sur {source}…",
   "No genre": "Sans genre",
   "Search genres...": "Rechercher des genres…",
-  "No genres match your search.": "Aucun genre ne correspond à votre recherche.",
+  "No genres match your search.":
+      "Aucun genre ne correspond à votre recherche.",
   "Full resolution tags in lists": "Résolution audio dans les listes",
   "Show known audio resolution details instead of quality tiers in song lists. Keep the existing quality colors.": "Afficher les détails audio connus à la place des niveaux de qualité dans les listes. Conserver les couleurs de qualité actuelles.",
   "Full resolution tags in full player": "Résolution audio dans le lecteur",
   "Show the available codec, bit depth, sample rate or bitrate instead of the quality tier. Keep the player badge white.": "Afficher le codec, la profondeur de bits, la fréquence ou le débit disponibles à la place du niveau de qualité. Conserver le badge blanc.",
   "Starting {source}…": "Démarrage de {source}…",
-  "Checking metadata on {source}…": "Vérification des métadonnées sur {source}…",
+  "Checking metadata on {source}…":
+      "Vérification des métadonnées sur {source}…",
   "Verifying recording on {source}…": "Vérification du morceau sur {source}…",
   "Resolving audio from {source}…": "Recherche de l’audio sur {source}…",
   "Preparing {source}…": "Préparation de {source}…",
   "Audio output": "Sortie audio",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, volume et crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, volume et crossfeed",
   "Advanced output": "Sortie avancée",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, fondu enchaîné, file, égaliseur et paroles",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, fondu enchaîné, file, égaliseur et paroles",
   "Previous in queue": "Précédents dans la file",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Le manifeste du module a renvoyé HTTP 404. Vérifiez que le lien manifest.json est valide et toujours accessible.",
-  "The add-on manifest URL is invalid.": "L’URL du manifeste du module est invalide.",
+  "The add-on manifest URL is invalid.":
+      "L’URL du manifeste du module est invalide.",
   "Invalid add-on manifest URL.": "URL de manifeste du module invalide.",
   "Save original lyrics": "Enregistrer les paroles originales",
   "Save with selected translation": "Enregistrer avec la traduction choisie",
-  "Includes the active translation or romanization.": "Inclut la traduction ou la romanisation active.",
-  "Save lyrics to file (hold for options)": "Enregistrer les paroles (maintenir pour les options)",
+  "Includes the active translation or romanization.":
+      "Inclut la traduction ou la romanisation active.",
+  "Save lyrics to file (hold for options)":
+      "Enregistrer les paroles (maintenir pour les options)",
   "Refresh low-quality covers": "Améliorer les pochettes de faible qualité",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Vérifier les pochettes de moins de 640 px et remplacer uniquement celles d’un album identique. Les pochettes personnalisées sont conservées.",
-  "Repair only covers smaller than 640 px.": "Améliorer uniquement les pochettes de moins de 640 px.",
+  "Repair only covers smaller than 640 px.":
+      "Améliorer uniquement les pochettes de moins de 640 px.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal cherche des pochettes plus grandes uniquement si le titre et l’artiste de l’album correspondent exactement. Les pochettes choisies manuellement et les correspondances incertaines sont conservées. Les modifications concernent les fichiers musicaux modifiables de votre bibliothèque.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} vérifiés · {updated} améliorés · {skipped} ignorés · {failed} échecs",
   "Stopping after the current operation…": "Arrêt après l’opération en cours…",
   "Checking your library…": "Vérification de votre bibliothèque…",
   "Stopped": "Arrêté",
-  "Could not refresh covers. Check access and try again.": "Impossible d’actualiser les pochettes. Vérifiez l’accès et réessayez.",
+  "Could not refresh covers. Check access and try again.":
+      "Impossible d’actualiser les pochettes. Vérifiez l’accès et réessayez.",
   "Stopping…": "Arrêt en cours…",
   "Stop refresh": "Arrêter l’actualisation",
   "Hold to reorder": "Maintenez pour réorganiser",
@@ -54,30 +67,36 @@ const Map<String, String> _uifr = {
   "Sad": "Tristesse",
   "Focus": "Concentration",
   "Party": "Fête",
-  "Could not reorder queue. Try again.": "Impossible de réorganiser la file. Réessayez.",
+  "Could not reorder queue. Try again.":
+      "Impossible de réorganiser la file. Réessayez.",
   "Choose sections to show and drag to reorder.": "Choisissez les sections à afficher et faites-les glisser pour les réorganiser.",
   "From the community": "De la communauté",
   "New releases": "Nouveautés",
   "Trending songs for you": "Titres tendance pour vous",
   "Featured playlists for you": "Playlists sélectionnées pour vous",
   "Your daily discover": "Votre découverte du jour",
-  "Could not save Discovery layout. Try again.": "Impossible d’enregistrer la disposition de Découverte. Réessayez.",
+  "Could not save Discovery layout. Try again.":
+      "Impossible d’enregistrer la disposition de Découverte. Réessayez.",
   "Customize {arg0}": "Personnaliser {arg0}",
   "SoundCloud (preview)": "SoundCloud (extrait)",
   "Eco Data Mode": "Mode économie de données",
   "Mobile data": "Données mobiles",
-  "Search and stream audio from SoundCloud.": "Rechercher et écouter de la musique sur SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Rechercher et écouter de la musique sur SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Sur les données mobiles, essayer les sources YouTube Music et SoundCloud activées avant les sources sans perte. Conserver votre ordre habituel en Wi-Fi et pour les sources choisies manuellement.",
-  "Could not save data settings. Try again.": "Impossible d’enregistrer les réglages de données. Réessayez.",
+  "Could not save data settings. Try again.":
+      "Impossible d’enregistrer les réglages de données. Réessayez.",
   "Connecting to SoundCloud…": "Connexion à SoundCloud…",
   "Downloading from SoundCloud…": "Téléchargement depuis SoundCloud…",
   "Buffering from SoundCloud…": "Mise en mémoire depuis SoundCloud…",
   "Connecting to Monochrome…": "Connexion à Monochrome…",
   "Downloading from Monochrome…": "Téléchargement depuis Monochrome…",
   "Buffering from Monochrome…": "Mise en mémoire depuis Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Téléchargement depuis Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Téléchargement depuis Monochrome… {progress}%",
   "Save lyrics to file": "Enregistrer les paroles dans un fichier",
-  "Could not save lyrics to file.": "Impossible d’enregistrer les paroles dans un fichier.",
+  "Could not save lyrics to file.":
+      "Impossible d’enregistrer les paroles dans un fichier.",
   "All": "Tous",
   "Favorites": "Favoris",
   "Non-favorites": "Non favoris",
@@ -85,24 +104,35 @@ const Map<String, String> _uifr = {
   "Add to favorites": "Ajouter aux favoris",
   "Remove from favorites": "Retirer des favoris",
   "Could not save artist favorite.": "Impossible d’enregistrer ce favori.",
-  "Could not load favorite artists.": "Impossible de charger les artistes favoris.",
+  "Could not load favorite artists.":
+      "Impossible de charger les artistes favoris.",
   "Connecting to Spotify…": "Connexion à Spotify…",
-  "Reading Spotify favorites… {count} artists": "Lecture des favoris Spotify… {count} artistes",
-  "No followed artists found on Spotify.": "Aucun artiste suivi trouvé sur Spotify.",
-  "Imported {added} new favorites ({received} found on Spotify).": "{added} nouveaux favoris importés ({received} trouvés sur Spotify).",
+  "Reading Spotify favorites… {count} artists":
+      "Lecture des favoris Spotify… {count} artistes",
+  "No followed artists found on Spotify.":
+      "Aucun artiste suivi trouvé sur Spotify.",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "{added} nouveaux favoris importés ({received} trouvés sur Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "Impossible d’importer les artistes Spotify. Vérifiez la connexion et réessayez.",
   "Importing Spotify artists…": "Importation des artistes Spotify…",
   "Import favorites from Spotify": "Importer les favoris de Spotify",
   "Search artists": "Rechercher des artistes",
   "Artists come from your library or Spotify favorites.": "Les artistes proviennent de votre bibliothèque ou de vos favoris Spotify.",
-  "Follow an artist or import your Spotify favorites.": "Suivez un artiste ou importez vos favoris Spotify.",
-  "No non-favorite artists in your library.": "Aucun artiste non favori dans votre bibliothèque.",
-  "Search and stream FLAC from Monochrome.": "Rechercher et écouter du FLAC depuis Monochrome.",
-  "Could not save source settings. Try again.": "Impossible d’enregistrer les sources. Réessayez.",
-  "Audio is temporarily unavailable.": "Le son est temporairement indisponible.",
+  "Follow an artist or import your Spotify favorites.":
+      "Suivez un artiste ou importez vos favoris Spotify.",
+  "No non-favorite artists in your library.":
+      "Aucun artiste non favori dans votre bibliothèque.",
+  "Search and stream FLAC from Monochrome.":
+      "Rechercher et écouter du FLAC depuis Monochrome.",
+  "Could not save source settings. Try again.":
+      "Impossible d’enregistrer les sources. Réessayez.",
+  "Audio is temporarily unavailable.":
+      "Le son est temporairement indisponible.",
   "Restoring audio…": "Restauration du son…",
-  "Audio is ready. Use Play to continue.": "Le son est prêt. Appuyez sur Lecture pour continuer.",
-  "Close and reopen the app to restore audio.": "Fermez et rouvrez l’application pour rétablir le son.",
+  "Audio is ready. Use Play to continue.":
+      "Le son est prêt. Appuyez sur Lecture pour continuer.",
+  "Close and reopen the app to restore audio.":
+      "Fermez et rouvrez l’application pour rétablir le son.",
   "Found": "Trouvé",
   "Checking…": "Recherche…",
   "No result": "Aucun résultat",
@@ -115,13 +145,17 @@ const Map<String, String> _uifr = {
   "Local file": "Fichier local",
   "Refresh search": "Relancer la recherche",
   "Search this source again; keep existing lyrics on a miss.": "Rechercher à nouveau dans cette source ; conserver les paroles actuelles sans résultat.",
-  "Use your priority order and keep the best timing": "Suivre votre ordre de priorité et garder la meilleure synchronisation",
-  "Copied, sidecar or embedded lyrics": "Paroles copiées, dans un fichier associé ou intégrées",
-  "Line-synced and plain lyrics": "Paroles synchronisées par ligne et texte simple",
+  "Use your priority order and keep the best timing":
+      "Suivre votre ordre de priorité et garder la meilleure synchronisation",
+  "Copied, sidecar or embedded lyrics":
+      "Paroles copiées, dans un fichier associé ou intégrées",
+  "Line-synced and plain lyrics":
+      "Paroles synchronisées par ligne et texte simple",
   "Plain lyrics": "Paroles en texte simple",
   "Supports syllable / word timing": "Synchronisation par syllabe ou par mot",
   "Add a music folder": "Ajouter un dossier de musique",
-  "Adjust video quality in the YouTube player.": "La qualité vidéo se règle dans le lecteur YouTube.",
+  "Adjust video quality in the YouTube player.":
+      "La qualité vidéo se règle dans le lecteur YouTube.",
   "Exit Space": "Quitter Space",
   "Use device volume buttons": "Utilisez les boutons de volume",
   "Waiting for video timing": "En attente de la synchronisation vidéo",
@@ -133,19 +167,24 @@ const Map<String, String> _uifr = {
   "All sources": "Toutes les sources",
   "Online": "En ligne",
   "Artist": "Artiste",
-  "Search online catalogues and playback sources": "Rechercher dans les catalogues et sources en ligne",
-  "This category searches your library": "Cette catégorie recherche dans votre bibliothèque",
+  "Search online catalogues and playback sources":
+      "Rechercher dans les catalogues et sources en ligne",
+  "This category searches your library":
+      "Cette catégorie recherche dans votre bibliothèque",
   "Choose one result type, or All": "Choisissez un type de résultat, ou Tout",
-  "Try another keyword or choose All result types": "Essayez un autre mot-clé ou sélectionnez Tous les types",
+  "Try another keyword or choose All result types":
+      "Essayez un autre mot-clé ou sélectionnez Tous les types",
   "Online albums": "Albums en ligne",
   "Online artists": "Artistes en ligne",
-  "Apple Music catalogue · plays through your configured sources": "Catalogue Apple Music · lecture via vos sources configurées",
+  "Apple Music catalogue · plays through your configured sources":
+      "Catalogue Apple Music · lecture via vos sources configurées",
   "Could not search. Retry": "Recherche impossible. Réessayer",
   "No albums found online.": "Aucun album trouvé en ligne.",
   "No artists found online.": "Aucun artiste trouvé en ligne.",
   "See all albums": "Voir tous les albums",
   "See all artists": "Voir tous les artistes",
-  "No matching tracks found. Try refreshing the catalogue.": "Aucun titre correspondant. Essayez d’actualiser le catalogue.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Aucun titre correspondant. Essayez d’actualiser le catalogue.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
   "A light tap under your finger as you use Lokal.":
@@ -649,12 +688,15 @@ const Map<String, String> _uifr = {
   "“{arg0}” plays next": "\"{arg0}\" joue ensuite",
 };
 const Map<String, String> _uide = {
+  "Forget": "Vergessen",
   "Reverse song swipe actions": "Wischaktionen für Titel umkehren",
   "Swipe right to Play next, left to Add to queue.": "Nach rechts wischen: Als Nächstes abspielen. Nach links: Zur Warteschlange hinzufügen.",
   "Swipe right to Add to queue, left to Play next.": "Nach rechts wischen: Zur Warteschlange hinzufügen. Nach links: Als Nächstes abspielen.",
-  "Couldn’t play this song next.": "Dieser Titel konnte nicht als Nächstes abgespielt werden.",
+  "Couldn’t play this song next.":
+      "Dieser Titel konnte nicht als Nächstes abgespielt werden.",
   "Matching recording on {source}…": "Aufnahme auf {source} suchen…",
-  "Checking matched recording on {source}…": "Gefundene Aufnahme auf {source} prüfen…",
+  "Checking matched recording on {source}…":
+      "Gefundene Aufnahme auf {source} prüfen…",
   "Fetching audio from {source}…": "Audio von {source} abrufen…",
   "No genre": "Ohne Genre",
   "Search genres...": "Genres suchen…",
@@ -669,23 +711,30 @@ const Map<String, String> _uide = {
   "Resolving audio from {source}…": "Audio von {source} ermitteln…",
   "Preparing {source}…": "{source} wird vorbereitet…",
   "Audio output": "Audioausgabe",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, Lautstärke und Crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, Lautstärke und Crossfeed",
   "Advanced output": "Erweiterte Ausgabe",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, Überblenden, Warteschlange, Equalizer und Liedtexte",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, Überblenden, Warteschlange, Equalizer und Liedtexte",
   "Previous in queue": "Vorherige in der Warteschlange",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Das Add-on-Manifest meldet HTTP 404. Prüfe, ob der Link manifest.json gültig und weiterhin erreichbar ist.",
-  "The add-on manifest URL is invalid.": "Die URL des Add-on-Manifests ist ungültig.",
+  "The add-on manifest URL is invalid.":
+      "Die URL des Add-on-Manifests ist ungültig.",
   "Invalid add-on manifest URL.": "Ungültige URL des Add-on-Manifests.",
   "Save original lyrics": "Originaltext speichern",
   "Save with selected translation": "Mit ausgewählter Übersetzung speichern",
-  "Includes the active translation or romanization.": "Enthält die aktive Übersetzung oder Umschrift.",
-  "Save lyrics to file (hold for options)": "Songtext speichern (für Optionen gedrückt halten)",
+  "Includes the active translation or romanization.":
+      "Enthält die aktive Übersetzung oder Umschrift.",
+  "Save lyrics to file (hold for options)":
+      "Songtext speichern (für Optionen gedrückt halten)",
   "Refresh low-quality covers": "Cover mit geringer Qualität verbessern",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Cover unter 640 px prüfen und nur bei genau passendem Album ersetzen. Eigene Cover bleiben erhalten.",
-  "Repair only covers smaller than 640 px.": "Nur Cover unter 640 px verbessern.",
+  "Repair only covers smaller than 640 px.":
+      "Nur Cover unter 640 px verbessern.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal sucht nur dann größere Cover, wenn Albumtitel und Albuminterpret genau übereinstimmen. Manuell gewählte Cover und unsichere Treffer bleiben unverändert. Änderungen betreffen beschreibbare Musikdateien in deiner Mediathek.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} geprüft · {updated} verbessert · {skipped} übersprungen · {failed} fehlgeschlagen",
-  "Stopping after the current operation…": "Wird nach dem aktuellen Vorgang angehalten…",
+  "Stopping after the current operation…":
+      "Wird nach dem aktuellen Vorgang angehalten…",
   "Checking your library…": "Deine Mediathek wird geprüft…",
   "Stopped": "Angehalten",
   "Could not refresh covers. Check access and try again.": "Cover konnten nicht aktualisiert werden. Prüfe den Zugriff und versuche es erneut.",
@@ -703,55 +752,74 @@ const Map<String, String> _uide = {
   "Sad": "Traurig",
   "Focus": "Fokus",
   "Party": "Party",
-  "Could not reorder queue. Try again.": "Warteschlange konnte nicht sortiert werden. Versuche es erneut.",
-  "Choose sections to show and drag to reorder.": "Wähle sichtbare Bereiche und ziehe sie zum Sortieren.",
+  "Could not reorder queue. Try again.":
+      "Warteschlange konnte nicht sortiert werden. Versuche es erneut.",
+  "Choose sections to show and drag to reorder.":
+      "Wähle sichtbare Bereiche und ziehe sie zum Sortieren.",
   "From the community": "Aus der Community",
   "New releases": "Neuerscheinungen",
   "Trending songs for you": "Angesagte Songs für dich",
   "Featured playlists for you": "Ausgewählte Playlists für dich",
   "Your daily discover": "Deine tägliche Entdeckung",
-  "Could not save Discovery layout. Try again.": "Discovery-Layout konnte nicht gespeichert werden. Versuche es erneut.",
+  "Could not save Discovery layout. Try again.":
+      "Discovery-Layout konnte nicht gespeichert werden. Versuche es erneut.",
   "Customize {arg0}": "{arg0} anpassen",
   "SoundCloud (preview)": "SoundCloud (Hörprobe)",
   "Eco Data Mode": "Datensparmodus",
   "Mobile data": "Mobile Daten",
-  "Search and stream audio from SoundCloud.": "Audio auf SoundCloud suchen und streamen.",
+  "Search and stream audio from SoundCloud.":
+      "Audio auf SoundCloud suchen und streamen.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Über mobile Daten zuerst aktivierte YouTube-Music- und SoundCloud-Quellen statt verlustfreier Quellen versuchen. Im WLAN und bei manuell gewählten Quellen gilt deine normale Reihenfolge.",
-  "Could not save data settings. Try again.": "Dateneinstellungen konnten nicht gespeichert werden. Erneut versuchen.",
+  "Could not save data settings. Try again.":
+      "Dateneinstellungen konnten nicht gespeichert werden. Erneut versuchen.",
   "Connecting to SoundCloud…": "Verbindung zu SoundCloud…",
   "Downloading from SoundCloud…": "Download von SoundCloud…",
   "Buffering from SoundCloud…": "Puffern von SoundCloud…",
   "Connecting to Monochrome…": "Verbindung zu Monochrome…",
   "Downloading from Monochrome…": "Download von Monochrome…",
   "Buffering from Monochrome…": "Puffern von Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Download von Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Download von Monochrome… {progress}%",
   "Save lyrics to file": "Songtext als Datei speichern",
-  "Could not save lyrics to file.": "Songtext konnte nicht als Datei gespeichert werden.",
+  "Could not save lyrics to file.":
+      "Songtext konnte nicht als Datei gespeichert werden.",
   "All": "Alle",
   "Favorites": "Favoriten",
   "Non-favorites": "Keine Favoriten",
   "Not in library": "Nicht in der Mediathek",
   "Add to favorites": "Zu Favoriten hinzufügen",
   "Remove from favorites": "Aus Favoriten entfernen",
-  "Could not save artist favorite.": "Künstlerfavorit konnte nicht gespeichert werden.",
-  "Could not load favorite artists.": "Künstlerfavoriten konnten nicht geladen werden.",
+  "Could not save artist favorite.":
+      "Künstlerfavorit konnte nicht gespeichert werden.",
+  "Could not load favorite artists.":
+      "Künstlerfavoriten konnten nicht geladen werden.",
   "Connecting to Spotify…": "Verbindung zu Spotify…",
-  "Reading Spotify favorites… {count} artists": "Spotify-Favoriten werden gelesen… {count} Künstler",
-  "No followed artists found on Spotify.": "Keine gefolgten Künstler auf Spotify gefunden.",
-  "Imported {added} new favorites ({received} found on Spotify).": "{added} neue Favoriten importiert ({received} auf Spotify gefunden).",
+  "Reading Spotify favorites… {count} artists":
+      "Spotify-Favoriten werden gelesen… {count} Künstler",
+  "No followed artists found on Spotify.":
+      "Keine gefolgten Künstler auf Spotify gefunden.",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "{added} neue Favoriten importiert ({received} auf Spotify gefunden).",
   "Could not import Spotify artists. Check your connection and retry.": "Spotify-Künstler konnten nicht importiert werden. Verbindung prüfen und erneut versuchen.",
   "Importing Spotify artists…": "Spotify-Künstler werden importiert…",
   "Import favorites from Spotify": "Favoriten von Spotify importieren",
   "Search artists": "Künstler suchen",
-  "Artists come from your library or Spotify favorites.": "Künstler stammen aus deiner Mediathek oder deinen Spotify-Favoriten.",
-  "Follow an artist or import your Spotify favorites.": "Folge einem Künstler oder importiere deine Spotify-Favoriten.",
-  "No non-favorite artists in your library.": "Keine Künstler ohne Favoritenstatus in deiner Mediathek.",
-  "Search and stream FLAC from Monochrome.": "FLAC über Monochrome suchen und streamen.",
+  "Artists come from your library or Spotify favorites.":
+      "Künstler stammen aus deiner Mediathek oder deinen Spotify-Favoriten.",
+  "Follow an artist or import your Spotify favorites.":
+      "Folge einem Künstler oder importiere deine Spotify-Favoriten.",
+  "No non-favorite artists in your library.":
+      "Keine Künstler ohne Favoritenstatus in deiner Mediathek.",
+  "Search and stream FLAC from Monochrome.":
+      "FLAC über Monochrome suchen und streamen.",
   "Could not save source settings. Try again.": "Quelleneinstellungen konnten nicht gespeichert werden. Erneut versuchen.",
-  "Audio is temporarily unavailable.": "Audio ist vorübergehend nicht verfügbar.",
+  "Audio is temporarily unavailable.":
+      "Audio ist vorübergehend nicht verfügbar.",
   "Restoring audio…": "Audio wird wiederhergestellt…",
-  "Audio is ready. Use Play to continue.": "Audio ist bereit. Zum Fortfahren Wiedergabe drücken.",
-  "Close and reopen the app to restore audio.": "Schließe und öffne die App erneut, um Audio wiederherzustellen.",
+  "Audio is ready. Use Play to continue.":
+      "Audio ist bereit. Zum Fortfahren Wiedergabe drücken.",
+  "Close and reopen the app to restore audio.":
+      "Schließe und öffne die App erneut, um Audio wiederherzustellen.",
   "Found": "Gefunden",
   "Checking…": "Wird geprüft…",
   "No result": "Kein Ergebnis",
@@ -764,13 +832,16 @@ const Map<String, String> _uide = {
   "Local file": "Lokale Datei",
   "Refresh search": "Suche wiederholen",
   "Search this source again; keep existing lyrics on a miss.": "Diese Quelle erneut durchsuchen; vorhandenen Liedtext bei keinem Treffer behalten.",
-  "Use your priority order and keep the best timing": "Deine Priorität beachten und die beste Synchronisierung behalten",
-  "Copied, sidecar or embedded lyrics": "Kopierter, begleitender oder eingebetteter Liedtext",
+  "Use your priority order and keep the best timing":
+      "Deine Priorität beachten und die beste Synchronisierung behalten",
+  "Copied, sidecar or embedded lyrics":
+      "Kopierter, begleitender oder eingebetteter Liedtext",
   "Line-synced and plain lyrics": "Zeilensynchroner und einfacher Liedtext",
   "Plain lyrics": "Einfacher Liedtext",
   "Supports syllable / word timing": "Unterstützt Silben- und Wortzeiten",
   "Add a music folder": "Musikordner hinzufügen",
-  "Adjust video quality in the YouTube player.": "Die Videoqualität wird im YouTube-Player eingestellt.",
+  "Adjust video quality in the YouTube player.":
+      "Die Videoqualität wird im YouTube-Player eingestellt.",
   "Exit Space": "Space verlassen",
   "Use device volume buttons": "Lautstärketasten verwenden",
   "Waiting for video timing": "Warten auf die Videozeit",
@@ -782,19 +853,24 @@ const Map<String, String> _uide = {
   "All sources": "Alle Quellen",
   "Online": "Online",
   "Artist": "Künstler",
-  "Search online catalogues and playback sources": "Onlinekataloge und Wiedergabequellen durchsuchen",
-  "This category searches your library": "Diese Kategorie durchsucht deine Mediathek",
+  "Search online catalogues and playback sources":
+      "Onlinekataloge und Wiedergabequellen durchsuchen",
+  "This category searches your library":
+      "Diese Kategorie durchsucht deine Mediathek",
   "Choose one result type, or All": "Wähle einen Ergebnistyp oder Alle",
-  "Try another keyword or choose All result types": "Versuche ein anderes Stichwort oder wähle Alle",
+  "Try another keyword or choose All result types":
+      "Versuche ein anderes Stichwort oder wähle Alle",
   "Online albums": "Onlinealben",
   "Online artists": "Onlinekünstler",
-  "Apple Music catalogue · plays through your configured sources": "Apple-Music-Katalog · Wiedergabe über deine eingerichteten Quellen",
+  "Apple Music catalogue · plays through your configured sources":
+      "Apple-Music-Katalog · Wiedergabe über deine eingerichteten Quellen",
   "Could not search. Retry": "Suche fehlgeschlagen. Erneut versuchen",
   "No albums found online.": "Keine Alben online gefunden.",
   "No artists found online.": "Keine Künstler online gefunden.",
   "See all albums": "Alle Alben anzeigen",
   "See all artists": "Alle Künstler anzeigen",
-  "No matching tracks found. Try refreshing the catalogue.": "Keine passenden Titel gefunden. Aktualisiere den Katalog.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Keine passenden Titel gefunden. Aktualisiere den Katalog.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
   "A light tap under your finger as you use Lokal.":
@@ -1291,19 +1367,23 @@ const Map<String, String> _uide = {
   "“{arg0}” plays next": "Als nächstes wird „{arg0}“ abgespielt",
 };
 const Map<String, String> _uies = {
+  "Forget": "Olvidar",
   "Reverse song swipe actions": "Invertir gestos de las canciones",
   "Swipe right to Play next, left to Add to queue.": "Desliza a la derecha para reproducir después y a la izquierda para añadir a la cola.",
   "Swipe right to Add to queue, left to Play next.": "Desliza a la derecha para añadir a la cola y a la izquierda para reproducir después.",
-  "Couldn’t play this song next.": "No se pudo reproducir esta canción a continuación.",
+  "Couldn’t play this song next.":
+      "No se pudo reproducir esta canción a continuación.",
   "Matching recording on {source}…": "Buscando la grabación en {source}…",
-  "Checking matched recording on {source}…": "Comprobando la grabación encontrada en {source}…",
+  "Checking matched recording on {source}…":
+      "Comprobando la grabación encontrada en {source}…",
   "Fetching audio from {source}…": "Obteniendo audio de {source}…",
   "No genre": "Sin género",
   "Search genres...": "Buscar géneros…",
   "No genres match your search.": "Ningún género coincide con tu búsqueda.",
   "Full resolution tags in lists": "Resolución de audio en listas",
   "Show known audio resolution details instead of quality tiers in song lists. Keep the existing quality colors.": "Mostrar los datos de audio conocidos en lugar de los niveles de calidad en las listas. Mantener los colores de calidad actuales.",
-  "Full resolution tags in full player": "Resolución de audio en el reproductor",
+  "Full resolution tags in full player":
+      "Resolución de audio en el reproductor",
   "Show the available codec, bit depth, sample rate or bitrate instead of the quality tier. Keep the player badge white.": "Mostrar el códec, profundidad de bits, frecuencia o tasa de bits disponibles en lugar del nivel de calidad. Mantener la etiqueta blanca.",
   "Starting {source}…": "Iniciando {source}…",
   "Checking metadata on {source}…": "Comprobando metadatos en {source}…",
@@ -1311,23 +1391,31 @@ const Map<String, String> _uies = {
   "Resolving audio from {source}…": "Resolviendo audio de {source}…",
   "Preparing {source}…": "Preparando {source}…",
   "Audio output": "Salida de audio",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, volumen y mezcla de canales",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, volumen y mezcla de canales",
   "Advanced output": "Salida avanzada",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, fundido cruzado, cola, ecualizador y letras",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, fundido cruzado, cola, ecualizador y letras",
   "Previous in queue": "Anteriores en la cola",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "El manifiesto del complemento devolvió HTTP 404. Comprueba que el enlace manifest.json sea válido y siga disponible.",
-  "The add-on manifest URL is invalid.": "La URL del manifiesto del complemento no es válida.",
-  "Invalid add-on manifest URL.": "URL del manifiesto del complemento no válida.",
+  "The add-on manifest URL is invalid.":
+      "La URL del manifiesto del complemento no es válida.",
+  "Invalid add-on manifest URL.":
+      "URL del manifiesto del complemento no válida.",
   "Save original lyrics": "Guardar letra original",
   "Save with selected translation": "Guardar con la traducción seleccionada",
-  "Includes the active translation or romanization.": "Incluye la traducción o romanización activa.",
-  "Save lyrics to file (hold for options)": "Guardar letra (mantén pulsado para ver opciones)",
+  "Includes the active translation or romanization.":
+      "Incluye la traducción o romanización activa.",
+  "Save lyrics to file (hold for options)":
+      "Guardar letra (mantén pulsado para ver opciones)",
   "Refresh low-quality covers": "Mejorar carátulas de baja calidad",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Revisar carátulas de menos de 640 px y sustituirlas solo si el álbum coincide exactamente. Se conservan las carátulas personalizadas.",
-  "Repair only covers smaller than 640 px.": "Mejorar solo carátulas de menos de 640 px.",
+  "Repair only covers smaller than 640 px.":
+      "Mejorar solo carátulas de menos de 640 px.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal busca carátulas más grandes solo cuando el título y el artista del álbum coinciden exactamente. Se conservan las carátulas elegidas manualmente y las coincidencias dudosas. Los cambios se aplican a los archivos de música modificables de tu biblioteca.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} revisados · {updated} mejorados · {skipped} omitidos · {failed} fallidos",
-  "Stopping after the current operation…": "Se detendrá al terminar la operación actual…",
+  "Stopping after the current operation…":
+      "Se detendrá al terminar la operación actual…",
   "Checking your library…": "Revisando tu biblioteca…",
   "Stopped": "Detenido",
   "Could not refresh covers. Check access and try again.": "No se pudieron actualizar las carátulas. Comprueba el acceso e inténtalo de nuevo.",
@@ -1345,30 +1433,37 @@ const Map<String, String> _uies = {
   "Sad": "Tristeza",
   "Focus": "Concentración",
   "Party": "Fiesta",
-  "Could not reorder queue. Try again.": "No se pudo reordenar la cola. Inténtalo de nuevo.",
-  "Choose sections to show and drag to reorder.": "Elige las secciones que se mostrarán y arrástralas para ordenarlas.",
+  "Could not reorder queue. Try again.":
+      "No se pudo reordenar la cola. Inténtalo de nuevo.",
+  "Choose sections to show and drag to reorder.":
+      "Elige las secciones que se mostrarán y arrástralas para ordenarlas.",
   "From the community": "De la comunidad",
   "New releases": "Novedades",
   "Trending songs for you": "Canciones en tendencia para ti",
   "Featured playlists for you": "Playlists destacadas para ti",
   "Your daily discover": "Tu descubrimiento diario",
-  "Could not save Discovery layout. Try again.": "No se pudo guardar el diseño de Descubrimiento. Inténtalo de nuevo.",
+  "Could not save Discovery layout. Try again.":
+      "No se pudo guardar el diseño de Descubrimiento. Inténtalo de nuevo.",
   "Customize {arg0}": "Personalizar {arg0}",
   "SoundCloud (preview)": "SoundCloud (vista previa)",
   "Eco Data Mode": "Modo de ahorro de datos",
   "Mobile data": "Datos móviles",
-  "Search and stream audio from SoundCloud.": "Buscar y reproducir audio de SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Buscar y reproducir audio de SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Con datos móviles, probar las fuentes activadas de YouTube Music y SoundCloud antes de las fuentes sin pérdida. Mantener tu orden habitual en Wi-Fi y para las fuentes elegidas manualmente.",
-  "Could not save data settings. Try again.": "No se pudieron guardar los ajustes de datos. Inténtalo de nuevo.",
+  "Could not save data settings. Try again.":
+      "No se pudieron guardar los ajustes de datos. Inténtalo de nuevo.",
   "Connecting to SoundCloud…": "Conectando con SoundCloud…",
   "Downloading from SoundCloud…": "Descargando desde SoundCloud…",
   "Buffering from SoundCloud…": "Cargando desde SoundCloud…",
   "Connecting to Monochrome…": "Conectando con Monochrome…",
   "Downloading from Monochrome…": "Descargando desde Monochrome…",
   "Buffering from Monochrome…": "Cargando desde Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Descargando desde Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Descargando desde Monochrome… {progress}%",
   "Save lyrics to file": "Guardar letra en un archivo",
-  "Could not save lyrics to file.": "No se pudo guardar la letra en un archivo.",
+  "Could not save lyrics to file.":
+      "No se pudo guardar la letra en un archivo.",
   "All": "Todos",
   "Favorites": "Favoritos",
   "Non-favorites": "No favoritos",
@@ -1376,24 +1471,35 @@ const Map<String, String> _uies = {
   "Add to favorites": "Añadir a favoritos",
   "Remove from favorites": "Quitar de favoritos",
   "Could not save artist favorite.": "No se pudo guardar el artista favorito.",
-  "Could not load favorite artists.": "No se pudieron cargar los artistas favoritos.",
+  "Could not load favorite artists.":
+      "No se pudieron cargar los artistas favoritos.",
   "Connecting to Spotify…": "Conectando con Spotify…",
-  "Reading Spotify favorites… {count} artists": "Leyendo favoritos de Spotify… {count} artistas",
-  "No followed artists found on Spotify.": "No se encontraron artistas seguidos en Spotify.",
+  "Reading Spotify favorites… {count} artists":
+      "Leyendo favoritos de Spotify… {count} artistas",
+  "No followed artists found on Spotify.":
+      "No se encontraron artistas seguidos en Spotify.",
   "Imported {added} new favorites ({received} found on Spotify).": "{added} nuevos favoritos importados ({received} encontrados en Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "No se pudieron importar los artistas de Spotify. Comprueba la conexión e inténtalo de nuevo.",
   "Importing Spotify artists…": "Importando artistas de Spotify…",
   "Import favorites from Spotify": "Importar favoritos de Spotify",
   "Search artists": "Buscar artistas",
-  "Artists come from your library or Spotify favorites.": "Los artistas proceden de tu biblioteca o de tus favoritos de Spotify.",
-  "Follow an artist or import your Spotify favorites.": "Sigue a un artista o importa tus favoritos de Spotify.",
-  "No non-favorite artists in your library.": "No hay artistas no favoritos en tu biblioteca.",
-  "Search and stream FLAC from Monochrome.": "Buscar y reproducir FLAC desde Monochrome.",
-  "Could not save source settings. Try again.": "No se pudo guardar la configuración de fuentes. Inténtalo de nuevo.",
-  "Audio is temporarily unavailable.": "El audio no está disponible temporalmente.",
+  "Artists come from your library or Spotify favorites.":
+      "Los artistas proceden de tu biblioteca o de tus favoritos de Spotify.",
+  "Follow an artist or import your Spotify favorites.":
+      "Sigue a un artista o importa tus favoritos de Spotify.",
+  "No non-favorite artists in your library.":
+      "No hay artistas no favoritos en tu biblioteca.",
+  "Search and stream FLAC from Monochrome.":
+      "Buscar y reproducir FLAC desde Monochrome.",
+  "Could not save source settings. Try again.":
+      "No se pudo guardar la configuración de fuentes. Inténtalo de nuevo.",
+  "Audio is temporarily unavailable.":
+      "El audio no está disponible temporalmente.",
   "Restoring audio…": "Restaurando el audio…",
-  "Audio is ready. Use Play to continue.": "El audio está listo. Pulsa Reproducir para continuar.",
-  "Close and reopen the app to restore audio.": "Cierra y vuelve a abrir la aplicación para restaurar el audio.",
+  "Audio is ready. Use Play to continue.":
+      "El audio está listo. Pulsa Reproducir para continuar.",
+  "Close and reopen the app to restore audio.":
+      "Cierra y vuelve a abrir la aplicación para restaurar el audio.",
   "Found": "Encontrado",
   "Checking…": "Buscando…",
   "No result": "Sin resultados",
@@ -1406,13 +1512,18 @@ const Map<String, String> _uies = {
   "Local file": "Archivo local",
   "Refresh search": "Repetir búsqueda",
   "Search this source again; keep existing lyrics on a miss.": "Buscar de nuevo en esta fuente; conservar la letra actual si no hay resultados.",
-  "Use your priority order and keep the best timing": "Seguir tu orden de prioridad y conservar la mejor sincronización",
-  "Copied, sidecar or embedded lyrics": "Letras copiadas, en archivos adjuntos o incrustadas",
-  "Line-synced and plain lyrics": "Letras sincronizadas por línea y texto simple",
+  "Use your priority order and keep the best timing":
+      "Seguir tu orden de prioridad y conservar la mejor sincronización",
+  "Copied, sidecar or embedded lyrics":
+      "Letras copiadas, en archivos adjuntos o incrustadas",
+  "Line-synced and plain lyrics":
+      "Letras sincronizadas por línea y texto simple",
   "Plain lyrics": "Letras sin sincronizar",
-  "Supports syllable / word timing": "Admite sincronización por sílaba o palabra",
+  "Supports syllable / word timing":
+      "Admite sincronización por sílaba o palabra",
   "Add a music folder": "Añadir una carpeta de música",
-  "Adjust video quality in the YouTube player.": "La calidad del vídeo se ajusta en el reproductor de YouTube.",
+  "Adjust video quality in the YouTube player.":
+      "La calidad del vídeo se ajusta en el reproductor de YouTube.",
   "Exit Space": "Salir de Space",
   "Use device volume buttons": "Usa los botones de volumen",
   "Waiting for video timing": "Esperando la sincronización del vídeo",
@@ -1424,10 +1535,13 @@ const Map<String, String> _uies = {
   "All sources": "Todas las fuentes",
   "Online": "En línea",
   "Artist": "Artista",
-  "Search online catalogues and playback sources": "Buscar en catálogos y fuentes de reproducción en línea",
-  "This category searches your library": "Esta categoría busca en tu biblioteca",
+  "Search online catalogues and playback sources":
+      "Buscar en catálogos y fuentes de reproducción en línea",
+  "This category searches your library":
+      "Esta categoría busca en tu biblioteca",
   "Choose one result type, or All": "Elige un tipo de resultado o Todos",
-  "Try another keyword or choose All result types": "Prueba otra palabra clave o selecciona Todos",
+  "Try another keyword or choose All result types":
+      "Prueba otra palabra clave o selecciona Todos",
   "Online albums": "Álbumes en línea",
   "Online artists": "Artistas en línea",
   "Apple Music catalogue · plays through your configured sources": "Catálogo de Apple Music · reproducción mediante tus fuentes configuradas",
@@ -1436,7 +1550,8 @@ const Map<String, String> _uies = {
   "No artists found online.": "No se encontraron artistas en línea.",
   "See all albums": "Ver todos los álbumes",
   "See all artists": "Ver todos los artistas",
-  "No matching tracks found. Try refreshing the catalogue.": "No se encontraron pistas coincidentes. Prueba a actualizar el catálogo.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "No se encontraron pistas coincidentes. Prueba a actualizar el catálogo.",
   "120 Hz": "120Hz",
   "60 Hz": "60Hz",
   "A light tap under your finger as you use Lokal.":
@@ -1941,12 +2056,15 @@ const Map<String, String> _uies = {
   "“{arg0}” plays next": "“{arg0}” se reproduce a continuación",
 };
 const Map<String, String> _uiit = {
+  "Forget": "Dimentica",
   "Reverse song swipe actions": "Inverti i gesti sui brani",
   "Swipe right to Play next, left to Add to queue.": "Scorri a destra per riprodurre dopo, a sinistra per aggiungere alla coda.",
   "Swipe right to Add to queue, left to Play next.": "Scorri a destra per aggiungere alla coda, a sinistra per riprodurre dopo.",
-  "Couldn’t play this song next.": "Impossibile riprodurre questo brano dopo quello attuale.",
+  "Couldn’t play this song next.":
+      "Impossibile riprodurre questo brano dopo quello attuale.",
   "Matching recording on {source}…": "Ricerca della registrazione su {source}…",
-  "Checking matched recording on {source}…": "Verifica della registrazione trovata su {source}…",
+  "Checking matched recording on {source}…":
+      "Verifica della registrazione trovata su {source}…",
   "Fetching audio from {source}…": "Recupero dell’audio da {source}…",
   "No genre": "Senza genere",
   "Search genres...": "Cerca generi…",
@@ -1957,30 +2075,40 @@ const Map<String, String> _uiit = {
   "Show the available codec, bit depth, sample rate or bitrate instead of the quality tier. Keep the player badge white.": "Mostra codec, profondità in bit, frequenza o bitrate disponibili al posto del livello di qualità. Mantieni il badge bianco.",
   "Starting {source}…": "Avvio di {source}…",
   "Checking metadata on {source}…": "Controllo dei metadati su {source}…",
-  "Verifying recording on {source}…": "Verifica della registrazione su {source}…",
+  "Verifying recording on {source}…":
+      "Verifica della registrazione su {source}…",
   "Resolving audio from {source}…": "Ricerca dell’audio da {source}…",
   "Preparing {source}…": "Preparazione di {source}…",
   "Audio output": "Uscita audio",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, volume e crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, volume e crossfeed",
   "Advanced output": "Uscita avanzata",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, dissolvenza incrociata, coda, equalizzatore e testi",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, dissolvenza incrociata, coda, equalizzatore e testi",
   "Previous in queue": "Precedenti in coda",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Il manifesto del componente aggiuntivo ha restituito HTTP 404. Verifica che il collegamento manifest.json sia valido e ancora accessibile.",
-  "The add-on manifest URL is invalid.": "L’URL del manifesto del componente aggiuntivo non è valido.",
-  "Invalid add-on manifest URL.": "URL del manifesto del componente aggiuntivo non valido.",
+  "The add-on manifest URL is invalid.":
+      "L’URL del manifesto del componente aggiuntivo non è valido.",
+  "Invalid add-on manifest URL.":
+      "URL del manifesto del componente aggiuntivo non valido.",
   "Save original lyrics": "Salva il testo originale",
   "Save with selected translation": "Salva con la traduzione selezionata",
-  "Includes the active translation or romanization.": "Include la traduzione o la traslitterazione attiva.",
-  "Save lyrics to file (hold for options)": "Salva il testo (tieni premuto per le opzioni)",
+  "Includes the active translation or romanization.":
+      "Include la traduzione o la traslitterazione attiva.",
+  "Save lyrics to file (hold for options)":
+      "Salva il testo (tieni premuto per le opzioni)",
   "Refresh low-quality covers": "Migliora copertine di bassa qualità",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Controlla le copertine inferiori a 640 px e sostituiscile solo se l’album corrisponde esattamente. Le copertine personalizzate vengono conservate.",
-  "Repair only covers smaller than 640 px.": "Migliora solo le copertine inferiori a 640 px.",
+  "Repair only covers smaller than 640 px.":
+      "Migliora solo le copertine inferiori a 640 px.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal cerca copertine più grandi solo quando titolo e artista dell’album corrispondono esattamente. Le copertine scelte manualmente e le corrispondenze incerte restano invariate. Le modifiche riguardano i file musicali modificabili nella tua libreria.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} controllati · {updated} migliorati · {skipped} saltati · {failed} non riusciti",
-  "Stopping after the current operation…": "Arresto al termine dell’operazione in corso…",
+  "Stopping after the current operation…":
+      "Arresto al termine dell’operazione in corso…",
   "Checking your library…": "Controllo della libreria…",
   "Stopped": "Arrestato",
-  "Could not refresh covers. Check access and try again.": "Impossibile aggiornare le copertine. Controlla l’accesso e riprova.",
+  "Could not refresh covers. Check access and try again.":
+      "Impossibile aggiornare le copertine. Controlla l’accesso e riprova.",
   "Stopping…": "Arresto in corso…",
   "Stop refresh": "Interrompi aggiornamento",
   "Hold to reorder": "Tieni premuto per riordinare",
@@ -1995,28 +2123,34 @@ const Map<String, String> _uiit = {
   "Sad": "Tristezza",
   "Focus": "Concentrazione",
   "Party": "Festa",
-  "Could not reorder queue. Try again.": "Impossibile riordinare la coda. Riprova.",
-  "Choose sections to show and drag to reorder.": "Scegli le sezioni da mostrare e trascinale per riordinarle.",
+  "Could not reorder queue. Try again.":
+      "Impossibile riordinare la coda. Riprova.",
+  "Choose sections to show and drag to reorder.":
+      "Scegli le sezioni da mostrare e trascinale per riordinarle.",
   "From the community": "Dalla community",
   "New releases": "Nuove uscite",
   "Trending songs for you": "Brani di tendenza per te",
   "Featured playlists for you": "Playlist selezionate per te",
   "Your daily discover": "La tua scoperta quotidiana",
-  "Could not save Discovery layout. Try again.": "Impossibile salvare la disposizione di Scopri. Riprova.",
+  "Could not save Discovery layout. Try again.":
+      "Impossibile salvare la disposizione di Scopri. Riprova.",
   "Customize {arg0}": "Personalizza {arg0}",
   "SoundCloud (preview)": "SoundCloud (anteprima)",
   "Eco Data Mode": "Modalità risparmio dati",
   "Mobile data": "Dati mobili",
-  "Search and stream audio from SoundCloud.": "Cerca e ascolta audio da SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Cerca e ascolta audio da SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Con i dati mobili, prova le fonti YouTube Music e SoundCloud abilitate prima di quelle senza perdita. Mantieni l’ordine abituale in Wi-Fi e per le fonti scelte manualmente.",
-  "Could not save data settings. Try again.": "Impossibile salvare le impostazioni dei dati. Riprova.",
+  "Could not save data settings. Try again.":
+      "Impossibile salvare le impostazioni dei dati. Riprova.",
   "Connecting to SoundCloud…": "Connessione a SoundCloud…",
   "Downloading from SoundCloud…": "Download da SoundCloud…",
   "Buffering from SoundCloud…": "Caricamento da SoundCloud…",
   "Connecting to Monochrome…": "Connessione a Monochrome…",
   "Downloading from Monochrome…": "Download da Monochrome…",
   "Buffering from Monochrome…": "Caricamento da Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Download da Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Download da Monochrome… {progress}%",
   "Save lyrics to file": "Salva il testo in un file",
   "Could not save lyrics to file.": "Impossibile salvare il testo in un file.",
   "All": "Tutti",
@@ -2026,24 +2160,36 @@ const Map<String, String> _uiit = {
   "Add to favorites": "Aggiungi ai preferiti",
   "Remove from favorites": "Rimuovi dai preferiti",
   "Could not save artist favorite.": "Impossibile salvare l’artista preferito.",
-  "Could not load favorite artists.": "Impossibile caricare gli artisti preferiti.",
+  "Could not load favorite artists.":
+      "Impossibile caricare gli artisti preferiti.",
   "Connecting to Spotify…": "Connessione a Spotify…",
-  "Reading Spotify favorites… {count} artists": "Lettura dei preferiti Spotify… {count} artisti",
-  "No followed artists found on Spotify.": "Nessun artista seguito trovato su Spotify.",
-  "Imported {added} new favorites ({received} found on Spotify).": "Importati {added} nuovi preferiti ({received} trovati su Spotify).",
+  "Reading Spotify favorites… {count} artists":
+      "Lettura dei preferiti Spotify… {count} artisti",
+  "No followed artists found on Spotify.":
+      "Nessun artista seguito trovato su Spotify.",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "Importati {added} nuovi preferiti ({received} trovati su Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "Impossibile importare gli artisti Spotify. Controlla la connessione e riprova.",
   "Importing Spotify artists…": "Importazione degli artisti Spotify…",
   "Import favorites from Spotify": "Importa preferiti da Spotify",
   "Search artists": "Cerca artisti",
-  "Artists come from your library or Spotify favorites.": "Gli artisti provengono dalla tua libreria o dai preferiti Spotify.",
-  "Follow an artist or import your Spotify favorites.": "Segui un artista o importa i tuoi preferiti Spotify.",
-  "No non-favorite artists in your library.": "Nessun artista non preferito nella tua libreria.",
-  "Search and stream FLAC from Monochrome.": "Cerca e riproduci FLAC da Monochrome.",
-  "Could not save source settings. Try again.": "Impossibile salvare le impostazioni delle fonti. Riprova.",
-  "Audio is temporarily unavailable.": "L’audio non è temporaneamente disponibile.",
+  "Artists come from your library or Spotify favorites.":
+      "Gli artisti provengono dalla tua libreria o dai preferiti Spotify.",
+  "Follow an artist or import your Spotify favorites.":
+      "Segui un artista o importa i tuoi preferiti Spotify.",
+  "No non-favorite artists in your library.":
+      "Nessun artista non preferito nella tua libreria.",
+  "Search and stream FLAC from Monochrome.":
+      "Cerca e riproduci FLAC da Monochrome.",
+  "Could not save source settings. Try again.":
+      "Impossibile salvare le impostazioni delle fonti. Riprova.",
+  "Audio is temporarily unavailable.":
+      "L’audio non è temporaneamente disponibile.",
   "Restoring audio…": "Ripristino dell’audio…",
-  "Audio is ready. Use Play to continue.": "L’audio è pronto. Premi Riproduci per continuare.",
-  "Close and reopen the app to restore audio.": "Chiudi e riapri l’app per ripristinare l’audio.",
+  "Audio is ready. Use Play to continue.":
+      "L’audio è pronto. Premi Riproduci per continuare.",
+  "Close and reopen the app to restore audio.":
+      "Chiudi e riapri l’app per ripristinare l’audio.",
   "Found": "Trovato",
   "Checking…": "Ricerca…",
   "No result": "Nessun risultato",
@@ -2056,13 +2202,18 @@ const Map<String, String> _uiit = {
   "Local file": "File locale",
   "Refresh search": "Ripeti ricerca",
   "Search this source again; keep existing lyrics on a miss.": "Cerca di nuovo in questa fonte; conserva il testo attuale se non ci sono risultati.",
-  "Use your priority order and keep the best timing": "Segui le tue priorità e conserva la sincronizzazione migliore",
-  "Copied, sidecar or embedded lyrics": "Testi copiati, in file associati o incorporati",
-  "Line-synced and plain lyrics": "Testi sincronizzati per riga e testo semplice",
+  "Use your priority order and keep the best timing":
+      "Segui le tue priorità e conserva la sincronizzazione migliore",
+  "Copied, sidecar or embedded lyrics":
+      "Testi copiati, in file associati o incorporati",
+  "Line-synced and plain lyrics":
+      "Testi sincronizzati per riga e testo semplice",
   "Plain lyrics": "Testi non sincronizzati",
-  "Supports syllable / word timing": "Supporta la sincronizzazione per sillaba o parola",
+  "Supports syllable / word timing":
+      "Supporta la sincronizzazione per sillaba o parola",
   "Add a music folder": "Aggiungi una cartella di musica",
-  "Adjust video quality in the YouTube player.": "La qualità video si regola nel player di YouTube.",
+  "Adjust video quality in the YouTube player.":
+      "La qualità video si regola nel player di YouTube.",
   "Exit Space": "Esci da Space",
   "Use device volume buttons": "Usa i pulsanti del volume",
   "Waiting for video timing": "In attesa della sincronizzazione video",
@@ -2074,19 +2225,24 @@ const Map<String, String> _uiit = {
   "All sources": "Tutte le fonti",
   "Online": "Online",
   "Artist": "Artista",
-  "Search online catalogues and playback sources": "Cerca nei cataloghi e nelle fonti di riproduzione online",
-  "This category searches your library": "Questa categoria cerca nella tua libreria",
+  "Search online catalogues and playback sources":
+      "Cerca nei cataloghi e nelle fonti di riproduzione online",
+  "This category searches your library":
+      "Questa categoria cerca nella tua libreria",
   "Choose one result type, or All": "Scegli un tipo di risultato o Tutti",
-  "Try another keyword or choose All result types": "Prova un’altra parola chiave o seleziona Tutti",
+  "Try another keyword or choose All result types":
+      "Prova un’altra parola chiave o seleziona Tutti",
   "Online albums": "Album online",
   "Online artists": "Artisti online",
-  "Apple Music catalogue · plays through your configured sources": "Catalogo Apple Music · riproduzione tramite le fonti configurate",
+  "Apple Music catalogue · plays through your configured sources":
+      "Catalogo Apple Music · riproduzione tramite le fonti configurate",
   "Could not search. Retry": "Ricerca non riuscita. Riprova",
   "No albums found online.": "Nessun album trovato online.",
   "No artists found online.": "Nessun artista trovato online.",
   "See all albums": "Vedi tutti gli album",
   "See all artists": "Vedi tutti gli artisti",
-  "No matching tracks found. Try refreshing the catalogue.": "Nessun brano corrispondente. Prova ad aggiornare il catalogo.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Nessun brano corrispondente. Prova ad aggiornare il catalogo.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
   "A light tap under your finger as you use Lokal.":
@@ -2593,12 +2749,15 @@ const Map<String, String> _uiit = {
   "“{arg0}” plays next": "Successivamente viene riprodotto “{arg0}”.",
 };
 const Map<String, String> _uiptBR = {
+  "Forget": "Esquecer",
   "Reverse song swipe actions": "Inverter gestos nas músicas",
   "Swipe right to Play next, left to Add to queue.": "Deslize para a direita para tocar a seguir e para a esquerda para adicionar à fila.",
   "Swipe right to Add to queue, left to Play next.": "Deslize para a direita para adicionar à fila e para a esquerda para tocar a seguir.",
-  "Couldn’t play this song next.": "Não foi possível tocar esta música a seguir.",
+  "Couldn’t play this song next.":
+      "Não foi possível tocar esta música a seguir.",
   "Matching recording on {source}…": "Buscando a gravação em {source}…",
-  "Checking matched recording on {source}…": "Verificando a gravação encontrada em {source}…",
+  "Checking matched recording on {source}…":
+      "Verificando a gravação encontrada em {source}…",
   "Fetching audio from {source}…": "Obtendo áudio de {source}…",
   "No genre": "Sem gênero",
   "Search genres...": "Buscar gêneros…",
@@ -2613,20 +2772,26 @@ const Map<String, String> _uiptBR = {
   "Resolving audio from {source}…": "Resolvendo áudio de {source}…",
   "Preparing {source}…": "Preparando {source}…",
   "Audio output": "Saída de áudio",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, volume e crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, volume e crossfeed",
   "Advanced output": "Saída avançada",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, transição, fila, equalizador e letras",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, transição, fila, equalizador e letras",
   "Previous in queue": "Anteriores na fila",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "O manifesto do complemento retornou HTTP 404. Verifique se o link manifest.json é válido e ainda está acessível.",
-  "The add-on manifest URL is invalid.": "A URL do manifesto do complemento é inválida.",
+  "The add-on manifest URL is invalid.":
+      "A URL do manifesto do complemento é inválida.",
   "Invalid add-on manifest URL.": "URL do manifesto do complemento inválida.",
   "Save original lyrics": "Salvar letra original",
   "Save with selected translation": "Salvar com a tradução selecionada",
-  "Includes the active translation or romanization.": "Inclui a tradução ou romanização ativa.",
-  "Save lyrics to file (hold for options)": "Salvar letra (mantenha pressionado para opções)",
+  "Includes the active translation or romanization.":
+      "Inclui a tradução ou romanização ativa.",
+  "Save lyrics to file (hold for options)":
+      "Salvar letra (mantenha pressionado para opções)",
   "Refresh low-quality covers": "Melhorar capas de baixa qualidade",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Verificar capas menores que 640 px e substituir apenas quando o álbum corresponder exatamente. Capas personalizadas são preservadas.",
-  "Repair only covers smaller than 640 px.": "Melhorar apenas capas menores que 640 px.",
+  "Repair only covers smaller than 640 px.":
+      "Melhorar apenas capas menores que 640 px.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "O Lokal procura capas maiores apenas quando o título e o artista do álbum correspondem exatamente. Capas escolhidas manualmente e correspondências incertas permanecem inalteradas. As alterações são aplicadas aos arquivos de música graváveis da sua biblioteca.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} verificados · {updated} melhorados · {skipped} ignorados · {failed} falhas",
   "Stopping after the current operation…": "Parando após a operação atual…",
@@ -2647,55 +2812,75 @@ const Map<String, String> _uiptBR = {
   "Sad": "Tristeza",
   "Focus": "Foco",
   "Party": "Festa",
-  "Could not reorder queue. Try again.": "Não foi possível reordenar a fila. Tente novamente.",
-  "Choose sections to show and drag to reorder.": "Escolha as seções e arraste para reordenar.",
+  "Could not reorder queue. Try again.":
+      "Não foi possível reordenar a fila. Tente novamente.",
+  "Choose sections to show and drag to reorder.":
+      "Escolha as seções e arraste para reordenar.",
   "From the community": "Da comunidade",
   "New releases": "Lançamentos",
   "Trending songs for you": "Músicas em alta para você",
   "Featured playlists for you": "Playlists em destaque para você",
   "Your daily discover": "Sua descoberta diária",
-  "Could not save Discovery layout. Try again.": "Não foi possível salvar o layout de Descobrir. Tente novamente.",
+  "Could not save Discovery layout. Try again.":
+      "Não foi possível salvar o layout de Descobrir. Tente novamente.",
   "Customize {arg0}": "Personalizar {arg0}",
   "SoundCloud (preview)": "SoundCloud (prévia)",
   "Eco Data Mode": "Modo de economia de dados",
   "Mobile data": "Dados móveis",
-  "Search and stream audio from SoundCloud.": "Buscar e reproduzir áudio do SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Buscar e reproduzir áudio do SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Nos dados móveis, tentar as fontes ativadas do YouTube Music e SoundCloud antes das fontes sem perdas. Manter sua ordem normal no Wi-Fi e nas fontes escolhidas manualmente.",
-  "Could not save data settings. Try again.": "Não foi possível salvar as configurações de dados. Tente novamente.",
+  "Could not save data settings. Try again.":
+      "Não foi possível salvar as configurações de dados. Tente novamente.",
   "Connecting to SoundCloud…": "Conectando ao SoundCloud…",
   "Downloading from SoundCloud…": "Baixando do SoundCloud…",
   "Buffering from SoundCloud…": "Carregando do SoundCloud…",
   "Connecting to Monochrome…": "Conectando ao Monochrome…",
   "Downloading from Monochrome…": "Baixando do Monochrome…",
   "Buffering from Monochrome…": "Carregando do Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Baixando do Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Baixando do Monochrome… {progress}%",
   "Save lyrics to file": "Salvar letras em um arquivo",
-  "Could not save lyrics to file.": "Não foi possível salvar as letras em um arquivo.",
+  "Could not save lyrics to file.":
+      "Não foi possível salvar as letras em um arquivo.",
   "All": "Todos",
   "Favorites": "Favoritos",
   "Non-favorites": "Não favoritos",
   "Not in library": "Fora da biblioteca",
   "Add to favorites": "Adicionar aos favoritos",
   "Remove from favorites": "Remover dos favoritos",
-  "Could not save artist favorite.": "Não foi possível salvar o artista favorito.",
-  "Could not load favorite artists.": "Não foi possível carregar os artistas favoritos.",
+  "Could not save artist favorite.":
+      "Não foi possível salvar o artista favorito.",
+  "Could not load favorite artists.":
+      "Não foi possível carregar os artistas favoritos.",
   "Connecting to Spotify…": "Conectando ao Spotify…",
-  "Reading Spotify favorites… {count} artists": "Lendo favoritos do Spotify… {count} artistas",
-  "No followed artists found on Spotify.": "Nenhum artista seguido encontrado no Spotify.",
-  "Imported {added} new favorites ({received} found on Spotify).": "{added} novos favoritos importados ({received} encontrados no Spotify).",
+  "Reading Spotify favorites… {count} artists":
+      "Lendo favoritos do Spotify… {count} artistas",
+  "No followed artists found on Spotify.":
+      "Nenhum artista seguido encontrado no Spotify.",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "{added} novos favoritos importados ({received} encontrados no Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "Não foi possível importar artistas do Spotify. Verifique a conexão e tente novamente.",
   "Importing Spotify artists…": "Importando artistas do Spotify…",
   "Import favorites from Spotify": "Importar favoritos do Spotify",
   "Search artists": "Buscar artistas",
-  "Artists come from your library or Spotify favorites.": "Os artistas vêm da sua biblioteca ou dos favoritos do Spotify.",
-  "Follow an artist or import your Spotify favorites.": "Siga um artista ou importe seus favoritos do Spotify.",
-  "No non-favorite artists in your library.": "Nenhum artista não favorito na sua biblioteca.",
-  "Search and stream FLAC from Monochrome.": "Buscar e reproduzir FLAC do Monochrome.",
-  "Could not save source settings. Try again.": "Não foi possível salvar as configurações das fontes. Tente novamente.",
-  "Audio is temporarily unavailable.": "O áudio está temporariamente indisponível.",
+  "Artists come from your library or Spotify favorites.":
+      "Os artistas vêm da sua biblioteca ou dos favoritos do Spotify.",
+  "Follow an artist or import your Spotify favorites.":
+      "Siga um artista ou importe seus favoritos do Spotify.",
+  "No non-favorite artists in your library.":
+      "Nenhum artista não favorito na sua biblioteca.",
+  "Search and stream FLAC from Monochrome.":
+      "Buscar e reproduzir FLAC do Monochrome.",
+  "Could not save source settings. Try again.":
+      "Não foi possível salvar as configurações das fontes. Tente novamente.",
+  "Audio is temporarily unavailable.":
+      "O áudio está temporariamente indisponível.",
   "Restoring audio…": "Restaurando o áudio…",
-  "Audio is ready. Use Play to continue.": "O áudio está pronto. Toque em Reproduzir para continuar.",
-  "Close and reopen the app to restore audio.": "Feche e abra o aplicativo novamente para restaurar o áudio.",
+  "Audio is ready. Use Play to continue.":
+      "O áudio está pronto. Toque em Reproduzir para continuar.",
+  "Close and reopen the app to restore audio.":
+      "Feche e abra o aplicativo novamente para restaurar o áudio.",
   "Found": "Encontrado",
   "Checking…": "Buscando…",
   "No result": "Sem resultados",
@@ -2708,13 +2893,18 @@ const Map<String, String> _uiptBR = {
   "Local file": "Arquivo local",
   "Refresh search": "Refazer busca",
   "Search this source again; keep existing lyrics on a miss.": "Buscar novamente nesta fonte; manter a letra atual se não houver resultados.",
-  "Use your priority order and keep the best timing": "Seguir sua ordem de prioridade e manter a melhor sincronização",
-  "Copied, sidecar or embedded lyrics": "Letras copiadas, em arquivos associados ou incorporadas",
-  "Line-synced and plain lyrics": "Letras sincronizadas por linha e texto simples",
+  "Use your priority order and keep the best timing":
+      "Seguir sua ordem de prioridade e manter a melhor sincronização",
+  "Copied, sidecar or embedded lyrics":
+      "Letras copiadas, em arquivos associados ou incorporadas",
+  "Line-synced and plain lyrics":
+      "Letras sincronizadas por linha e texto simples",
   "Plain lyrics": "Letras sem sincronização",
-  "Supports syllable / word timing": "Suporta sincronização por sílaba ou palavra",
+  "Supports syllable / word timing":
+      "Suporta sincronização por sílaba ou palavra",
   "Add a music folder": "Adicionar uma pasta de música",
-  "Adjust video quality in the YouTube player.": "A qualidade do vídeo é ajustada no player do YouTube.",
+  "Adjust video quality in the YouTube player.":
+      "A qualidade do vídeo é ajustada no player do YouTube.",
   "Exit Space": "Sair do Space",
   "Use device volume buttons": "Use os botões de volume",
   "Waiting for video timing": "Aguardando a sincronização do vídeo",
@@ -2726,19 +2916,24 @@ const Map<String, String> _uiptBR = {
   "All sources": "Todas as fontes",
   "Online": "Online",
   "Artist": "Artista",
-  "Search online catalogues and playback sources": "Buscar em catálogos e fontes de reprodução online",
-  "This category searches your library": "Esta categoria busca na sua biblioteca",
+  "Search online catalogues and playback sources":
+      "Buscar em catálogos e fontes de reprodução online",
+  "This category searches your library":
+      "Esta categoria busca na sua biblioteca",
   "Choose one result type, or All": "Escolha um tipo de resultado ou Todos",
-  "Try another keyword or choose All result types": "Tente outra palavra-chave ou selecione Todos",
+  "Try another keyword or choose All result types":
+      "Tente outra palavra-chave ou selecione Todos",
   "Online albums": "Álbuns online",
   "Online artists": "Artistas online",
-  "Apple Music catalogue · plays through your configured sources": "Catálogo Apple Music · reprodução pelas fontes configuradas",
+  "Apple Music catalogue · plays through your configured sources":
+      "Catálogo Apple Music · reprodução pelas fontes configuradas",
   "Could not search. Retry": "Não foi possível buscar. Tentar novamente",
   "No albums found online.": "Nenhum álbum encontrado online.",
   "No artists found online.": "Nenhum artista encontrado online.",
   "See all albums": "Ver todos os álbuns",
   "See all artists": "Ver todos os artistas",
-  "No matching tracks found. Try refreshing the catalogue.": "Nenhuma faixa correspondente. Tente atualizar o catálogo.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Nenhuma faixa correspondente. Tente atualizar o catálogo.",
   "120 Hz": "120Hz",
   "60 Hz": "60Hz",
   "A light tap under your finger as you use Lokal.":
@@ -2819,7 +3014,8 @@ const Map<String, String> _uiptBR = {
   "Connect Your Music Accounts": "Liga as tuas contas de música",
   "Connect your Spotify session to enable personal shelves.":
       "Conecte sua sessão Spotify para ativar estantes pessoais.",
-  "Connect your account to see your mixes and personalized picks.": "Conecte sua conta para ver seus mixes e recomendações personalizadas.",
+  "Connect your account to see your mixes and personalized picks.":
+      "Conecte sua conta para ver seus mixes e recomendações personalizadas.",
   "Connect your account to see your mixes, Likes, history and personalized picks.": "Conecte sua conta para ver seus mixes, curtidas, histórico e escolhas personalizadas.",
   "Connected": "Ligado",
   "Continue": "Continuar",
@@ -3240,16 +3436,20 @@ const Map<String, String> _uiptBR = {
   "“{arg0}” plays next": "“{arg0}” é reproduzido a seguir",
 };
 const Map<String, String> _uinl = {
+  "Forget": "Vergeten",
   "Reverse song swipe actions": "Veegacties voor nummers omkeren",
   "Swipe right to Play next, left to Add to queue.": "Veeg naar rechts om hierna af te spelen, naar links om aan de wachtrij toe te voegen.",
   "Swipe right to Add to queue, left to Play next.": "Veeg naar rechts om aan de wachtrij toe te voegen, naar links om hierna af te spelen.",
-  "Couldn’t play this song next.": "Dit nummer kon niet hierna worden afgespeeld.",
+  "Couldn’t play this song next.":
+      "Dit nummer kon niet hierna worden afgespeeld.",
   "Matching recording on {source}…": "Opname zoeken op {source}…",
-  "Checking matched recording on {source}…": "Gevonden opname controleren op {source}…",
+  "Checking matched recording on {source}…":
+      "Gevonden opname controleren op {source}…",
   "Fetching audio from {source}…": "Audio ophalen van {source}…",
   "No genre": "Geen genre",
   "Search genres...": "Genres zoeken…",
-  "No genres match your search.": "Geen genres komen overeen met je zoekopdracht.",
+  "No genres match your search.":
+      "Geen genres komen overeen met je zoekopdracht.",
   "Full resolution tags in lists": "Audioresolutie in lijsten",
   "Show known audio resolution details instead of quality tiers in song lists. Keep the existing quality colors.": "Toon bekende audiodetails in plaats van kwaliteitsniveaus in nummerlijsten. Behoud de bestaande kwaliteitskleuren.",
   "Full resolution tags in full player": "Audioresolutie in de speler",
@@ -3260,20 +3460,26 @@ const Map<String, String> _uinl = {
   "Resolving audio from {source}…": "Audio van {source} ophalen…",
   "Preparing {source}…": "{source} voorbereiden…",
   "Audio output": "Audio-uitvoer",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, volume en crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, volume en crossfeed",
   "Advanced output": "Geavanceerde uitvoer",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, crossfade, wachtrij, equalizer en songteksten",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, crossfade, wachtrij, equalizer en songteksten",
   "Previous in queue": "Eerdere nummers in de wachtrij",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Het add-onmanifest gaf HTTP 404 terug. Controleer of de link manifest.json geldig en nog bereikbaar is.",
-  "The add-on manifest URL is invalid.": "De URL van het add-onmanifest is ongeldig.",
+  "The add-on manifest URL is invalid.":
+      "De URL van het add-onmanifest is ongeldig.",
   "Invalid add-on manifest URL.": "Ongeldige URL voor het add-onmanifest.",
   "Save original lyrics": "Originele songtekst opslaan",
   "Save with selected translation": "Opslaan met gekozen vertaling",
-  "Includes the active translation or romanization.": "Inclusief de actieve vertaling of romanisatie.",
-  "Save lyrics to file (hold for options)": "Songtekst opslaan (ingedrukt houden voor opties)",
+  "Includes the active translation or romanization.":
+      "Inclusief de actieve vertaling of romanisatie.",
+  "Save lyrics to file (hold for options)":
+      "Songtekst opslaan (ingedrukt houden voor opties)",
   "Refresh low-quality covers": "Omslagen van lage kwaliteit verbeteren",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Controleer omslagen kleiner dan 640 px en vervang ze alleen bij een exacte albumovereenkomst. Eigen omslagen blijven behouden.",
-  "Repair only covers smaller than 640 px.": "Alleen omslagen kleiner dan 640 px verbeteren.",
+  "Repair only covers smaller than 640 px.":
+      "Alleen omslagen kleiner dan 640 px verbeteren.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal zoekt alleen grotere omslagen als de albumtitel en albumartiest exact overeenkomen. Handmatig gekozen omslagen en onzekere overeenkomsten blijven ongewijzigd. Wijzigingen gelden voor beschrijfbare muziekbestanden in je bibliotheek.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} gecontroleerd · {updated} verbeterd · {skipped} overgeslagen · {failed} mislukt",
   "Stopping after the current operation…": "Stopt na de huidige bewerking…",
@@ -3294,55 +3500,73 @@ const Map<String, String> _uinl = {
   "Sad": "Verdrietig",
   "Focus": "Focus",
   "Party": "Feest",
-  "Could not reorder queue. Try again.": "De wachtrij kon niet worden gesorteerd. Probeer opnieuw.",
-  "Choose sections to show and drag to reorder.": "Kies welke secties je wilt zien en sleep ze om te sorteren.",
+  "Could not reorder queue. Try again.":
+      "De wachtrij kon niet worden gesorteerd. Probeer opnieuw.",
+  "Choose sections to show and drag to reorder.":
+      "Kies welke secties je wilt zien en sleep ze om te sorteren.",
   "From the community": "Uit de community",
   "New releases": "Nieuwe releases",
   "Trending songs for you": "Populaire nummers voor jou",
   "Featured playlists for you": "Uitgelichte afspeellijsten voor jou",
   "Your daily discover": "Je dagelijkse ontdekking",
-  "Could not save Discovery layout. Try again.": "De Ontdekken-indeling kon niet worden opgeslagen. Probeer opnieuw.",
+  "Could not save Discovery layout. Try again.":
+      "De Ontdekken-indeling kon niet worden opgeslagen. Probeer opnieuw.",
   "Customize {arg0}": "{arg0} aanpassen",
   "SoundCloud (preview)": "SoundCloud (fragment)",
   "Eco Data Mode": "Databesparingsmodus",
   "Mobile data": "Mobiele data",
-  "Search and stream audio from SoundCloud.": "Audio zoeken en streamen via SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Audio zoeken en streamen via SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Probeer via mobiele data eerst ingeschakelde YouTube Music- en SoundCloud-bronnen vóór verliesvrije bronnen. Behoud je normale volgorde via wifi en voor handmatig gekozen bronnen.",
-  "Could not save data settings. Try again.": "Kan de gegevensinstellingen niet opslaan. Probeer het opnieuw.",
+  "Could not save data settings. Try again.":
+      "Kan de gegevensinstellingen niet opslaan. Probeer het opnieuw.",
   "Connecting to SoundCloud…": "Verbinden met SoundCloud…",
   "Downloading from SoundCloud…": "Downloaden van SoundCloud…",
   "Buffering from SoundCloud…": "Bufferen van SoundCloud…",
   "Connecting to Monochrome…": "Verbinden met Monochrome…",
   "Downloading from Monochrome…": "Downloaden van Monochrome…",
   "Buffering from Monochrome…": "Bufferen van Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Downloaden van Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Downloaden van Monochrome… {progress}%",
   "Save lyrics to file": "Songtekst opslaan als bestand",
-  "Could not save lyrics to file.": "Songtekst kon niet als bestand worden opgeslagen.",
+  "Could not save lyrics to file.":
+      "Songtekst kon niet als bestand worden opgeslagen.",
   "All": "Alle",
   "Favorites": "Favorieten",
   "Non-favorites": "Geen favorieten",
   "Not in library": "Niet in bibliotheek",
   "Add to favorites": "Toevoegen aan favorieten",
   "Remove from favorites": "Verwijderen uit favorieten",
-  "Could not save artist favorite.": "Artiestfavoriet kon niet worden opgeslagen.",
-  "Could not load favorite artists.": "Favoriete artiesten konden niet worden geladen.",
+  "Could not save artist favorite.":
+      "Artiestfavoriet kon niet worden opgeslagen.",
+  "Could not load favorite artists.":
+      "Favoriete artiesten konden niet worden geladen.",
   "Connecting to Spotify…": "Verbinden met Spotify…",
-  "Reading Spotify favorites… {count} artists": "Spotify-favorieten lezen… {count} artiesten",
-  "No followed artists found on Spotify.": "Geen gevolgde artiesten gevonden op Spotify.",
+  "Reading Spotify favorites… {count} artists":
+      "Spotify-favorieten lezen… {count} artiesten",
+  "No followed artists found on Spotify.":
+      "Geen gevolgde artiesten gevonden op Spotify.",
   "Imported {added} new favorites ({received} found on Spotify).": "{added} nieuwe favorieten geïmporteerd ({received} gevonden op Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "Spotify-artiesten konden niet worden geïmporteerd. Controleer je verbinding en probeer opnieuw.",
   "Importing Spotify artists…": "Spotify-artiesten importeren…",
   "Import favorites from Spotify": "Favorieten importeren van Spotify",
   "Search artists": "Artiesten zoeken",
-  "Artists come from your library or Spotify favorites.": "Artiesten komen uit je bibliotheek of je Spotify-favorieten.",
-  "Follow an artist or import your Spotify favorites.": "Volg een artiest of importeer je Spotify-favorieten.",
-  "No non-favorite artists in your library.": "Geen niet-favoriete artiesten in je bibliotheek.",
-  "Search and stream FLAC from Monochrome.": "FLAC zoeken en streamen via Monochrome.",
-  "Could not save source settings. Try again.": "Broninstellingen konden niet worden opgeslagen. Probeer opnieuw.",
+  "Artists come from your library or Spotify favorites.":
+      "Artiesten komen uit je bibliotheek of je Spotify-favorieten.",
+  "Follow an artist or import your Spotify favorites.":
+      "Volg een artiest of importeer je Spotify-favorieten.",
+  "No non-favorite artists in your library.":
+      "Geen niet-favoriete artiesten in je bibliotheek.",
+  "Search and stream FLAC from Monochrome.":
+      "FLAC zoeken en streamen via Monochrome.",
+  "Could not save source settings. Try again.":
+      "Broninstellingen konden niet worden opgeslagen. Probeer opnieuw.",
   "Audio is temporarily unavailable.": "Audio is tijdelijk niet beschikbaar.",
   "Restoring audio…": "Audio herstellen…",
-  "Audio is ready. Use Play to continue.": "Audio is gereed. Druk op Afspelen om verder te gaan.",
-  "Close and reopen the app to restore audio.": "Sluit en heropen de app om audio te herstellen.",
+  "Audio is ready. Use Play to continue.":
+      "Audio is gereed. Druk op Afspelen om verder te gaan.",
+  "Close and reopen the app to restore audio.":
+      "Sluit en heropen de app om audio te herstellen.",
   "Found": "Gevonden",
   "Checking…": "Zoeken…",
   "No result": "Geen resultaat",
@@ -3354,14 +3578,19 @@ const Map<String, String> _uinl = {
   "Automatic": "Automatisch",
   "Local file": "Lokaal bestand",
   "Refresh search": "Opnieuw zoeken",
-  "Search this source again; keep existing lyrics on a miss.": "Zoek opnieuw in deze bron; behoud de huidige tekst zonder resultaat.",
-  "Use your priority order and keep the best timing": "Volg je prioriteiten en behoud de beste timing",
-  "Copied, sidecar or embedded lyrics": "Gekopieerde, begeleidende of ingesloten songtekst",
+  "Search this source again; keep existing lyrics on a miss.":
+      "Zoek opnieuw in deze bron; behoud de huidige tekst zonder resultaat.",
+  "Use your priority order and keep the best timing":
+      "Volg je prioriteiten en behoud de beste timing",
+  "Copied, sidecar or embedded lyrics":
+      "Gekopieerde, begeleidende of ingesloten songtekst",
   "Line-synced and plain lyrics": "Songtekst met regeltiming en gewone tekst",
   "Plain lyrics": "Songtekst zonder timing",
-  "Supports syllable / word timing": "Ondersteunt timing per lettergreep of woord",
+  "Supports syllable / word timing":
+      "Ondersteunt timing per lettergreep of woord",
   "Add a music folder": "Een muziekmap toevoegen",
-  "Adjust video quality in the YouTube player.": "De videokwaliteit stel je in de YouTube-speler in.",
+  "Adjust video quality in the YouTube player.":
+      "De videokwaliteit stel je in de YouTube-speler in.",
   "Exit Space": "Space verlaten",
   "Use device volume buttons": "Gebruik de volumeknoppen",
   "Waiting for video timing": "Wachten op de videotiming",
@@ -3373,19 +3602,24 @@ const Map<String, String> _uinl = {
   "All sources": "Alle bronnen",
   "Online": "Online",
   "Artist": "Artiest",
-  "Search online catalogues and playback sources": "Doorzoek onlinecatalogi en afspeelbronnen",
-  "This category searches your library": "Deze categorie doorzoekt je bibliotheek",
+  "Search online catalogues and playback sources":
+      "Doorzoek onlinecatalogi en afspeelbronnen",
+  "This category searches your library":
+      "Deze categorie doorzoekt je bibliotheek",
   "Choose one result type, or All": "Kies één resultaattype of Alles",
-  "Try another keyword or choose All result types": "Probeer een ander trefwoord of kies Alles",
+  "Try another keyword or choose All result types":
+      "Probeer een ander trefwoord of kies Alles",
   "Online albums": "Onlinealbums",
   "Online artists": "Onlineartiesten",
-  "Apple Music catalogue · plays through your configured sources": "Apple Music-catalogus · afspelen via je ingestelde bronnen",
+  "Apple Music catalogue · plays through your configured sources":
+      "Apple Music-catalogus · afspelen via je ingestelde bronnen",
   "Could not search. Retry": "Zoeken mislukt. Opnieuw proberen",
   "No albums found online.": "Geen albums online gevonden.",
   "No artists found online.": "Geen artiesten online gevonden.",
   "See all albums": "Alle albums bekijken",
   "See all artists": "Alle artiesten bekijken",
-  "No matching tracks found. Try refreshing the catalogue.": "Geen overeenkomende nummers. Probeer de catalogus te vernieuwen.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Geen overeenkomende nummers. Probeer de catalogus te vernieuwen.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
   "A light tap under your finger as you use Lokal.":
@@ -3899,12 +4133,15 @@ const Map<String, String> _uinl = {
   "“{arg0}” plays next": "Vervolgens wordt “{arg0}” afgespeeld",
 };
 const Map<String, String> _uipl = {
+  "Forget": "Zapomnij",
   "Reverse song swipe actions": "Odwróć gesty przesuwania utworów",
   "Swipe right to Play next, left to Add to queue.": "Przesuń w prawo, aby odtworzyć jako następny; w lewo, aby dodać do kolejki.",
   "Swipe right to Add to queue, left to Play next.": "Przesuń w prawo, aby dodać do kolejki; w lewo, aby odtworzyć jako następny.",
-  "Couldn’t play this song next.": "Nie udało się odtworzyć tego utworu jako następnego.",
+  "Couldn’t play this song next.":
+      "Nie udało się odtworzyć tego utworu jako następnego.",
   "Matching recording on {source}…": "Wyszukiwanie nagrania w {source}…",
-  "Checking matched recording on {source}…": "Sprawdzanie znalezionego nagrania w {source}…",
+  "Checking matched recording on {source}…":
+      "Sprawdzanie znalezionego nagrania w {source}…",
   "Fetching audio from {source}…": "Pobieranie dźwięku z {source}…",
   "No genre": "Bez gatunku",
   "Search genres...": "Szukaj gatunków…",
@@ -3919,26 +4156,34 @@ const Map<String, String> _uipl = {
   "Resolving audio from {source}…": "Wyszukiwanie dźwięku z {source}…",
   "Preparing {source}…": "Przygotowywanie {source}…",
   "Audio output": "Wyjście audio",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, głośność i crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, głośność i crossfeed",
   "Advanced output": "Zaawansowane wyjście",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, przenikanie, kolejka, korektor i teksty",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, przenikanie, kolejka, korektor i teksty",
   "Previous in queue": "Poprzednie w kolejce",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Manifest dodatku zwrócił HTTP 404. Sprawdź, czy adres manifest.json jest poprawny i nadal dostępny.",
-  "The add-on manifest URL is invalid.": "Adres URL manifestu dodatku jest nieprawidłowy.",
+  "The add-on manifest URL is invalid.":
+      "Adres URL manifestu dodatku jest nieprawidłowy.",
   "Invalid add-on manifest URL.": "Nieprawidłowy adres URL manifestu dodatku.",
   "Save original lyrics": "Zapisz oryginalny tekst",
   "Save with selected translation": "Zapisz z wybranym tłumaczeniem",
-  "Includes the active translation or romanization.": "Zawiera aktywne tłumaczenie lub transliterację.",
-  "Save lyrics to file (hold for options)": "Zapisz tekst (przytrzymaj, aby zobaczyć opcje)",
+  "Includes the active translation or romanization.":
+      "Zawiera aktywne tłumaczenie lub transliterację.",
+  "Save lyrics to file (hold for options)":
+      "Zapisz tekst (przytrzymaj, aby zobaczyć opcje)",
   "Refresh low-quality covers": "Popraw okładki niskiej jakości",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Sprawdź okładki mniejsze niż 640 px i zastąp je tylko przy dokładnej zgodności albumu. Własne okładki zostaną zachowane.",
-  "Repair only covers smaller than 640 px.": "Popraw tylko okładki mniejsze niż 640 px.",
+  "Repair only covers smaller than 640 px.":
+      "Popraw tylko okładki mniejsze niż 640 px.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal szuka większych okładek tylko przy dokładnej zgodności tytułu i wykonawcy albumu. Ręcznie wybrane okładki i niepewne dopasowania pozostają bez zmian. Zmiany dotyczą plików muzycznych w bibliotece, do których masz prawo zapisu.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} sprawdzonych · {updated} poprawionych · {skipped} pominiętych · {failed} błędów",
-  "Stopping after the current operation…": "Zatrzymywanie po bieżącej operacji…",
+  "Stopping after the current operation…":
+      "Zatrzymywanie po bieżącej operacji…",
   "Checking your library…": "Sprawdzanie biblioteki…",
   "Stopped": "Zatrzymano",
-  "Could not refresh covers. Check access and try again.": "Nie udało się odświeżyć okładek. Sprawdź dostęp i spróbuj ponownie.",
+  "Could not refresh covers. Check access and try again.":
+      "Nie udało się odświeżyć okładek. Sprawdź dostęp i spróbuj ponownie.",
   "Stopping…": "Zatrzymywanie…",
   "Stop refresh": "Zatrzymaj odświeżanie",
   "Hold to reorder": "Przytrzymaj, aby zmienić kolejność",
@@ -3953,28 +4198,34 @@ const Map<String, String> _uipl = {
   "Sad": "Smutek",
   "Focus": "Skupienie",
   "Party": "Impreza",
-  "Could not reorder queue. Try again.": "Nie udało się zmienić kolejności. Spróbuj ponownie.",
-  "Choose sections to show and drag to reorder.": "Wybierz widoczne sekcje i przeciągnij, aby zmienić kolejność.",
+  "Could not reorder queue. Try again.":
+      "Nie udało się zmienić kolejności. Spróbuj ponownie.",
+  "Choose sections to show and drag to reorder.":
+      "Wybierz widoczne sekcje i przeciągnij, aby zmienić kolejność.",
   "From the community": "Od społeczności",
   "New releases": "Nowości",
   "Trending songs for you": "Popularne utwory dla Ciebie",
   "Featured playlists for you": "Polecane playlisty dla Ciebie",
   "Your daily discover": "Twoje codzienne odkrycie",
-  "Could not save Discovery layout. Try again.": "Nie udało się zapisać układu Odkrywaj. Spróbuj ponownie.",
+  "Could not save Discovery layout. Try again.":
+      "Nie udało się zapisać układu Odkrywaj. Spróbuj ponownie.",
   "Customize {arg0}": "Dostosuj {arg0}",
   "SoundCloud (preview)": "SoundCloud (fragment)",
   "Eco Data Mode": "Tryb oszczędzania danych",
   "Mobile data": "Dane komórkowe",
-  "Search and stream audio from SoundCloud.": "Wyszukuj i odtwarzaj muzykę z SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Wyszukuj i odtwarzaj muzykę z SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Przy danych komórkowych najpierw próbuj włączonych źródeł YouTube Music i SoundCloud, przed źródłami bezstratnymi. W Wi-Fi i dla ręcznie wybranych źródeł zachowaj zwykłą kolejność.",
-  "Could not save data settings. Try again.": "Nie można zapisać ustawień danych. Spróbuj ponownie.",
+  "Could not save data settings. Try again.":
+      "Nie można zapisać ustawień danych. Spróbuj ponownie.",
   "Connecting to SoundCloud…": "Łączenie z SoundCloud…",
   "Downloading from SoundCloud…": "Pobieranie z SoundCloud…",
   "Buffering from SoundCloud…": "Buforowanie z SoundCloud…",
   "Connecting to Monochrome…": "Łączenie z Monochrome…",
   "Downloading from Monochrome…": "Pobieranie z Monochrome…",
   "Buffering from Monochrome…": "Buforowanie z Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Pobieranie z Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Pobieranie z Monochrome… {progress}%",
   "Save lyrics to file": "Zapisz tekst do pliku",
   "Could not save lyrics to file.": "Nie można zapisać tekstu do pliku.",
   "All": "Wszyscy",
@@ -3986,22 +4237,31 @@ const Map<String, String> _uipl = {
   "Could not save artist favorite.": "Nie można zapisać ulubionego artysty.",
   "Could not load favorite artists.": "Nie można wczytać ulubionych artystów.",
   "Connecting to Spotify…": "Łączenie ze Spotify…",
-  "Reading Spotify favorites… {count} artists": "Odczytywanie ulubionych ze Spotify… {count} artystów",
-  "No followed artists found on Spotify.": "Nie znaleziono obserwowanych artystów w Spotify.",
+  "Reading Spotify favorites… {count} artists":
+      "Odczytywanie ulubionych ze Spotify… {count} artystów",
+  "No followed artists found on Spotify.":
+      "Nie znaleziono obserwowanych artystów w Spotify.",
   "Imported {added} new favorites ({received} found on Spotify).": "Zaimportowano {added} nowych ulubionych (znaleziono {received} w Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "Nie można zaimportować artystów Spotify. Sprawdź połączenie i spróbuj ponownie.",
   "Importing Spotify artists…": "Importowanie artystów Spotify…",
   "Import favorites from Spotify": "Importuj ulubionych ze Spotify",
   "Search artists": "Szukaj artystów",
-  "Artists come from your library or Spotify favorites.": "Artyści pochodzą z biblioteki lub ulubionych w Spotify.",
-  "Follow an artist or import your Spotify favorites.": "Obserwuj artystę lub zaimportuj ulubionych ze Spotify.",
-  "No non-favorite artists in your library.": "Brak nieulubionych artystów w bibliotece.",
-  "Search and stream FLAC from Monochrome.": "Wyszukuj i odtwarzaj FLAC z Monochrome.",
-  "Could not save source settings. Try again.": "Nie można zapisać ustawień źródeł. Spróbuj ponownie.",
+  "Artists come from your library or Spotify favorites.":
+      "Artyści pochodzą z biblioteki lub ulubionych w Spotify.",
+  "Follow an artist or import your Spotify favorites.":
+      "Obserwuj artystę lub zaimportuj ulubionych ze Spotify.",
+  "No non-favorite artists in your library.":
+      "Brak nieulubionych artystów w bibliotece.",
+  "Search and stream FLAC from Monochrome.":
+      "Wyszukuj i odtwarzaj FLAC z Monochrome.",
+  "Could not save source settings. Try again.":
+      "Nie można zapisać ustawień źródeł. Spróbuj ponownie.",
   "Audio is temporarily unavailable.": "Dźwięk jest chwilowo niedostępny.",
   "Restoring audio…": "Przywracanie dźwięku…",
-  "Audio is ready. Use Play to continue.": "Dźwięk jest gotowy. Naciśnij Odtwórz, aby kontynuować.",
-  "Close and reopen the app to restore audio.": "Zamknij i ponownie otwórz aplikację, aby przywrócić dźwięk.",
+  "Audio is ready. Use Play to continue.":
+      "Dźwięk jest gotowy. Naciśnij Odtwórz, aby kontynuować.",
+  "Close and reopen the app to restore audio.":
+      "Zamknij i ponownie otwórz aplikację, aby przywrócić dźwięk.",
   "Found": "Znaleziono",
   "Checking…": "Sprawdzanie…",
   "No result": "Brak wyników",
@@ -4014,13 +4274,17 @@ const Map<String, String> _uipl = {
   "Local file": "Plik lokalny",
   "Refresh search": "Szukaj ponownie",
   "Search this source again; keep existing lyrics on a miss.": "Przeszukaj to źródło ponownie; zachowaj obecny tekst przy braku wyników.",
-  "Use your priority order and keep the best timing": "Użyj swojej kolejności i zachowaj najlepszą synchronizację",
-  "Copied, sidecar or embedded lyrics": "Tekst skopiowany, z pliku towarzyszącego lub osadzony",
-  "Line-synced and plain lyrics": "Tekst z synchronizacją wierszy i zwykły tekst",
+  "Use your priority order and keep the best timing":
+      "Użyj swojej kolejności i zachowaj najlepszą synchronizację",
+  "Copied, sidecar or embedded lyrics":
+      "Tekst skopiowany, z pliku towarzyszącego lub osadzony",
+  "Line-synced and plain lyrics":
+      "Tekst z synchronizacją wierszy i zwykły tekst",
   "Plain lyrics": "Tekst bez synchronizacji",
   "Supports syllable / word timing": "Obsługuje synchronizację sylab lub słów",
   "Add a music folder": "Dodaj folder z muzyką",
-  "Adjust video quality in the YouTube player.": "Jakość wideo ustawia się w odtwarzaczu YouTube.",
+  "Adjust video quality in the YouTube player.":
+      "Jakość wideo ustawia się w odtwarzaczu YouTube.",
   "Exit Space": "Wyjdź z Space",
   "Use device volume buttons": "Użyj przycisków głośności",
   "Waiting for video timing": "Oczekiwanie na synchronizację wideo",
@@ -4032,19 +4296,24 @@ const Map<String, String> _uipl = {
   "All sources": "Wszystkie źródła",
   "Online": "Online",
   "Artist": "Wykonawca",
-  "Search online catalogues and playback sources": "Przeszukaj katalogi i źródła odtwarzania online",
-  "This category searches your library": "Ta kategoria przeszukuje Twoją bibliotekę",
+  "Search online catalogues and playback sources":
+      "Przeszukaj katalogi i źródła odtwarzania online",
+  "This category searches your library":
+      "Ta kategoria przeszukuje Twoją bibliotekę",
   "Choose one result type, or All": "Wybierz jeden typ wyników lub Wszystkie",
-  "Try another keyword or choose All result types": "Spróbuj innego słowa lub wybierz Wszystkie",
+  "Try another keyword or choose All result types":
+      "Spróbuj innego słowa lub wybierz Wszystkie",
   "Online albums": "Albumy online",
   "Online artists": "Wykonawcy online",
-  "Apple Music catalogue · plays through your configured sources": "Katalog Apple Music · odtwarzanie przez skonfigurowane źródła",
+  "Apple Music catalogue · plays through your configured sources":
+      "Katalog Apple Music · odtwarzanie przez skonfigurowane źródła",
   "Could not search. Retry": "Wyszukiwanie nie powiodło się. Ponów",
   "No albums found online.": "Nie znaleziono albumów online.",
   "No artists found online.": "Nie znaleziono wykonawców online.",
   "See all albums": "Zobacz wszystkie albumy",
   "See all artists": "Zobacz wszystkich wykonawców",
-  "No matching tracks found. Try refreshing the catalogue.": "Nie znaleziono pasujących utworów. Odśwież katalog.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Nie znaleziono pasujących utworów. Odśwież katalog.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
   "A light tap under your finger as you use Lokal.":
@@ -4548,12 +4817,15 @@ const Map<String, String> _uipl = {
   "“{arg0}” plays next": "Następnie odtwarzany jest utwór „{arg0}”.",
 };
 const Map<String, String> _uisv = {
+  "Forget": "Glöm",
   "Reverse song swipe actions": "Vänd på låtarnas svepåtgärder",
   "Swipe right to Play next, left to Add to queue.": "Svep åt höger för att spela härnäst, åt vänster för att lägga till i kön.",
   "Swipe right to Add to queue, left to Play next.": "Svep åt höger för att lägga till i kön, åt vänster för att spela härnäst.",
-  "Couldn’t play this song next.": "Det gick inte att spela den här låten härnäst.",
+  "Couldn’t play this song next.":
+      "Det gick inte att spela den här låten härnäst.",
   "Matching recording on {source}…": "Söker efter inspelningen på {source}…",
-  "Checking matched recording on {source}…": "Kontrollerar hittad inspelning på {source}…",
+  "Checking matched recording on {source}…":
+      "Kontrollerar hittad inspelning på {source}…",
   "Fetching audio from {source}…": "Hämtar ljud från {source}…",
   "No genre": "Ingen genre",
   "Search genres...": "Sök genrer…",
@@ -4568,23 +4840,30 @@ const Map<String, String> _uisv = {
   "Resolving audio from {source}…": "Hämtar ljud från {source}…",
   "Preparing {source}…": "Förbereder {source}…",
   "Audio output": "Ljudutgång",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, volym och crossfeed",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, volym och crossfeed",
   "Advanced output": "Avancerad utgång",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, övertoning, kö, equalizer och låttexter",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, övertoning, kö, equalizer och låttexter",
   "Previous in queue": "Tidigare i kön",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Tilläggets manifest svarade med HTTP 404. Kontrollera att länken manifest.json är giltig och fortfarande tillgänglig.",
-  "The add-on manifest URL is invalid.": "URL:en till tilläggets manifest är ogiltig.",
+  "The add-on manifest URL is invalid.":
+      "URL:en till tilläggets manifest är ogiltig.",
   "Invalid add-on manifest URL.": "Ogiltig URL till tilläggets manifest.",
   "Save original lyrics": "Spara originaltext",
   "Save with selected translation": "Spara med vald översättning",
-  "Includes the active translation or romanization.": "Inkluderar den aktiva översättningen eller romaniseringen.",
-  "Save lyrics to file (hold for options)": "Spara text (håll inne för alternativ)",
+  "Includes the active translation or romanization.":
+      "Inkluderar den aktiva översättningen eller romaniseringen.",
+  "Save lyrics to file (hold for options)":
+      "Spara text (håll inne för alternativ)",
   "Refresh low-quality covers": "Förbättra omslag med låg kvalitet",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "Kontrollera omslag mindre än 640 px och ersätt bara vid exakt albummatchning. Egna omslag bevaras.",
-  "Repair only covers smaller than 640 px.": "Förbättra bara omslag mindre än 640 px.",
+  "Repair only covers smaller than 640 px.":
+      "Förbättra bara omslag mindre än 640 px.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal söker bara större omslag när albumtitel och albumartist stämmer exakt. Manuellt valda omslag och osäkra träffar lämnas oförändrade. Ändringarna gäller skrivbara musikfiler i ditt bibliotek.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} kontrollerade · {updated} förbättrade · {skipped} överhoppade · {failed} misslyckade",
-  "Stopping after the current operation…": "Stoppar efter den aktuella åtgärden…",
+  "Stopping after the current operation…":
+      "Stoppar efter den aktuella åtgärden…",
   "Checking your library…": "Kontrollerar ditt bibliotek…",
   "Stopped": "Stoppad",
   "Could not refresh covers. Check access and try again.": "Det gick inte att uppdatera omslagen. Kontrollera åtkomsten och försök igen.",
@@ -4602,28 +4881,34 @@ const Map<String, String> _uisv = {
   "Sad": "Sorg",
   "Focus": "Fokus",
   "Party": "Fest",
-  "Could not reorder queue. Try again.": "Kunde inte ändra köns ordning. Försök igen.",
-  "Choose sections to show and drag to reorder.": "Välj vilka avsnitt som visas och dra för att ändra ordning.",
+  "Could not reorder queue. Try again.":
+      "Kunde inte ändra köns ordning. Försök igen.",
+  "Choose sections to show and drag to reorder.":
+      "Välj vilka avsnitt som visas och dra för att ändra ordning.",
   "From the community": "Från gemenskapen",
   "New releases": "Nya släpp",
   "Trending songs for you": "Populära låtar för dig",
   "Featured playlists for you": "Utvalda spellistor för dig",
   "Your daily discover": "Din dagliga upptäckt",
-  "Could not save Discovery layout. Try again.": "Kunde inte spara layouten för Upptäck. Försök igen.",
+  "Could not save Discovery layout. Try again.":
+      "Kunde inte spara layouten för Upptäck. Försök igen.",
   "Customize {arg0}": "Anpassa {arg0}",
   "SoundCloud (preview)": "SoundCloud (förhandslyssning)",
   "Eco Data Mode": "Datasparläge",
   "Mobile data": "Mobildata",
-  "Search and stream audio from SoundCloud.": "Sök och strömma ljud från SoundCloud.",
+  "Search and stream audio from SoundCloud.":
+      "Sök och strömma ljud från SoundCloud.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Med mobildata provas aktiverade YouTube Music- och SoundCloud-källor före förlustfria källor. Din vanliga ordning används på wifi och för manuellt valda källor.",
-  "Could not save data settings. Try again.": "Det gick inte att spara datainställningarna. Försök igen.",
+  "Could not save data settings. Try again.":
+      "Det gick inte att spara datainställningarna. Försök igen.",
   "Connecting to SoundCloud…": "Ansluter till SoundCloud…",
   "Downloading from SoundCloud…": "Hämtar från SoundCloud…",
   "Buffering from SoundCloud…": "Buffrar från SoundCloud…",
   "Connecting to Monochrome…": "Ansluter till Monochrome…",
   "Downloading from Monochrome…": "Hämtar från Monochrome…",
   "Buffering from Monochrome…": "Buffrar från Monochrome…",
-  "Downloading from Monochrome… {progress}%": "Hämtar från Monochrome… {progress}%",
+  "Downloading from Monochrome… {progress}%":
+      "Hämtar från Monochrome… {progress}%",
   "Save lyrics to file": "Spara låttext till fil",
   "Could not save lyrics to file.": "Kunde inte spara låttext till fil.",
   "All": "Alla",
@@ -4635,22 +4920,32 @@ const Map<String, String> _uisv = {
   "Could not save artist favorite.": "Kunde inte spara artistfavoriten.",
   "Could not load favorite artists.": "Kunde inte läsa in favoritartister.",
   "Connecting to Spotify…": "Ansluter till Spotify…",
-  "Reading Spotify favorites… {count} artists": "Läser Spotify-favoriter… {count} artister",
-  "No followed artists found on Spotify.": "Inga följda artister hittades på Spotify.",
-  "Imported {added} new favorites ({received} found on Spotify).": "Importerade {added} nya favoriter ({received} hittades på Spotify).",
+  "Reading Spotify favorites… {count} artists":
+      "Läser Spotify-favoriter… {count} artister",
+  "No followed artists found on Spotify.":
+      "Inga följda artister hittades på Spotify.",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "Importerade {added} nya favoriter ({received} hittades på Spotify).",
   "Could not import Spotify artists. Check your connection and retry.": "Kunde inte importera Spotify-artister. Kontrollera anslutningen och försök igen.",
   "Importing Spotify artists…": "Importerar Spotify-artister…",
   "Import favorites from Spotify": "Importera favoriter från Spotify",
   "Search artists": "Sök artister",
-  "Artists come from your library or Spotify favorites.": "Artister kommer från ditt bibliotek eller dina Spotify-favoriter.",
-  "Follow an artist or import your Spotify favorites.": "Följ en artist eller importera dina Spotify-favoriter.",
-  "No non-favorite artists in your library.": "Inga artister som inte är favoriter i ditt bibliotek.",
-  "Search and stream FLAC from Monochrome.": "Sök och strömma FLAC från Monochrome.",
-  "Could not save source settings. Try again.": "Kunde inte spara källinställningarna. Försök igen.",
+  "Artists come from your library or Spotify favorites.":
+      "Artister kommer från ditt bibliotek eller dina Spotify-favoriter.",
+  "Follow an artist or import your Spotify favorites.":
+      "Följ en artist eller importera dina Spotify-favoriter.",
+  "No non-favorite artists in your library.":
+      "Inga artister som inte är favoriter i ditt bibliotek.",
+  "Search and stream FLAC from Monochrome.":
+      "Sök och strömma FLAC från Monochrome.",
+  "Could not save source settings. Try again.":
+      "Kunde inte spara källinställningarna. Försök igen.",
   "Audio is temporarily unavailable.": "Ljud är tillfälligt otillgängligt.",
   "Restoring audio…": "Återställer ljud…",
-  "Audio is ready. Use Play to continue.": "Ljudet är klart. Tryck på Spela för att fortsätta.",
-  "Close and reopen the app to restore audio.": "Stäng och öppna appen igen för att återställa ljudet.",
+  "Audio is ready. Use Play to continue.":
+      "Ljudet är klart. Tryck på Spela för att fortsätta.",
+  "Close and reopen the app to restore audio.":
+      "Stäng och öppna appen igen för att återställa ljudet.",
   "Found": "Hittad",
   "Checking…": "Söker…",
   "No result": "Inget resultat",
@@ -4662,14 +4957,19 @@ const Map<String, String> _uisv = {
   "Automatic": "Automatisk",
   "Local file": "Lokal fil",
   "Refresh search": "Sök igen",
-  "Search this source again; keep existing lyrics on a miss.": "Sök i denna källa igen; behåll befintlig text om inget hittas.",
-  "Use your priority order and keep the best timing": "Följ din prioritetsordning och behåll bästa tidsynkronisering",
-  "Copied, sidecar or embedded lyrics": "Kopierad text, separat textfil eller inbäddad text",
+  "Search this source again; keep existing lyrics on a miss.":
+      "Sök i denna källa igen; behåll befintlig text om inget hittas.",
+  "Use your priority order and keep the best timing":
+      "Följ din prioritetsordning och behåll bästa tidsynkronisering",
+  "Copied, sidecar or embedded lyrics":
+      "Kopierad text, separat textfil eller inbäddad text",
   "Line-synced and plain lyrics": "Radsynkroniserad och vanlig text",
   "Plain lyrics": "Text utan tidsynkronisering",
-  "Supports syllable / word timing": "Stöd för tidsynkronisering per stavelse eller ord",
+  "Supports syllable / word timing":
+      "Stöd för tidsynkronisering per stavelse eller ord",
   "Add a music folder": "Lägg till en musikmapp",
-  "Adjust video quality in the YouTube player.": "Videokvaliteten ställs in i YouTube-spelaren.",
+  "Adjust video quality in the YouTube player.":
+      "Videokvaliteten ställs in i YouTube-spelaren.",
   "Exit Space": "Lämna Space",
   "Use device volume buttons": "Använd volymknapparna",
   "Waiting for video timing": "Väntar på videons tidsinformation",
@@ -4681,19 +4981,24 @@ const Map<String, String> _uisv = {
   "All sources": "Alla källor",
   "Online": "Online",
   "Artist": "Artist",
-  "Search online catalogues and playback sources": "Sök i onlinekataloger och uppspelningskällor",
-  "This category searches your library": "Den här kategorin söker i ditt bibliotek",
+  "Search online catalogues and playback sources":
+      "Sök i onlinekataloger och uppspelningskällor",
+  "This category searches your library":
+      "Den här kategorin söker i ditt bibliotek",
   "Choose one result type, or All": "Välj en resultattyp eller Alla",
-  "Try another keyword or choose All result types": "Prova ett annat sökord eller välj Alla",
+  "Try another keyword or choose All result types":
+      "Prova ett annat sökord eller välj Alla",
   "Online albums": "Album online",
   "Online artists": "Artister online",
-  "Apple Music catalogue · plays through your configured sources": "Apple Music-katalog · uppspelning via dina konfigurerade källor",
+  "Apple Music catalogue · plays through your configured sources":
+      "Apple Music-katalog · uppspelning via dina konfigurerade källor",
   "Could not search. Retry": "Sökningen misslyckades. Försök igen",
   "No albums found online.": "Inga album hittades online.",
   "No artists found online.": "Inga artister hittades online.",
   "See all albums": "Visa alla album",
   "See all artists": "Visa alla artister",
-  "No matching tracks found. Try refreshing the catalogue.": "Inga matchande låtar hittades. Försök uppdatera katalogen.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Inga matchande låtar hittades. Försök uppdatera katalogen.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
   "A light tap under your finger as you use Lokal.":
@@ -5203,6 +5508,7 @@ const Map<String, String> _uisv = {
   "“{arg0}” plays next": "\"{arg0}\" spelas härnäst",
 };
 const Map<String, String> _uizh = {
+  "Forget": "忘记",
   "Reverse song swipe actions": "反转歌曲滑动操作",
   "Swipe right to Play next, left to Add to queue.": "向右滑动可下一首播放，向左滑动可添加到队列。",
   "Swipe right to Add to queue, left to Play next.": "向右滑动可添加到队列，向左滑动可下一首播放。",
@@ -5214,9 +5520,11 @@ const Map<String, String> _uizh = {
   "Search genres...": "搜索音乐类型…",
   "No genres match your search.": "没有符合搜索条件的音乐类型。",
   "Full resolution tags in lists": "列表中显示完整音频规格",
-  "Show known audio resolution details instead of quality tiers in song lists. Keep the existing quality colors.": "在歌曲列表中以已知的音频规格替代质量等级，并保留现有的质量颜色。",
+  "Show known audio resolution details instead of quality tiers in song lists. Keep the existing quality colors.":
+      "在歌曲列表中以已知的音频规格替代质量等级，并保留现有的质量颜色。",
   "Full resolution tags in full player": "播放器中显示完整音频规格",
-  "Show the available codec, bit depth, sample rate or bitrate instead of the quality tier. Keep the player badge white.": "以可用的编解码器、位深、采样率或比特率替代质量等级，并保持播放器标签为白色。",
+  "Show the available codec, bit depth, sample rate or bitrate instead of the quality tier. Keep the player badge white.":
+      "以可用的编解码器、位深、采样率或比特率替代质量等级，并保持播放器标签为白色。",
   "Starting {source}…": "正在启动 {source}…",
   "Checking metadata on {source}…": "正在检查 {source} 的元数据…",
   "Verifying recording on {source}…": "正在验证 {source} 上的录音…",
@@ -5225,9 +5533,11 @@ const Map<String, String> _uizh = {
   "Audio output": "音频输出",
   "AirPlay, Bluetooth, volume and crossfeed": "AirPlay、蓝牙、音量和交叉馈送",
   "Advanced output": "高级输出",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain、交叉淡化、队列、均衡器和歌词",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain、交叉淡化、队列、均衡器和歌词",
   "Previous in queue": "队列中的前序曲目",
-  "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "扩展清单返回了 HTTP 404。请检查 manifest.json 链接是否有效且仍可访问。",
+  "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.":
+      "扩展清单返回了 HTTP 404。请检查 manifest.json 链接是否有效且仍可访问。",
   "The add-on manifest URL is invalid.": "扩展清单的网址无效。",
   "Invalid add-on manifest URL.": "扩展清单网址无效。",
   "Save original lyrics": "保存原始歌词",
@@ -5235,10 +5545,13 @@ const Map<String, String> _uizh = {
   "Includes the active translation or romanization.": "包含当前翻译或罗马字。",
   "Save lyrics to file (hold for options)": "将歌词保存到文件（长按查看选项）",
   "Refresh low-quality covers": "改善低画质封面",
-  "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "检查小于 640 像素的封面，仅在专辑完全匹配时替换。保留自定义封面。",
+  "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.":
+      "检查小于 640 像素的封面，仅在专辑完全匹配时替换。保留自定义封面。",
   "Repair only covers smaller than 640 px.": "仅改善小于 640 像素的封面。",
-  "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal 仅在专辑名称和专辑艺人完全匹配时查找更大的封面。手动选择的封面和无法确定的匹配项保持不变。更新仅应用于资料库中可写入的音乐文件。",
-  "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "已检查 {checked} / {total} · 已改善 {updated} · 已跳过 {skipped} · 失败 {failed}",
+  "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.":
+      "Lokal 仅在专辑名称和专辑艺人完全匹配时查找更大的封面。手动选择的封面和无法确定的匹配项保持不变。更新仅应用于资料库中可写入的音乐文件。",
+  "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed":
+      "已检查 {checked} / {total} · 已改善 {updated} · 已跳过 {skipped} · 失败 {failed}",
   "Stopping after the current operation…": "将在当前操作完成后停止…",
   "Checking your library…": "正在检查资料库…",
   "Stopped": "已停止",
@@ -5292,12 +5605,15 @@ const Map<String, String> _uizh = {
   "Connecting to Spotify…": "正在连接 Spotify…",
   "Reading Spotify favorites… {count} artists": "正在读取 Spotify 收藏… {count} 位艺人",
   "No followed artists found on Spotify.": "未在 Spotify 找到已关注的艺人。",
-  "Imported {added} new favorites ({received} found on Spotify).": "已导入 {added} 个新收藏（在 Spotify 找到 {received} 个）。",
-  "Could not import Spotify artists. Check your connection and retry.": "无法导入 Spotify 艺人。请检查连接后重试。",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "已导入 {added} 个新收藏（在 Spotify 找到 {received} 个）。",
+  "Could not import Spotify artists. Check your connection and retry.":
+      "无法导入 Spotify 艺人。请检查连接后重试。",
   "Importing Spotify artists…": "正在导入 Spotify 艺人…",
   "Import favorites from Spotify": "从 Spotify 导入收藏",
   "Search artists": "搜索艺人",
-  "Artists come from your library or Spotify favorites.": "艺人来自音乐库或 Spotify 收藏。",
+  "Artists come from your library or Spotify favorites.":
+      "艺人来自音乐库或 Spotify 收藏。",
   "Follow an artist or import your Spotify favorites.": "关注艺人或导入 Spotify 收藏。",
   "No non-favorite artists in your library.": "音乐库中没有未收藏的艺人。",
   "Search and stream FLAC from Monochrome.": "从 Monochrome 搜索并串流播放 FLAC。",
@@ -5317,7 +5633,8 @@ const Map<String, String> _uizh = {
   "Automatic": "自动",
   "Local file": "本地文件",
   "Refresh search": "重新搜索",
-  "Search this source again; keep existing lyrics on a miss.": "重新搜索此来源；没有结果时保留现有歌词。",
+  "Search this source again; keep existing lyrics on a miss.":
+      "重新搜索此来源；没有结果时保留现有歌词。",
   "Use your priority order and keep the best timing": "按优先顺序查找并保留最佳时间信息",
   "Copied, sidecar or embedded lyrics": "复制的歌词、独立歌词文件或内嵌歌词",
   "Line-synced and plain lyrics": "逐行同步歌词和纯文本歌词",
@@ -5331,7 +5648,8 @@ const Map<String, String> _uizh = {
   "Video": "视频",
   "Home": "首页",
   "Video quality": "视频画质",
-  "Maximum resolution for music videos. Higher quality uses more data; the nearest available stream is selected.": "音乐视频的最高分辨率。更高画质会消耗更多流量，播放时会选择不超过该上限的最佳可用清晰度。",
+  "Maximum resolution for music videos. Higher quality uses more data; the nearest available stream is selected.":
+      "音乐视频的最高分辨率。更高画质会消耗更多流量，播放时会选择不超过该上限的最佳可用清晰度。",
   "Auto (best available)": "自动（最佳可用画质）",
   "All sources": "所有来源",
   "Online": "在线",
@@ -5342,13 +5660,15 @@ const Map<String, String> _uizh = {
   "Try another keyword or choose All result types": "请尝试其他关键词或选择全部类型",
   "Online albums": "在线专辑",
   "Online artists": "在线艺人",
-  "Apple Music catalogue · plays through your configured sources": "Apple Music 曲库 · 通过已配置的来源播放",
+  "Apple Music catalogue · plays through your configured sources":
+      "Apple Music 曲库 · 通过已配置的来源播放",
   "Could not search. Retry": "无法搜索。重试",
   "No albums found online.": "未找到在线专辑。",
   "No artists found online.": "未找到在线艺人。",
   "See all albums": "查看所有专辑",
   "See all artists": "查看所有艺人",
-  "No matching tracks found. Try refreshing the catalogue.": "未找到匹配的歌曲。请尝试刷新曲库。",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "未找到匹配的歌曲。请尝试刷新曲库。",
   "120 Hz": "120赫兹",
   "60 Hz": "60赫兹",
   "A light tap under your finger as you use Lokal.": "使用 Lokal 时，用手指轻轻敲击即可。",
@@ -5431,7 +5751,8 @@ const Map<String, String> _uizh = {
   "Connect Your Music Accounts": "连接您的音乐帐户",
   "Connect your Spotify session to enable personal shelves.":
       "连接您的 Spotify 会话以启用个人书架。",
-  "Connect your account to see your mixes and personalized picks.": "连接账号，查看你的混音和个性化推荐。",
+  "Connect your account to see your mixes and personalized picks.":
+      "连接账号，查看你的混音和个性化推荐。",
   "Connect your account to see your mixes, Likes, history and personalized picks.":
       "连接您的帐户以查看您的混音、喜欢、历史记录和个性化精选。",
   "Connected": "已连接",
@@ -5857,12 +6178,16 @@ const Map<String, String> _uizh = {
   "“{arg0}” plays next": "接下来播放“{arg0}”",
 };
 const Map<String, String> _uitr = {
+  "Forget": "Unut",
   "Reverse song swipe actions": "Şarkı kaydırma işlemlerini ters çevir",
-  "Swipe right to Play next, left to Add to queue.": "Sırada çalmak için sağa, kuyruğa eklemek için sola kaydırın.",
-  "Swipe right to Add to queue, left to Play next.": "Kuyruğa eklemek için sağa, sırada çalmak için sola kaydırın.",
+  "Swipe right to Play next, left to Add to queue.":
+      "Sırada çalmak için sağa, kuyruğa eklemek için sola kaydırın.",
+  "Swipe right to Add to queue, left to Play next.":
+      "Kuyruğa eklemek için sağa, sırada çalmak için sola kaydırın.",
   "Couldn’t play this song next.": "Bu şarkı sırada çalınamadı.",
   "Matching recording on {source}…": "{source} üzerinde kayıt eşleştiriliyor…",
-  "Checking matched recording on {source}…": "{source} üzerinde eşleşen kayıt denetleniyor…",
+  "Checking matched recording on {source}…":
+      "{source} üzerinde eşleşen kayıt denetleniyor…",
   "Fetching audio from {source}…": "{source} üzerinden ses alınıyor…",
   "No genre": "Tür yok",
   "Search genres...": "Tür ara…",
@@ -5872,31 +6197,40 @@ const Map<String, String> _uitr = {
   "Full resolution tags in full player": "Oynatıcıda ses çözünürlüğü",
   "Show the available codec, bit depth, sample rate or bitrate instead of the quality tier. Keep the player badge white.": "Kalite düzeyi yerine mevcut codec, bit derinliği, örnekleme hızı veya bit hızını göster. Oynatıcı etiketini beyaz tut.",
   "Starting {source}…": "{source} başlatılıyor…",
-  "Checking metadata on {source}…": "{source} üzerindeki meta veriler denetleniyor…",
+  "Checking metadata on {source}…":
+      "{source} üzerindeki meta veriler denetleniyor…",
   "Verifying recording on {source}…": "{source} üzerindeki kayıt doğrulanıyor…",
   "Resolving audio from {source}…": "{source} üzerinden ses çözümleniyor…",
   "Preparing {source}…": "{source} hazırlanıyor…",
   "Audio output": "Ses çıkışı",
-  "AirPlay, Bluetooth, volume and crossfeed": "AirPlay, Bluetooth, ses düzeyi ve çapraz besleme",
+  "AirPlay, Bluetooth, volume and crossfeed":
+      "AirPlay, Bluetooth, ses düzeyi ve çapraz besleme",
   "Advanced output": "Gelişmiş çıkış",
-  "ReplayGain, crossfade, queue, equalizer and lyrics": "ReplayGain, çapraz geçiş, sıra, ekolayzer ve şarkı sözleri",
+  "ReplayGain, crossfade, queue, equalizer and lyrics":
+      "ReplayGain, çapraz geçiş, sıra, ekolayzer ve şarkı sözleri",
   "Previous in queue": "Kuyruktaki önceki parçalar",
   "The add-on manifest returned HTTP 404. Check that the manifest.json link is valid and still accessible.": "Eklenti bildirimi HTTP 404 döndürdü. manifest.json bağlantısının geçerli ve hâlâ erişilebilir olduğunu kontrol edin.",
-  "The add-on manifest URL is invalid.": "Eklenti bildiriminin URL’si geçersiz.",
+  "The add-on manifest URL is invalid.":
+      "Eklenti bildiriminin URL’si geçersiz.",
   "Invalid add-on manifest URL.": "Geçersiz eklenti bildirimi URL’si.",
   "Save original lyrics": "Orijinal sözleri kaydet",
   "Save with selected translation": "Seçili çeviriyle kaydet",
-  "Includes the active translation or romanization.": "Etkin çeviriyi veya Latin harfleriyle yazımı içerir.",
-  "Save lyrics to file (hold for options)": "Sözleri dosyaya kaydet (seçenekler için basılı tut)",
+  "Includes the active translation or romanization.":
+      "Etkin çeviriyi veya Latin harfleriyle yazımı içerir.",
+  "Save lyrics to file (hold for options)":
+      "Sözleri dosyaya kaydet (seçenekler için basılı tut)",
   "Refresh low-quality covers": "Düşük kaliteli kapakları iyileştir",
   "Check covers smaller than 640 px and replace only exact album matches. Custom artwork is preserved.": "640 pikselden küçük kapakları denetle ve yalnızca albüm tam eşleştiğinde değiştir. Özel kapaklar korunur.",
-  "Repair only covers smaller than 640 px.": "Yalnızca 640 pikselden küçük kapakları iyileştir.",
+  "Repair only covers smaller than 640 px.":
+      "Yalnızca 640 pikselden küçük kapakları iyileştir.",
   "Lokal looks for larger covers only when the album title and album artist match exactly. Manually chosen covers and uncertain matches stay unchanged. Updates apply to writable music files in your library.": "Lokal, yalnızca albüm adı ve albüm sanatçısı tam eşleştiğinde daha büyük kapaklar arar. Elle seçilen kapaklar ve belirsiz eşleşmeler değiştirilmez. Güncellemeler arşivinizdeki yazılabilir müzik dosyalarına uygulanır.",
   "{checked} / {total} checked · {updated} upgraded · {skipped} skipped · {failed} failed": "{checked} / {total} denetlendi · {updated} iyileştirildi · {skipped} atlandı · {failed} başarısız",
-  "Stopping after the current operation…": "Geçerli işlemden sonra durdurulacak…",
+  "Stopping after the current operation…":
+      "Geçerli işlemden sonra durdurulacak…",
   "Checking your library…": "Arşiviniz denetleniyor…",
   "Stopped": "Durduruldu",
-  "Could not refresh covers. Check access and try again.": "Kapaklar güncellenemedi. Erişimi denetleyip yeniden deneyin.",
+  "Could not refresh covers. Check access and try again.":
+      "Kapaklar güncellenemedi. Erişimi denetleyip yeniden deneyin.",
   "Stopping…": "Durduruluyor…",
   "Stop refresh": "Yenilemeyi durdur",
   "Hold to reorder": "Sıralamak için basılı tut",
@@ -5911,28 +6245,34 @@ const Map<String, String> _uitr = {
   "Sad": "Hüzün",
   "Focus": "Odak",
   "Party": "Parti",
-  "Could not reorder queue. Try again.": "Kuyruk yeniden sıralanamadı. Tekrar deneyin.",
-  "Choose sections to show and drag to reorder.": "Gösterilecek bölümleri seçin ve sıralamak için sürükleyin.",
+  "Could not reorder queue. Try again.":
+      "Kuyruk yeniden sıralanamadı. Tekrar deneyin.",
+  "Choose sections to show and drag to reorder.":
+      "Gösterilecek bölümleri seçin ve sıralamak için sürükleyin.",
   "From the community": "Topluluktan",
   "New releases": "Yeni çıkanlar",
   "Trending songs for you": "Senin için popüler şarkılar",
   "Featured playlists for you": "Senin için öne çıkan çalma listeleri",
   "Your daily discover": "Günlük keşfin",
-  "Could not save Discovery layout. Try again.": "Keşfet düzeni kaydedilemedi. Tekrar deneyin.",
+  "Could not save Discovery layout. Try again.":
+      "Keşfet düzeni kaydedilemedi. Tekrar deneyin.",
   "Customize {arg0}": "{arg0} özelleştir",
   "SoundCloud (preview)": "SoundCloud (önizleme)",
   "Eco Data Mode": "Veri tasarrufu modu",
   "Mobile data": "Mobil veri",
-  "Search and stream audio from SoundCloud.": "SoundCloud’dan ses ara ve dinle.",
+  "Search and stream audio from SoundCloud.":
+      "SoundCloud’dan ses ara ve dinle.",
   "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Uses your normal order on Wi-Fi and for manually selected sources.": "Mobil veride kayıpsız kaynaklardan önce etkin YouTube Music ve SoundCloud kaynaklarını dene. Wi-Fi’da ve elle seçilen kaynaklarda normal sıralamanı kullan.",
-  "Could not save data settings. Try again.": "Veri ayarları kaydedilemedi. Yeniden deneyin.",
+  "Could not save data settings. Try again.":
+      "Veri ayarları kaydedilemedi. Yeniden deneyin.",
   "Connecting to SoundCloud…": "SoundCloud’a bağlanılıyor…",
   "Downloading from SoundCloud…": "SoundCloud’dan indiriliyor…",
   "Buffering from SoundCloud…": "SoundCloud’dan arabelleğe alınıyor…",
   "Connecting to Monochrome…": "Monochrome’a bağlanılıyor…",
   "Downloading from Monochrome…": "Monochrome’dan indiriliyor…",
   "Buffering from Monochrome…": "Monochrome’dan arabelleğe alınıyor…",
-  "Downloading from Monochrome… {progress}%": "Monochrome’dan indiriliyor… %{progress}",
+  "Downloading from Monochrome… {progress}%":
+      "Monochrome’dan indiriliyor… %{progress}",
   "Save lyrics to file": "Şarkı sözlerini dosyaya kaydet",
   "Could not save lyrics to file.": "Şarkı sözleri dosyaya kaydedilemedi.",
   "All": "Tümü",
@@ -5944,22 +6284,33 @@ const Map<String, String> _uitr = {
   "Could not save artist favorite.": "Sanatçı favorisi kaydedilemedi.",
   "Could not load favorite artists.": "Favori sanatçılar yüklenemedi.",
   "Connecting to Spotify…": "Spotify’a bağlanılıyor…",
-  "Reading Spotify favorites… {count} artists": "Spotify favorileri okunuyor… {count} sanatçı",
-  "No followed artists found on Spotify.": "Spotify’da takip edilen sanatçı bulunamadı.",
-  "Imported {added} new favorites ({received} found on Spotify).": "{added} yeni favori aktarıldı (Spotify’da {received} bulundu).",
-  "Could not import Spotify artists. Check your connection and retry.": "Spotify sanatçıları aktarılamadı. Bağlantını kontrol edip tekrar dene.",
+  "Reading Spotify favorites… {count} artists":
+      "Spotify favorileri okunuyor… {count} sanatçı",
+  "No followed artists found on Spotify.":
+      "Spotify’da takip edilen sanatçı bulunamadı.",
+  "Imported {added} new favorites ({received} found on Spotify).":
+      "{added} yeni favori aktarıldı (Spotify’da {received} bulundu).",
+  "Could not import Spotify artists. Check your connection and retry.":
+      "Spotify sanatçıları aktarılamadı. Bağlantını kontrol edip tekrar dene.",
   "Importing Spotify artists…": "Spotify sanatçıları aktarılıyor…",
   "Import favorites from Spotify": "Spotify’dan favorileri aktar",
   "Search artists": "Sanatçı ara",
-  "Artists come from your library or Spotify favorites.": "Sanatçılar kitaplığından veya Spotify favorilerinden gelir.",
-  "Follow an artist or import your Spotify favorites.": "Bir sanatçıyı takip et veya Spotify favorilerini aktar.",
-  "No non-favorite artists in your library.": "Kitaplığında favori olmayan sanatçı yok.",
-  "Search and stream FLAC from Monochrome.": "Monochrome’dan FLAC ara ve dinle.",
-  "Could not save source settings. Try again.": "Kaynak ayarları kaydedilemedi. Tekrar dene.",
+  "Artists come from your library or Spotify favorites.":
+      "Sanatçılar kitaplığından veya Spotify favorilerinden gelir.",
+  "Follow an artist or import your Spotify favorites.":
+      "Bir sanatçıyı takip et veya Spotify favorilerini aktar.",
+  "No non-favorite artists in your library.":
+      "Kitaplığında favori olmayan sanatçı yok.",
+  "Search and stream FLAC from Monochrome.":
+      "Monochrome’dan FLAC ara ve dinle.",
+  "Could not save source settings. Try again.":
+      "Kaynak ayarları kaydedilemedi. Tekrar dene.",
   "Audio is temporarily unavailable.": "Ses geçici olarak kullanılamıyor.",
   "Restoring audio…": "Ses geri yükleniyor…",
-  "Audio is ready. Use Play to continue.": "Ses hazır. Devam etmek için Oynat’a dokunun.",
-  "Close and reopen the app to restore audio.": "Sesi geri yüklemek için uygulamayı kapatıp yeniden açın.",
+  "Audio is ready. Use Play to continue.":
+      "Ses hazır. Devam etmek için Oynat’a dokunun.",
+  "Close and reopen the app to restore audio.":
+      "Sesi geri yüklemek için uygulamayı kapatıp yeniden açın.",
   "Found": "Bulundu",
   "Checking…": "Kontrol ediliyor…",
   "No result": "Sonuç yok",
@@ -5971,14 +6322,18 @@ const Map<String, String> _uitr = {
   "Automatic": "Otomatik",
   "Local file": "Yerel dosya",
   "Refresh search": "Aramayı yenile",
-  "Search this source again; keep existing lyrics on a miss.": "Bu kaynakta tekrar ara; sonuç yoksa mevcut sözleri koru.",
-  "Use your priority order and keep the best timing": "Öncelik sıranı kullan ve en iyi zamanlamayı koru",
-  "Copied, sidecar or embedded lyrics": "Kopyalanmış, eşlik eden dosyadan veya gömülü sözler",
+  "Search this source again; keep existing lyrics on a miss.":
+      "Bu kaynakta tekrar ara; sonuç yoksa mevcut sözleri koru.",
+  "Use your priority order and keep the best timing":
+      "Öncelik sıranı kullan ve en iyi zamanlamayı koru",
+  "Copied, sidecar or embedded lyrics":
+      "Kopyalanmış, eşlik eden dosyadan veya gömülü sözler",
   "Line-synced and plain lyrics": "Satır eşzamanlı ve düz metin sözler",
   "Plain lyrics": "Düz metin sözler",
   "Supports syllable / word timing": "Hece veya kelime zamanlamasını destekler",
   "Add a music folder": "Müzik klasörü ekle",
-  "Adjust video quality in the YouTube player.": "Video kalitesi YouTube oynatıcısında ayarlanır.",
+  "Adjust video quality in the YouTube player.":
+      "Video kalitesi YouTube oynatıcısında ayarlanır.",
   "Exit Space": "Space’ten çık",
   "Use device volume buttons": "Cihazın ses düğmelerini kullanın",
   "Waiting for video timing": "Video zamanlaması bekleniyor",
@@ -5990,22 +6345,27 @@ const Map<String, String> _uitr = {
   "All sources": "Tüm kaynaklar",
   "Online": "Çevrimiçi",
   "Artist": "Sanatçı",
-  "Search online catalogues and playback sources": "Çevrimiçi kataloglarda ve oynatma kaynaklarında ara",
+  "Search online catalogues and playback sources":
+      "Çevrimiçi kataloglarda ve oynatma kaynaklarında ara",
   "This category searches your library": "Bu kategori kitaplığında arama yapar",
   "Choose one result type, or All": "Bir sonuç türü veya Tümü'nü seç",
-  "Try another keyword or choose All result types": "Başka bir anahtar sözcük dene veya tüm sonuç türlerini seç",
+  "Try another keyword or choose All result types":
+      "Başka bir anahtar sözcük dene veya tüm sonuç türlerini seç",
   "Online albums": "Çevrimiçi albümler",
   "Online artists": "Çevrimiçi sanatçılar",
-  "Apple Music catalogue · plays through your configured sources": "Apple Music kataloğu · yapılandırdığın kaynaklar üzerinden çalar",
+  "Apple Music catalogue · plays through your configured sources":
+      "Apple Music kataloğu · yapılandırdığın kaynaklar üzerinden çalar",
   "Could not search. Retry": "Arama yapılamadı. Yeniden dene.",
   "No albums found online.": "Çevrimiçi albüm bulunamadı.",
   "No artists found online.": "Çevrimiçi sanatçı bulunamadı.",
   "See all albums": "Tüm albümleri gör",
   "See all artists": "Tüm sanatçıları gör",
-  "No matching tracks found. Try refreshing the catalogue.": "Eşleşen parça bulunamadı. Kataloğu yenilemeyi dene.",
+  "No matching tracks found. Try refreshing the catalogue.":
+      "Eşleşen parça bulunamadı. Kataloğu yenilemeyi dene.",
   "120 Hz": "120 Hz",
   "60 Hz": "60 Hz",
-  "A light tap under your finger as you use Lokal.": "Lokal'i kullanırken parmağının altında hafif bir titreşim hissedersin.",
+  "A light tap under your finger as you use Lokal.":
+      "Lokal'i kullanırken parmağının altında hafif bir titreşim hissedersin.",
   "ACCENT": "VURGU RENGİ",
   "ADD": "EKLE",
   "About": "Hakkında",
@@ -6015,7 +6375,8 @@ const Map<String, String> _uitr = {
   "Adaptive": "Uyarlanabilir",
   "Adaptive lets the phone decide. 120 Hz is smoothest and uses more battery.": "Uyarlanabilir modda kararı telefon verir. 120 Hz en akıcı seçenektir, ancak daha fazla pil tüketir.",
   "Add": "Ekle",
-  "Add HTTPS music catalogues using their manifest.json link.": "manifest.json bağlantılarıyla HTTPS müzik katalogları ekle.",
+  "Add HTTPS music catalogues using their manifest.json link.":
+      "manifest.json bağlantılarıyla HTTPS müzik katalogları ekle.",
   "Add a music folder to start your collection. Your albums, favorites, and listening history will live here.": "Koleksiyonunu oluşturmaya başlamak için bir müzik klasörü ekle. Albümlerin, favorilerin ve dinleme geçmişin burada olacak.",
   "Add another folder": "Başka klasör ekle",
   "Add folder": "Klasör ekle",
@@ -6023,11 +6384,13 @@ const Map<String, String> _uitr = {
   "Add songs from any song’s menu: More › Add to a playlist.": "Herhangi bir şarkının menüsünden Daha Fazla › Çalma Listesine Ekle seçeneğiyle şarkı ekle.",
   "Add to a playlist": "Çalma listesine ekle",
   "Add to queue": "Sıraya ekle",
-  "Add-ons, servers, Spotify and ListenBrainz": "Eklentiler, sunucular, Spotify ve ListenBrainz",
+  "Add-ons, servers, Spotify and ListenBrainz":
+      "Eklentiler, sunucular, Spotify ve ListenBrainz",
   "Added · scanning in the background": "Eklendi · arka planda taranıyor",
   "Added “{arg0}” to the queue": "“{arg0}” sıraya eklendi",
   "Album": "Albüm",
-  "Album covers kept on the phone so they open at once.": "Albüm kapakları anında açılabilsin diye telefonda saklanır.",
+  "Album covers kept on the phone so they open at once.":
+      "Albüm kapakları anında açılabilsin diye telefonda saklanır.",
   "Albums": "Albümler",
   "Albums For You": "Senin İçin Albümler",
   "Albums with an unknown artist or no cover, to fix.": "Sanatçısı bilinmeyen veya kapağı olmayan, düzeltilmesi gereken albümler.",
@@ -6044,8 +6407,10 @@ const Map<String, String> _uitr = {
   "Back": "Geri",
   "Background": "Arka plan",
   "Background playback anchor": "Arka plan oynatma bağlantısı",
-  "Bands, presets, AutoEQ headphone correction and effects.": "Bantlar, ön ayarlar, AutoEQ kulaklık düzeltmesi ve efektler.",
-  "Bigger or smaller text across Lokal.": "Lokal genelindeki yazıları büyüt veya küçült.",
+  "Bands, presets, AutoEQ headphone correction and effects.":
+      "Bantlar, ön ayarlar, AutoEQ kulaklık düzeltmesi ve efektler.",
+  "Bigger or smaller text across Lokal.":
+      "Lokal genelindeki yazıları büyüt veya küçült.",
   "Blend a little of each channel into the other, for easier listening on headphones.": "Kulaklıkla daha rahat dinlemek için iki kanalın sesini bir miktar birbirine karıştır.",
   "Bluetooth": "Bluetooth",
   "Building your Last.fm recommendations…": "Last.fm önerilerin hazırlanıyor…",
@@ -6057,9 +6422,11 @@ const Map<String, String> _uitr = {
   "Change artwork": "Kapak görselini değiştir",
   "Choose Folder": "Klasör seç",
   "Choose a folder": "Klasör seç",
-  "Choose a folder and let your collection take shape.": "Bir klasör seç ve koleksiyonunu oluşturmaya başla.",
+  "Choose a folder and let your collection take shape.":
+      "Bir klasör seç ve koleksiyonunu oluşturmaya başla.",
   "Choose a music folder": "Müzik klasörü seç",
-  "Choose which MilkDrop presets rotate in the visualizer.": "Görselleştiricide dönüşümlü kullanılacak MilkDrop ön ayarlarını seç.",
+  "Choose which MilkDrop presets rotate in the visualizer.":
+      "Görselleştiricide dönüşümlü kullanılacak MilkDrop ön ayarlarını seç.",
   "Clear": "Temizle",
   "Clear library": "Kitaplığı temizle",
   "Clear search": "Aramayı temizle",
@@ -6072,15 +6439,20 @@ const Map<String, String> _uitr = {
   "Connect Spotify": "Spotify'a bağlan",
   "Connect Spotify for Discovery": "Keşif için Spotify'a bağlan",
   "Connect Your Music Accounts": "Müzik hesaplarını bağla",
-  "Connect your Spotify session to enable personal shelves.": "Kişisel koleksiyonların için Spotify oturumunu bağla.",
-  "Connect your account to see your mixes and personalized picks.": "Mixlerini ve sana özel önerileri görmek için hesabını bağla.",
+  "Connect your Spotify session to enable personal shelves.":
+      "Kişisel koleksiyonların için Spotify oturumunu bağla.",
+  "Connect your account to see your mixes and personalized picks.":
+      "Mixlerini ve sana özel önerileri görmek için hesabını bağla.",
   "Connect your account to see your mixes, Likes, history and personalized picks.": "Karışımlarını, beğenilerini, geçmişini ve kişisel önerilerini görmek için hesabını bağla.",
   "Connected": "Bağlandı",
   "Continue": "Devam et",
   "Converted songs": "Dönüştürülen şarkılar",
-  "Could not load this YouTube Music mix. Refresh and try again.": "Bu YouTube Music karışımı yüklenemedi. Yenileyip tekrar dene.",
-  "Could not sign in to YouTube Music. Try again.": "YouTube Music oturumu açılamadı. Yeniden dene.",
-  "Couldn’t find {arg0} on YouTube Music or your add-ons.": "“{arg0}” YouTube Music'te veya eklentilerinde bulunamadı.",
+  "Could not load this YouTube Music mix. Refresh and try again.":
+      "Bu YouTube Music karışımı yüklenemedi. Yenileyip tekrar dene.",
+  "Could not sign in to YouTube Music. Try again.":
+      "YouTube Music oturumu açılamadı. Yeniden dene.",
+  "Couldn’t find {arg0} on YouTube Music or your add-ons.":
+      "“{arg0}” YouTube Music'te veya eklentilerinde bulunamadı.",
   "Couldn’t load these songs": "Bu şarkılar yüklenemedi",
   "Couldn’t load this shelf": "Bu koleksiyon yüklenemedi",
   "Couldn’t load your playlists": "Çalma listelerin yüklenemedi",
@@ -6105,7 +6477,8 @@ const Map<String, String> _uitr = {
   "Delete playlist": "Çalma listesini sil",
   "Delete “{arg0}”?": "“{arg0}” silinsin mi?",
   "Deleted “{arg0}”": "“{arg0}” silindi",
-  "Deletes the file too. This can’t be undone.": "Dosya da silinir. Bu işlem geri alınamaz.",
+  "Deletes the file too. This can’t be undone.":
+      "Dosya da silinir. Bu işlem geri alınamaz.",
   "Desktop Lokal’s ten themes.": "Masaüstü Lokal'in on teması.",
   "Desktop link": "Masaüstü bağlantısı",
   "Deutsch": "Deutsch",
@@ -6121,12 +6494,15 @@ const Map<String, String> _uitr = {
   "Edit info": "Bilgileri düzenle",
   "English": "English",
   "Equal power": "Eşit güç",
-  "Equal power fades evenly to the ear.": "Eşit güç eğrisi, kulağa daha dengeli gelen geçiş sağlar.",
+  "Equal power fades evenly to the ear.":
+      "Eşit güç eğrisi, kulağa daha dengeli gelen geçiş sağlar.",
   "Equalizer": "Ekolayzır",
   "Español": "Español",
   "Every control, explained.": "Tüm denetimlerin açıklamaları.",
-  "Every song is removed from Lokal. Files on your phone stay where they are.": "Her şarkı Lokal'den kaldırılır. Telefondaki dosyaların yerinde kalır.",
-  "Every song you’ve played, newest first.": "Çaldığın tüm şarkılar, en yeniden eskiye.",
+  "Every song is removed from Lokal. Files on your phone stay where they are.":
+      "Her şarkı Lokal'den kaldırılır. Telefondaki dosyaların yerinde kalır.",
+  "Every song you’ve played, newest first.":
+      "Çaldığın tüm şarkılar, en yeniden eskiye.",
   "Explore": "Keşfet",
   "Export as M3U8": "M3U8 olarak dışa aktar",
   "Extended volume": "Genişletilmiş ses düzeyi",
@@ -6134,7 +6510,8 @@ const Map<String, String> _uitr = {
   "Fade curve": "Geçiş eğrisi",
   "Fetch lyrics automatically": "Şarkı sözlerini otomatik getir",
   "Fill the square with covers that aren’t square. Off crops them instead.": "Kare olmayan kapakları kareye sığdırmak için genişlet. Kapalıysa görseller kırpılır.",
-  "Find DLNA, UPnP and Chromecast receivers on your network.": "Ağındaki DLNA, UPnP ve Chromecast alıcılarını bul.",
+  "Find DLNA, UPnP and Chromecast receivers on your network.":
+      "Ağındaki DLNA, UPnP ve Chromecast alıcılarını bul.",
   "Find duplicates": "Yinelenenleri bul",
   "Find matching library entries by title and artist. Removing one only removes its Lokal entry; your files stay untouched.": "Başlık ve sanatçıya göre kitaplıkta eşleşenleri bul. Birini kaldırdığında yalnızca Lokal kaydı silinir; dosyalarına dokunulmaz.",
   "Folders": "Klasörler",
@@ -6154,8 +6531,10 @@ const Map<String, String> _uitr = {
   "Help": "Yardım",
   "Help keep bit-perfect audio alive in the background. Some phones and routes may still stop it.": "Bit-perfect sesin arka planda devam etmesine yardımcı olur. Bazı telefonlar ve çıkış yolları yine de durdurabilir.",
   "Home-screen widget": "Ana ekran widget'ı",
-  "How Lokal plays, looks and connects.": "Lokal'in oynatma, görünüm ve bağlantı ayarları.",
-  "How long the two songs overlap.": "İki şarkının ne kadar süre üst üste çalacağı.",
+  "How Lokal plays, looks and connects.":
+      "Lokal'in oynatma, görünüm ve bağlantı ayarları.",
+  "How long the two songs overlap.":
+      "İki şarkının ne kadar süre üst üste çalacağı.",
   "Identify album": "Albümü tanı",
   "Import M3U": "M3U içe aktar",
   "In the classic player, light up each word as it’s sung when the lyrics have word timing.": "Klasik oynatıcıda, sözcük zamanlaması varsa söylenen her sözcüğü vurgula.",
@@ -6170,7 +6549,8 @@ const Map<String, String> _uitr = {
   "Leave out unsupported files and folders marked hidden or .nomedia.": "Desteklenmeyen dosyaları ve gizli veya .nomedia olarak işaretlenmiş klasörleri atla.",
   "Left": "Sol",
   "Legal": "Yasal bilgiler",
-  "Let the volume go past 100 %, up to 200 %.": "Ses düzeyini %100'ün üzerine, %200'e kadar çıkar.",
+  "Let the volume go past 100 %, up to 200 %.":
+      "Ses düzeyini %100'ün üzerine, %200'e kadar çıkar.",
   "Library": "Kitaplık",
   "Library settings": "Kitaplık ayarları",
   "Licences": "Lisanslar",
@@ -6181,13 +6561,15 @@ const Map<String, String> _uitr = {
   "Linked playlists": "Bağlantılı çalma listeleri",
   "Listen": "Dinle",
   "ListenBrainz": "ListenBrainz",
-  "Loading your YouTube Music shelves…": "YouTube Music koleksiyonların yükleniyor…",
+  "Loading your YouTube Music shelves…":
+      "YouTube Music koleksiyonların yükleniyor…",
   "Loading {arg0}": "{arg0} yükleniyor",
   "Lokal": "Lokal",
   "Lokal is not a streaming service: it plays music you own. You can add folders later from Library or Settings › Library.": "Lokal bir akış hizmeti değildir; sahip olduğun müziği çalar. Daha sonra Kitaplık veya Ayarlar › Kitaplık bölümünden klasör ekleyebilirsin.",
   "Lokal may ask to show playback controls in your notifications.": "Lokal, bildirimlerinde oynatma denetimleri göstermek için izin isteyebilir.",
   "Lokal {arg0}": "Lokal {arg0}",
-  "Lokal’s logs, to attach to a bug report.": "Hata bildirimi için ekleyebileceğin Lokal günlükleri.",
+  "Lokal’s logs, to attach to a bug report.":
+      "Hata bildirimi için ekleyebileceğin Lokal günlükleri.",
   "Look up missing info": "Eksik bilgileri ara",
   "Lyrics": "Şarkı sözleri",
   "Lyrics Lokal saves take the song’s file name instead of its title.": "Lokal'in kaydettiği şarkı sözü dosyaları, şarkı adını değil dosya adını kullanır.",
@@ -6208,27 +6590,33 @@ const Map<String, String> _uitr = {
   "Mixed for you": "Senin için karışım",
   "More": "Daha fazla",
   "More by {arg0}": "{arg0} sanatçısından daha fazlası",
-  "More from your YouTube Music home page.": "YouTube Music ana sayfandan daha fazla müzik.",
+  "More from your YouTube Music home page.":
+      "YouTube Music ana sayfandan daha fazla müzik.",
   "More music from Last.fm.": "Last.fm'den daha fazla müzik.",
   "Moving covers": "Hareketli kapaklar",
   "Moving covers in bit-perfect": "Bit-perfect modunda hareketli kapaklar",
-  "Name lyrics after the song file": "Şarkı sözlerini müzik dosyasının adına göre adlandır",
+  "Name lyrics after the song file":
+      "Şarkı sözlerini müzik dosyasının adına göre adlandır",
   "Nederlands": "Nederlands",
   "Network servers": "Ağ sunucuları",
   "New playlist": "Yeni çalma listesi",
   "New playlist…": "Yeni çalma listesi…",
-  "New tracks around your Spotify taste.": "Spotify zevkine uygun yeni parçalar.",
-  "New versions are published on GitHub.": "Yeni sürümler GitHub'da yayımlanır.",
+  "New tracks around your Spotify taste.":
+      "Spotify zevkine uygun yeni parçalar.",
+  "New versions are published on GitHub.":
+      "Yeni sürümler GitHub'da yayımlanır.",
   "Next track": "Sonraki parça",
   "No Last.fm recommendations are available yet. Scrobble a few songs, then refresh.": "Henüz Last.fm önerisi yok. Birkaç şarkı dinleyip scrobble et, ardından yenile.",
-  "No YouTube Music recommendations were returned. Refresh to retry.": "YouTube Music önerileri alınamadı. Tekrar denemek için yenile.",
+  "No YouTube Music recommendations were returned. Refresh to retry.":
+      "YouTube Music önerileri alınamadı. Tekrar denemek için yenile.",
   "No badges yet": "Henüz rozet yok",
   "No genres yet": "Henüz tür yok",
   "No licences found.": "Lisans bulunamadı.",
   "No results": "Sonuç yok",
   "No settings match your search.": "Aramanla eşleşen ayar yok.",
   "No songs yet": "Henüz şarkı yok",
-  "No tracks from this mix could be prepared.": "Bu karışımdan çalınabilir parça hazırlanamadı.",
+  "No tracks from this mix could be prepared.":
+      "Bu karışımdan çalınabilir parça hazırlanamadı.",
   "Not available in bit-perfect mode.": "Bit-perfect modunda kullanılamaz.",
   "Not enough similar songs for a radio yet. Radio uses your library’s artists, genres and years.": "Radyo oluşturmak için henüz yeterli benzer şarkı yok. Radyo, kitaplığındaki sanatçı, tür ve yılları kullanır.",
   "Not now": "Şimdi değil",
@@ -6264,12 +6652,15 @@ const Map<String, String> _uitr = {
   "Peak hour": "En yoğun saat",
   "Peak tags limit boosts so loud songs don’t distort.": "Tepe seviyesi etiketleri, yüksek sesli şarkılarda bozulmayı önlemek için artışı sınırlar.",
   "Performance mode": "Performans modu",
-  "Personalized recommendations from your selected provider.": "Seçtiğin sağlayıcıdan kişiselleştirilmiş öneriler.",
+  "Personalized recommendations from your selected provider.":
+      "Seçtiğin sağlayıcıdan kişiselleştirilmiş öneriler.",
   "Phone": "Telefon",
-  "Pick a folder on your phone; Lokal scans it straight away.": "Telefonundan klasör seç; Lokal hemen tarar.",
+  "Pick a folder on your phone; Lokal scans it straight away.":
+      "Telefonundan klasör seç; Lokal hemen tarar.",
   "Pick your look": "Görünümünü seç",
   "Play": "Oynat",
-  "Play an album’s animated cover in the classic player, when there is one.": "Kullanılabiliyorsa klasik oynatıcıda hareketli albüm kapağını oynat.",
+  "Play an album’s animated cover in the classic player, when there is one.":
+      "Kullanılabiliyorsa klasik oynatıcıda hareketli albüm kapağını oynat.",
   "Play mix ": "Karışımı çal ",
   "Play moving covers during bit-perfect output. Off: a still cover instead.": "Bit-perfect çıkış sırasında hareketli kapakları oynat. Kapalıysa sabit kapak gösterilir.",
   "Play next": "Sıradaki çal",
@@ -6281,7 +6672,8 @@ const Map<String, String> _uitr = {
   "Play {arg0}, {arg1} songs": "{arg0} çal, {arg1} şarkı",
   "Playable copies of songs the phone can’t play as they are, like Apple Lossless.": "Telefonun özgün biçimiyle çalamadığı şarkıların oynatılabilir kopyaları (ör. Apple Lossless).",
   "Playback": "Oynatma",
-  "Playback couldn’t be changed. Please try again.": "Oynatma değiştirilemedi. Yeniden dene.",
+  "Playback couldn’t be changed. Please try again.":
+      "Oynatma değiştirilemedi. Yeniden dene.",
   "Playback needs to be synchronized": "Oynatmanın eşitlenmesi gerekiyor",
   "Playlist": "Çalma listesi",
   "Playlist name": "Çalma listesi adı",
@@ -6295,7 +6687,8 @@ const Map<String, String> _uitr = {
   "Privacy": "Gizlilik",
   "Queue": "Sıra",
   "Radio": "Radyo",
-  "Raise or lower every song by this much.": "Tüm şarkıların ses düzeyini bu miktarda artır veya azalt.",
+  "Raise or lower every song by this much.":
+      "Tüm şarkıların ses düzeyini bu miktarda artır veya azalt.",
   "Read folders directly instead of asking Android’s media index, to find everything.": "Tüm dosyaları bulmak için Android'in medya dizini yerine klasörleri doğrudan oku.",
   "Recap": "Yıl özeti",
   "Recently added": "Son eklenenler",
@@ -6305,7 +6698,8 @@ const Map<String, String> _uitr = {
   "Remove every song from Lokal. Your music files aren’t touched; rescan to bring them back.": "Tüm şarkıları Lokal'den kaldır. Müzik dosyalarına dokunulmaz; yeniden tarayarak geri ekleyebilirsin.",
   "Remove from library": "Kitaplıktan kaldır",
   "Remove from playlist": "Çalma listesinden kaldır",
-  "Removed from your library, but couldn’t delete the file": "Kitaplıktan kaldırıldı, ancak dosya silinemedi",
+  "Removed from your library, but couldn’t delete the file":
+      "Kitaplıktan kaldırıldı, ancak dosya silinemedi",
   "Removed “{arg0}” from your library": "“{arg0}” kitaplığından kaldırıldı",
   "Rename": "Yeniden adlandır",
   "Rename playlist": "Çalma listesini yeniden adlandır",
@@ -6319,7 +6713,8 @@ const Map<String, String> _uitr = {
   "SPOTIFY": "SPOTIFY",
   "Save": "Kaydet",
   "Scanning": "Taranıyor",
-  "Scrobble what you play and power Discovery": "Dinlediklerini scrobble et ve Keşif'i kişiselleştir",
+  "Scrobble what you play and power Discovery":
+      "Dinlediklerini scrobble et ve Keşif'i kişiselleştir",
   "See all": "Tümünü gör",
   "See and remove your folders, rescan (quick, full or deep), full library access, ReplayGain and audio preparation.": "Klasörleri gör ve kaldır, hızlı/tam/derin tarama yap, kitaplığa tam erişimi, ReplayGain'i ve ses hazırlığını yönet.",
   "Select": "Seç",
@@ -6331,100 +6726,126 @@ const Map<String, String> _uitr = {
   "Show tabs. {arg0}": "Sekmeleri göster. {arg0}",
   "Shuffle": "Karıştır",
   "Sign in to YouTube Music": "YouTube Music'e giriş yap",
-  "Sign in to load your mixes, likes and history": "Karışımlarını, beğenilerini ve geçmişini yüklemek için oturum aç",
-  "Sign in, import playlists and sync Liked Songs.": "Oturum aç, çalma listelerini içe aktar ve beğenilen şarkıları eşitle.",
+  "Sign in to load your mixes, likes and history":
+      "Karışımlarını, beğenilerini ve geçmişini yüklemek için oturum aç",
+  "Sign in, import playlists and sync Liked Songs.":
+      "Oturum aç, çalma listelerini içe aktar ve beğenilen şarkıları eşitle.",
   "Signed in": "Oturum açıldı",
   "Skip Setup": "Kurulumu atla",
   "Skip for now": "Şimdilik atla",
   "Skip non-music files": "Müzik olmayan dosyaları atla",
   "Smart": "Akıllı",
-  "Solid surfaces instead of glass, for older phones": "Eski telefonlar için cam efekti yerine düz renkli yüzeyler",
-  "Solid surfaces instead of glass, for older phones.": "Eski telefonlar için cam efekti yerine düz renkli yüzeyler.",
+  "Solid surfaces instead of glass, for older phones":
+      "Eski telefonlar için cam efekti yerine düz renkli yüzeyler",
+  "Solid surfaces instead of glass, for older phones.":
+      "Eski telefonlar için cam efekti yerine düz renkli yüzeyler.",
   "Song info": "Şarkı bilgisi",
   "Song transitions": "Şarkı geçişleri",
   "Songs": "Şarkılar",
-  "Songs show up here once they’re in your library.": "Kitaplığına şarkı eklediğinde burada görünürler.",
+  "Songs show up here once they’re in your library.":
+      "Kitaplığına şarkı eklediğinde burada görünürler.",
   "Songs you liked on YouTube Music.": "YouTube Music'te beğendiğin şarkılar.",
   "Sort: {arg0}": "Sıralama: {arg0}",
   "Spotify": "Spotify",
   "Spotify Discovery is off": "Spotify Keşif kapalı",
-  "Spotify connected, but Discovery settings could not be saved.": "Spotify'a bağlanıldı, ancak Keşif ayarları kaydedilemedi.",
+  "Spotify connected, but Discovery settings could not be saved.":
+      "Spotify'a bağlanıldı, ancak Keşif ayarları kaydedilemedi.",
   "Spotify could not verify that cookie. Check the sp_dc value and try again.": "Spotify bu çerezi doğrulayamadı. sp_dc değerini kontrol edip tekrar dene.",
-  "Spotify did not return any personal shelves yet. Refresh and try again.": "Spotify henüz kişisel koleksiyon döndürmedi. Yenileyip tekrar dene.",
+  "Spotify did not return any personal shelves yet. Refresh and try again.":
+      "Spotify henüz kişisel koleksiyon döndürmedi. Yenileyip tekrar dene.",
   "Spotify library": "Spotify kitaplığı",
   "Spotify sp_dc cookie": "Spotify sp_dc çerezi",
   "Square root": "Karekök",
   "Start Listening": "Dinlemeye başla",
   "Start artist radio": "Sanatçı radyosunu başlat",
   "Start radio": "Radyoyu başlat",
-  "Start the next song before the current one ends.": "Geçerli şarkı bitmeden sonraki şarkıyı başlat.",
+  "Start the next song before the current one ends.":
+      "Geçerli şarkı bitmeden sonraki şarkıyı başlat.",
   "Starting…": "Başlatılıyor…",
   "Station list": "Radyo istasyonları",
   "Stats": "İstatistikler",
   "Step {arg0} of {arg1}": "{arg1} adımın {arg0}. adımı",
   "Stretch non-square covers": "Kare olmayan kapakları genişlet",
-  "Subsonic, Jellyfin, WebDAV and other servers you run.": "Subsonic, Jellyfin, WebDAV ve kendi çalıştırdığın diğer sunucular.",
+  "Subsonic, Jellyfin, WebDAV and other servers you run.":
+      "Subsonic, Jellyfin, WebDAV ve kendi çalıştırdığın diğer sunucular.",
   "Svenska": "Svenska",
   "Sync": "Eşitle",
   "Sync server playlists": "Sunucu çalma listelerini eşitle",
   "THEME": "TEMA",
   "Text size": "Metin boyutu",
   "The file stays on your device.": "Dosya cihazında kalır.",
-  "The open-source software Lokal is built with.": "Lokal'in geliştirilmesinde kullanılan açık kaynak yazılımlar.",
-  "The phone’s language, or one Lokal is translated into.": "Telefonun dili veya Lokal'in desteklediği dillerden biri.",
-  "The project Lokal grew from. Its code keeps this notice.": "Lokal'in temel aldığı proje. Kodunda bu bildirim korunur.",
+  "The open-source software Lokal is built with.":
+      "Lokal'in geliştirilmesinde kullanılan açık kaynak yazılımlar.",
+  "The phone’s language, or one Lokal is translated into.":
+      "Telefonun dili veya Lokal'in desteklediği dillerden biri.",
+  "The project Lokal grew from. Its code keeps this notice.":
+      "Lokal'in temel aldığı proje. Kodunda bu bildirim korunur.",
   "The songs stay in your library.": "Şarkılar kitaplığında kalır.",
   "The theme’s own accent, or one of desktop’s. The app icon follows it.": "Temanın kendi vurgu rengini veya masaüstündekilerden birini kullan. Uygulama simgesi de onu izler.",
   "The version you’re running.": "Kullandığın sürüm.",
   "Theme": "Tema",
   "Theme accent": "Tema vurgu rengi",
-  "This mix did not return any playable tracks.": "Bu karışım çalınabilir bir parça döndürmedi.",
+  "This mix did not return any playable tracks.":
+      "Bu karışım çalınabilir bir parça döndürmedi.",
   "Top albums": "En çok dinlenen albümler",
   "Top artists": "En çok dinlenen sanatçılar",
   "Top songs": "En çok dinlenen şarkılar",
   "Track": "Parça",
-  "Tracks you scrobbled most often over the past week.": "Geçen hafta en sık scrobble ettiğin parçalar.",
+  "Tracks you scrobbled most often over the past week.":
+      "Geçen hafta en sık scrobble ettiğin parçalar.",
   "Try again in a moment.": "Birazdan yeniden dene.",
-  "Try again or manage your music folders.": "Tekrar dene veya müzik klasörlerini yönet.",
+  "Try again or manage your music folders.":
+      "Tekrar dene veya müzik klasörlerini yönet.",
   "USB DAC": "USB DAC",
   "Unlike": "Beğeniyi kaldır",
   "Unlike all": "Tüm beğenileri kaldır",
   "Updates": "Güncellemeler",
   "Use ReplayGain tags to bring songs closer in loudness. Songs without tags are unchanged.": "ReplayGain etiketlerini kullanarak şarkıların ses düzeylerini birbirine yaklaştır. Etiketi olmayan şarkılar değişmez.",
-  "Use an https link to a JSON file.": "JSON dosyasına giden bir HTTPS bağlantısı kullan.",
+  "Use an https link to a JSON file.":
+      "JSON dosyasına giden bir HTTPS bağlantısı kullan.",
   "Version": "Sürüm",
-  "Version, updates, licences and privacy.": "Sürüm, güncellemeler, lisanslar ve gizlilik.",
+  "Version, updates, licences and privacy.":
+      "Sürüm, güncellemeler, lisanslar ve gizlilik.",
   "Videos": "Videolar",
   "Volume": "Ses düzeyi",
   "Watch video": "Videoyu izle",
   "We couldn’t load your music. Try again, or check your music folders in Library.": "Müziğin yüklenemedi. Tekrar dene veya Kitaplık'tan müzik klasörlerini kontrol et.",
   "Welcome to Lokal": "Lokal'e hoş geldin",
-  "What Lokal keeps and what it sends.": "Lokal'in sakladığı ve gönderdiği veriler.",
+  "What Lokal keeps and what it sends.":
+      "Lokal'in sakladığı ve gönderdiği veriler.",
   "What changed in this version.": "Bu sürümde neler değişti?",
-  "What the widget on your home screen shows.": "Ana ekranındaki widget'ın gösterdiği içerik.",
+  "What the widget on your home screen shows.":
+      "Ana ekranındaki widget'ın gösterdiği içerik.",
   "What’s new": "Yenilikler",
-  "When the queue ends, keep playing songs from your library.": "Sıra bittiğinde kitaplığındaki şarkıları çalmaya devam et.",
-  "Where lyric lines sit in the classic player.": "Klasik oynatıcıda şarkı sözü satırlarının konumu.",
+  "When the queue ends, keep playing songs from your library.":
+      "Sıra bittiğinde kitaplığındaki şarkıları çalmaya devam et.",
+  "Where lyric lines sit in the classic player.":
+      "Klasik oynatıcıda şarkı sözü satırlarının konumu.",
   "Word-by-word sync": "Sözcük sözcük eşitleme",
   "YOUTUBE MUSIC": "YOUTUBE MUSIC",
   "You": "Sen",
-  "You can add it again by rescanning.": "Yeniden tarayarak tekrar ekleyebilirsin.",
-  "You can turn it off again in Settings › Online sources.": "Ayarlar › Çevrimiçi Kaynaklar bölümünden tekrar kapatabilirsin.",
+  "You can add it again by rescanning.":
+      "Yeniden tarayarak tekrar ekleyebilirsin.",
+  "You can turn it off again in Settings › Online sources.":
+      "Ayarlar › Çevrimiçi Kaynaklar bölümünden tekrar kapatabilirsin.",
   "YouTube Music": "YouTube Music",
   "Your Library": "Kitaplığın",
   "Your Mixes": "Karışımların",
   "Your YouTube Music listening history.": "YouTube Music dinleme geçmişin.",
   "Your YouTube Music radio mixes.": "YouTube Music radyo karışımların.",
-  "Your first one unlocks at 100 songs.": "İlki 100 şarkıya ulaştığında açılır.",
+  "Your first one unlocks at 100 songs.":
+      "İlki 100 şarkıya ulaştığında açılır.",
   "Your last 100 scrobbles, by day.": "Günlere göre son 100 scrobble kaydın.",
   "Your latest Spotify likes.": "Spotify'da son beğendiklerin.",
   "Your latest Spotify listening.": "Spotify'daki son dinlemelerin.",
   "Your library needs another look": "Kitaplığın yeniden gözden geçirilmeli",
   "Your mixes, likes and history": "Karışımların, beğenilerin ve geçmişin",
-  "Your music is still yours. Try loading this section again.": "Müziğin hâlâ burada. Bu bölümü yeniden yüklemeyi dene.",
+  "Your music is still yours. Try loading this section again.":
+      "Müziğin hâlâ burada. Bu bölümü yeniden yüklemeyi dene.",
   "Your short-term top tracks.": "Son dönemde en çok dinlediğin parçalar.",
   "Your top artists and songs show up here once you’ve played some music.": "Biraz müzik dinlediğinde en çok dinlediğin sanatçılar ve şarkılar burada görünür.",
-  "Your week, month and year in music. Tap one for the story.": "Müzikle geçen haftan, ayın ve yılın. Hikâyeyi görmek için birine dokun.",
+  "Your week, month and year in music. Tap one for the story.":
+      "Müzikle geçen haftan, ayın ve yılın. Hikâyeyi görmek için birine dokun.",
   "{arg0}": "{arg0}",
   "{arg0}\n{arg1}": "{arg0}\n{arg1}",
   "{arg0} Radio: {arg1}": "{arg0} radyosu: {arg1}",

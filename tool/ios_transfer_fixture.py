@@ -33,9 +33,14 @@ def serve_fixture():
     slow_upload_reply = threading.Event()
     slow_match_reply = threading.Event()
     storage_reply = threading.Event()
+    capability_reply = threading.Event()
     state = {'requests': {}, 'redirectHits': 0, 'cookiesSeen': False,
              'uploadRequests': {}, 'uploadHashes': {}, 'uploadMetadataValid': True, 'uploadLeakHits': 0,
              'matchRequests': 0, 'matchMode': 'positive', 'matchQueryValid': True, 'matchLeakHits': 0}
+
+    operations = {}
+    state['uploadCapabilityMode'] = 'supported'
+    state['uploadCapabilityRequests'] = 0
 
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
@@ -53,6 +58,43 @@ def serve_fixture():
                 self.wfile.write(body)
 
         def do_GET(self):
+            if self.path.startswith('/__upload_capability?'):
+                mode = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['mode'][0]
+                with lock:
+                    state['uploadCapabilityMode'] = mode
+                if mode == 'slow':
+                    capability_reply.clear()
+                self.respond(200)
+                return
+            if self.path == '/__release_capability':
+                capability_reply.set()
+                self.respond(200)
+                return
+            if self.path == '/api/remote/files/operations':
+                with lock:
+                    mode = state['uploadCapabilityMode']
+                    state['uploadCapabilityRequests'] += 1
+                if self.headers.get('x-remote-token') != 'transfer-fixture-token':
+                    self.respond(401)
+                elif mode == 'redirect':
+                    self.respond(302, b'{}', Location='/upload-leak', Content_Type='application/json')
+                else:
+                    if mode == 'slow':
+                        capability_reply.wait(timeout=10)
+                    result = {'protocolVersion': 2 if mode == 'future' else 1,
+                              'uploadOperations': 0 if mode == 'unsupported' else 1}
+                    try:
+                        self.respond(200, json.dumps(result).encode(), Content_Type='application/json')
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                return
+            if self.path.startswith('/api/remote/files/operations/'):
+                operation_id = self.path.rsplit('/', 1)[-1]
+                with lock:
+                    result = operations.get(operation_id)
+                result = result or {'protocolVersion': 1, 'operationID': operation_id, 'state': 'absent'}
+                self.respond(404 if result['state'] == 'absent' else 200, json.dumps(result).encode(), Content_Type='application/json')
+                return
             if self.path == '/__hold_storage':
                 storage_reply.clear()
                 self.respond(200)
@@ -201,6 +243,17 @@ def serve_fixture():
                 self.respond(400)
                 return
             actual = hashlib.sha256(body).hexdigest()
+            operation_receipt = None
+            if self.headers.get('x-link-upload-version') == '1' and self.headers.get('x-remote-token') == 'transfer-fixture-token':
+                operation_id = self.headers.get('x-link-upload-id')
+                fields = ''.join(str(len(metadata.get(key, '').encode())) + ':' + metadata.get(key, '')
+                                 for key in ['title', 'artist', 'album', 'extension', 'originalFilename'])
+                fingerprint = hashlib.sha256(('lokal.upload.v1\n' + str(size) + '\n' + actual + '\n' + fields).encode()).hexdigest()
+                operation_receipt = dict(protocolVersion=1, operationID=operation_id, state='committed', bytes=size,
+                                         sha256=actual, fingerprint=fingerprint, available=True,
+                                         trackId='desktop-' + mode, file_hash=actual)
+                with lock:
+                    operations[operation_id] = operation_receipt
             with lock:
                 state['uploadRequests'][mode] = state['uploadRequests'].get(mode, 0) + 1
                 state['uploadHashes'][mode] = actual
@@ -244,6 +297,8 @@ def serve_fixture():
                         receipt['alreadyPresent'] = True
                     else:
                         receipt['file_hash'] = '0' * 64 if mode == 'upload-bad-hash' else actual
+                    if operation_receipt is not None:
+                        receipt.update(operation_receipt)
                     self.respond(200, json.dumps(receipt).encode(), Content_Type='application/json',
                                  Set_Cookie='upload_fixture_cookie=unexpected; Path=/')
             except (BrokenPipeError, ConnectionResetError):
@@ -258,6 +313,7 @@ def serve_fixture():
         slow_upload_reply.set()
         slow_match_reply.set()
         storage_reply.set()
+        capability_reply.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)

@@ -29,6 +29,22 @@ void main() {
       );
     }
   });
+  test('lead artist lookup preserves compound names and removes collaborators', () {
+    expect(primaryArtistCredit('M83, ZHU'), 'M83');
+    expect(primaryArtistCredit('Asake feat. Wizkid'), 'Asake');
+    expect(primaryArtistCredit('Davido; Omah Lay'), 'Davido');
+    expect(
+      primaryArtistCredit('Tyler, the Creator & Kali Uchis'),
+      'Tyler, the Creator',
+    );
+    expect(
+      primaryArtistCredit('Earth, Wind & Fire, Guest'),
+      'Earth, Wind & Fire',
+    );
+    expect(primaryArtistCredit(''), isEmpty);
+    expect(primaryArtistCredit(null), isEmpty);
+  });
+
   test('one collaboration credits each performer without combined or repeated artist rows', () {
     final shared = song(
       'one',

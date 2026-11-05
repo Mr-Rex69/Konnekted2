@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'ios_library_scan_epoch.dart';
 import 'ios_transfer_scan_guard.dart';
 
@@ -758,7 +759,9 @@ class LibraryScannerService {
           existing == null ||
           existing.sampleRate == null ||
           existing.bitDepth == null ||
-          existing.discNumber == null;
+          existing.discNumber == null ||
+          existing.artist == l10n.unknownArtist ||
+          existing.album == l10n.unknownAlbum;
 
       final artist = (file.artist?.trim().isNotEmpty ?? false)
           ? file.artist!.trim()
@@ -999,17 +1002,22 @@ class LibraryScannerService {
           existing.albumArtist = (meta.albumArtist?.trim().isNotEmpty ?? false)
               ? meta.albumArtist!.trim()
               : existing.albumArtist;
-          // Synthesized fallback rows (unindexed DSD/WavPack) start with
-          // empty text and filename-derived titles; fill from real tags.
-          if (existing.title.trim().isEmpty &&
+          // Filename-derived placeholders can survive earlier scans even
+          // after their audio properties were marked complete. Replace only
+          // unedited placeholders with real embedded tags, not custom titles.
+          if ((existing.title.trim().isEmpty ||
+                  (existing.artist == l10n.unknownArtist &&
+                      existing.album == l10n.unknownAlbum)) &&
               (meta.title?.trim().isNotEmpty ?? false)) {
             existing.title = meta.title!.trim();
           }
-          if (existing.artist.trim().isEmpty &&
+          if ((existing.artist.trim().isEmpty ||
+                  existing.artist == l10n.unknownArtist) &&
               (meta.artist?.trim().isNotEmpty ?? false)) {
             existing.artist = meta.artist!.trim();
           }
-          if ((existing.album ?? '').trim().isEmpty &&
+          if (((existing.album ?? '').trim().isEmpty ||
+                  existing.album == l10n.unknownAlbum) &&
               (meta.album?.trim().isNotEmpty ?? false)) {
             existing.album = meta.album!.trim();
           }
@@ -1553,11 +1561,17 @@ class LibraryScannerService {
         final fileTypeMismatch =
             currentFileType.isNotEmpty &&
             (storedFileType == null || storedFileType != currentFileType);
+        final missingTags =
+            existing.artist.trim().isEmpty ||
+            existing.artist == l10n.unknownArtist ||
+            (existing.album ?? '').trim().isEmpty ||
+            existing.album == l10n.unknownAlbum;
         final missingMetadata =
             !existing.metadataComplete ||
             existing.bitrate == null ||
             existing.sampleRate == null ||
-            fileTypeMismatch;
+            fileTypeMismatch ||
+            missingTags;
 
         if (mode == ScanMode.full ||
             file.lastModified != existingTime ||
@@ -2151,222 +2165,137 @@ class LibraryScannerService {
       isComplete: false,
     );
 
-    final finalization = _runDetachedScanTask(
-      displayName,
-      'scan finalization',
-      () async {
-        if (_isCancelled) return;
+    final finalization = _runDetachedScanTask(displayName, 'scan finalization', () async {
+      if (_isCancelled) return;
 
-        // Post-process CUE and log files (single walk, both collected in one pass)
-        if (!_isCancelled) {
-          final sidecarStopwatch = Stopwatch()..start();
-          final (:cueMap, :logMap) = await _parseCueAndLogFilesRust(
-            scanRootPath,
-          );
-          _logScanTiming(
-            displayName,
-            'Rust CUE/log parse',
-            sidecarStopwatch.elapsed,
-          );
+      // Post-process CUE and log files (single walk, both collected in one pass)
+      if (!_isCancelled) {
+        final sidecarStopwatch = Stopwatch()..start();
+        final (:cueMap, :logMap) = await _parseCueAndLogFilesRust(scanRootPath);
+        _logScanTiming(
+          displayName,
+          'Rust CUE/log parse',
+          sidecarStopwatch.elapsed,
+        );
 
-          if (cueMap.isNotEmpty || logMap.isNotEmpty || Platform.isIOS) {
-            final existingSongsAfterScan = await _songRepository
-                .getSongEntitiesByFolder(folderUri);
-            // Separate raw entities from CUE tracks — the old collapsible map
-            // (keyed only by filePath) lost raw entities when CUE tracks shared
-            // the same path, causing raw entities to survive alongside CUE tracks.
-            final rawEntitiesByPath = <String, SongEntity>{};
-            final logExistingByPath = <String, SongEntity>{};
-            for (var s in existingSongsAfterScan) {
-              if (s.startOffsetMs == null) {
-                rawEntitiesByPath[s.filePath] = s;
-              }
-              logExistingByPath[s.filePath] = s;
+        if (cueMap.isNotEmpty || logMap.isNotEmpty || Platform.isIOS) {
+          final existingSongsAfterScan = await _songRepository
+              .getSongEntitiesByFolder(folderUri);
+          // Separate raw entities from CUE tracks — the old collapsible map
+          // (keyed only by filePath) lost raw entities when CUE tracks shared
+          // the same path, causing raw entities to survive alongside CUE tracks.
+          final rawEntitiesByPath = <String, SongEntity>{};
+          final logExistingByPath = <String, SongEntity>{};
+          for (var s in existingSongsAfterScan) {
+            if (s.startOffsetMs == null) {
+              rawEntitiesByPath[s.filePath] = s;
             }
+            logExistingByPath[s.filePath] = s;
+          }
 
-            // Delete orphaned CUE tracks
-            final existingCuePaths = existingSongsAfterScan
-                .where((s) => s.startOffsetMs != null)
-                .map((s) => s.filePath)
-                .toSet();
-            final orphanedCuePaths = existingCuePaths
-                .where((p) => !cueMap.containsKey(p))
-                .toList();
-            final ordinaryOrphans = <String>[];
-            for (final audioPath in orphanedCuePaths) {
-              if (Platform.isIOS && iosTransferOperationKeyForPath(audioPath) != null) {
-                // A CUE track's duration describes a range, never the full file.
-                // Re-read the actual file before replacing any of its rows.
-                final metadata = await _extractRustMetadataForUri(audioPath, rawPath: audioPath);
-                if (metadata == null || _isCancelled) continue;
-                final expected = existingSongsAfterScan.where((row) => row.filePath == audioPath).toList();
-                final fallback = expected.firstOrNull;
-                if (fallback == null) continue;
-                final modified = DateTime.fromMillisecondsSinceEpoch(metadata.lastModified);
-                final replacement = SongEntity()
-                  ..filePath = audioPath
-                  ..title = (metadata.title?.trim().isNotEmpty ?? false)
-                      ? metadata.title!.trim() : _extractTitleFromFilename(audioPath.split('/').last)
-                  ..artist = (metadata.artist?.trim().isNotEmpty ?? false)
-                      ? metadata.artist!.trim() : l10n.unknownArtist
-                  ..album = metadata.album
-                  ..albumArtist = metadata.albumArtist
-                  ..genre = metadata.genre
-                  ..year = metadata.year
-                  ..trackNumber = metadata.trackNumber
-                  ..discNumber = metadata.discNumber
-                  ..durationMs = metadata.durationMs?.toInt()
-                  ..fileType = metadata.format.toUpperCase()
-                  ..fileSize = metadata.fileSize.toInt()
-                  ..lastModified = modified
-                  ..folderUri = folderUri
-                  ..relativeFolderPath = fallback.relativeFolderPath
-                  ..albumArtPath = _carriedArtworkPath(fallback,
-                      lastModified: modified, fileSize: metadata.fileSize.toInt())
-                  ..bitrate = AudioMetadataUtils.normalizeStoredBitrateKbps(metadata.bitrate,
-                      sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth)
-                  ..sampleRate = metadata.sampleRate
-                  ..bitDepth = metadata.bitDepth
-                  ..channels = fallback.channels
-                  ..replaygainTrackGain = metadata.replaygainTrackGain
-                  ..replaygainTrackPeak = metadata.replaygainTrackPeak
-                  ..replaygainAlbumGain = metadata.replaygainAlbumGain
-                  ..replaygainAlbumPeak = metadata.replaygainAlbumPeak
-                  ..metadataComplete = true;
-                if ((replacement.durationMs ?? 0) <= 0 ||
-                    (replacement.fileSize ?? 0) <= 0 || replacement.fileType!.isEmpty) continue;
-                final mapped = await _songRepository.replaceImportedCueTracks(
-                  audioPath, [replacement], expected: expected,
-                );
-                if (!mapped) ordinaryOrphans.add(audioPath);
-              } else {
-                ordinaryOrphans.add(audioPath);
-              }
-            }
-            // Preserve ordinary/Android cleanup's existing sidecar condition.
-            // Native groups are removed only by accepted atomic replacement.
-            if ((cueMap.isNotEmpty || logMap.isNotEmpty) && ordinaryOrphans.isNotEmpty) {
-              await _songRepository.deleteScannedCueTracksByPath(ordinaryOrphans);
-            }
-
-            // Process CUE files
-            for (final entry in cueMap.entries) {
-              final audioPath = entry.key;
-              final cueSheet = entry.value;
-
-              // Skip if audio file unchanged since last scan and CUE tracks
-              // already exist in DB — avoids redundant re-parsing.
-              final cachedTs = cachedFingerprints?[audioPath];
-              if (cachedTs != null &&
-                  !(Platform.isIOS && iosTransferOperationKeyForPath(audioPath) != null)) {
-                final existingCueCount = existingSongsAfterScan
-                    .where(
-                      (s) => s.filePath == audioPath && s.startOffsetMs != null,
-                    )
-                    .length;
-                if (existingCueCount > 0) {
-                  try {
-                    final stat = FileStat.statSync(audioPath);
-                    if (stat.type != FileSystemEntityType.notFound &&
-                        stat.modified.millisecondsSinceEpoch == cachedTs) {
-                      continue;
-                    }
-                  } catch (_) {}
-                }
-              }
-
-              final rawEntity = rawEntitiesByPath[audioPath];
-
-              // Re-fetch existing CUE tracks for this path to preserve IDs
-              final cueExistingMap = <String, SongEntity>{};
-              final cueTracksInDb = existingSongsAfterScan.where(
-                (s) => s.filePath == audioPath && s.startOffsetMs != null,
+          // Delete orphaned CUE tracks
+          final existingCuePaths = existingSongsAfterScan
+              .where((s) => s.startOffsetMs != null)
+              .map((s) => s.filePath)
+              .toSet();
+          final orphanedCuePaths = existingCuePaths
+              .where((p) => !cueMap.containsKey(p))
+              .toList();
+          final ordinaryOrphans = <String>[];
+          for (final audioPath in orphanedCuePaths) {
+            if (Platform.isIOS &&
+                iosTransferOperationKeyForPath(audioPath) != null) {
+              // A CUE track's duration describes a range, never the full file.
+              // Re-read the actual file before replacing any of its rows.
+              final metadata = await _extractRustMetadataForUri(
+                audioPath,
+                rawPath: audioPath,
               );
-              for (final s in cueTracksInDb) {
-                cueExistingMap['${s.filePath}#${s.startOffsetMs}'] = s;
-              }
-
-              // Build fallback metadata — prefer raw entity (fresh audio tags),
-              // then fall back to existing CUE tracks (preserve across rescans
-              // when the raw entity was already deleted).
-              SongEntity? fallbackSource = rawEntity;
-              fallbackSource ??= cueTracksInDb.isNotEmpty
-                  ? cueTracksInDb.first
-                  : null;
-              final AudioFileInfo? fallbackMeta = fallbackSource != null
-                  ? AudioFileInfo(
-                      uri: audioPath,
-                      name: audioPath.split('/').last,
-                      size: fallbackSource.fileSize ?? 0,
-                      lastModified:
-                          fallbackSource.lastModified?.millisecondsSinceEpoch ??
-                          0,
-                      extension: audioPath.split('.').last,
-                      title: fallbackSource.title,
-                      artist: fallbackSource.artist,
-                      album: fallbackSource.album,
-                      albumArtist: fallbackSource.albumArtist,
-                      trackNumber: fallbackSource.trackNumber,
-                      discNumber: fallbackSource.discNumber,
-                      duration: fallbackSource.durationMs,
-                      albumArtPath: fallbackSource.albumArtPath,
-                      bitrate: fallbackSource.bitrate?.toString(),
-                      bitDepth: fallbackSource.bitDepth,
-                      sampleRate: fallbackSource.sampleRate,
-                    )
-                  : null;
-
-              // Preserve the existing Android scanner's deletion ordering.
-              if (!Platform.isIOS && rawEntity != null) {
-                await _songRepository.deleteScannedSongsByIds([rawEntity.id]);
-              }
-              final ripLog = logMap[audioPath];
-              final lastModified =
-                  rawEntity?.lastModified ??
-                  fallbackSource?.lastModified ??
-                  DateTime.fromMillisecondsSinceEpoch(
-                    DateTime.now().millisecondsSinceEpoch,
-                  );
-
-              final entities = _buildCueTrackEntities(
-                audioUri: audioPath,
-                cueSheet: cueSheet,
-                meta: fallbackMeta,
-                folderUri: folderUri,
-                existingMap: cueExistingMap,
-                ripLog: ripLog,
-                lastModified: lastModified,
-                relativeFolderPath: fallbackSource?.relativeFolderPath,
+              if (metadata == null || _isCancelled) continue;
+              final expected = existingSongsAfterScan
+                  .where((row) => row.filePath == audioPath)
+                  .toList();
+              final fallback = expected.firstOrNull;
+              if (fallback == null) continue;
+              final modified = DateTime.fromMillisecondsSinceEpoch(
+                metadata.lastModified,
               );
-
-              if (entities.isNotEmpty) {
-                final mapped = await _songRepository.replaceImportedCueTracks(
-                  audioPath,
-                  entities,
-                  expected: existingSongsAfterScan
-                      .where((row) => row.filePath == audioPath).toList(),
-                );
-                if (!mapped) {
-                  if (Platform.isIOS && rawEntity != null) {
-                    await _songRepository.deleteScannedSongsByIds([rawEntity.id]);
-                  }
-                  await _songRepository.upsertScannedSongs(entities);
-                }
-              }
+              final replacement = SongEntity()
+                ..filePath = audioPath
+                ..title = (metadata.title?.trim().isNotEmpty ?? false)
+                    ? metadata.title!.trim()
+                    : _extractTitleFromFilename(audioPath.split('/').last)
+                ..artist = (metadata.artist?.trim().isNotEmpty ?? false)
+                    ? metadata.artist!.trim()
+                    : l10n.unknownArtist
+                ..album = metadata.album
+                ..albumArtist = metadata.albumArtist
+                ..genre = metadata.genre
+                ..year = metadata.year
+                ..trackNumber = metadata.trackNumber
+                ..discNumber = metadata.discNumber
+                ..durationMs = metadata.durationMs?.toInt()
+                ..fileType = metadata.format.toUpperCase()
+                ..fileSize = metadata.fileSize.toInt()
+                ..lastModified = modified
+                ..folderUri = folderUri
+                ..relativeFolderPath = fallback.relativeFolderPath
+                ..albumArtPath = _carriedArtworkPath(
+                  fallback,
+                  lastModified: modified,
+                  fileSize: metadata.fileSize.toInt(),
+                )
+                ..bitrate = AudioMetadataUtils.normalizeStoredBitrateKbps(
+                  metadata.bitrate,
+                  sampleRate: metadata.sampleRate,
+                  bitDepth: metadata.bitDepth,
+                )
+                ..sampleRate = metadata.sampleRate
+                ..bitDepth = metadata.bitDepth
+                ..channels = fallback.channels
+                ..replaygainTrackGain = metadata.replaygainTrackGain
+                ..replaygainTrackPeak = metadata.replaygainTrackPeak
+                ..replaygainAlbumGain = metadata.replaygainAlbumGain
+                ..replaygainAlbumPeak = metadata.replaygainAlbumPeak
+                ..metadataComplete = true;
+              if ((replacement.durationMs ?? 0) <= 0 ||
+                  (replacement.fileSize ?? 0) <= 0 ||
+                  replacement.fileType!.isEmpty)
+                continue;
+              final mapped = await _songRepository.replaceImportedCueTracks(
+                audioPath,
+                [replacement],
+                expected: expected,
+              );
+              if (!mapped) ordinaryOrphans.add(audioPath);
+            } else {
+              ordinaryOrphans.add(audioPath);
             }
+          }
+          // Preserve ordinary/Android cleanup's existing sidecar condition.
+          // Native groups are removed only by accepted atomic replacement.
+          if ((cueMap.isNotEmpty || logMap.isNotEmpty) &&
+              ordinaryOrphans.isNotEmpty) {
+            await _songRepository.deleteScannedCueTracksByPath(ordinaryOrphans);
+          }
 
-            // Apply log metadata to raw audio files without CUE
-            for (final entry in logMap.entries) {
-              final audioPath = entry.key;
-              if (cueMap.containsKey(audioPath)) continue;
+          // Process CUE files
+          for (final entry in cueMap.entries) {
+            final audioPath = entry.key;
+            final cueSheet = entry.value;
 
-              // Skip if audio file unchanged since last scan and already
-              // has log metadata — avoids redundant re-parsing.
-              final cachedTs = cachedFingerprints?[audioPath];
-              final existing = logExistingByPath[audioPath];
-              if (cachedTs != null &&
-                  existing != null &&
-                  existing.ripper != null) {
+            // Skip if audio file unchanged since last scan and CUE tracks
+            // already exist in DB — avoids redundant re-parsing.
+            final cachedTs = cachedFingerprints?[audioPath];
+            if (cachedTs != null &&
+                !(Platform.isIOS &&
+                    iosTransferOperationKeyForPath(audioPath) != null)) {
+              final existingCueCount = existingSongsAfterScan
+                  .where(
+                    (s) => s.filePath == audioPath && s.startOffsetMs != null,
+                  )
+                  .length;
+              if (existingCueCount > 0) {
                 try {
                   final stat = FileStat.statSync(audioPath);
                   if (stat.type != FileSystemEntityType.notFound &&
@@ -2375,43 +2304,145 @@ class LibraryScannerService {
                   }
                 } catch (_) {}
               }
+            }
 
-              if (existing == null) continue;
-              existing.ripper = entry.value.ripper;
-              existing.readMode = entry.value.readMode;
-              existing.accurateRip = entry.value.accurateRipEnabled;
-              await _songRepository.upsertScannedSong(existing);
+            final rawEntity = rawEntitiesByPath[audioPath];
+
+            // Re-fetch existing CUE tracks for this path to preserve IDs
+            final cueExistingMap = <String, SongEntity>{};
+            final cueTracksInDb = existingSongsAfterScan.where(
+              (s) => s.filePath == audioPath && s.startOffsetMs != null,
+            );
+            for (final s in cueTracksInDb) {
+              cueExistingMap['${s.filePath}#${s.startOffsetMs}'] = s;
+            }
+
+            // Build fallback metadata — prefer raw entity (fresh audio tags),
+            // then fall back to existing CUE tracks (preserve across rescans
+            // when the raw entity was already deleted).
+            SongEntity? fallbackSource = rawEntity;
+            fallbackSource ??= cueTracksInDb.isNotEmpty
+                ? cueTracksInDb.first
+                : null;
+            final AudioFileInfo? fallbackMeta = fallbackSource != null
+                ? AudioFileInfo(
+                    uri: audioPath,
+                    name: audioPath.split('/').last,
+                    size: fallbackSource.fileSize ?? 0,
+                    lastModified:
+                        fallbackSource.lastModified?.millisecondsSinceEpoch ??
+                        0,
+                    extension: audioPath.split('.').last,
+                    title: fallbackSource.title,
+                    artist: fallbackSource.artist,
+                    album: fallbackSource.album,
+                    albumArtist: fallbackSource.albumArtist,
+                    trackNumber: fallbackSource.trackNumber,
+                    discNumber: fallbackSource.discNumber,
+                    duration: fallbackSource.durationMs,
+                    albumArtPath: fallbackSource.albumArtPath,
+                    bitrate: fallbackSource.bitrate?.toString(),
+                    bitDepth: fallbackSource.bitDepth,
+                    sampleRate: fallbackSource.sampleRate,
+                  )
+                : null;
+
+            // Preserve the existing Android scanner's deletion ordering.
+            if (!Platform.isIOS && rawEntity != null) {
+              await _songRepository.deleteScannedSongsByIds([rawEntity.id]);
+            }
+            final ripLog = logMap[audioPath];
+            final lastModified =
+                rawEntity?.lastModified ??
+                fallbackSource?.lastModified ??
+                DateTime.fromMillisecondsSinceEpoch(
+                  DateTime.now().millisecondsSinceEpoch,
+                );
+
+            final entities = _buildCueTrackEntities(
+              audioUri: audioPath,
+              cueSheet: cueSheet,
+              meta: fallbackMeta,
+              folderUri: folderUri,
+              existingMap: cueExistingMap,
+              ripLog: ripLog,
+              lastModified: lastModified,
+              relativeFolderPath: fallbackSource?.relativeFolderPath,
+            );
+
+            if (entities.isNotEmpty) {
+              final mapped = await _songRepository.replaceImportedCueTracks(
+                audioPath,
+                entities,
+                expected: existingSongsAfterScan
+                    .where((row) => row.filePath == audioPath)
+                    .toList(),
+              );
+              if (!mapped) {
+                if (Platform.isIOS && rawEntity != null) {
+                  await _songRepository.deleteScannedSongsByIds([rawEntity.id]);
+                }
+                await _songRepository.upsertScannedSongs(entities);
+              }
             }
           }
+
+          // Apply log metadata to raw audio files without CUE
+          for (final entry in logMap.entries) {
+            final audioPath = entry.key;
+            if (cueMap.containsKey(audioPath)) continue;
+
+            // Skip if audio file unchanged since last scan and already
+            // has log metadata — avoids redundant re-parsing.
+            final cachedTs = cachedFingerprints?[audioPath];
+            final existing = logExistingByPath[audioPath];
+            if (cachedTs != null &&
+                existing != null &&
+                existing.ripper != null) {
+              try {
+                final stat = FileStat.statSync(audioPath);
+                if (stat.type != FileSystemEntityType.notFound &&
+                    stat.modified.millisecondsSinceEpoch == cachedTs) {
+                  continue;
+                }
+              } catch (_) {}
+            }
+
+            if (existing == null) continue;
+            existing.ripper = entry.value.ripper;
+            existing.readMode = entry.value.readMode;
+            existing.accurateRip = entry.value.accurateRipEnabled;
+            await _songRepository.upsertScannedSong(existing);
+          }
         }
+      }
 
-        final playlistStopwatch = Stopwatch()..start();
-        await _syncPlaylistSourcesForFolder(
-          folderUri,
-          scanPreferences,
-          scanRootPath: scanRootPath,
-        );
-        _logScanTiming(
-          displayName,
-          'Rust playlist sync',
-          playlistStopwatch.elapsed,
-        );
+      final playlistStopwatch = Stopwatch()..start();
+      await _syncPlaylistSourcesForFolder(
+        folderUri,
+        scanPreferences,
+        scanRootPath: scanRootPath,
+      );
+      _logScanTiming(
+        displayName,
+        'Rust playlist sync',
+        playlistStopwatch.elapsed,
+      );
 
-        final fingerprintStopwatch = Stopwatch()..start();
-        await _fingerprintCache.sync(
-          folderUri,
-          newOrModifiedFingerprints,
-          deletedPaths,
-        );
-        _logScanTiming(
-          displayName,
-          'Rust fingerprint sync',
-          fingerprintStopwatch.elapsed,
-        );
+      final fingerprintStopwatch = Stopwatch()..start();
+      await _fingerprintCache.sync(
+        folderUri,
+        newOrModifiedFingerprints,
+        deletedPaths,
+      );
+      _logScanTiming(
+        displayName,
+        'Rust fingerprint sync',
+        fingerprintStopwatch.elapsed,
+      );
 
-        _logScanTiming(displayName, 'Rust scan total', totalStopwatch.elapsed);
-      },
-    );
+      _logScanTiming(displayName, 'Rust scan total', totalStopwatch.elapsed);
+    });
     _trackFinalization(folderUri, finalization);
 
     // Audio preload runs after finalization (CUE/log upserts must exist first)
@@ -2907,7 +2938,10 @@ class LibraryScannerService {
           meta.duration != null &&
           meta.sampleRate != null &&
           meta.bitDepth != null &&
-          meta.bitrate != null;
+          meta.bitrate != null &&
+          meta.title?.trim().isNotEmpty == true &&
+          meta.artist?.trim().isNotEmpty == true &&
+          meta.album?.trim().isNotEmpty == true;
       if (retrieverSolved) continue;
 
       if (!shouldRustRetryMetadata(

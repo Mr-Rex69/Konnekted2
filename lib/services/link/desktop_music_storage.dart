@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/entities/song_entity.dart';
 
@@ -30,6 +31,7 @@ class DesktopMusicFile {
 /// Permanent copies use a selected library folder. Private files are staging or
 /// recovery inputs; an unavailable folder must never silently change the target.
 class DesktopMusicStorage {
+  static const destinationKey = 'lokal.link.desktop_copy_folder_uri';
   DesktopMusicStorage({
     Future<List<DesktopMusicFolder>> Function()? folders,
     MethodChannel channel = const MethodChannel('com.mossapps.flick/storage'),
@@ -42,8 +44,16 @@ class DesktopMusicStorage {
   final Future<void> Function(List<String>) _indexMedia;
   static Future<List<DesktopMusicFolder>> _savedFolders() async {
     final service = MusicFolderService();
+    final selected = (await SharedPreferences.getInstance())
+        .getString(destinationKey);
+    final available = await service.getSavedFolders();
+    // An explicit destination is strict: never silently write elsewhere if
+    // SAF access is revoked or the selected folder has been removed.
+    final folders = selected == null
+        ? available
+        : available.where((f) => f.uri == selected).toList();
     return [
-      for (final folder in await service.getSavedFolders())
+      for (final folder in folders)
         DesktopMusicFolder(
           folder.uri,
           path: (await service.resolveStorageInfo(folder.uri)).fsPath,

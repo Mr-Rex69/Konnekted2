@@ -1,3 +1,4 @@
+import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
@@ -5,7 +6,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
 
@@ -79,20 +79,13 @@ Route<void> lokalSettingsRoute(
   String? section,
   bool aboutDataOnly = false,
 }) {
-  final duration = MediaQuery.disableAnimationsOf(context)
-      ? Duration.zero
-      : AppConstants.animationNormal;
-  return PageRouteBuilder<void>(
+  return LokalPageRoute<void>(
     settings: const RouteSettings(name: '/konnekted/settings'),
-    transitionDuration: duration,
-    reverseTransitionDuration: duration,
-    pageBuilder: (context, _, _) => lokalSettingsPage(
+    builder: (_) => lokalSettingsPage(
       group: group,
       section: section,
       aboutDataOnly: aboutDataOnly,
     ),
-    transitionsBuilder: (_, animation, _, child) =>
-        FadeTransition(opacity: animation, child: child),
   );
 }
 

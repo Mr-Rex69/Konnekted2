@@ -105,6 +105,42 @@ void main() {
     expect(find.textContaining("You're offline"), findsNothing);
   });
 
+  testWidgets('offline notice dismisses after five seconds without changing connectivity', (tester) async {
+    await tester.pumpWidget(_host(connectivity));
+    await _settle(tester);
+    connectivity.emit([ConnectivityResult.none]);
+    await tester.pump();
+    await tester.pump(
+      ConnectivityNotifier.offlineDebounce + const Duration(milliseconds: 100),
+    );
+    await _settle(tester);
+    expect(_barHeight(tester), greaterThan(0));
+
+    await tester.pump(const Duration(seconds: 5));
+    await _settle(tester);
+    expect(_barHeight(tester), 0);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ConnectionNoticeHost)),
+    );
+    expect(container.read(connectivityProvider), ConnectivityStatus.offline);
+  });
+
+  testWidgets('reconnection confirmation appears after offline notice expired',
+      (tester) async {
+    await tester.pumpWidget(_host(connectivity));
+    await _goOffline(tester, connectivity);
+    await tester.pump(const Duration(seconds: 5));
+    await _settle(tester);
+    expect(_barHeight(tester), 0);
+    connectivity.emit([ConnectivityResult.wifi]);
+    await _settle(tester);
+    expect(find.textContaining('Back online'), findsOneWidget);
+    expect(_barHeight(tester), greaterThan(0));
+    await tester.pump(const Duration(seconds: 2));
+    await _settle(tester);
+    expect(_barHeight(tester), 0);
+  });
+
   testWidgets('shows a full-width bar at the bottom while offline', (
     tester,
   ) async {

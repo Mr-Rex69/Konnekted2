@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 class MarqueeWidget extends StatefulWidget {
@@ -22,41 +24,78 @@ class MarqueeWidget extends StatefulWidget {
 
 class _MarqueeWidgetState extends State<MarqueeWidget> {
   late ScrollController _scrollController;
+  Timer? _pauseTimer;
+  Completer<bool>? _pauseReply;
+  bool _scrolling = false;
+
+  Future<bool> _pause() {
+    if (!mounted || !_scrollController.hasClients) return Future.value(false);
+    final reply = Completer<bool>();
+    _pauseReply = reply;
+    _pauseTimer = Timer(widget.pauseDuration, () {
+      _pauseTimer = null;
+      _pauseReply = null;
+      reply.complete(true);
+    });
+    return reply.future;
+  }
+
+  void _scheduleScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_scrolling) unawaited(_scroll());
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MarqueeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleScroll();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleScroll();
+  }
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scroll());
+    _scheduleScroll();
   }
 
   @override
   void dispose() {
+    _pauseTimer?.cancel();
+    _pauseReply?.complete(false);
+    _pauseReply = null;
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _scroll() async {
-    while (mounted && _scrollController.hasClients) {
-      // Respect reduced motion: keep the content static.
-      if (MediaQuery.maybeOf(context)?.disableAnimations == true) {
-        return;
-      }
-      await Future.delayed(widget.pauseDuration);
-      if (!mounted || !_scrollController.hasClients) return;
-      await _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: widget.animationDuration,
-        curve: Curves.ease,
-      );
-      await Future.delayed(widget.pauseDuration);
-      if (mounted && _scrollController.hasClients) {
+  Future<void> _scroll() async {
+    if (_scrolling) return;
+    _scrolling = true;
+    try {
+      while (mounted && _scrollController.hasClients) {
+        if (MediaQuery.maybeOf(context)?.disableAnimations == true ||
+            !TickerMode.valuesOf(context).enabled ||
+            _scrollController.position.maxScrollExtent <= 1) return;
+        if (!await _pause()) return;
+        if (!mounted || !_scrollController.hasClients) return;
         await _scrollController.animateTo(
-          0.0,
-          duration: widget.backDuration,
-          curve: Curves.easeOut,
+          _scrollController.position.maxScrollExtent,
+          duration: widget.animationDuration,
+          curve: Curves.ease,
         );
+        if (!await _pause()) return;
+        if (!mounted || !_scrollController.hasClients) return;
+        await _scrollController.animateTo(0.0,
+          duration: widget.backDuration, curve: Curves.easeOut);
       }
+    } finally {
+      _scrolling = false;
     }
   }
 

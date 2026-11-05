@@ -4,6 +4,106 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+/// Shared artwork trajectory for local, radio and desktop-remote players,
+/// including tall Canvas/Full Cover. The user-drawn close path forms a J:
+/// first descend beside the expanded cover, bend toward the mini-player,
+/// pass *below* the mini artwork's final centre, then rise into the dock.
+///
+/// The route already controls time/progress, including finger-driven drags.
+/// This helper changes only the cover centre; width, height, aspect handling,
+/// corner interpolation and the exact start/end rects stay unchanged.
+abstract final class LokalArtworkFlight {
+  /// [progress] is 0 at the mini-player, 1 at fullscreen. The geometric
+  /// path is canonicalized in closing direction and read in reverse for open.
+  static Rect rect(
+    Rect mini,
+    Rect expanded,
+    double progress, {
+    double? sheetTravel,
+  }) {
+    final t = progress.clamp(0.0, 1.0);
+    final bounds = Rect.lerp(mini, expanded, t)!;
+    if (t <= 0 || t >= 1) return bounds;
+
+    final dock = mini.center;
+    final full = expanded.center;
+    final downward = dock.dy - full.dy;
+    if (downward <= 0) return bounds;
+
+    // The long part of the J travels DIAGONALLY toward the mini-player
+    // from the beginning, rather than falling vertically at the expanded
+    // cover's X. The bottom hook forms close to the final miniature cover,
+    // dips BELOW it, and curves up into the exact target position.
+    //
+    // Preserve the sheet-travel guard from #468: a short sheet excursion
+    // must not create an oversized loop. The dip is typically 25–40dp for
+    // a full-player return, scaled down for shorter flights.
+    final availableTravel = sheetTravel == null
+        ? downward
+        : math.min(downward, math.max(sheetTravel, 0.0));
+    final dip = math.min(40.0, availableTravel * .095);
+    final dx = dock.dx - full.dx;
+
+    // Move both Bézier handles toward the destination: this places the
+    // lowest point of the J within ~35dp of the mini artwork instead of
+    // beneath the expanded cover. The final handle lies below the target,
+    // so the last tangent climbs back upward into the miniature.
+    final control1 = Offset(full.dx + dx * .65, dock.dy + dip * .30);
+    final control2 = Offset(full.dx + dx * .83, dock.dy + dip * 2.70);
+    final close = 1.0 - t;
+    final open = t;
+    final centre =
+        full * (open * open * open) +
+        control1 * (3 * open * open * close) +
+        control2 * (3 * open * close * close) +
+        dock * (close * close * close);
+    return Rect.fromCenter(
+      center: centre,
+      width: bounds.width,
+      height: bounds.height,
+    );
+  }
+}
+
+/// Tracks the actual mini-player artwork bounds for the lifetime of a
+/// player transition. The mini's GlobalKey can temporarily detach while
+/// Heroes switch their source/destination; sampling the source just once at
+/// transition creation and retaining the most recent valid rect keeps the
+/// artwork portal active through those frames instead of silently reverting
+/// to a straight sheet slide.
+class LokalArtworkSource {
+  LokalArtworkSource(Rect? Function() read) : _read = read, _last = read();
+
+  final Rect? Function() _read;
+  Rect? _last;
+
+  Rect? current() {
+    final live = _read();
+    if (live != null && live.isFinite && !live.isEmpty) {
+      _last = live;
+    }
+    return _last;
+  }
+}
+
+/// Fallback Hero flights use the identical curve when the route has no
+/// dedicated artwork portal (older/classic mini-player entry points).
+/// Canonicalize by size so pop and push follow the exact same arc in reverse.
+class LokalArtworkRectTween extends RectTween {
+  LokalArtworkRectTween({super.begin, super.end});
+
+  @override
+  Rect? lerp(double t) {
+    final from = begin;
+    final to = end;
+    if (from == null || to == null) return super.lerp(t);
+    final opening = from.width * from.height <= to.width * to.height;
+    return opening
+        ? LokalArtworkFlight.rect(from, to, t)
+        : LokalArtworkFlight.rect(to, from, 1 - t);
+  }
+}
+
 /// Paints the player's real cover above the moving sheet's clips. Its layout
 /// stays in the full player, while its paint bounds follow the same progress
 /// as the sheet, including a finger-held drag and its settling spring.
@@ -245,7 +345,16 @@ class _RenderArtworkPortal extends RenderProxyBox {
     final origin = localToGlobal(Offset.zero);
     final from = source.shift(-origin);
     final to = natural.shift(Offset(0, -_sheetOffset));
-    final rect = Rect.lerp(from, to, _progress.clamp(0.0, 1.0))!;
+    // Use the route's actual sheet travel. The fallback Hero tween derives
+    // it from mini bounds, while the shared portal tracks drag/settle motion.
+    final remaining = 1 - _progress;
+    final travel = remaining > 1e-4 ? (_sheetOffset / remaining).abs() : null;
+    final rect = LokalArtworkFlight.rect(
+      from,
+      to,
+      _progress,
+      sheetTravel: travel,
+    );
     // One scale preserves the artwork's aspect ratio. Independent X/Y
     // scaling squashed tall fullscreen art into a square and snapped when
     // the actual miniplayer cover took over.

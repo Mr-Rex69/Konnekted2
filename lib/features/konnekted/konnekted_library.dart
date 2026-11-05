@@ -138,34 +138,45 @@ class KonnektedLibrary extends ConsumerWidget {
                 onAction: () => _addFolder(context),
               ),
             ),
-          SliverToBoxAdapter(child: _Tiles(onNavigate: onNavigate)),
+          SliverToBoxAdapter(
+            child: RepaintBoundary(child: _Tiles(onNavigate: onNavigate)),
+          ),
           if (songs != null && songs.isNotEmpty)
             SliverToBoxAdapter(
-              child: KonnektedSongShelf(
-                title: lokalText('Recently added'),
-                songs: ref.watch(konnektedRecentlyAddedProvider),
-                emptyTitle: 'Nothing new yet',
-                emptyMessage: 'New songs show up here.',
-                onSeeAll: () => onNavigate(KonnektedDestination.recentlyAdded),
-                onRetry: () => ref.invalidate(songsProvider),
-                onPlay: (song, queue) =>
-                    lokalPlay(context, ref, queue, start: song),
+              child: RepaintBoundary(
+                child: KonnektedSongShelf(
+                  title: lokalText('Library'),
+                  songs: ref.watch(konnektedRecentlyAddedProvider),
+                  summarySongs: library,
+                  showTotalDuration: true,
+                  emptyTitle: 'Your library is empty',
+                  emptyMessage: 'Add music to see it here.',
+                  onSeeAll: () =>
+                      onNavigate(KonnektedDestination.recentlyAdded),
+                  onRetry: () => ref.invalidate(songsProvider),
+                  onPlay: (song, queue) =>
+                      lokalPlay(context, ref, queue, start: song),
+                ),
               ),
             ),
           SliverToBoxAdapter(
             child: LokalSectionTitle(title: lokalText('More')),
           ),
-          SliverToBoxAdapter(child: _MoreRows(onNavigate: onNavigate)),
           SliverToBoxAdapter(
-            child: KonnektedSongShelf(
-              title: lokalText('Recently played'),
-              songs: ref.watch(konnektedRecentSongsProvider),
-              emptyTitle: 'Nothing played yet',
-              emptyMessage: 'Songs you play show up here.',
-              onSeeAll: () => onNavigate(KonnektedDestination.recentlyPlayed),
-              onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
-              onPlay: (song, queue) =>
-                  lokalPlay(context, ref, queue, start: song),
+            child: RepaintBoundary(child: _MoreRows(onNavigate: onNavigate)),
+          ),
+          SliverToBoxAdapter(
+            child: RepaintBoundary(
+              child: KonnektedSongShelf(
+                title: lokalText('Recently played'),
+                songs: ref.watch(konnektedRecentSongsProvider),
+                emptyTitle: 'Nothing played yet',
+                emptyMessage: 'Songs you play show up here.',
+                onSeeAll: () => onNavigate(KonnektedDestination.recentlyPlayed),
+                onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
+                onPlay: (song, queue) =>
+                    lokalPlay(context, ref, queue, start: song),
+              ),
             ),
           ),
           if (songs == null)
@@ -245,6 +256,7 @@ class _Tile extends StatelessWidget {
     return Semantics(
       button: true,
       child: LokalGlass(
+        staticSurface: true,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
         thickness: LokalGlassThickness.thin,
         shadow: false,
@@ -315,8 +327,18 @@ class _MoreRows extends StatelessWidget {
         onTap: () => onNavigate(KonnektedDestination.linkedPlaylists),
       ),
       LokalNavRow(
+        icon: Icons.library_music_rounded,
+        label: lokalText('Spotify playlists'),
+        onTap: () => onNavigate(KonnektedDestination.spotifyPlaylists),
+      ),
+      LokalNavRow(
+        icon: Icons.video_library_rounded,
+        label: lokalText('YouTube Music playlists'),
+        onTap: () => onNavigate(KonnektedDestination.youtubeMusicPlaylists),
+      ),
+      LokalNavRow(
         icon: Icons.radio_rounded,
-        label: lokalText('Radio'),
+        label: lokalText('Stations'),
         onTap: () => pushLokal(context, const InternetRadioPage()),
       ),
     ],

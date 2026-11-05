@@ -12,6 +12,7 @@ import 'package:flick/features/spotify/spotify_web_api.dart';
 import 'package:flick/features/library_jobs/library_jobs.dart';
 import 'package:flick/features/library_jobs/library_job_control.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/core/theme/lokal_interaction.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/features/konnekted/konnekted_data.dart';
 import 'package:flick/features/konnekted/konnekted_home.dart';
@@ -241,6 +242,7 @@ class LokalAlbumsPage extends ConsumerWidget {
               art: _AlbumArt(album.songs),
               title: album.albumName,
               subtitle: album.albumArtist,
+              heroTag: 'lokal:album:${album.key}',
               onTap: () => pushLokal(context, LokalAlbumPage(album: album)),
             );
           },
@@ -502,14 +504,23 @@ class _ArtistRow extends ConsumerWidget {
         (paths) => paths[ArtistMetadata.key(artist.name)],
       ),
     );
+    // Portraits, fallback album art and placeholders must occupy the same
+    // circle; previously the first was 52 px but the others were 68 px.
+    const diameter = 52.0;
+    const radius = diameter / 2;
     final fallback = artist.songs.isEmpty
         ? CircleAvatar(
-            radius: 26,
+            radius: radius,
             backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
             child: Icon(Icons.person_rounded, color: context.lokal.muted),
           )
-        : KonnektedArtwork(song: artist.songs.first, size: 52, radius: 26);
-    return InkWell(
+        : KonnektedArtwork(
+            song: artist.songs.first,
+            size: diameter,
+            radius: radius,
+          );
+    return LokalPressable(
+      radius: 18,
       onTap: () => pushLokal(
         context,
         LokalArtistPage(
@@ -519,76 +530,92 @@ class _ArtistRow extends ConsumerWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-        child: Row(
-          children: [
-            portrait == null
-                ? fallback
-                : ClipOval(
-                    child: Image.file(
-                      File(portrait),
-                      width: 52,
-                      height: 52,
-                      cacheWidth: 156,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => fallback,
-                    ),
-                  ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    artist.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    artist.songs.isEmpty
-                        ? lokalText('Not in library')
-                        : lokalSongCount(artist.songs.length),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: context.lokal.muted),
-                  ),
-                ],
-              ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.lokal.surface.withValues(alpha: .7),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: context.lokal.border.withValues(alpha: .6),
             ),
-            IconButton(
-              tooltip: ArtistFollowStore.instance.isFollowed(artist.name)
-                  ? lokalText('Remove from favorites')
-                  : lokalText('Add to favorites'),
-              icon: Icon(
-                ArtistFollowStore.instance.isFollowed(artist.name)
-                    ? Icons.star_rounded
-                    : Icons.star_border_rounded,
-              ),
-              onPressed: () async {
-                try {
-                  final follows = ArtistFollowStore.instance;
-                  await follows.setFollowed(
-                    artist.name,
-                    !follows.isFollowed(artist.name),
-                  );
-                } catch (_) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          lokalText('Could not save artist favorite.'),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                SizedBox.square(
+                  dimension: diameter,
+                  child: ClipOval(
+                    child: portrait == null
+                        ? fallback
+                        : Image.file(
+                            File(portrait),
+                            width: diameter,
+                            height: diameter,
+                            cacheWidth: 156,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => fallback,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        artist.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    );
-                  }
-                }
-              },
+                      Text(
+                        artist.songs.isEmpty
+                            ? 'Not in library'
+                            : lokalSongCount(artist.songs.length),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.lokal.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: ArtistFollowStore.instance.isFollowed(artist.name)
+                      ? 'Remove from favorites'
+                      : 'Add to favorites',
+                  icon: Icon(
+                    ArtistFollowStore.instance.isFollowed(artist.name)
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                  ),
+                  onPressed: () async {
+                    try {
+                      final follows = ArtistFollowStore.instance;
+                      await follows.setFollowed(
+                        artist.name,
+                        !follows.isFollowed(artist.name),
+                      );
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not save artist favorite.'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -611,6 +638,7 @@ class LokalAlbumPage extends StatelessWidget {
     artist: album.albumArtist,
     localSongs: album.songs,
     initialOnline: initialOnline,
+    artworkHeroTag: 'lokal:album:${album.key}',
   );
 }
 

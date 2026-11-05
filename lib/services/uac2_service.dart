@@ -85,8 +85,9 @@ class Uac2AudioFormat {
   }
 
   /// Compact chip label: 'DSD128 5.6MHz' for DSD, '705kHz' for PCM.
-  String get compactRateLabel =>
-      isDsdStream ? '$dsdRateLabel $_dsdMHzLabel()' : '${sampleRate ~/ 1000}kHz';
+  String get compactRateLabel => isDsdStream
+      ? '$dsdRateLabel $_dsdMHzLabel()'
+      : '${sampleRate ~/ 1000}kHz';
 
   String _dsdMHzLabel() {
     final mhz = dsdBitRateHz / 1000000.0;
@@ -95,8 +96,7 @@ class Uac2AudioFormat {
   }
 
   /// Human label for the depth: DSD is 1-bit; PCM shows its depth.
-  String get bitDepthLabel =>
-      isDsdStream ? '1-bit (DSD)' : '${bitDepth}bit';
+  String get bitDepthLabel => isDsdStream ? '1-bit (DSD)' : '${bitDepth}bit';
 }
 
 class Uac2DeviceCapabilities {
@@ -199,6 +199,16 @@ class Uac2Service {
 
   static const _channel = MethodChannel('com.mossapps.flick/uac2');
 
+  /// Fail closed if the platform cannot report its SDK level.
+  Future<bool> supportsAndroidUsbMixer() async {
+    try {
+      final sdk = await _channel.invokeMethod<int>('getAndroidSdkInt');
+      return sdk != null && sdk >= 34;
+    } catch (_) {
+      return false;
+    }
+  }
+
   final _preferencesService = Uac2PreferencesService();
   final ValueNotifier<bool> bitPerfectEnabledNotifier = ValueNotifier(false);
   final ValueNotifier<bool> dapBitPerfectEnabledNotifier = ValueNotifier(true);
@@ -226,6 +236,7 @@ class Uac2Service {
       devLog('Uac2Service.syncDeveloperModeToNative failed: $e');
     }
   }
+
   Uac2DeviceStatus? _currentDeviceStatus;
   final List<ValueChanged<Uac2DeviceStatus?>> _statusListeners = [];
   final StreamController<void> _deviceDetachedController =
@@ -297,7 +308,8 @@ class Uac2Service {
 
     final bitPerfectEnabled = await _preferencesService.getBitPerfectEnabled();
     bitPerfectEnabledNotifier.value = bitPerfectEnabled;
-    final dapBitPerfectEnabled = await _preferencesService.getDapBitPerfectEnabled();
+    final dapBitPerfectEnabled = await _preferencesService
+        .getDapBitPerfectEnabled();
     dapBitPerfectEnabledNotifier.value = dapBitPerfectEnabled;
     await syncKillIsochronousUsbOnQuitToNative();
     final savedDevice = await _preferencesService.loadSelectedDevice();
@@ -306,7 +318,10 @@ class Uac2Service {
     }
 
     if (Platform.isAndroid) {
-      if (!bitPerfectEnabled) {
+      if (!bitPerfectEnabled ||
+          await _preferencesService.getAudioEnginePreference() ==
+              AudioEnginePreference.androidMixerUsb) {
+        // Framework mixer output must leave USB interface ownership with Android.
         return;
       }
       final matchingDevice = await _resolvePreferredAndroidActivationDevice(
@@ -330,8 +345,8 @@ class Uac2Service {
     _configureAndroidChannel();
     // Hydrate before publishing status or the prompt gate misfires for
     // users who already have bit-perfect on.
-    bitPerfectEnabledNotifier.value =
-        await _preferencesService.getBitPerfectEnabled();
+    bitPerfectEnabledNotifier.value = await _preferencesService
+        .getBitPerfectEnabled();
     _scheduleAndroidRouteRefresh();
   }
 
@@ -703,14 +718,16 @@ class Uac2Service {
     }
 
     try {
-      final applied = await _channel
-          .invokeMethod<bool>('setDirectUsbPlaybackFormat', {
-            'sampleRate': selectedFormat.sampleRate,
-            'bitDepth': selectedFormat.bitDepth,
-            'channels': selectedFormat.channels,
-            'isDop': selectedFormat.isDop,
-            'isNativeDsd': selectedFormat.isNativeDsd,
-          });
+      final applied = await _channel.invokeMethod<bool>(
+        'setDirectUsbPlaybackFormat',
+        {
+          'sampleRate': selectedFormat.sampleRate,
+          'bitDepth': selectedFormat.bitDepth,
+          'channels': selectedFormat.channels,
+          'isDop': selectedFormat.isDop,
+          'isNativeDsd': selectedFormat.isNativeDsd,
+        },
+      );
       if (applied != true) {
         devLog(
           'Uac2Service.setDirectUsbPlaybackFormat returned false for '
@@ -774,12 +791,12 @@ class Uac2Service {
 
     final sampleRate = switch (supportedSampleRates.isEmpty) {
       true when disallowedSampleRates.contains(requested.sampleRate) =>
-        _preferredAndroidUsbFallbackRates(
-          requested.sampleRate,
-        ).cast<int?>().firstWhere(
-          (rate) => rate != null && !disallowedSampleRates.contains(rate),
-          orElse: () => null,
-        ),
+        _preferredAndroidUsbFallbackRates(requested.sampleRate)
+            .cast<int?>()
+            .firstWhere(
+              (rate) => rate != null && !disallowedSampleRates.contains(rate),
+              orElse: () => null,
+            ),
       true => requested.sampleRate,
       false when supportedSampleRates.contains(requested.sampleRate) =>
         requested.sampleRate,
@@ -854,14 +871,16 @@ class Uac2Service {
 
     if (format != null) {
       try {
-        final applied = await _channel
-            .invokeMethod<bool>('setDirectUsbPlaybackFormat', {
-              'sampleRate': format.sampleRate,
-              'bitDepth': format.bitDepth,
-              'channels': format.channels,
-              'isDop': format.isDop,
-              'isNativeDsd': format.isNativeDsd,
-            });
+        final applied = await _channel.invokeMethod<bool>(
+          'setDirectUsbPlaybackFormat',
+          {
+            'sampleRate': format.sampleRate,
+            'bitDepth': format.bitDepth,
+            'channels': format.channels,
+            'isDop': format.isDop,
+            'isNativeDsd': format.isNativeDsd,
+          },
+        );
         if (applied != true) {
           devLog(
             'Uac2Service.resetAndroidDirectUsbPath format apply returned '
@@ -871,9 +890,7 @@ class Uac2Service {
           return false;
         }
       } catch (e) {
-        devLog(
-          'Uac2Service.resetAndroidDirectUsbPath format apply failed: $e',
-        );
+        devLog('Uac2Service.resetAndroidDirectUsbPath format apply failed: $e');
         return false;
       }
     }
@@ -913,7 +930,7 @@ class Uac2Service {
     );
   }
 
-Future<void> markAndroidDirectUsbFallback(String reason) async {
+  Future<void> markAndroidDirectUsbFallback(String reason) async {
     if (!Platform.isAndroid) {
       return;
     }
@@ -936,7 +953,7 @@ Future<void> markAndroidDirectUsbFallback(String reason) async {
     }
   }
 
-Future<void> stopPriorityAnchor() async {
+  Future<void> stopPriorityAnchor() async {
     if (!Platform.isAndroid) return;
     try {
       await _channel.invokeMethod<bool>('stopPriorityAnchor');
@@ -1066,7 +1083,8 @@ Future<void> stopPriorityAnchor() async {
           'hardwareOnly': hardwareOnly,
           if (hardwareOnly) 'deviceName': status.device.deviceName,
         });
-        if (result != true || _currentDeviceStatus?.device != status.device ||
+        if (result != true ||
+            _currentDeviceStatus?.device != status.device ||
             _currentDeviceStatus?.volumeMode != status.volumeMode) {
           return false;
         }
@@ -1091,7 +1109,9 @@ Future<void> stopPriorityAnchor() async {
   Future<bool?> verifyHardwareVolumeHealth() async {
     if (!Platform.isAndroid) return null;
     try {
-      final result = await _channel.invokeMethod<int>('verifyHardwareVolumeHealth');
+      final result = await _channel.invokeMethod<int>(
+        'verifyHardwareVolumeHealth',
+      );
       if (result == null) return null;
       if (result == 1) return await getVolume() != null;
       if (result == 0) return false;
@@ -1114,8 +1134,11 @@ Future<void> stopPriorityAnchor() async {
           if (hardwareOnly) 'deviceName': status.device.deviceName,
         });
         final current = _currentDeviceStatus;
-        if (volume == null || !volume.isFinite || current == null ||
-            current.device != status.device || current.volumeMode != status.volumeMode) {
+        if (volume == null ||
+            !volume.isFinite ||
+            current == null ||
+            current.device != status.device ||
+            current.volumeMode != status.volumeMode) {
           return null;
         }
         final actual = volume.clamp(0.0, 1.0).toDouble();
@@ -1147,7 +1170,8 @@ Future<void> stopPriorityAnchor() async {
           'hardwareOnly': hardwareOnly,
           if (hardwareOnly) 'deviceName': status.device.deviceName,
         });
-        if (result != true || _currentDeviceStatus?.device != status.device ||
+        if (result != true ||
+            _currentDeviceStatus?.device != status.device ||
             _currentDeviceStatus?.volumeMode != status.volumeMode) {
           return false;
         }
@@ -1175,7 +1199,9 @@ Future<void> stopPriorityAnchor() async {
           if (hardwareOnly) 'deviceName': status.device.deviceName,
         });
         final current = _currentDeviceStatus;
-        if (muted == null || current == null || current.device != status.device ||
+        if (muted == null ||
+            current == null ||
+            current.device != status.device ||
             current.volumeMode != status.volumeMode) {
           return null;
         }
@@ -1464,15 +1490,17 @@ Future<void> stopPriorityAnchor() async {
     final preferredUsbDetected =
         routeStatus['preferredUsbDeviceDetected'] == true;
     final directUsbRegistered = routeStatus['directUsbRegistered'] == true;
-    final volumeMode = directUsbRegistered &&
+    final volumeMode =
+        directUsbRegistered &&
             _volumeModeFromString(routeStatus['volumeMode'] as String?) ==
                 Uac2VolumeMode.unavailable
         ? Uac2VolumeMode.software
         : _volumeModeFromString(routeStatus['volumeMode'] as String?);
     final isSwVolumeOverride = volumeMode == Uac2VolumeMode.software;
-    final hasVolumeControl = isSwVolumeOverride ||
-        routeStatus['hasVolumeControl'] == true;
-    final volumeControlWritable = isSwVolumeOverride ||
+    final hasVolumeControl =
+        isSwVolumeOverride || routeStatus['hasVolumeControl'] == true;
+    final volumeControlWritable =
+        isSwVolumeOverride ||
         (hasVolumeControl && routeStatus['volumeControlWritable'] != false);
     final volume = (routeStatus['volume'] as num?)?.toDouble();
     final muted = routeStatus['muted'] as bool?;
@@ -1556,14 +1584,16 @@ Future<void> stopPriorityAnchor() async {
 
     final resolvedPreferredDevice = await _resolvePreferredAndroidDevice(null);
     try {
-      final raw = await _channel
-          .invokeMapMethod<dynamic, dynamic>('getAudioCapabilities', {
-            'deviceName': resolvedPreferredDevice?.deviceName,
-            'productName': resolvedPreferredDevice?.productName,
-            'vendorId': resolvedPreferredDevice?.vendorId,
-            'productId': resolvedPreferredDevice?.productId,
-            'serial': resolvedPreferredDevice?.serial,
-          });
+      final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
+        'getAudioCapabilities',
+        {
+          'deviceName': resolvedPreferredDevice?.deviceName,
+          'productName': resolvedPreferredDevice?.productName,
+          'vendorId': resolvedPreferredDevice?.vendorId,
+          'productId': resolvedPreferredDevice?.productId,
+          'serial': resolvedPreferredDevice?.serial,
+        },
+      );
 
       if (raw == null) {
         return const rust_audio.AudioCapabilityInfo(
@@ -1646,9 +1676,7 @@ Future<void> stopPriorityAnchor() async {
             );
           }
         } catch (e) {
-          devLog(
-            'Uac2Service.getAndroidPlaybackDebugState JSON failed: $e',
-          );
+          devLog('Uac2Service.getAndroidPlaybackDebugState JSON failed: $e');
         }
       }
       return map;
@@ -1908,6 +1936,12 @@ Future<void> stopPriorityAnchor() async {
   }
 
   bool _shouldActivateAndroidDirectUsb(Uac2DeviceInfo preferredDevice) {
+    if (Uac2PreferencesService.isAndroidMixerUsbSelectedSync) return false;
+    // Status refreshes must not re-claim an interface already in use by Rust.
+    if (_lastDirectUsbPlaybackActive == true &&
+        _hasFrozenAndroidDirectUsbSession()) {
+      return false;
+    }
     final currentStatus = _currentDeviceStatus;
     if (currentStatus == null) {
       return true;
@@ -2089,14 +2123,16 @@ Future<void> stopPriorityAnchor() async {
     Uac2DeviceInfo? preferredDevice,
   }) async {
     try {
-      final raw = await _channel
-          .invokeMapMethod<dynamic, dynamic>('getRouteStatus', {
-            'deviceName': preferredDevice?.deviceName,
-            'productName': preferredDevice?.productName,
-            'vendorId': preferredDevice?.vendorId,
-            'productId': preferredDevice?.productId,
-            'serial': preferredDevice?.serial,
-          });
+      final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
+        'getRouteStatus',
+        {
+          'deviceName': preferredDevice?.deviceName,
+          'productName': preferredDevice?.productName,
+          'vendorId': preferredDevice?.vendorId,
+          'productId': preferredDevice?.productId,
+          'serial': preferredDevice?.serial,
+        },
+      );
       if (raw == null) return null;
       return raw.map((key, value) => MapEntry(key.toString(), value));
     } catch (e) {
@@ -2179,6 +2215,13 @@ Future<void> stopPriorityAnchor() async {
 
     if (!Platform.isAndroid) {
       return false;
+    }
+
+    // Native Android USB mixer retains Android's ownership of the interface.
+    // Do not register a libusb session when that transport is selected.
+    if (await _preferencesService.getAudioEnginePreference() ==
+        AudioEnginePreference.androidMixerUsb) {
+      return true; // Native mixer negotiates on the next track.
     }
 
     if (enabled) {
@@ -2278,7 +2321,8 @@ String? _deviceCompatibilityNotice({
     );
   }
 
-  final mayHaveInput = name.contains('mic') ||
+  final mayHaveInput =
+      name.contains('mic') ||
       name.contains('microphone') ||
       name.contains('input') ||
       mfg.contains('venture') ||

@@ -77,6 +77,12 @@ func rawDocument(_ url: URL, id: String, replacement: Data? = nil) throws -> Dat
 
 var contractStage = "startup"
 do {
+  if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--desktop-upload-peer" {
+    try runDesktopUploadPeer(origin: CommandLine.arguments[2], token: CommandLine.arguments[3],
+      audio: URL(fileURLWithPath: CommandLine.arguments[4]))
+    exit(0)
+  }
+  try runUploadOperationDocumentContracts()
   if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--upload-copy-crash" {
     try uploadCopyCrashChild(root: URL(fileURLWithPath: CommandLine.arguments[2]))
     exit(0)

@@ -8,6 +8,7 @@ import 'package:flick/widgets/lokal/lokal_choice_sheet.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/konnekted_data.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/services/link/library_song_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -69,35 +70,42 @@ class LokalSongBrowserViewSettings {
     try {
       final raw = jsonDecode(json);
       if (raw is! Map) return null;
-      final sort = LokalSongSort.values
-          .where((s) => s.name == raw['sort'])
-          .firstOrNull ?? fallbackSort;
-      final location = LokalSongLocation.values
-          .where((s) => s.name == raw['location'])
-          .firstOrNull ?? LokalSongLocation.all;
+      final sort =
+          LokalSongSort.values
+              .where((s) => s.name == raw['sort'])
+              .firstOrNull ??
+          fallbackSort;
+      final location =
+          LokalSongLocation.values
+              .where((s) => s.name == raw['location'])
+              .firstOrNull ??
+          LokalSongLocation.all;
       final filter = raw['audioFilter'];
-      final isQuality = filter is String &&
+      final isQuality =
+          filter is String &&
           filter.startsWith('quality:') &&
           LokalQualityTier.values.any(
             (tier) => tier.name == filter.substring(8),
           );
-      final isFormat = filter is String &&
-          RegExp(r'^format:\d+:\d+$').hasMatch(filter);
+      final isFormat =
+          filter is String && RegExp(r'^format:\d+:\d+$').hasMatch(filter);
       return LokalSongBrowserViewSettings(
         sort: sort == LokalSongSort.original && !allowOriginal
-            ? fallbackSort : sort,
+            ? fallbackSort
+            : sort,
         descending: raw['descending'] is bool
             ? raw['descending'] as bool
             : (sort == LokalSongSort.recentlyAdded ||
-               sort == LokalSongSort.mostPlayed ||
-               sort == LokalSongSort.longest),
+                  sort == LokalSongSort.mostPlayed ||
+                  sort == LokalSongSort.longest),
         location: location,
         audioFilter: filter == 'all' || isQuality || isFormat
-            ? filter as String : 'all',
+            ? filter as String
+            : 'all',
         query: raw['query'] is String
             ? ((raw['query'] as String).length > 200
-                ? (raw['query'] as String).substring(0, 200)
-                : raw['query'] as String)
+                  ? (raw['query'] as String).substring(0, 200)
+                  : raw['query'] as String)
             : '',
       );
     } catch (_) {
@@ -138,8 +146,10 @@ class LokalSongBrowser extends ConsumerStatefulWidget {
 
   final List<Song> songs;
   final LokalSongSort initialSort;
+
   /// Supplied only by Likes: hearts sort chronologically, not by import date.
   final Map<String, int>? recentlyAddedRanks;
+
   /// Optional stable persistence key, scoped per list (Likes, Library,
   /// Downloads, recently played/added, genre, or individual playlist).
   final String? preferencesKey;
@@ -198,8 +208,11 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
         fallbackSort: widget.initialSort,
         allowOriginal: widget.originalLabel != null,
       );
-      if (!mounted || widget.preferencesKey != key ||
-          _viewModified || saved == null) return;
+      if (!mounted ||
+          widget.preferencesKey != key ||
+          _viewModified ||
+          saved == null)
+        return;
       setState(() {
         _sort = saved.sort;
         _descending = saved.descending;
@@ -216,18 +229,22 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
   void _persistView() {
     final key = widget.preferencesKey;
     if (key == null) return;
-    final encoded = jsonEncode(LokalSongBrowserViewSettings(
-      sort: _sort,
-      descending: _descending,
-      location: _location,
-      audioFilter: _audioFilter,
-      query: _query,
-    ).toJson());
+    final encoded = jsonEncode(
+      LokalSongBrowserViewSettings(
+        sort: _sort,
+        descending: _descending,
+        location: _location,
+        audioFilter: _audioFilter,
+        query: _query,
+      ).toJson(),
+    );
     // Serialize rapid filter changes to prevent older async writes winning.
-    _writeTail = _writeTail.then((_) async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(key, encoded);
-    }).catchError((Object _) {});
+    _writeTail = _writeTail
+        .then((_) async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(key, encoded);
+        })
+        .catchError((Object _) {});
   }
 
   void _updateView(VoidCallback update) {
@@ -253,6 +270,7 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
       if (mounted) _updateView(() => _query = value);
     });
   }
+
   LokalSongLocation _location = LokalSongLocation.all;
   String _audioFilter = 'all';
   LokalSongLocation? _inputLocation;
@@ -309,8 +327,7 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
     final titleKeys = <String, String>{
       for (final song in songs) song.id: song.title.toLowerCase(),
     };
-    int byTitle(Song a, Song b) =>
-        titleKeys[a.id]!.compareTo(titleKeys[b.id]!);
+    int byTitle(Song a, Song b) => titleKeys[a.id]!.compareTo(titleKeys[b.id]!);
     final direction = _descending ? -1 : 1;
     switch (_sort) {
       case LokalSongSort.original:
@@ -320,16 +337,20 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
           songs.setAll(0, songs.reversed.toList(growable: false));
         }
       case LokalSongSort.recentlyAdded:
-        songs.sort((a, b) => compareSongAddedOrder(
-          a, b,
-          descending: _descending,
-          likedRanks: widget.recentlyAddedRanks,
-        ));
+        songs.sort(
+          (a, b) => compareSongAddedOrder(
+            a,
+            b,
+            descending: _descending,
+            likedRanks: widget.recentlyAddedRanks,
+          ),
+        );
       case LokalSongSort.title:
         songs.sort((a, b) => byTitle(a, b) * direction);
       case LokalSongSort.artist:
         final artistKeys = <String, String>{
-          for (final song in songs) song.id: song.artist.toLowerCase(),
+          for (final song in songs)
+            song.id: creditedLeadArtist(song).toLowerCase(),
         };
         songs.sort((a, b) {
           final c = artistKeys[a.id]!.compareTo(artistKeys[b.id]!);
@@ -417,8 +438,11 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
       title: 'Filter by format and quality',
       selected: _audioFilter,
       choices: [
-        const LokalChoice(value: 'all', label: 'All formats and qualities',
-            icon: Icons.tune_rounded),
+        const LokalChoice(
+          value: 'all',
+          label: 'All formats and qualities',
+          icon: Icons.tune_rounded,
+        ),
         for (final tier in LokalQualityTier.values)
           LokalChoice(
             value: 'quality:${tier.name}',
@@ -473,19 +497,27 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
                     ),
                   ),
                   IconButton(
-                    tooltip: lokalText("Sort: {arg0}", args: {'arg0': label(_sort)}),
+                    tooltip: lokalText(
+                      "Sort: {arg0}",
+                      args: {'arg0': label(_sort)},
+                    ),
                     icon: Icon(Icons.sort_rounded, color: t.accent),
                     onPressed: () => unawaited(_chooseSort(sorts, label)),
                   ),
                   IconButton(
-                    tooltip: lokalText(_descending ? 'Descending · switch to ascending'
-                                                  : 'Ascending · switch to descending'),
+                    tooltip: lokalText(
+                      _descending
+                          ? 'Descending · switch to ascending'
+                          : 'Ascending · switch to descending',
+                    ),
                     icon: Icon(
-                      _descending ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded,
+                      _descending
+                          ? Icons.arrow_downward_rounded
+                          : Icons.arrow_upward_rounded,
                       color: t.accent,
                     ),
-                    onPressed: () => _updateView(() => _descending = !_descending),
+                    onPressed: () =>
+                        _updateView(() => _descending = !_descending),
                   ),
                 ],
               ),
@@ -557,7 +589,13 @@ class _LokalSongBrowserState extends ConsumerState<LokalSongBrowser> {
               return LokalTrackRow(
                 song: song,
                 subtitle: widget.subtitleOf?.call(song),
-                onTap: () => lokalPlay(context, ref, songs, start: song, startIndex: index),
+                onTap: () => lokalPlay(
+                  context,
+                  ref,
+                  songs,
+                  start: song,
+                  startIndex: index,
+                ),
                 onRemove: widget.onRemove == null
                     ? null
                     : () => widget.onRemove!(song),
@@ -583,6 +621,7 @@ class LokalSongListPage extends ConsumerWidget {
     this.subtitleOf,
     this.recentlyAddedRanks,
     this.preferencesKey,
+    this.showTotalDuration = false,
   });
 
   final String title;
@@ -595,14 +634,46 @@ class LokalSongListPage extends ConsumerWidget {
   final String Function(Song song)? subtitleOf;
   final Map<String, int> Function(WidgetRef ref)? recentlyAddedRanks;
   final String? preferencesKey;
+  final bool showTotalDuration;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final songs = source(ref);
     final list = songs.value;
+    final metadata = list == null
+        ? null
+        : '${lokalSongCount(list.length)} · ${lokalRunningTime(list)}';
+    final pendingMetadata = songs.hasError
+        ? lokalText('Couldn’t load these songs')
+        : (title == lokalText('Library')
+              ? lokalText('Opening your collection')
+              : lokalText('Loading history…'));
     return LokalLibraryPage(
       title: title,
-      subtitle: list == null ? null : lokalSongCount(list.length),
+      // Recently Played uses a full-size metadata row: never hide its
+      // running time in the small uppercase section-label treatment.
+      subtitle: showTotalDuration
+          ? null
+          : (list == null ? null : lokalSongCount(list.length)),
+      header: showTotalDuration
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LokalLargeTitle(title: title),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                  child: Text(
+                    metadata ?? pendingMetadata,
+                    style: TextStyle(
+                      color: context.lokal.muted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : null,
       slivers: [
         if (list != null && list.isNotEmpty)
           LokalSongBrowser(

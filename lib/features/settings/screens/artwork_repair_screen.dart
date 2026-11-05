@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flick/providers/songs_provider.dart';
 
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/l10n/l10n.dart';
@@ -7,17 +9,18 @@ import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
 
 /// Repair is user initiated. Leaving this screen requests cancellation so
 /// catalogue lookups never continue as an invisible background operation.
-class ArtworkRepairScreen extends StatefulWidget {
+class ArtworkRepairScreen extends ConsumerStatefulWidget {
   const ArtworkRepairScreen({super.key, this.serviceOverride});
 
   @visibleForTesting
   final ArtworkRepairService? serviceOverride;
 
   @override
-  State<ArtworkRepairScreen> createState() => _ArtworkRepairScreenState();
+  ConsumerState<ArtworkRepairScreen> createState() =>
+      _ArtworkRepairScreenState();
 }
 
-class _ArtworkRepairScreenState extends State<ArtworkRepairScreen>
+class _ArtworkRepairScreenState extends ConsumerState<ArtworkRepairScreen>
     with WidgetsBindingObserver {
   late final _service = widget.serviceOverride ?? ArtworkRepairService();
   ArtworkRepairProgress? _progress;
@@ -73,7 +76,9 @@ class _ArtworkRepairScreenState extends State<ArtworkRepairScreen>
           if (mounted) setState(() => _progress = value);
         },
       );
-      if (mounted) setState(() => _progress = result);
+      if (mounted) { setState(() => _progress = result);
+        if (result.updated > 0) { ref.invalidate(songsProvider); ref.invalidate(songsByAlbumProvider); }
+      }
     } catch (_) {
       if (mounted) {
         setState(() {

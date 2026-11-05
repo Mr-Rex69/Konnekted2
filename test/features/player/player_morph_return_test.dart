@@ -100,11 +100,12 @@ void main() {
             data.getUint8(outside + 2) - data.getUint8(outside),
             lessThan(10),
           );
-          final center = Rect.lerp(
+          final center = LokalArtworkFlight.rect(
             source,
             const Rect.fromLTWH(0, 0, 400, 480),
             .5,
-          )!.center;
+            sheetTravel: 700,
+          ).center;
           final pixel =
               (center.dy.round() * image.width + center.dx.round()) * 4;
           expect(data.getUint8(pixel), greaterThan(150));

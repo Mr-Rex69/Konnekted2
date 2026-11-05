@@ -94,7 +94,7 @@ abstract final class LokalOnlineSections {
   static const addons = 'Add-ons';
   static const repositories = 'Add-on repositories';
   static const accounts = 'Accounts & scrobbling';
-  static const radioVideos = 'Radio & videos';
+  static const radioVideos = 'Stations & videos';
 
   /// Section names older links used, mapped to where they are now.
   static const aliases = {
@@ -103,6 +103,7 @@ abstract final class LokalOnlineSections {
     'network sources': streaming,
     'repositories': repositories,
     'radio': radioVideos,
+    'radio & videos': radioVideos,
     'videos': radioVideos,
   };
 }

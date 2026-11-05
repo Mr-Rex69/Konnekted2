@@ -20,6 +20,7 @@ import 'package:just_audio/just_audio.dart' as ja;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'radio_catalog.dart';
+import 'station_metadata.dart';
 
 const _urlKey = 'lokal_radio_catalog_url';
 const _catalogKey = 'lokal_radio_catalog';
@@ -45,7 +46,7 @@ Future<Map<String, dynamic>> fetchRadioCatalogJson(
     if (initialUrl.toString() != defaultRadioCatalogUrl) rethrow;
     final apiUrl = Uri.https(
       'api.github.com',
-      '/repos/sipbuu/lokal/contents/radios.json',
+      '/repos/lokal-music/Desktop/contents/radios.json',
       {'ref': 'main'},
     );
     return _fetchRadioCatalogAtUrl(
@@ -292,12 +293,16 @@ class RadioPlayback {
     this.playing = false,
     this.loading = false,
     this.error,
+    this.nowPlaying,
+    this.trackMetadata,
   });
 
   final RadioStation? station;
   final bool playing;
   final bool loading;
   final String? error;
+  final String? nowPlaying;
+  final StationLiveMetadata? trackMetadata;
 }
 
 /// Plays a station's live stream.
@@ -313,10 +318,45 @@ class RadioPlayback {
 /// going in the background), and hands it back to the library when it stops.
 class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   ja.AudioPlayer? _player;
+  bool _showQueueOnPlayerOpen = false;
+  void requestStationQueue() => _showQueueOnPlayerOpen = true;
+  bool consumeStationQueueRequest() {
+    final requested = _showQueueOnPlayerOpen;
+    _showQueueOnPlayerOpen = false;
+    return requested;
+  }
+
+  List<RadioStation> _stationQueue = const [];
+  List<RadioStation> get stationQueue => List.unmodifiable(_stationQueue);
+  int get stationIndex =>
+      _stationQueue.indexWhere((item) => item.id == state.station?.id);
+  final ValueNotifier<double> volume = ValueNotifier<double>(1.0);
+
+  Future<void> setVolume(double value) async {
+    volume.value = value.clamp(0.0, 1.0).toDouble();
+    await _ensurePlayer().setVolume(volume.value);
+  }
+
+  Future<void> nextStation() async {
+    if (_stationQueue.length < 2) return;
+    final index = stationIndex;
+    await play(_stationQueue[(index + 1) % _stationQueue.length]);
+  }
+
+  Future<void> previousStation() async {
+    if (_stationQueue.length < 2) return;
+    final index = stationIndex;
+    await play(
+      _stationQueue[index <= 0 ? _stationQueue.length - 1 : index - 1],
+    );
+  }
+
   int _playRequest = 0;
   int? _failingPlayRequest;
   Timer? _bufferingTimer;
+  Timer? _metadataTimer;
   StreamSubscription<ja.PlayerState>? _states;
+  StreamSubscription<ja.IcyMetadata?>? _icyMetadata;
   String? _notified;
   final Map<String, String> _iconFiles = {};
   bool _resetParticipantRegistered = false;
@@ -342,8 +382,11 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         IosLocalAudioRequests.lifecycle.unregister(this);
       }
       _bufferingTimer?.cancel();
+      _metadataTimer?.cancel();
+      volume.dispose();
       NotificationService().release(_notificationOwner);
       unawaited(_states?.cancel());
+      unawaited(_icyMetadata?.cancel());
       final player = _player;
       if (player != null) unawaited(IosLocalAudioPlayers.dispose(player));
     });
@@ -390,6 +433,40 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         playing: s.playing && s.processingState != ja.ProcessingState.completed,
         loading: loading,
         error: state.error,
+        nowPlaying: state.nowPlaying,
+        trackMetadata: state.trackMetadata,
+      );
+      _syncNotification();
+    });
+    // Only the selected station's own stream provides ICY metadata;
+    // no background audio connections are opened for list rows.
+    _icyMetadata = player.icyMetadataStream.listen((metadata) {
+      final title = metadata?.info?.title?.trim();
+      if (title == null ||
+          title.isEmpty ||
+          state.station == null ||
+          state.error != null ||
+          title == state.nowPlaying)
+        return;
+      // Stream metadata can advance before a broadcaster API's cached feed.
+      // Never keep the old song artwork on a newly announced recording.
+      final normalize = (String value) =>
+          value.toLowerCase().replaceAll(RegExp(r'\s*[-—–]\s*'), ' - ').trim();
+      final stillCurrent =
+          state.trackMetadata != null &&
+          normalize(
+                state.trackMetadata!.artist +
+                    ' - ' +
+                    state.trackMetadata!.title,
+              ) ==
+              normalize(title);
+      state = RadioPlayback(
+        station: state.station,
+        playing: state.playing,
+        loading: state.loading,
+        error: state.error,
+        nowPlaying: title,
+        trackMetadata: stillCurrent ? state.trackMetadata : null,
       );
       if (Platform.isIOS && state.playing && !state.loading) {
         IosLocalAudioRequests.lifecycle.confirmLocalPlaybackStarted();
@@ -430,14 +507,18 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
   void _syncNotification() {
     final station = state.station;
     if (station == null) return;
-    final icon = _iconFiles[station.icon ?? ''];
-    final key = '${station.id}|${state.playing}|$icon';
+    final artUrl = state.trackMetadata?.cover ?? station.icon;
+    final icon = _iconFiles[artUrl ?? ''];
+    final key =
+        '${station.id}|${state.playing}|$icon|${state.nowPlaying ?? ''}';
     if (key == _notified) return;
     _notified = key;
     final song = Song(
       id: 'radio:${station.id}',
-      title: station.title,
-      artist: station.genre ?? station.description ?? 'Internet radio',
+      title: state.trackMetadata?.title ?? state.nowPlaying ?? station.title,
+      artist: state.trackMetadata?.artist.isNotEmpty == true
+          ? state.trackMetadata!.artist
+          : station.title,
       albumArt: icon,
       duration: Duration.zero,
       fileType: 'Stream',
@@ -449,20 +530,22 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         isPlaying: state.playing,
       ),
     );
-    if (icon == null) unawaited(_fetchIcon(station));
+    if (icon == null) unawaited(_fetchIcon(station, artUrl));
   }
 
   /// The notification reads its picture from a file: cache the station's
   /// icon and show it once it is there.
-  Future<void> _fetchIcon(RadioStation station) async {
-    final url = station.icon;
+  Future<void> _fetchIcon(RadioStation station, String? url) async {
     if (url == null || _iconFiles.containsKey(url)) return;
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != 'https') return;
     try {
       final file = await DefaultCacheManager().getSingleFile(url);
       _iconFiles[url] = file.path;
-      if (ref.mounted && state.station?.id == station.id) _syncNotification();
+      if (ref.mounted &&
+          state.station?.id == station.id &&
+          (state.trackMetadata?.cover ?? station.icon) == url)
+        _syncNotification();
     } catch (_) {
       // No icon: the notification shows the station without a picture.
     }
@@ -506,18 +589,56 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     if (_failingPlayRequest == request) _failingPlayRequest = null;
   }
 
-  Future<void> play(
-    RadioStation station,
-  ) => IosLocalAudioRequests.run(() async {
+  /// Playback-owned metadata polling survives leaving the Stations page.
+  /// The shared cache deduplicates these requests with visible station rows.
+  void _pollStationMetadata(RadioStation station, int request) {
+    Future<void> refresh() async {
+      final info = await StationMetadataLookup.lookup(station);
+      if (!_isCurrentPlay(request, station) || info == null) return;
+      final current = state;
+      if (current.trackMetadata?.label == info.label &&
+          current.trackMetadata?.cover == info.cover)
+        return;
+      state = RadioPlayback(
+        station: station,
+        playing: current.playing,
+        loading: current.loading,
+        error: current.error,
+        nowPlaying: info.label,
+        trackMetadata: info,
+      );
+      _syncNotification();
+    }
+
+    unawaited(refresh());
+    _metadataTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(refresh()),
+    );
+  }
+
+  Future<void> play(RadioStation station, {List<RadioStation>? queue}) => IosLocalAudioRequests.run(() async {
     if (!ref.read(internetRadioEnabledProvider)) return;
+    if (queue != null) {
+      final seen = <String>{};
+      _stationQueue = [
+        for (final item in queue)
+          if (seen.add(item.id)) item,
+      ];
+    }
+    if (!_stationQueue.any((item) => item.id == station.id)) {
+      _stationQueue = [..._stationQueue, station];
+    }
     final request = ++_playRequest;
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
+    _metadataTimer?.cancel();
     _failingPlayRequest = null;
     // Set loading before awaiting session/player setup so every failure path
     // is visible and can also be cleared by stop().
     state = RadioPlayback(station: station, loading: true);
     _syncNotification();
+    _pollStationMetadata(station, request);
     try {
       final player = _ensurePlayer();
       if (ref.read(isPlayingProvider)) {
@@ -593,7 +714,12 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
       if (!_isCurrentPlay(request, station)) return;
       // The state stream usually delivered this already; set it explicitly so
       // the initial load cannot remain visible if that event was missed.
-      state = RadioPlayback(station: station, playing: true);
+      state = RadioPlayback(
+        station: station,
+        playing: true,
+        nowPlaying: state.nowPlaying,
+        trackMetadata: state.trackMetadata,
+      );
       _syncNotification();
     } catch (_) {
       await IosLocalAudioRequests.wait(_failPlay(request, station));
@@ -626,6 +752,8 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
     _playRequest++;
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
+    _metadataTimer?.cancel();
+    _stationQueue = const [];
     _failingPlayRequest = null;
     final wasOn = state.station != null;
     state = const RadioPlayback();

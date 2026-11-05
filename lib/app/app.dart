@@ -9,7 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/theme/lokal_interaction.dart';
 import 'package:flick/core/navigation/root_navigator.dart';
+import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flick/core/utils/app_haptics.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/providers/providers.dart';
@@ -83,6 +85,7 @@ class FlickPlayerApp extends StatelessWidget {
     LokalAppearance appearance,
   ) {
     return MaterialApp(
+      scrollBehavior: const LokalScrollBehavior(),
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
       debugShowCheckedModeBanner: false,
       theme: LokalTheme.build(appearance.tokens),
@@ -171,11 +174,32 @@ class _ScaledTextScaler extends TextScaler {
   int get hashCode => Object.hash(system, factor);
 }
 
-class _RootRouter extends ConsumerWidget {
+class _RootRouter extends ConsumerStatefulWidget {
   const _RootRouter();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_RootRouter> createState() => _RootRouterState();
+}
+
+class _RootRouterState extends ConsumerState<_RootRouter>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
     final onboardingComplete = ref.watch(onboardingCompletedProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
 
@@ -183,7 +207,7 @@ class _RootRouter extends ConsumerWidget {
     // When the OS requests reduced motion (e.g. Accessibility "remove
     // animations"), that flag wins over the in-app preference so the app
     // settles into a static state like native Android apps do.
-    final systemReducedMotion = MediaQuery.of(context).disableAnimations;
+    final systemReducedMotion = systemRequestsReducedMotion(context);
     final animationsEnabled =
         appPreferences.animationsEnabled && !systemReducedMotion;
     AppConstants.setAnimationsEnabled(animationsEnabled);

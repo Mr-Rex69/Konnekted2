@@ -109,6 +109,65 @@ class PlayerPanelStage extends StatelessWidget {
   );
 }
 
+/// The full-size artwork target used by both the player panel layout and
+/// Space's reveal. Matching these calculations prevents the rounded Space
+/// cutout drifting from the cover when Space opens directly from Lyrics.
+@visibleForTesting
+Rect playerPanelRestArtworkRect(
+  Size size, {
+  required double artGap,
+  required double infoReserve,
+}) {
+  final width = size.width;
+  final height = size.height;
+  final room = math.max(
+    0.0,
+    height - artGap - math.min(height, infoReserve) - 6,
+  );
+  final side = math.min(width, room);
+  return Rect.fromLTWH(
+    (width - side) / 2,
+    (room - side) / 2,
+    side,
+    side,
+  );
+}
+
+/// Artwork rectangle at any point in the existing queue/lyrics transition.
+/// These are exactly the constraints and offsets used by _PanelLayout, so
+/// Space's growing frost mask can follow the actual cover frame by frame.
+@visibleForTesting
+Rect playerPanelArtworkRect(
+  Size size, {
+  required double artGap,
+  required double infoReserve,
+  required double queue,
+  required double lyrics,
+}) {
+  final l = lyrics.clamp(0.0, 1.0);
+  final q = queue.clamp(0.0, 1.0) * (1 - l);
+  final c = q + l;
+  final full = 1 - c;
+  final rest = playerPanelRestArtworkRect(
+    size,
+    artGap: artGap,
+    infoReserve: infoReserve,
+  );
+  final w = size.width;
+  final h = size.height;
+  const thumb = 52.0;
+  final headerHeight = math.max(math.min(thumb, h), infoReserve);
+  final artCentering = (headerHeight - math.min(thumb, h)) / 2;
+  final lyricsTop = math.max(0.0, h - headerHeight - 8);
+  final side = lerpDouble(rest.width, math.min(thumb, h), c)!;
+  return Rect.fromLTWH(
+    (w - rest.width) / 2 * full,
+    rest.top * full + artCentering * c + lyricsTop * l,
+    side,
+    side,
+  );
+}
+
 enum _Part { art, info, queue, lyrics, header }
 
 class _PanelLayout extends MultiChildLayoutDelegate {
@@ -135,21 +194,27 @@ class _PanelLayout extends MultiChildLayoutDelegate {
     );
     // Hold sleeve geometry steady across fallback fonts with different
     // ascent/descent metrics (e.g. Japanese, Chinese, Latin).
-    final room = math.max(0.0, h - artGap - math.min(h, infoReserve) - 6);
-    final fullSide = math.min(w, room);
-    final top = (room - fullSide) / 2;
+    final restArtwork = playerPanelRestArtworkRect(
+      size,
+      artGap: artGap,
+      infoReserve: infoReserve,
+    );
+    final fullSide = restArtwork.width;
+    final room = restArtwork.top * 2 + fullSide;
+    final top = restArtwork.top;
     final headerHeight = math.max(math.min(thumb, h), infoReserve);
     final artCentering = (headerHeight - math.min(thumb, h)) / 2;
     final lyricsTop = math.max(0.0, h - headerHeight - 8);
-    final side = lerpDouble(fullSide, math.min(thumb, h), c)!;
-    layoutChild(_Part.art, BoxConstraints.tightFor(width: side, height: side));
-    positionChild(
-      _Part.art,
-      Offset(
-        (w - fullSide) / 2 * full,
-        top * full + artCentering * c + lyricsTop * lyrics,
-      ),
+    final artBounds = playerPanelArtworkRect(
+      size,
+      artGap: artGap,
+      infoReserve: infoReserve,
+      // _PanelLayout receives the already-composited q term.
+      queue: lyrics >= 1 ? 0 : queue / (1 - lyrics),
+      lyrics: lyrics,
     );
+    layoutChild(_Part.art, BoxConstraints.tight(artBounds.size));
+    positionChild(_Part.art, artBounds.topLeft);
     positionChild(
       _Part.info,
       Offset(

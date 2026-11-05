@@ -1,16 +1,13 @@
+import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flick/l10n/l10n.dart';
-import 'package:flick/core/constants/app_constants.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/services/global_catalogue_source.dart';
 import 'package:flick/services/global_catalogue_search.dart';
-
 import 'global_catalogue_search_section.dart';
-
 import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/features/konnekted/library/lokal_music_detail_page.dart';
-
 import 'artist_search_portrait.dart';
 
 import '../models/search_category.dart';
@@ -53,8 +50,7 @@ class _OnlineCatalogueSearchSectionState
   }
 
   void _load({bool refresh = false}) {
-    _results = ref
-        .read(globalCatalogueSearchServiceProvider)
+    _results = ref.read(globalCatalogueSearchServiceProvider)
         .search(widget.query, refresh: refresh, songsOnly: false);
   }
 
@@ -68,17 +64,7 @@ class _OnlineCatalogueSearchSectionState
   }
 
   Future<void> _open(Widget page) => Navigator.of(context).push<void>(
-    PageRouteBuilder<void>(
-      transitionDuration: AppConstants.animationNormal,
-      reverseTransitionDuration: AppConstants.animationNormal,
-      pageBuilder: (_, _, _) => page,
-      transitionsBuilder: (_, animation, _, child) => SlideTransition(
-        position: Tween(begin: const Offset(.08, 0), end: Offset.zero).animate(
-          CurvedAnimation(parent: animation, curve: Curves.easeInOutCubic),
-        ),
-        child: FadeTransition(opacity: animation, child: child),
-      ),
-    ),
+    LokalPageRoute<void>(builder: (_) => page),
   );
 
   @override
@@ -107,29 +93,19 @@ class _OnlineCatalogueSearchSectionState
                   label: Text(lokalText('Could not search. Retry')),
                 );
               }
-              final data =
-                  snapshot.data ??
+              final data = snapshot.data ??
                   const GlobalCatalogueMatches(catalogue: 'apple');
               final rows = widget.category == SearchCategory.albums
-                  ? data.albums
-                  : data.artists;
+                  ? data.albums : data.artists;
               if (rows.isEmpty) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (data.notice != null)
-                      Text(
-                        data.notice!,
-                        style: TextStyle(color: t.muted, fontSize: 11),
-                      ),
-                    Text(
-                      lokalText(
-                        widget.category == SearchCategory.albums
-                            ? 'No albums found online.'
-                            : 'No artists found online.',
-                      ),
-                      style: TextStyle(color: t.muted),
-                    ),
+                      Text(data.notice!, style: TextStyle(color: t.muted, fontSize: 11)),
+                    Text(lokalText(widget.category == SearchCategory.albums
+                        ? 'No albums found online.' : 'No artists found online.'),
+                        style: TextStyle(color: t.muted)),
                   ],
                 );
               }
@@ -137,10 +113,7 @@ class _OnlineCatalogueSearchSectionState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (data.notice != null)
-                    Text(
-                      data.notice!,
-                      style: TextStyle(color: t.muted, fontSize: 11),
-                    ),
+                    Text(data.notice!, style: TextStyle(color: t.muted, fontSize: 11)),
                   const SizedBox(height: 8),
                   for (final row in rows.take(
                     widget.previewLimit ?? rows.length,
@@ -178,10 +151,7 @@ class _OnlineCatalogueSearchSectionState
                     else if (row is GlobalCatalogueArtist)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: ArtistSearchPortrait(
-                          name: row.name,
-                          artworkUrl: row.artworkUrl,
-                        ),
+                        leading: ArtistSearchPortrait(name: row.name, artworkUrl: row.artworkUrl),
                         title: Text(row.name),
                         subtitle: Text(lokalText('Artist')),
                         trailing: const Icon(Icons.chevron_right),

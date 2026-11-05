@@ -6,6 +6,7 @@ import 'package:flick/core/navigation/root_navigator.dart';
 import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/features/queue/screens/queue_sheet.dart';
 import 'package:flick/widgets/lokal/lokal_player_route.dart';
+import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 
 /// Helper class to prevent duplicate navigation to FullPlayerScreen
 class NavigationHelper {
@@ -84,12 +85,19 @@ class NavigationHelper {
       final navigator = rootNavigatorKey.currentState != null
           ? rootNavigatorKey.currentState!
           : Navigator.of(context);
+      // Capture the mini's actual on-screen art *before* pushing the route.
+      // Flutter may temporarily detach its Hero GlobalKey during the push.
+      // A live-only callback made the shared artwork portal disappear in
+      // precisely those frames, so the visible close could remain straight.
+      final artworkSource = sourceArtwork == null
+          ? null
+          : LokalArtworkSource(sourceArtwork);
       final route = LokalPlayerRoute<int>(
         builder: (context) =>
             FullPlayerScreen(key: playerKey, heroTag: heroTag),
         startTop: startTop,
         initialProgress: initialProgress,
-        sourceArtwork: sourceArtwork,
+        sourceArtwork: artworkSource?.current,
         reduceMotion: () => AppConstants.animationNormal == Duration.zero,
         settings: const RouteSettings(name: '/full_player'),
       );
@@ -126,12 +134,15 @@ class NavigationHelper {
   }) {
     if (_isNavigating || _isFullPlayerOpen) return null;
     final navigator = rootNavigatorKey.currentState ?? Navigator.of(context);
+    final artworkSource = sourceArtwork == null
+        ? null
+        : LokalArtworkSource(sourceArtwork);
     return LokalPlayerPull.start(
       navigator,
       builder: (_) => FullPlayerScreen(key: playerKey, heroTag: heroTag),
       startTop: startTop,
       onOpen: onOpen,
-      sourceArtwork: sourceArtwork,
+      sourceArtwork: artworkSource?.current,
       onClosed: onClosed,
       reduceMotion: () => AppConstants.animationNormal == Duration.zero,
     );

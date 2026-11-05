@@ -26,7 +26,7 @@ void main() {
       expect(request.url.queryParameters['artist_name'], 'Kiko');
       expect(
         request.headers['User-Agent'],
-        contains('https://github.com/lokal-music/lokal-mobile'),
+        contains('https://github.com/lokal-music/Mobile'),
       );
       expect(request.headers['Accept'], 'application/json');
       return http.Response(jsonEncode([_record]), 200);

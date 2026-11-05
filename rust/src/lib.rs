@@ -1,4 +1,6 @@
 pub mod api;
+// C ABI used by the shared Soulseek client, outside FRB code generation.
+pub mod soulseek_ffi;
 
 // Audio engine is now available on all platforms including Android (using CPAL with Oboe backend)
 pub mod audio;

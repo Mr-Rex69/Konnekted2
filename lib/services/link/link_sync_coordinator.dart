@@ -2,8 +2,8 @@ import '../milestone_service.dart';
 import '../local_metadata_repair.dart';
 import '../../models/song.dart';
 
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:isar_community/isar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -117,7 +117,10 @@ class LinkSyncCoordinator {
     });
   }
 
-  Future<void> _execute(Future<void> Function() action, {bool fullSync = true}) async {
+  Future<void> _execute(
+    Future<void> Function() action, {
+    bool fullSync = true,
+  }) async {
     if (fullSync) _report(LinkSyncPhase.preparing);
     try {
       _requireReady();
@@ -227,6 +230,15 @@ class LinkSyncCoordinator {
       await socket.request('history.push', {'items': pushed});
       _requireReady();
       await prefs.setInt(pushKey, outgoing['cursor'] as int);
+      // The history cursor never waits on cover decoding or image transfer.
+      // Art upload is bounded and can retry separately from listening stats.
+      unawaited(
+        LokalDesktopSource.instance.uploadHistoryArtwork(
+          credentials,
+          pushed,
+          maxCovers: 2,
+        ),
+      );
     }
 
     // The desktop currently caps replies at 250 events. Consume only one
@@ -238,9 +250,7 @@ class LinkSyncCoordinator {
     _requireReady();
     final incoming = reply.body['items'];
     final nextCursor = reply.body['cursor'];
-    if (incoming is! List ||
-        incoming.length > 250 ||
-        nextCursor is! int) {
+    if (incoming is! List || incoming.length > 250 || nextCursor is! int) {
       throw const FormatException('Invalid desktop listening-history page.');
     }
     if (incoming.isNotEmpty) {
@@ -248,7 +258,9 @@ class LinkSyncCoordinator {
       final songs = SongRepository();
       final candidatesByTitle = <String, List<Song>>{};
       final projected =
-          <({String songId, String eventId, DateTime playedAt, int listenedMs})>[];
+          <
+            ({String songId, String eventId, DateTime playedAt, int listenedMs})
+          >[];
       for (final item in accepted) {
         // The journal always retains remote-only plays. Local recent history
         // is updated only for bounded, matching phone songs.
@@ -267,15 +279,17 @@ class LinkSyncCoordinator {
         final wire = Map<String, dynamic>.from(track);
         final title = wire['title'] as String? ?? '';
         if (title.isEmpty) continue;
-        final candidates = candidatesByTitle[title] ??=
-            await songs.getHistoryMatchCandidates(title);
+        final candidates = candidatesByTitle[title] ??= await songs
+            .getHistoryMatchCandidates(title);
         if (candidates.isEmpty) continue;
         final song = await journal.match(wire, candidates: candidates);
         if (song == null) continue;
         projected.add((
           songId: song.id,
           eventId: item['event_id'] as String,
-          playedAt: DateTime.fromMillisecondsSinceEpoch(item['played_at'] as int),
+          playedAt: DateTime.fromMillisecondsSinceEpoch(
+            item['played_at'] as int,
+          ),
           listenedMs: item['ms_played'] as int,
         ));
       }
@@ -291,15 +305,19 @@ class LinkSyncCoordinator {
     final prefs = await SharedPreferences.getInstance();
     final source = LokalDesktopSource.instance,
         server = await LokalDesktopSource.instance.ensureServer(credentials);
-    // A catalogue import is deliberately one-time. Subsequent explicit
-    // syncs need a lightweight, genre-only repair because desktop lookup
-    // results can predate the journal or fail to match when first received.
-    final reconcileGenres = !importCatalog &&
+    // Startup remains lightweight: only an explicit user-triggered full sync
+    // or a first-time merge walks the desktop catalogue. A one-time import
+    // prevents subsequently added PC tracks from ever reaching mobile.
+    final refreshCatalog =
+        importCatalog ||
+        !_background ||
+        prefs.getBool('$_prefix.catalog') != true ||
+        prefs.getBool('$_prefix.owned_catalog_v2') != true;
+    final reconcileGenres =
+        !refreshCatalog &&
         prefs.getBool('$_prefix.catalog') == true &&
         prefs.getBool('$_prefix.owned_catalog_v2') == true;
-    if (importCatalog ||
-        prefs.getBool('$_prefix.catalog') != true ||
-        prefs.getBool('$_prefix.owned_catalog_v2') != true) {
+    if (refreshCatalog) {
       _report(LinkSyncPhase.catalog);
       await for (final progress in source.syncLibrary(server)) {
         _requireReady();
@@ -411,7 +429,13 @@ class LinkSyncCoordinator {
     // A cursor only returns new events. Explicit Sync Now must also rebuild
     // playlists missing from the mobile store after a legacy or partial merge.
     // Replaying their durable operation history also repairs order and deletes.
-    if (!_background) await _reconcileDesktopPlaylists();
+    if (!_background) {
+      await _reconcileDesktopPlaylists();
+      await _reconcileRecentDesktopHistory();
+      // Backfill cover art for plays acknowledged by older desktop versions.
+      // Do not make a successful full sync wait for optional image uploads.
+      unawaited(source.uploadRecentHistoryArtwork(credentials, maxCovers: 8));
+    }
     _requireReady();
     _report(LinkSyncPhase.finalizing);
     if (!_background) {
@@ -419,6 +443,55 @@ class LinkSyncCoordinator {
       onProfileChanged?.call();
     }
     if (changed || !_background) MilestoneService.changes.add(null);
+  }
+
+  /// Repair history which was received before its PC songs were in the
+  /// phone's catalogue. Pull cursors are append-only, so those old events
+  /// would otherwise never be projected into the visible Recent history.
+  /// Only the latest 500 events are checked; all older events remain safely
+  /// stored in the journal for listening statistics.
+  Future<void> _reconcileRecentDesktopHistory() async {
+    final rows = await Database.instance.playEventEntitys
+        .where()
+        .sortByPlayedAtDesc()
+        .limit(500)
+        .findAll();
+    if (rows.isEmpty) return;
+    final songs = SongRepository();
+    final journal = LinkJournal.instance;
+    final byTitle = <String, List<Song>>{};
+    final byTrack = <String, Song?>{};
+    final projected =
+        <
+          ({String songId, String eventId, DateTime playedAt, int listenedMs})
+        >[];
+    for (final event in rows) {
+      if (event.source != 'desktop') continue;
+      Map<String, dynamic> track;
+      try {
+        track = Map<String, dynamic>.from(jsonDecode(event.trackJson) as Map);
+      } on Object {
+        continue;
+      }
+      final title = track['title']?.toString() ?? '';
+      if (title.isEmpty) continue;
+      final song = byTrack.containsKey(event.trackKey)
+          ? byTrack[event.trackKey]
+          : await journal.match(
+              {...track, 'track_key': event.trackKey},
+              candidates: byTitle[title] ??= await songs
+                  .getHistoryMatchCandidates(title),
+            );
+      byTrack[event.trackKey] = song;
+      if (song == null) continue;
+      projected.add((
+        songId: song.id,
+        eventId: event.eventId,
+        playedAt: DateTime.fromMillisecondsSinceEpoch(event.playedAt),
+        listenedMs: event.msPlayed,
+      ));
+    }
+    await RecentlyPlayedRepository().recordLinkPlays(projected);
   }
 
   /// Recover every playlist owned by the paired desktop on an explicit sync,
@@ -545,39 +618,52 @@ class LinkSyncCoordinator {
           final duration = (fields['duration'] as num?)?.toDouble() ?? 0;
           final rawArt = fields['artwork_url']?.toString() ?? '';
           final image = Uri.tryParse(rawArt);
-          final publicArt = image != null &&
+          final publicArt =
+              image != null &&
               image.scheme == 'https' &&
-              !image.queryParameters.keys.any((name) =>
-                  RegExp(r'token|signature|expires|auth', caseSensitive: false)
-                      .hasMatch(name));
-          final reference = stableOnlinePlaylistSong(Song(
-            id: 'online-link:${member.trackKey}',
-            title: title,
-            artist: artist,
-            album: fields['album']?.toString(),
-            albumArt: publicArt ? rawArt : null,
-            duration: Duration(
-              milliseconds: (duration.clamp(0, 86400) * 1000).round(),
+              !image.queryParameters.keys.any(
+                (name) => RegExp(
+                  r'token|signature|expires|auth',
+                  caseSensitive: false,
+                ).hasMatch(name),
+              );
+          final reference = stableOnlinePlaylistSong(
+            Song(
+              id: 'online-link:${member.trackKey}',
+              title: title,
+              artist: artist,
+              album: fields['album']?.toString(),
+              albumArt: publicArt ? rawArt : null,
+              duration: Duration(
+                milliseconds: (duration.clamp(0, 86400) * 1000).round(),
+              ),
+              fileType: 'ONLINE',
+              sourcePackage: Song.pendingSourcePackage,
+              remoteId: fields['source_ref']?.toString(),
             ),
-            fileType: 'ONLINE',
-            sourcePackage: Song.pendingSourcePackage,
-            remoteId: fields['source_ref']?.toString(),
-          ));
-          onlineSnapshots[reference.id] = PlaylistSongSnapshot.fromSong(reference);
+          );
+          onlineSnapshots[reference.id] = PlaylistSongSnapshot.fromSong(
+            reference,
+          );
           return reference.id;
         });
         final songIds = projection.songIds;
         final old = await PlaylistService.instance.getPlaylist(localId);
-        final sameOrder = old != null &&
+        final sameOrder =
+            old != null &&
             old.songIds.length == songIds.length &&
-            List.generate(songIds.length, (i) => i).every(
-              (i) => old.songIds[i] == songIds[i],
-            );
+            List.generate(
+              songIds.length,
+              (i) => i,
+            ).every((i) => old.songIds[i] == songIds[i]);
         final missingSnapshots = onlineSnapshots.keys.any(
           (id) => !(old?.songSnapshots.containsKey(id) ?? false),
         );
-        if (state.deleted || old == null || old.name != name ||
-            !sameOrder || missingSnapshots) {
+        if (state.deleted ||
+            old == null ||
+            old.name != name ||
+            !sameOrder ||
+            missingSnapshots) {
           final snapshots = {...?old?.songSnapshots, ...onlineSnapshots}
             ..removeWhere((id, _) => !songIds.contains(id));
           final playlist =
@@ -648,8 +734,8 @@ class LinkSyncCoordinator {
         ]) {
           if (fields.containsKey(field) && await journal.wins(item, field)) {
             winning[field] = fields[field];
-        }
           }
+        }
         // The matching snapshot identifies rows; edits earlier in this sync
         // may already have changed their metadata, so compare the current row.
         final currentRow = await Database.songs
