@@ -1,4 +1,5 @@
 import 'lyrics_matching.dart';
+import 'lyrics_flac_vorbis_reader.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -534,6 +535,11 @@ class LyricsService {
     final embeddedData = embedded?.content.trim().isNotEmpty == true
         ? _parseLyrics(embedded!.content, source: embedded.source)
         : null;
+    debugPrint(
+      '[LyricsLocalParsed] embeddedBg=${supportingVocalCount(embeddedData)} '
+      'sidecarBg=${supportingVocalCount(sidecarData)} '
+      'desktopBg=${supportingVocalCount(desktop)}',
+    );
 
     // A sidecar is the explicitly supplied local source. Otherwise preserve
     // word timing from linked Desktop lyrics, but overlay backing vocals from
@@ -560,6 +566,10 @@ class LyricsService {
     final selected = mergeSupportingVocals(
       primary,
       [embeddedData, sidecarData, desktop],
+    );
+    debugPrint(
+      '[LyricsLocalSelected] bg=${supportingVocalCount(selected)} '
+      'leadLines=${selected?.lines.where((l) => l.voice != 'bg').length ?? 0}',
     );
     _cache[filePath] = selected;
     return selected;
@@ -1109,6 +1119,7 @@ class LyricsService {
   }
 
   Future<_LoadedLyrics?> _loadEmbeddedLyricsText(String filePath) async {
+    _LoadedLyrics? native;
     try {
       final result = await _storageChannel.invokeMapMethod<String, dynamic>(
         'readEmbeddedLyrics',
@@ -1116,15 +1127,35 @@ class LyricsService {
       );
       final content = result?['content'] as String?;
       if (content != null && content.trim().isNotEmpty) {
-        return _LoadedLyrics(
+        native = _LoadedLyrics(
           content: content,
           source: result?['source'] as String? ?? 'embedded',
         );
       }
-    } catch (_) {
-      // Best-effort lookup. Fall back to sidecar lookup.
+    } catch (error) {
+      // Do not silently treat a native-channel failure as "no bg lyrics".
+      debugPrint('[LyricsEmbedded] androidNativeError=${error.runtimeType}');
     }
-    return null;
+
+    // Independent metadata reader: some Android devices expose only the lead
+    // through the platform bridge. For a real filesystem-backed FLAC, decode
+    // the Vorbis block directly and prefer the version retaining [bg:] rows.
+    final path = _resolveLocalPath(filePath);
+    final direct = path == null
+        ? null
+        : await FlacVorbisLyricsReader.readFile(path);
+    final nativeBg = FlacVorbisLyricsReader.backgroundCount(native?.content);
+    final directBg = FlacVorbisLyricsReader.backgroundCount(direct);
+    debugPrint(
+      '[LyricsEmbedded] nativeBg=$nativeBg directFlacBg=$directBg '
+      'nativeFound=${native != null} directFound=${direct != null}',
+    );
+    if (direct != null && directBg > nativeBg) {
+      return _LoadedLyrics(content: direct, source: 'embedded:vorbis:direct');
+    }
+    return native ?? (direct == null
+        ? null
+        : _LoadedLyrics(content: direct, source: 'embedded:vorbis:direct'));
   }
 
   Future<_LoadedLyrics?> _loadLyricsFromAbsolutePath(
