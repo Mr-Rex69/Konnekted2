@@ -34,6 +34,66 @@ List<int> overlappingBackgroundVocalIndices(
   return active;
 }
 
+/// A standalone backing voice is not a separate lead row in scrolling lyrics.
+List<int> visibleLeadLyricIndices(LyricsData lyrics) {
+  final lead = [
+    for (var i = 0; i < lyrics.lines.length; i++)
+      if (lyrics.lines[i].voice != 'bg') i,
+  ];
+  return lead.isNotEmpty
+      ? lead : List<int>.generate(lyrics.lines.length, (i) => i);
+}
+
+/// The index here refers to the visible rows, not the backing-only source rows.
+int focusedVisibleLyricIndex(LyricsData lyrics, Duration position) {
+  final visible = visibleLeadLyricIndices(lyrics);
+  var result = -1;
+  for (var i = 0; i < visible.length; i++) {
+    if (lyrics.lines[visible[i]].timestamp > position) break;
+    result = i;
+  }
+  return result;
+}
+
+class ActiveSupportingVocal {
+  final int lineIndex;
+  final bool standalone;
+  const ActiveSupportingVocal(this.lineIndex, this.standalone);
+}
+
+/// Attach any concurrent background singer visually to the *current* lead,
+/// including a singer whose original parent lead has already scrolled away.
+List<ActiveSupportingVocal> activeSupportingVocals(
+  LyricsData lyrics, Duration position, int focusedLineIndex,
+) {
+  if (focusedLineIndex < 0) return const [];
+  final hasLead = lyrics.lines.any((l) => l.voice != 'bg');
+  final found = <ActiveSupportingVocal>[];
+  for (var i = 0; i < lyrics.lines.length; i++) {
+    final line = lyrics.lines[i];
+    final standalone = line.voice == 'bg';
+    if (standalone && !hasLead) continue;
+    final text = standalone ? line.text : line.backgroundText;
+    if (text?.trim().isNotEmpty != true) continue;
+    final words = standalone ? line.words : line.backgroundWords;
+    if (words == null || words.isEmpty) {
+      if (!standalone && i == focusedLineIndex) {
+        found.add(ActiveSupportingVocal(i, false));
+      }
+      continue;
+    }
+    final start = words.first.start;
+    var end = words.last.end;
+    if (end <= start) {
+      end = words.last.start + const Duration(milliseconds: 500);
+    }
+    if (position >= start && position < end) {
+      found.add(ActiveSupportingVocal(i, standalone));
+    }
+  }
+  return found;
+}
+
 /// Synced lyrics list with a fixed focus anchor: the active line pins at
 /// [_anchorFraction] of the viewport height, per-line geometry comes from a
 /// measured-height registry (TextPainter estimates until real sizes arrive),
@@ -85,6 +145,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
 
   final ScrollController _scrollController = ScrollController();
 
+  List<int> _visibleLineIndices = const [];
   List<double> _inactiveEstimates = const [];
   List<double> _activeEstimates = const [];
   List<double?> _measuredHeights = const [];
@@ -149,10 +210,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     final isSeekBack = deltaMs <= -_seekBackThresholdMs;
     final isSeek = isSeekBack || deltaMs >= _seekForwardThresholdMs;
 
-    final newIndex = widget.lyricsService.findCurrentLineIndex(
-      widget.lyrics,
-      position,
-    );
+    final newIndex = focusedVisibleLyricIndex(widget.lyrics, position);
     if (newIndex == _activeLineIndex) {
       if (isSeek) _resumeFollow();
       return;
@@ -171,10 +229,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   void _syncToPosition() {
     final position = _positionNotifier.value;
     _lastTickPosition = position;
-    final newIndex = widget.lyricsService.findCurrentLineIndex(
-      widget.lyrics,
-      position,
-    );
+    final newIndex = focusedVisibleLyricIndex(widget.lyrics, position);
     if (newIndex != _activeLineIndex) {
       _setActiveIndex(newIndex);
     }
@@ -183,7 +238,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
 
   Future<void> _seekToLine(int index) async {
     if (index < 0 || index >= widget.lyrics.lines.length) return;
-    final target = widget.lyrics.lines[index].timestamp;
+    final target = widget.lyrics.lines[_visibleLineIndices[index]].timestamp;
     if (widget.onSeek == null) {
       widget.playerService.positionNotifier.value = target;
     } else {
@@ -207,7 +262,10 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
         identical(_estimatesForLyrics, widget.lyrics)) {
       return;
     }
-    final lines = widget.lyrics.lines;
+    _visibleLineIndices = visibleLeadLyricIndices(widget.lyrics);
+    final lines = [
+      for (final index in _visibleLineIndices) widget.lyrics.lines[index],
+    ];
     final textWidth = listWidth - 44 > 24 ? listWidth - 44 : 24.0;
     final inactive = <double>[];
     final active = <double>[];
@@ -266,7 +324,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   }
 
   void _recomputeTops() {
-    final count = widget.lyrics.lines.length;
+    final count = _visibleLineIndices.length;
     if (_lineTops.length != count) {
       _lineTops = List<double>.filled(count, 0);
     }
@@ -429,7 +487,8 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     LyricsAlignment alignment, {
     required bool karaokeEnabled,
   }) {
-    final line = widget.lyrics.lines[index];
+    final lyricIndex = _visibleLineIndices[index];
+    final line = widget.lyrics.lines[lyricIndex];
     final isActive = index == _activeLineIndex;
     final isSupportingVoice = line.voice == 'bg';
 
@@ -440,7 +499,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               playerService: widget.playerService,
               lyricsService: widget.lyricsService,
               lyrics: widget.lyrics,
-              lineIndex: index,
+              lineIndex: lyricIndex,
               textAlign: alignment.textAlign,
               style: isSupportingVoice
                   ? _textStyle(true, 1).copyWith(
@@ -490,105 +549,65 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 content,
+                // The backing singer sits immediately below the playing
+                // lead, never in a separate large lyric row.
                 if (isActive && widget.active)
-                  // A separately timed backing singer must remain visible
-                  // even after another lead row takes the scrolling focus.
                   ValueListenableBuilder<Duration>(
                     valueListenable: _positionNotifier,
                     builder: (context, position, _) {
-                      final overlapping = overlappingBackgroundVocalIndices(
-                        widget.lyrics, position, index,
+                      final backing = activeSupportingVocals(
+                        widget.lyrics, position, lyricIndex,
                       );
-                      if (overlapping.isEmpty) return const SizedBox.shrink();
+                      if (backing.isEmpty) return const SizedBox.shrink();
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          for (final bgIndex in overlapping)
+                          for (final voice in backing)
                             Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 2,
+                              key: ValueKey(
+                                'active-bg-${voice.lineIndex}-${voice.standalone}',
+                              ),
+                              padding: const EdgeInsets.only(
+                                left: 12, right: 12, top: 2, bottom: 5,
                               ),
                               child: karaokeEnabled
                                   ? KaraokeLyricLine(
-                                      key: ValueKey(
-                                        'overlapping-bg-$bgIndex',
-                                      ),
                                       playerService: widget.playerService,
                                       lyricsService: widget.lyricsService,
                                       lyrics: widget.lyrics,
-                                      lineIndex: bgIndex,
-                                      backgroundVoice: true,
+                                      lineIndex: voice.lineIndex,
+                                      backgroundVoice: !voice.standalone,
                                       textAlign: alignment.textAlign,
                                       style: const TextStyle(
-                                        fontSize: 15,
-                                        height: 1.3,
-                                        fontStyle: FontStyle.italic,
+                                        fontFamily: 'GoogleSansFlex',
+                                        fontSize: 16,
+                                        height: 1.25,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                      sungColor: _sungColor.withValues(
-                                        alpha: .83,
-                                      ),
-                                      unsungColor: Colors.white.withValues(
-                                        alpha: .28,
-                                      ),
+                                      sungColor: _sungColor.withValues(alpha: .84),
+                                      unsungColor: Colors.white.withValues(alpha: .38),
                                       positionNotifier: _positionNotifier,
                                       playingNotifier: widget.playingNotifier,
                                       active: widget.active,
                                     )
                                   : Text(
-                                      widget.lyrics.lines[bgIndex]
-                                          .backgroundText ?? '',
+                                      voice.standalone
+                                          ? widget.lyrics.lines[voice.lineIndex].text
+                                          : widget.lyrics.lines[voice.lineIndex]
+                                              .backgroundText ?? '',
                                       textAlign: alignment.textAlign,
                                       style: TextStyle(
-                                        fontSize: 15,
-                                        height: 1.3,
-                                        fontStyle: FontStyle.italic,
-                                        color: Colors.white.withValues(
-                                          alpha: .67,
-                                        ),
+                                        fontFamily: 'GoogleSansFlex',
+                                        fontSize: 16,
+                                        height: 1.25,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white.withValues(alpha: .78),
                                       ),
                                     ),
                             ),
                         ],
                       );
                     },
-                  ),
-                if (line.backgroundText?.trim().isNotEmpty == true)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 2,
-                    ),
-                    child: isActive && karaokeEnabled &&
-                            line.backgroundWords?.isNotEmpty == true
-                        ? KaraokeLyricLine(
-                            playerService: widget.playerService,
-                            lyricsService: widget.lyricsService,
-                            lyrics: widget.lyrics,
-                            lineIndex: index,
-                            backgroundVoice: true,
-                            textAlign: alignment.textAlign,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              height: 1.3,
-                              fontStyle: FontStyle.italic,
-                            ),
-                            sungColor: _sungColor.withValues(alpha: .83),
-                            unsungColor: Colors.white.withValues(alpha: .28),
-                            positionNotifier: _positionNotifier,
-                            playingNotifier: widget.playingNotifier,
-                            active: widget.active,
-                          )
-                        : Text(
-                            line.backgroundText!,
-                            textAlign: alignment.textAlign,
-                            style: TextStyle(
-                              fontSize: 15,
-                              height: 1.3,
-                              fontStyle: FontStyle.italic,
-                              color: Colors.white.withValues(
-                                alpha: isActive ? .67 : .30,
-                              ),
-                            ),
-                          ),
                   ),
                 AnimatedLyricSubline(
                   text: line.translation,
@@ -605,7 +624,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                           playerService: widget.playerService,
                           lyricsService: widget.lyricsService,
                           lyrics: widget.lyrics,
-                          lineIndex: index,
+                          lineIndex: lyricIndex,
                           sublineText: line.translation,
                           textAlign: alignment.textAlign,
                           style: const TextStyle(fontSize: 15, height: 1.3),
@@ -654,7 +673,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               left: 10,
               right: 10,
             ),
-            itemCount: widget.lyrics.lines.length,
+            itemCount: _visibleLineIndices.length,
             itemBuilder: (context, index) => _buildLine(
               context,
               index,
