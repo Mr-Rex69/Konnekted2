@@ -237,7 +237,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   }
 
   Future<void> _seekToLine(int index) async {
-    if (index < 0 || index >= widget.lyrics.lines.length) return;
+    if (index < 0 || index >= _visibleLineIndices.length) return;
     final target = widget.lyrics.lines[_visibleLineIndices[index]].timestamp;
     if (widget.onSeek == null) {
       widget.playerService.positionNotifier.value = target;
@@ -274,7 +274,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
       final bgHeight = background == null || background.isEmpty
           ? 0.0
           : 6 + _estimateTextHeight(background, 15, 1.3, 2, textWidth);
-      inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth) + bgHeight);
+      // Background vocals occupy space only while actually singing beneath
+      // the active line. Do not leave an empty subline under inactive rows.
+      inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth));
       active.add(28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth) + bgHeight);
     }
     _inactiveEstimates = inactive;
