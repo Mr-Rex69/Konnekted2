@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/online_lyrics_service.dart';
 
@@ -535,7 +536,7 @@ class LyricsService {
     final embeddedData = embedded?.content.trim().isNotEmpty == true
         ? _parseLyrics(embedded!.content, source: embedded.source)
         : null;
-    debugPrint(
+    AppLog.instance.add(
       '[LyricsLocalParsed] embeddedBg=${supportingVocalCount(embeddedData)} '
       'sidecarBg=${supportingVocalCount(sidecarData)} '
       'desktopBg=${supportingVocalCount(desktop)}',
@@ -567,7 +568,7 @@ class LyricsService {
       primary,
       [embeddedData, sidecarData, desktop],
     );
-    debugPrint(
+    AppLog.instance.add(
       '[LyricsLocalSelected] bg=${supportingVocalCount(selected)} '
       'leadLines=${selected?.lines.where((l) => l.voice != 'bg').length ?? 0}',
     );
@@ -1118,6 +1119,38 @@ class LyricsService {
     return '${parent.path}${Platform.pathSeparator}$stem.lrc';
   }
 
+  /// Background vocals are an independent track of metadata, not a new
+  /// choice of lead lyrics. Fetch them directly from the audio file, bypassing
+  /// lyric-source preferences and any cached lead-only result.
+  ///
+  /// The caller decides which primary lyrics to display; this only contributes
+  /// the original embedded supporting voice events.
+  Future<LyricsData?> loadEmbeddedSupportingVocals(Song song) async {
+    final path = song.filePath;
+    if (path == null || path.isEmpty) {
+      AppLog.instance.add('[LyricsBG] embedded skipped=no-audio-path');
+      return null;
+    }
+    try {
+      final embedded = await _loadEmbeddedLyricsText(path);
+      final parsed = embedded == null
+          ? null
+          : _parseLyrics(embedded.content, source: embedded.source);
+      final count = supportingVocalCount(parsed);
+      AppLog.instance.add(
+        '[LyricsBG] directExtract bg=$count '
+        'source=${embedded?.source ?? 'none'} '
+        'hasLead=${parsed?.lines.any((line) => line.voice != 'bg') == true}',
+      );
+      return count == 0 ? null : parsed;
+    } catch (error) {
+      AppLog.instance.add(
+        '[LyricsBG] embeddedExtractionError=${error.runtimeType}',
+      );
+      return null;
+    }
+  }
+
   Future<_LoadedLyrics?> _loadEmbeddedLyricsText(String filePath) async {
     _LoadedLyrics? native;
     try {
@@ -1134,7 +1167,7 @@ class LyricsService {
       }
     } catch (error) {
       // Do not silently treat a native-channel failure as "no bg lyrics".
-      debugPrint('[LyricsEmbedded] androidNativeError=${error.runtimeType}');
+      AppLog.instance.add('[LyricsEmbedded] androidNativeError=${error.runtimeType}');
     }
 
     // Independent metadata reader: some Android devices expose only the lead
@@ -1146,7 +1179,7 @@ class LyricsService {
         : await FlacVorbisLyricsReader.readFile(path);
     final nativeBg = FlacVorbisLyricsReader.backgroundCount(native?.content);
     final directBg = FlacVorbisLyricsReader.backgroundCount(direct);
-    debugPrint(
+    AppLog.instance.add(
       '[LyricsEmbedded] nativeBg=$nativeBg directFlacBg=$directBg '
       'nativeFound=${native != null} directFound=${direct != null}',
     );
