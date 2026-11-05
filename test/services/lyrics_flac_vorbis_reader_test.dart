@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/services/lyrics_flac_vorbis_reader.dart';
 import 'package:flick/services/lyrics_service.dart';
+import 'package:flick/features/player/widgets/flowing_background_vocals.dart';
 
 /// Anonymized structural fixture from the user-supplied Phantom Liberty FLAC.
 /// Preserves *all actual lead/background timestamps*, alternating [bg:] rows,
@@ -122,4 +123,53 @@ void main() {
       LyricsService().parseLyricsText(extracted!),
     ), 16);
   });
+
+  test('fullscreen renderer sees 16 voices from real FLAC tag structure', () {
+    final payload = FlacVorbisLyricsReader.fromVorbisCommentBlock(
+      vorbisBlock(anonymizedLyrics()),
+    )!;
+    final parsed = LyricsService().parseLyricsText(payload);
+    final voices = flowingBackgroundVocalLines(parsed.lines);
+    expect(voices, hasLength(16));
+    final index = activeFlowingBackgroundVocalIndex(
+      voices, const Duration(minutes: 4, seconds: 49),
+    );
+    expect(index, isNot(-1),
+      reason: 'Fullscreen must display singer at 04:49 under the lead.');
+    expect(voices[index].timestamp.inMilliseconds, 286325);
+    expect(voices[index].words!.last.end.inMilliseconds, 291269);
+    expect(
+      activeFlowingBackgroundVocalIndex(
+        voices, const Duration(milliseconds: 291269),
+      ),
+      -1,
+      reason: 'The backing voice stops at its independently timed end.',
+    );
+  });
+
+  test('independent vocal events cannot replace fullscreen lead timeline', () {
+    const lead = LyricsLine(
+      timestamp: Duration(seconds: 15),
+      text: 'Lead vocalist',
+    );
+    const bg = LyricsLine(
+      timestamp: Duration(seconds: 17),
+      text: 'Backing vocalist',
+      voice: 'bg',
+      words: [
+        LyricsWord(
+          start: Duration(seconds: 17),
+          end: Duration(seconds: 22),
+          text: 'Backing vocalist',
+        ),
+      ],
+    );
+    final voices = flowingBackgroundVocalLines([lead, bg]);
+    expect(voices, hasLength(1));
+    expect(voices.single.text, 'Backing vocalist');
+    expect(activeFlowingBackgroundVocalIndex(
+      voices, const Duration(seconds: 20),
+    ), 0);
+  });
+
 }

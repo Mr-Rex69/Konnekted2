@@ -13,6 +13,7 @@ import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/lyrics_playback_prefetch.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/features/player/widgets/lyrics_alignment.dart';
 
@@ -51,6 +52,7 @@ class InlineLyricsPanel extends ConsumerStatefulWidget {
 class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
   final ScrollController _scrollController = ScrollController();
   LyricsData? _lyricsData;
+  LyricsData? _embeddedBackgroundLyrics;
   LyricsData? _sublineLyrics;
   bool _isLoading = true;
   bool _savingLyricsFile = false;
@@ -101,9 +103,13 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
     final request = ++_lyricsRequest;
     setState(() {
       _isLoading = true;
-      if (_loadedSongId != song.id) _lyricsData = null;
+      if (_loadedSongId != song.id) {
+        _lyricsData = null;
+        _embeddedBackgroundLyrics = null;
+      }
       _sublineLyrics = null;
     });
+    unawaited(_loadEmbeddedBackgroundLyrics(song, request));
     try {
       final selected = _selectedLyricsSource;
       final warm = !refreshOnline && selected == 'auto';
@@ -121,7 +127,9 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
       if (!mounted || request != _lyricsRequest ||
           widget.song.id != song.id) return;
       setState(() {
-        _lyricsData = local;
+        _lyricsData = LyricsService.mergeSupportingVocals(
+          local, [_embeddedBackgroundLyrics],
+        );
         _loadedSongId = song.id;
         _isLoading = local == null;
       });
@@ -156,11 +164,12 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
         }
         // Preserve independent background-vocal timing across source upgrades.
         // The manually chosen lead remains authoritative.
-        if (selected == 'auto') {
-          _lyricsData = LyricsService.mergeSupportingVocals(
-            _lyricsData, [local, best],
-          );
-        }
+        _lyricsData = LyricsService.mergeSupportingVocals(
+          _lyricsData, [
+            if (selected == 'auto') ...[local, best],
+            _embeddedBackgroundLyrics,
+          ],
+        );
         _hasManualLyricsSelection =
             manualPath != null && manualPath.isNotEmpty;
         _isLoading = false;
@@ -170,6 +179,32 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _loadEmbeddedBackgroundLyrics(Song song, int request) async {
+    LyricsData? background;
+    try {
+      background = await widget.lyricsService
+          .loadEmbeddedSupportingVocals(song)
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
+    } catch (error) {
+      AppLog.instance.add(
+        '[LyricsBG] inlineLookupError=${error.runtimeType}',
+      );
+    }
+    if (!mounted || request != _lyricsRequest ||
+        widget.song.id != song.id) return;
+    final combined = LyricsService.mergeSupportingVocals(
+      _lyricsData, [background],
+    );
+    AppLog.instance.add(
+      '[LyricsBG] inlineVisible embedded=${LyricsService.supportingVocalCount(background)} '
+      'selected=${LyricsService.supportingVocalCount(combined)}',
+    );
+    setState(() {
+      _embeddedBackgroundLyrics = background;
+      _lyricsData = combined;
+    });
   }
 
   String? _lyricsSourceLabel(String? source) {

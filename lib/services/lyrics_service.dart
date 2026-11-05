@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/online_lyrics_service.dart';
 
@@ -536,7 +537,7 @@ class LyricsService {
     final embeddedData = embedded?.content.trim().isNotEmpty == true
         ? _parseLyrics(embedded!.content, source: embedded.source)
         : null;
-    debugPrint(
+    AppLog.instance.add(
       '[LyricsLocalParsed] embeddedBg=${supportingVocalCount(embeddedData)} '
       'sidecarBg=${supportingVocalCount(sidecarData)} '
       'desktopBg=${supportingVocalCount(desktop)}',
@@ -568,7 +569,7 @@ class LyricsService {
       primary,
       [embeddedData, sidecarData, desktop],
     );
-    debugPrint(
+    AppLog.instance.add(
       '[LyricsLocalSelected] bg=${supportingVocalCount(selected)} '
       'leadLines=${selected?.lines.where((l) => l.voice != 'bg').length ?? 0}',
     );
@@ -1156,6 +1157,34 @@ class LyricsService {
     }
   }
 
+  /// Supporting vocals are an independently timed vocal lane, not a choice
+  /// of lead lyric source. Resolve them directly from the stored recording,
+  /// including its MediaStore URI, without relying on cached lead lyrics.
+  Future<LyricsData?> loadEmbeddedSupportingVocals(Song song) async {
+    if (song.filePath == null || song.filePath!.isEmpty) {
+      AppLog.instance.add('[LyricsBG] embedded skipped=no-audio-path');
+      return null;
+    }
+    try {
+      final embedded = await _loadEmbeddedLyricsText(song);
+      final parsed = embedded == null
+          ? null
+          : _parseLyrics(embedded.content, source: embedded.source);
+      final count = supportingVocalCount(parsed);
+      AppLog.instance.add(
+        '[LyricsBG] directExtract bg=$count '
+        'source=${embedded?.source ?? 'none'} '
+        'hasLead=${parsed?.lines.any((line) => line.voice != 'bg') == true}',
+      );
+      return count == 0 ? null : parsed;
+    } catch (error) {
+      AppLog.instance.add(
+        '[LyricsBG] embeddedExtractionError=${error.runtimeType}',
+      );
+      return null;
+    }
+  }
+
   Future<_LoadedLyrics?> _loadEmbeddedLyricsText(Song song) async {
     final filePath = song.filePath;
     if (filePath == null || filePath.isEmpty) return null;
@@ -1186,7 +1215,7 @@ class LyricsService {
           );
         }
       } catch (error) {
-        debugPrint(
+        AppLog.instance.add(
           '[LyricsEmbedded] nativeReadFailed='
           '${error.runtimeType} usingMediaStore=${uri != filePath}',
         );
@@ -1208,7 +1237,7 @@ class LyricsService {
       bestCount = directBg;
     }
 
-    debugPrint(
+    AppLog.instance.add(
       '[LyricsEmbedded] attempts=${candidates.length} '
       'nativeSuccess=$nativeSuccess persistedMediaStoreUri='
       '${storedUri != null} usedMediaStore=$persistedUriUsed '
