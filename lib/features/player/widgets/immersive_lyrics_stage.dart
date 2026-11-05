@@ -303,6 +303,7 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
   );
 
   Widget _subtitleLine(LyricsLine line, int index, Duration position) {
+    final isSupportingVoice = line.voice == 'bg';
     return Column(
       // Keep the entire line's subtree stable as adjacent active lines expire.
       // A key only on LyricMotionLine cannot preserve its state if Column moves.
@@ -317,7 +318,13 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
             line: line,
             position: position,
             textAlign: TextAlign.center,
-            style: _lyricStyle,
+            style: isSupportingVoice
+                ? _lyricStyle.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    fontStyle: FontStyle.italic,
+                  )
+                : _lyricStyle,
           ),
         ),
         if (line.backgroundText?.trim().isNotEmpty == true) ...[
