@@ -1593,7 +1593,8 @@ Future<List<OnlineSource>> _playbackSources(
               rethrow;
             }
           }
-          if (forDownload || audio.hybridPlan != null) {
+          if (forDownload || audio.hybridPlan != null ||
+              audio.dashMedia != null || audio.requiresStaging) {
             // CENC hybrid-v1 is a set of encrypted CDN ranges, not a
             // progressive media URL. Stage/decrypt it locally, then run the
             // native audio probe before handing the file to PlayerService.
@@ -1767,6 +1768,16 @@ String _onlineFailureKind(Object error) {
       case 'The addon returned invalid hybrid byte ranges.':
       case 'The addon returned an incomplete hybrid audio plan.':
         return 'addon_hybrid_invalid';
+      case 'The add-on returned an unsupported DASH manifest.':
+      case 'The add-on DASH manifest is invalid.':
+      case 'The add-on DASH manifest is invalid UTF-8.':
+        return 'addon_dash_manifest_invalid';
+      case 'The DASH init is not a supported MP4 file.':
+        return 'addon_dash_init_invalid';
+      case 'The add-on DASH rendition requires DRM.':
+        return 'addon_dash_drm';
+      case 'The DASH recording timed out.':
+        return 'addon_dash_timeout';
     }
   }
   final message = error.toString().toLowerCase();

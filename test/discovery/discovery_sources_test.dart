@@ -629,9 +629,7 @@ void main() {
           {'url': 'https://[::1]/audio'},
           {'url': 'https://localhost/audio'},
           {'url': 'https://router.local/audio'},
-          {'url': 'https://cdn.example/audio.mpd'},
           {'url': 'https://cdn.example/list.m3u8'},
-          {'url': 'https://cdn.example/audio', 'manifest': 'dash'},
           {
             'url': 'https://cdn.example/audio',
             'mimeType': 'application/vnd.apple.mpegurl',
@@ -652,6 +650,19 @@ void main() {
             reason: json.toString(),
           );
         }
+        expect(
+          addon.parseStream({
+            'url': 'https://cdn.example/audio.mpd',
+          }).dashMedia,
+          isNotNull,
+        );
+        expect(
+          addon.parseStream({
+            'url': 'https://cdn.example/audio',
+            'manifest': 'dash',
+          }).requiresStaging,
+          isTrue,
+        );
         expect(
           addon
               .parseStream({

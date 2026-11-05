@@ -58,16 +58,15 @@ void main() {
     );
   });
 
-  test('a real DASH/MPD URL is never mistaken for progressive audio', () {
-    expect(
-      () => addon.parseStream({
-        'stream': {
-          'url': 'https://cdn.example/audio/manifest.mpd',
-          'format': 'dash',
-        },
-      }),
-      throwsA(isA<DiscoveryException>()),
-    );
+  test('a real DASH/MPD URL uses the DASH plan, not progressive audio', () {
+    final resolved = addon.parseStream({
+      'stream': {
+        'url': 'https://cdn.example/audio/manifest.mpd',
+        'format': 'dash',
+      },
+    });
+    expect(resolved.dashMedia?.manifestUrl?.path, '/audio/manifest.mpd');
+    expect(resolved.requiresStaging, isFalse);
   });
 
   test('a hybrid-only encrypted plan is rejected without a playable URL', () {
