@@ -476,11 +476,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           (_videoOverrideSong ?? widget.videoSong ??
            _player.currentSongNotifier.value)?.id != song.id) return;
       setState(() {
-        if (lyricQualityRank(best) > lyricQualityRank(_lyrics)) {
-          _lyrics = best;
-        } else if (_lyrics == null) {
-          _lyrics = best;
-        }
+        final selected = lyricQualityRank(best) > lyricQualityRank(_lyrics)
+            ? best : _lyrics ?? best;
+        // An online lead-timing upgrade must not remove independently timed
+        // backing vocals that came from the audio file.
+        _lyrics = LyricsService.mergeSupportingVocals(
+          selected, [_lyrics, best],
+        );
         _lyricsLoading = false;
       });
     } catch (_) {
