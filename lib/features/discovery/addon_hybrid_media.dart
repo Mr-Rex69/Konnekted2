@@ -136,6 +136,19 @@ class AddonHybridPlan {
   }
 }
 
+// The isolate callback only captures sendable typed data and scalar values.
+// In particular it cannot accidentally capture the HTTP client or file handle.
+Future<Uint8List> _decryptHybridFragment(
+  Uint8List bytes,
+  Uint8List key,
+  int ivSize,
+  Uint8List constantIv,
+  int segmentStart,
+) => Isolate.run(() {
+  cenc.decryptSegment(bytes, key, ivSize, constantIv, segmentStart);
+  return bytes;
+});
+
 /// Fetches only declared CDN byte ranges. Never asks the add-on endpoint to
 /// proxy media. CENC keys and all decrypted bytes remain on the device.
 Future<void> downloadAddonHybrid(
@@ -207,16 +220,13 @@ Future<void> downloadAddonHybrid(
     final batch = plan.ranges.skip(offset).take(parallel).toList();
     final bytes = await Future.wait(batch.map(fetchRange));
     for (var i = 0; i < batch.length; i++) {
-      final segment = bytes[i];
+      var segment = bytes[i];
       if (plan.encrypted) {
         try {
-          // The AES work is CPU-bound and can span many megabytes.
-          // Keep decryption off Flutter's UI isolate.
-          await Isolate.run(() {
-            cenc.decryptSegment(
-              segment, keyBytes, ivSize, constantIv, batch[i].start,
-            );
-          });
+          // A returned copy is required: isolates do not mutate the source.
+          segment = await _decryptHybridFragment(
+            segment, keyBytes, ivSize, constantIv, batch[i].start,
+          );
         } on Object {
           throw const DiscoveryException(
             'The hybrid media segment could not be decrypted.',
