@@ -206,7 +206,7 @@ class LyricsService {
     final seen = <String>{};
 
     String signature(String text, Duration time) =>
-        '${time.inMilliseconds}|${text.trim().replaceAll(RegExp(r'\\s+'), ' ')}';
+        '${time.inMilliseconds}|${text.trim().replaceAll(RegExp(r'\s+'), ' ')}';
 
     for (final line in lines) {
       if (line.backgroundText?.trim().isNotEmpty != true) continue;
@@ -541,13 +541,22 @@ class LyricsService {
     bool hasLead(LyricsData? data) => data?.lines.any(
       (line) => line.voice != 'bg' && line.text.trim().isNotEmpty,
     ) == true;
-    final primary = (hasLead(sidecarData) ? sidecarData : null) ??
-        ((hasLead(desktop) &&
-                desktop!.lines.any((l) => l.words?.isNotEmpty == true))
-            ? desktop
-            : (hasLead(embeddedData) ? embeddedData : null) ??
-                (hasLead(desktop) ? desktop : null) ??
-                sidecarData ?? embeddedData ?? desktop);
+    final desktopTimed = desktop?.lines.any((line) =>
+        line.voice != 'bg' && line.words?.isNotEmpty == true) == true;
+    final ordered = <LyricsData?>[
+      sidecarData,
+      if (desktopTimed) desktop,
+      embeddedData,
+      desktop,
+    ];
+    // Never choose a bg-only field over another source's actual lead.
+    final primary = ordered.firstWhere(
+      hasLead,
+      orElse: () => ordered.firstWhere(
+        (data) => data != null,
+        orElse: () => null,
+      ),
+    );
     final selected = mergeSupportingVocals(
       primary,
       [embeddedData, sidecarData, desktop],
