@@ -379,7 +379,8 @@ class LyricsService {
     if (own != null && await getManualLyricsPathForSong(song) != null)
       return own;
     final found = await fetchOnlineLyrics(song, stillCurrent: stillCurrent);
-    int rank(LyricsData? data) => data == null
+    int rank(LyricsData? data) => data == null ||
+            !data.lines.any((l) => l.voice != 'bg' && l.text.trim().isNotEmpty)
         ? 0
         : data.lines.any((l) =>
             l.voice != 'bg' && l.words?.isNotEmpty == true)
