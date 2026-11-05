@@ -3237,27 +3237,28 @@ class MainActivity: FlutterActivity() {
             }
         }
 
-        val retriever = MediaMetadataRetriever()
         val platformLyrics = try {
-            val uri = Uri.parse(audioUriString)
-            when (uri.scheme) {
-                "content", "file" -> retriever.setDataSource(this, uri)
-                else -> retriever.setDataSource(audioUriString)
-            }
-            val lyricKey = try {
-                MediaMetadataRetriever::class.java.getField("METADATA_KEY_LYRIC").getInt(null)
-            } catch (_: Exception) {
-                null
-            }
-            lyricKey?.let { retriever.extractMetadata(it) }
-        } catch (_: Exception) {
-            // Android metadata extraction is best effort, not a prerequisite
-            // for reading embedded lyrics from the file itself.
-            null
-        } finally {
+            val retriever = MediaMetadataRetriever()
             try {
-                retriever.release()
-            } catch (_: Exception) {}
+                val uri = Uri.parse(audioUriString)
+                when (uri.scheme) {
+                    "content", "file" -> retriever.setDataSource(this, uri)
+                    else -> retriever.setDataSource(audioUriString)
+                }
+                val lyricKey = try {
+                    MediaMetadataRetriever::class.java.getField("METADATA_KEY_LYRIC").getInt(null)
+                } catch (_: Exception) {
+                    null
+                }
+                lyricKey?.let { retriever.extractMetadata(it) }
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {
+            // Native tag reading is independent of Android's metadata decoder.
+            null
         }
 
         val candidates = listOfNotNull(
@@ -3266,12 +3267,12 @@ class MainActivity: FlutterActivity() {
         )
         val best = pickEmbeddedLyrics(candidates.map { it.second })
         val chosen = candidates.firstOrNull { it.second == best } ?: return null
-        // Counts only: never write lyric content or a file path into logs.
-        android.util.Log.d(
+        // No lyric text or file path is written to diagnostics.
+        val backgroundCount = chosen.second.lineSequence()
+            .count { it.trimStart().startsWith("[bg:", ignoreCase = true) }
+        android.util.Log.i(
             "FlickLyrics",
-            "embedded source=${chosen.first} backgroundRows=${
-                best?.lineSequence()?.count { it.trimStart().startsWith("[bg:", true) } ?: 0
-            }"
+            "embedded source=${chosen.first} bgRows=$backgroundCount"
         )
         return mapOf("content" to chosen.second, "source" to chosen.first)
     }
