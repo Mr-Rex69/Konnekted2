@@ -745,4 +745,32 @@ void main() {
       },
     );
   });
+  test('per-add-on HMAC key persists and legacy records remain unsigned', () async {
+    const addon = DiscoveryAddonConfig(
+      id: 'signed-source',
+      endpoint: 'https://addon.example/a/token',
+      signingKey: 'unit-test-key',
+      enabled: true,
+    );
+    await store.save(const DiscoverySettings(addons: [addon]));
+    final raw = await storage.read(key: _key);
+    expect(raw, contains('"signingKey":"unit-test-key"'));
+    final loaded = await store.load();
+    expect(loaded.addons.single.signingKey, 'unit-test-key');
+    expect(
+      const DiscoveryAddonConfig(
+        id: 'legacy-source',
+        endpoint: 'https://addon.example',
+      ).signingKey,
+      isEmpty,
+    );
+    expect(
+      () => const DiscoveryAddonConfig(
+        id: 'invalid-key',
+        endpoint: 'https://addon.example',
+        signingKey: 'bad\u0001key',
+      ).validated(),
+      throwsA(isA<DiscoveryException>()),
+    );
+  });
 }

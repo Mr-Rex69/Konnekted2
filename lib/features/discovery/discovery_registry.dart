@@ -14,6 +14,7 @@ class DiscoverySourceRegistry {
             http,
             endpoint: config.endpoint,
             token: config.token,
+            signingKey: config.signingKey,
             exactManifestUrl: config.manifestUrl == null
                 ? null
                 : Uri.parse(config.manifestUrl!),

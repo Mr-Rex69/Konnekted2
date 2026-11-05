@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import 'discovery_http.dart';
 import 'discovery_models.dart';
+import 'addon_request_signing.dart';
 
 class YoutubeMusicCatalog {
   YoutubeMusicCatalog(this.http, {this.refreshClientContext = false});
@@ -547,6 +548,7 @@ class DiscoveryAddon {
     this.configId,
     this.displayName = 'Music addon',
     this.settings = const {},
+    this.signingKey = '',
   }) : base = normalizeAddonEndpoint(endpoint),
        _token = token.trim() {
     if (_token.length > 4096 || RegExp(r'[\x00-\x20\x7f]').hasMatch(_token)) {
@@ -563,6 +565,7 @@ class DiscoveryAddon {
   final String? configId;
   final String displayName;
   final Map<String, String> settings;
+  final String signingKey;
 
   /// A provider may use a custom quality value with an explicitly Atmos-
   /// labeled option. Inspect that manifest label only if the selected ID is
@@ -612,11 +615,18 @@ class DiscoveryAddon {
     List<String> suffix, {
     Map<String, String>? query,
     Future<void>? cancel,
-  }) => http.json(
-    _endpoint(suffix, query),
-    headers: {if (_token.isNotEmpty) 'Authorization': 'Bearer $_token'},
-    cancel: cancel,
-  );
+    String? intent,
+  }) {
+    final url = _endpoint(suffix, query);
+    return http.json(
+      url,
+      headers: {
+        if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+        ...signedAddonHeaders(url, intent: intent, signingKey: signingKey),
+      },
+      cancel: cancel,
+    );
+  }
 
   Future<AddonHealth> health({
     Future<void>? cancel,
@@ -639,7 +649,10 @@ class DiscoveryAddon {
         ? await _get(['manifest.json'], cancel: cancel)
         : await http.json(
             exactManifestUrl,
-            headers: {if (_token.isNotEmpty) 'Authorization': 'Bearer $_token'},
+            headers: {
+              if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+              ...signedAddonHeaders(exactManifestUrl, signingKey: signingKey),
+            },
             cancel: cancel,
           );
     final id = discoveryText(json['id']);
@@ -681,8 +694,13 @@ class DiscoveryAddon {
       ['search'],
       query: {...settings, 'q': trimmed},
       cancel: cancel,
+      intent: 'stream',
     );
-    final rows = json['tracks'];
+    // HTTP add-on providers may nest their catalogue in "data".
+    final nested = json['data'];
+    final rows = json['tracks'] ??
+        (nested is Map ? nested['tracks'] : null) ??
+        json['results'] ?? json['items'];
     if (rows is! List) {
       throw const DiscoveryException(
         'The addon search response must contain a tracks array.',
@@ -809,7 +827,12 @@ class DiscoveryAddon {
       }
     }
     return parseStream(
-      await _get(['stream', track.id], query: settings, cancel: cancel),
+      await _get(
+        ['stream', track.id],
+        query: settings,
+        cancel: cancel,
+        intent: forDownload ? 'download' : 'stream',
+      ),
       expectedDuration: track.duration,
     );
   }
@@ -818,6 +841,25 @@ class DiscoveryAddon {
     Map<String, dynamic> json, {
     Duration? expectedDuration,
   }) {
+    // An add-on may return the same stream at top level and inside "data".
+    // Check security-sensitive flags on both layers before merging them.
+    final nested = json['data'];
+    if (nested is Map<String, dynamic>) {
+      for (final layer in [json, nested]) {
+        if (layer['error'] != null) {
+          throw const DiscoveryException('The addon could not resolve this recording.');
+        }
+        if (layer['encrypted'] != null && layer['encrypted'] != false ||
+            layer['drm'] != null && layer['drm'] != false) {
+          throw const DiscoveryException('Encrypted audio is not supported by this adapter.');
+        }
+        if (layer['headers'] != null &&
+            !(layer['headers'] is Map && (layer['headers'] as Map).isEmpty)) {
+          throw const DiscoveryException('Use a signed media URL; custom media headers are not supported.');
+        }
+      }
+      json = {...json, ...nested};
+    }
     if (json['error'] != null) {
       throw const DiscoveryException(
         'The addon could not resolve this recording.',
@@ -839,7 +881,13 @@ class DiscoveryAddon {
         'Use a signed media URL; custom media headers are not supported.',
       );
     }
-    final url = discoveryText(json['url'], maxLength: 8192);
+    String? url;
+    for (final field in const [
+      'url', 'directUrl', 'streamUrl', 'downloadUrl', 'mediaUrl',
+    ]) {
+      url = discoveryText(json[field], maxLength: 8192);
+      if (url != null) break;
+    }
     if (url == null) {
       throw const DiscoveryException('The addon returned no playable URL.');
     }

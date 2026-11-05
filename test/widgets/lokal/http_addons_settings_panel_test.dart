@@ -267,4 +267,49 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('HMAC key can be configured, replaced and removed without exposure', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PlaybackSourcePriority.key: ['yt'],
+    });
+    final store = _MemoryStore(const DiscoverySettings());
+    final client = MockClient((request) async {
+      expect(request.headers['X-LW-Sign'], isNotNull);
+      return http.Response(jsonEncode({
+      'id': 'signed-fixture',
+      'name': 'Fixture',
+      'resources': ['search', 'stream'],
+    }), 200, headers: {'content-type': 'application/json'});
+    });
+    addTearDown(client.close);
+    await tester.pumpWidget(_host(HttpAddonsSettingsPanel(store: store, client: client)));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('http-addon-manifest-url')),
+      'https://addon.example/a/token/manifest.json',
+    );
+    await tester.enterText(find.byKey(const ValueKey('http-addon-hmac-key')), 'test-key-one');
+    await tester.tap(find.byKey(const ValueKey('http-addon-add')));
+    for (var frame = 0; frame < 40 && store.saves == 0; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pump();
+    expect(store.settings.addons.single.signingKey, 'test-key-one');
+    final id = store.settings.addons.single.id;
+    await tester.tap(find.byKey(ValueKey('http-addon-settings-$id')));
+    await tester.pumpAndSettle();
+    final keyFinder = find.byKey(ValueKey('http-addon-hmac-key-$id'));
+    expect(tester.widget<TextField>(keyFinder).obscureText, isTrue);
+    await tester.enterText(keyFinder, 'test-key-two');
+    await tester.tap(find.widgetWithText(TextButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(store.settings.addons.single.signingKey, 'test-key-two');
+    await tester.tap(find.byKey(ValueKey('http-addon-settings-$id')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove saved HMAC key'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(store.settings.addons.single.signingKey, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 }

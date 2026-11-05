@@ -12,6 +12,7 @@ class DiscoveryAddonConfig {
     this.manifestUrl,
     this.label = '',
     this.token = '',
+    this.signingKey = '',
     this.settings = const {},
     this.enabled = false,
   });
@@ -23,6 +24,7 @@ class DiscoveryAddonConfig {
   final String? manifestUrl;
   final String label;
   final String token;
+  final String signingKey;
   final Map<String, String> settings;
   final bool enabled;
 
@@ -44,6 +46,9 @@ class DiscoveryAddonConfig {
       throw const DiscoveryException(
         'The bearer token contains invalid characters or is too long.',
       );
+    }
+    if (signingKey.length > 1024 || RegExp(r'[\x00-\x1f\x7f]').hasMatch(signingKey)) {
+      throw const DiscoveryException('Invalid HMAC signing key.');
     }
     final String normalizedEndpoint;
     try {
@@ -86,6 +91,7 @@ class DiscoveryAddonConfig {
       manifestUrl: manifestUrl,
       label: label.trim(),
       token: trimmedToken,
+      signingKey: signingKey,
       settings: Map.unmodifiable(settings),
       enabled: enabled,
     );
@@ -216,6 +222,7 @@ class DiscoverySettingsStore {
               : throw const FormatException(),
       label: value['label'] as String,
       token: value['token'] as String,
+      signingKey: value['signingKey'] == null ? '' : value['signingKey'] is String ? value['signingKey'] as String : throw const FormatException(),
       enabled: value['enabled'] as bool,
       settings: value['settings'] == null
           ? const {}
@@ -248,6 +255,7 @@ class DiscoverySettingsStore {
                 if (addon.manifestUrl != null) 'manifestUrl': addon.manifestUrl,
                 'label': addon.label,
                 'token': addon.token,
+                if (addon.signingKey.isNotEmpty) 'signingKey': addon.signingKey,
                 if (addon.settings.isNotEmpty) 'settings': addon.settings,
                 'enabled': addon.enabled,
               },
