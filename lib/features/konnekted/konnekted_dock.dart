@@ -903,38 +903,8 @@ class KonnektedMiniPlayer extends ConsumerWidget {
       fit: StackFit.passthrough,
       children: [
         KonnektedMiniPlayerContent(
-      song: song,
-      artworkKey: artworkKey,
-      isPlaying: ref.watch(isPlayingProvider),
-      onOpen: onOpen,
-      onQueue: onQueue,
-      onPullUpStart: onPullUpStart,
-      onPullUpUpdate: onPullUpUpdate,
-      onPullUpEnd: onPullUpEnd,
-      onPlayPause: () {
-        AppHaptics.doublePulse();
-        _transport(context, () => ref.read(playerProvider.notifier).togglePlayPause());
-      },
-      onNext: () {
-        AppHaptics.triplePulse();
-        _transport(context, () => ref.read(playerProvider.notifier).next());
-      },
-      onPrevious: () {
-        AppHaptics.triplePulse();
-        _transport(context, () => ref.read(playerProvider.notifier).previous());
-      },
-      progress: Consumer(
-        builder: (context, ref, _) {
-          final value = ref.watch(progressProvider);
-          return LinearProgressIndicator(
-            value: value.isFinite ? value.clamp(0.0, 1.0) : 0,
-            minHeight: 2,
-            backgroundColor: Colors.white.withValues(alpha: .06),
-            color: context.lokal.accent,
-            semanticsLabel: 'Track progress',
-          );
-        },
-      ),
+          song: song,          artworkKey: artworkKey,          isPlaying: ref.watch(isPlayingProvider),          onOpen: onOpen,          onQueue: onQueue,          onPullUpStart: onPullUpStart,          onPullUpUpdate: onPullUpUpdate,          onPullUpEnd: onPullUpEnd,          onPlayPause: () {            AppHaptics.doublePulse();            _transport(context, () => ref.read(playerProvider.notifier).togglePlayPause());          },          onNext: () {            AppHaptics.triplePulse();            _transport(context, () => ref.read(playerProvider.notifier).next());          },          onPrevious: () {            AppHaptics.triplePulse();            _transport(context, () => ref.read(playerProvider.notifier).previous());          },          progress: Consumer(            builder: (context, ref, _) {              final value = ref.watch(progressProvider);              return LinearProgressIndicator(                value: value.isFinite ? value.clamp(0.0, 1.0) : 0,                minHeight: 2,                backgroundColor: Colors.white.withValues(alpha: .06),                color: context.lokal.accent,                semanticsLabel: 'Track progress',              );            },          ),
+        ),
         // Cache this track's blur while its mini player remains on screen.
         // The preload is invisible and never starts a mesh ticker; reopening
         // Now Playing after a scroll reuses the finished 224px texture.
