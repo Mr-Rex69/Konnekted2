@@ -3486,41 +3486,10 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private fun parseFlacVorbisLyrics(audioUriString: String): String? {
-        return openAudioInputStream(audioUriString)?.use { input ->
-            val signature = ByteArray(4)
-            if (!readExact(input, signature)) return@use null
-            if (!signature.contentEquals(byteArrayOf('f'.code.toByte(), 'L'.code.toByte(), 'a'.code.toByte(), 'C'.code.toByte()))) {
-                return@use null
-            }
-
-            var isLastBlock = false
-            while (!isLastBlock) {
-                val header = input.read()
-                if (header < 0) break
-
-                isLastBlock = (header and 0x80) != 0
-                val blockType = header and 0x7F
-                val lengthBytes = ByteArray(3)
-                if (!readExact(input, lengthBytes)) break
-                val blockLength =
-                    ((lengthBytes[0].toInt() and 0xFF) shl 16) or
-                    ((lengthBytes[1].toInt() and 0xFF) shl 8) or
-                    (lengthBytes[2].toInt() and 0xFF)
-
-                if (blockLength < 0) break
-
-                if (blockType == 4) {
-                    val commentData = ByteArray(blockLength)
-                    if (!readExact(input, commentData)) break
-                    return@use parseVorbisCommentLyrics(commentData)
-                } else {
-                    if (!skipFully(input, blockLength.toLong())) break
-                }
-            }
-            null
+    private fun parseFlacVorbisLyrics(audioUriString: String): String? =
+        openAudioInputStream(audioUriString)?.use { input ->
+            EmbeddedLyricsSelection.fromFlac(input)
         }
-    }
 
     private fun parseOggLyrics(audioUriString: String): String? {
         return openAudioInputStream(audioUriString)?.use { input ->
