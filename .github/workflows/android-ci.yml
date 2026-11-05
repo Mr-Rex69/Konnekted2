@@ -104,6 +104,8 @@ jobs:
           test/widgets/share_actions_test.dart
           test/features/player/picked_lyrics_file_test.dart
           test/features/player/lyrics_search_sheet_test.dart
+          test/features/player/supporting_vocal_visibility_test.dart
+          test/features/player/immersive_lyrics_stage_test.dart
           test/classipod test/services test/providers test/core test/data
           test/widgets/lokal test/features/appearance/lokal_frame_bottleneck_test.dart
           test/widgets/overflow_marquee_title_test.dart
