@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
+import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/providers/app_preferences_provider.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
@@ -897,7 +899,10 @@ class KonnektedMiniPlayer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final song = ref.watch(currentSongProvider);
     if (song == null) return const SizedBox.shrink();
-    return KonnektedMiniPlayerContent(
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        KonnektedMiniPlayerContent(
       song: song,
       artworkKey: artworkKey,
       isPlaying: ref.watch(isPlayingProvider),
@@ -930,6 +935,21 @@ class KonnektedMiniPlayer extends ConsumerWidget {
           );
         },
       ),
+        // Cache this track's blur while its mini player remains on screen.
+        // The preload is invisible and never starts a mesh ticker; reopening
+        // Now Playing after a scroll reuses the finished 224px texture.
+        Positioned(
+          left: 0,
+          top: 0,
+          child: ArtworkMeshBlurBackdrop(
+            song: song,
+            preserveArtworkContrast: ref.watch(
+              lokalAppearanceProvider.select((look) => look.fullscreenCover),
+            ),
+            prewarmOnly: true,
+          ),
+        ),
+      ],
     );
   }
 
