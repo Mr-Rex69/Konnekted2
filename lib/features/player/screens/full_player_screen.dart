@@ -32,6 +32,8 @@ import '../widgets/player_transport_controls.dart';
 import '../widgets/artwork_gradient_backdrop.dart';
 import '../widgets/artwork_mesh_blur_backdrop.dart';
 import '../widgets/lyric_motion_line.dart';
+import '../widgets/flowing_background_vocals.dart';
+import 'package:flick/core/utils/app_log.dart';
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
 import '../widgets/immersive_lyrics_stage.dart';
@@ -2640,6 +2642,13 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     color: Colors.white,
   );
   static const double _subGap = 6;
+  static const TextStyle _backingStyle = TextStyle(
+    fontFamily: _font,
+    fontSize: 18,
+    height: 1.25,
+    fontWeight: FontWeight.w600,
+    color: Color(0xD9FFFFFF),
+  );
   static const TextStyle _sub = TextStyle(
     fontFamily: _font,
     fontSize: 18,
@@ -2662,13 +2671,24 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
   // The parser keeps start-only enhanced-LRC words for lossless editing.
   // Resolve their end windows once for painting; never do it on each tick.
   late List<LyricsLine> _playbackLines;
+  List<LyricsLine> _backgroundVocalLines = const [];
+  List<double> _backgroundVocalHeights = const [];
+  int _activeBackground = -1;
   // Project translations/romaji exactly once per source change, never during
   // the frame-driven scroll/reveal loop. Null means line-only or plain lyrics.
   List<LyricsLine?> _timedSublines = const [];
   List<LyricsLine> get _lines => _playbackLines;
 
   void _prepareLyrics() {
-    _playbackLines = LyricsService().playbackLines(widget.lyrics);
+    final resolved = LyricsService().playbackLines(widget.lyrics);
+    _backgroundVocalLines = flowingBackgroundVocalLines(resolved);
+    final leads = resolved.where((line) => line.voice != 'bg').toList();
+    _playbackLines = leads.isEmpty ? resolved : leads;
+    _ts = [for (final line in _playbackLines) line.timestamp.inMilliseconds];
+    AppLog.instance.add(
+      '[LyricsBG] fullscreenRenderer supporting=${_backgroundVocalLines.length} '
+      'leadLines=${_playbackLines.length}',
+    );
     _timedSublines = [
       for (final line in _playbackLines)
         if (line.words?.isNotEmpty == true &&
@@ -2678,9 +2698,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           null,
     ];
   }
-  late List<int> _ts = [
-    for (final l in widget.lyrics.lines) l.timestamp.inMilliseconds,
-  ];
+  List<int> _ts = const [];
 
   List<double> _heights = const [];
   List<double> _baseHeights = const [], _subHeights = const [];
@@ -2825,6 +2843,12 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     }
     _baseHeights = hs;
     _subHeights = subs;
+    _backgroundVocalHeights = [
+      for (final bg in _backgroundVocalLines)
+        _subGap +
+            LyricMotionLine.height(context, bg.text, _backingStyle, math.max(w, 40)) +
+            8,
+    ];
     _layoutLyrics = widget.lyrics;
     _layoutScaler = MediaQuery.textScalerOf(context);
     _layoutLocale = Localizations.maybeLocaleOf(context);
@@ -2837,7 +2861,13 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final tops = <double>[], heights = <double>[];
     for (var i = 0; i < _baseHeights.length; i++) {
       tops.add(y);
-      final height = _baseHeights[i] + _subHeights[i] * _sublineReveal;
+      final backgroundHeight = i == _active &&
+              _activeBackground >= 0 &&
+              _activeBackground < _backgroundVocalHeights.length
+          ? _backgroundVocalHeights[_activeBackground]
+          : 0.0;
+      final height = _baseHeights[i] +
+          _subHeights[i] * _sublineReveal + backgroundHeight;
       heights.add(height);
       y += height + _gap;
     }
@@ -2875,9 +2905,17 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
         : _sublineReveal +
               (targetReveal - _sublineReveal) * (1 - math.exp(-dt * 10));
     if (!subMoving) _sublineReveal = targetReveal;
-    if (previousReveal != _sublineReveal) _geometry();
     final ms = _posNowMs();
     final a = _indexAt(ms);
+    final nextBackground = activeFlowingBackgroundVocalIndex(
+      _backgroundVocalLines, Duration(milliseconds: ms),
+    );
+    if (previousReveal != _sublineReveal ||
+        nextBackground != _activeBackground || a != _active) {
+      _active = a;
+      _activeBackground = nextBackground;
+      _geometry();
+    }
     final aScroll = _indexAt(ms + 300);
     final target = _following ? _centerFor(aScroll) : _offset;
     final playing = widget.player.isPlayingNotifier.value;
@@ -2942,41 +2980,58 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           );
 
     final sub = _translationOf(l);
+    final backing = i == _active &&
+            _activeBackground >= 0 &&
+            _activeBackground < _backgroundVocalLines.length
+        ? _backgroundVocalLines[_activeBackground]
+        : null;
     Widget child = Transform.scale(
       alignment: Alignment.centerLeft,
       scale: scale,
-      child: sub == null
+      child: backing == null && sub == null
           ? text
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 text,
-                ClipRect(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    heightFactor: _sublineReveal,
-                    child: Opacity(
-                      opacity: _sublineReveal,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: _subGap),
-                        child: Transform.translate(
-                          offset: Offset(0, (1 - _sublineReveal) * 6),
-                          child: FlowingLyricSubline(
-                            text: sub,
-                            // Source translation is available only after
-                            // Translate/Romanize; old memorized sublines must
-                            // not inherit the next source's timings.
-                            timedLine: widget.showTranslation &&
-                                    i < _timedSublines.length &&
-                                    _timedSublines[i]?.text == sub
-                                ? _timedSublines[i]
-                                : null,
-                            position: Duration(milliseconds: _posMs),
-                            singing: singing,
-                            lightweight: _ultra,
-                            style: _sub.copyWith(
-                              color: Colors.white.withValues(
-                                alpha: i == _active ? .82 : op * .8,
+                // This fullscreen renderer is separate from SyncedLyricsView.
+                // Keep the independently timed second singer directly beneath
+                // whichever lead line is currently focused.
+                if (backing != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: _subGap, bottom: 8),
+                    child: LyricMotionLine(
+                      line: backing,
+                      position: Duration(milliseconds: _posMs),
+                      lightweight: _ultra,
+                      style: _backingStyle,
+                    ),
+                  ),
+                if (sub != null)
+                  ClipRect(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      heightFactor: _sublineReveal,
+                      child: Opacity(
+                        opacity: _sublineReveal,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: _subGap),
+                          child: Transform.translate(
+                            offset: Offset(0, (1 - _sublineReveal) * 6),
+                            child: FlowingLyricSubline(
+                              text: sub,
+                              timedLine: widget.showTranslation &&
+                                      i < _timedSublines.length &&
+                                      _timedSublines[i]?.text == sub
+                                  ? _timedSublines[i]
+                                  : null,
+                              position: Duration(milliseconds: _posMs),
+                              singing: singing,
+                              lightweight: _ultra,
+                              style: _sub.copyWith(
+                                color: Colors.white.withValues(
+                                  alpha: i == _active ? .82 : op * .8,
+                                ),
                               ),
                             ),
                           ),
@@ -2984,7 +3039,6 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
                       ),
                     ),
                   ),
-                ),
               ],
             ),
     );
