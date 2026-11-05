@@ -72,4 +72,44 @@ void main() {
     expect(parsed.lines, hasLength(2));
     expect(parsed.lines.every((l) => l.backgroundText == null), isTrue);
   });
+
+  test('41 lead lines retain 16 backing vocals grouped after a blank line', () {
+    String clock(int seconds) =>
+        (seconds ~/ 60).toString().padLeft(2, '0') + ':' +
+        (seconds % 60).toString().padLeft(2, '0');
+    final leads = List.generate(41, (i) {
+      final t = clock(i * 5);
+      return '[' + t + '.000]v1:<' + t + '.000>Lead ' +
+          (i + 1).toString() + '<' + t + '.900>';
+    });
+    final backing = List.generate(16, (i) {
+      final t = clock(76 + i * 5);
+      return '[bg:<' + t + '.100><' + t + '.100>Voice ' +
+          (i + 1).toString() + '<' + t + '.900>]';
+    });
+    final parsed = service.parseLyricsText([...leads, '', ...backing].join('\n'));
+    expect(parsed.lines, hasLength(41));
+    final withVoices = parsed.lines.where((l) => l.backgroundText != null).toList();
+    expect(withVoices, hasLength(16));
+    expect(parsed.lines[15].backgroundText, 'Voice 1');
+    expect(parsed.lines[16].backgroundText, 'Voice 2');
+    expect(parsed.lines[15].backgroundWords!.first.start.inMilliseconds, 76100);
+    expect(parsed.lines.first.backgroundText, isNull);
+    expect(parsed.lines.last.backgroundText, isNull);
+  });
+
+  test('backing vocals before their lead or after unrelated rows are not discarded', () {
+    final parsed = service.parseLyricsText([
+      '[bg:<00:07.00><00:07.00>Early<00:08.00>]',
+      '',
+      '[00:05.00]<00:05.00>First<00:09.00>',
+      '[00:10.00]<00:10.00>Second<00:13.00>',
+      '',
+      '[bg:<00:11.00><00:11.00>Late<00:12.00>]',
+    ].join('\n'));
+    expect(parsed.lines, hasLength(2));
+    expect(parsed.lines.first.backgroundText, 'Early');
+    expect(parsed.lines.last.backgroundText, 'Late');
+  });
+
 }

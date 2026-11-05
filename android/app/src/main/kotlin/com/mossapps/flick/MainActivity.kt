@@ -3827,48 +3827,10 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private val lrcStampPattern = Regex("""\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?]""")
-    private val lrcMetaPattern = Regex(
-        """^\[(?:ar|ti|al|au|by|re|ve|length|offset|id|hash|sign|qq|total|#)\s*:""",
-        RegexOption.IGNORE_CASE,
-    )
-
-    /** Unstamped lines right under stamped ones: an LRC's translation lines. */
-    private fun lyricTranslationScore(text: String): Int {
-        var score = 0
-        var afterStamped = false
-        for (raw in text.replace("\r\n", "\n").replace('\r', '\n').split('\n')) {
-            val line = raw.trim()
-            if (line.isEmpty()) {
-                afterStamped = false
-                continue
-            }
-            if (lrcStampPattern.containsMatchIn(line)) {
-                afterStamped = true
-                continue
-            }
-            if (afterStamped && !lrcMetaPattern.containsMatchIn(line)) score++
-            afterStamped = false
-        }
-        return score
-    }
-
-    /**
-     * Desktop Lokal's pick among a file's lyric tags: timed text wins over
-     * plain whichever tag comes first, and among timed tags the one carrying
-     * the most translation lines (an MP3's USLT often holds the LRC with
-     * translations while its SYLT holds the timing alone).
-     */
-    private fun pickEmbeddedLyrics(candidates: List<String>): String? {
-        val parts = candidates.filter { it.isNotBlank() }
-        val synced = parts.filter { lrcStampPattern.containsMatchIn(it) }
-        if (synced.isNotEmpty()) {
-            return synced.reduce { best, part ->
-                if (lyricTranslationScore(part) > lyricTranslationScore(best)) part else best
-            }
-        }
-        return parts.firstOrNull()
-    }
+    // Keep embedded lyric tag selection in a pure, unit-tested helper. A
+    // synced Vorbis tag with [bg:] data must win over its lead-only twin.
+    private fun pickEmbeddedLyrics(candidates: List<String>): String? =
+        EmbeddedLyricsSelection.pick(candidates)
 
     private fun formatLrcTime(milliseconds: Int): String {
         val clampedMs = milliseconds.coerceAtLeast(0)

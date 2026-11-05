@@ -1173,6 +1173,9 @@ class LyricsService {
     // line is that line's translation; the rest are notes and credits.
     final plainLines = <LyricsLine>[];
     final translations = <(List<int>, String)>[];
+    // A backing voice's timestamp, not the previous text row, determines
+    // which lead it belongs to. Some enhanced-LRC tags group [bg:] rows.
+    final backingRows = <(String, List<LyricsWord>, Duration)>[];
     // An optional association tag is emitted only for simultaneous vocal
     // groups, where an otherwise portable timestamped translation would be
     // indistinguishable from another sung voice.
@@ -1200,41 +1203,43 @@ class LyricsService {
         continue;
       }
 
-      // [bg:<time>...] is a separately timed supporting singer under the
-      // previous lead, not an LRC translation or metadata entry.
+      // [bg:] is timed separately and might be interleaved, separated by
+      // blank lines or collected in its own block. Keep it until all leads
+      // have been parsed; never interpret it as metadata or translation.
       final backing = backingPattern.firstMatch(line);
       if (backing != null) {
-        if (previous.isNotEmpty) {
-          final body = backing.group(1)!;
-          final text = body.replaceAll(_wordTimestampPattern, '').trim();
-          if (text.isNotEmpty) {
-            final rawWords = (_extractWords(body, offsetMs) ?? const <LyricsWord>[])
-                .where((w) => w.text.trim().isNotEmpty).toList();
-            final stamps = _wordTimestampPattern.allMatches(body).toList();
-            final tail = stamps.isEmpty
-                ? null
-                : _parseTimestamp(stamps.last.group(1) ?? '');
-            final tailMs = tail == null ? null : tail.inMilliseconds + offsetMs;
-            final words = <LyricsWord>[
-              for (var i = 0; i < rawWords.length; i++)
-                LyricsWord(
-                  start: rawWords[i].start,
-                  end: i + 1 < rawWords.length &&
-                          rawWords[i + 1].start > rawWords[i].start
-                      ? rawWords[i + 1].start
-                      : i + 1 == rawWords.length &&
-                            tailMs != null &&
-                            tailMs > rawWords[i].start.inMilliseconds
-                          ? Duration(milliseconds: tailMs)
-                          : rawWords[i].start + const Duration(milliseconds: 500),
-                  text: rawWords[i].text,
-                ),
-            ];
+        final body = backing.group(1)!;
+        final text = body.replaceAll(_wordTimestampPattern, '').trim();
+        if (text.isNotEmpty) {
+          final rawWords = (_extractWords(body, offsetMs) ?? const <LyricsWord>[])
+              .where((w) => w.text.trim().isNotEmpty).toList();
+          final stamps = _wordTimestampPattern.allMatches(body).toList();
+          final tail = stamps.isEmpty
+              ? null
+              : _parseTimestamp(stamps.last.group(1) ?? '');
+          final tailMs = tail == null ? null : tail.inMilliseconds + offsetMs;
+          final words = <LyricsWord>[
+            for (var i = 0; i < rawWords.length; i++)
+              LyricsWord(
+                start: rawWords[i].start,
+                end: i + 1 < rawWords.length &&
+                        rawWords[i + 1].start > rawWords[i].start
+                    ? rawWords[i + 1].start
+                    : i + 1 == rawWords.length &&
+                          tailMs != null &&
+                          tailMs > rawWords[i].start.inMilliseconds
+                        ? Duration(milliseconds: tailMs)
+                        : rawWords[i].start + const Duration(milliseconds: 500),
+                text: rawWords[i].text,
+              ),
+          ];
+          if (words.isNotEmpty) {
+            backingRows.add((text, words, words.first.start));
+          } else if (previous.isNotEmpty) {
+            // Untimed annotations can still follow their immediately
+            // preceding lead; timed vocals never depend on textual ordering.
             for (final index in previous) {
-              parsedLines[index] = parsedLines[index].withBackground(
-                text,
-                words.isEmpty ? null : words,
-              );
+              parsedLines[index] = parsedLines[index].withBackground(text, null);
             }
           }
         }
@@ -1303,6 +1308,23 @@ class LyricsService {
     }
 
     if (hasTimestamps) {
+      // Pair background vocals with the latest lead whose timestamp is at
+      // or before the background onset. This also handles [bg:] rows that
+      // appear before their lead in file order.
+      for (final (text, words, onset) in backingRows) {
+        if (parsedLines.isEmpty) break;
+        var target = 0;
+        final tolerance = onset + const Duration(milliseconds: 20);
+        for (var i = 0; i < parsedLines.length; i++) {
+          final candidate = parsedLines[i].timestamp;
+          if (candidate <= tolerance &&
+              (parsedLines[target].timestamp > tolerance ||
+                  candidate >= parsedLines[target].timestamp)) {
+            target = i;
+          }
+        }
+        parsedLines[target] = parsedLines[target].withBackground(text, words);
+      }
       // A stray note isn't a translation: a translated file has one under at
       // least half its sung lines.
       final sung = parsedLines.map((line) => line.timestamp).toSet().length;
