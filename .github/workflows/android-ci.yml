@@ -80,6 +80,9 @@ jobs:
             lib/features/player/widgets/full_bleed_artwork_frame.dart \
             lib/features/player/widgets/synced_lyrics_view.dart \
             lib/features/player/widgets/karaoke_lyric_line.dart \
+            lib/features/player/widgets/flowing_background_vocals.dart \
+            lib/features/player/widgets/player_song_blur_background.dart \
+            lib/features/player/screens/full_player_screen.dart \
             lib/providers/player_provider.dart \
             lib/providers/lokal_remote_provider.dart \
             lib/models/lokal_remote_state.dart; do
@@ -106,6 +109,8 @@ jobs:
           test/features/player/lyrics_search_sheet_test.dart
           test/services/lyrics_flac_vorbis_reader_test.dart
           test/features/player/supporting_vocal_visibility_test.dart
+          test/features/player/flowing_background_vocal_reveal_test.dart
+          test/features/player/player_song_blur_background_test.dart
           test/features/player/immersive_lyrics_stage_test.dart
           test/classipod test/services test/providers test/core test/data
           test/widgets/lokal test/features/appearance/lokal_frame_bottleneck_test.dart
