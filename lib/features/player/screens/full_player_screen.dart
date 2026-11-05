@@ -31,6 +31,7 @@ import 'package:flick/features/spotify/spotify_storage.dart';
 import '../widgets/player_transport_controls.dart';
 import '../widgets/artwork_gradient_backdrop.dart';
 import '../widgets/artwork_mesh_blur_backdrop.dart';
+import '../widgets/player_song_blur_background.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
 import 'package:flick/core/utils/app_log.dart';
@@ -1194,10 +1195,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               key: _playerBoundsKey,
               fit: StackFit.expand,
               children: [
-                ArtworkGradientBackdrop(colors: colors, vibrant: true),
-                ArtworkMeshBlurBackdrop(
+                // One crossfade owns both the mesh blur and its fallback
+                // palette. Independent transitions could expose a sudden
+                // palette swap before the next cover finished decoding.
+                PlayerSongBlurBackground(
                   song: song,
-                  preserveArtworkContrast: fullCover,
+                  colors: colors,
+                  fullCover: fullCover,
                 ),
                 if (fullCover)
                   FadeTransition(
@@ -2974,6 +2978,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final settled =
         !playing &&
         !subMoving &&
+        !backgroundMoving &&
         (target - _offset).abs() < 0.2 &&
         (a - _focus).abs() < 0.003 &&
         a == _active;
