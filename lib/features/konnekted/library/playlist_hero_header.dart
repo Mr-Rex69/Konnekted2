@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -18,6 +19,11 @@ class PlaylistHeroCover {
 /// One seed for each app process. Navigating between pages retains the same
 /// selection; force-closing and relaunching changes the artwork arrangement.
 final int _playlistHeroSessionSeed = math.Random().nextInt(0x7fffffff);
+
+// A newly shuffled collage is expensive to decode on the same frames as
+// the page push. Defer its first construction until the route has settled.
+const playlistHeroPostTransitionDelay = Duration(milliseconds: 80);
+final Set<String> _mountedPlaylistCollages = <String>{};
 
 /// Sized against display height, not screen width, so the artwork never
 /// dominates more than roughly a third of a phone's vertical viewport.
@@ -80,6 +86,7 @@ class PlaylistHeroHeader extends StatelessWidget {
     final sampled = playlistHeroCoversForSession(playlistId, covers);
     final fallback = PlaylistDiagonalCollage(
       key: ValueKey('playlist-art:$playlistId'),
+      playlistId: playlistId,
       covers: sampled,
     );
     final cover = coverUrl?.trim();
@@ -187,14 +194,100 @@ class PlaylistHeroHeader extends StatelessWidget {
 /// A static, session-varied diagonal collage. Rounded thumbnails are
 /// clipped once and remain stationary; no AnimationController or per-frame
 /// widget builds. The sample changes on next process launch, not mid-session.
-class PlaylistDiagonalCollage extends StatelessWidget {
-  const PlaylistDiagonalCollage({super.key, required this.covers});
+class PlaylistDiagonalCollage extends StatefulWidget {
+  const PlaylistDiagonalCollage({
+    super.key,
+    required this.playlistId,
+    required this.covers,
+  });
 
+  final String playlistId;
   final List<PlaylistHeroCover> covers;
 
   @override
+  State<PlaylistDiagonalCollage> createState() =>
+      _PlaylistDiagonalCollageState();
+}
+
+class _PlaylistDiagonalCollageState extends State<PlaylistDiagonalCollage> {
+  Timer? _mountTimer;
+  Animation<double>? _routeAnimation;
+  late bool _artworkMounted;
+
+  @override
+  void initState() {
+    super.initState();
+    _artworkMounted = _mountedPlaylistCollages.contains(widget.playlistId);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    if (!identical(animation, _routeAnimation)) {
+      _routeAnimation?.removeStatusListener(_onRouteStatus);
+      _routeAnimation = animation;
+      _routeAnimation?.addStatusListener(_onRouteStatus);
+    }
+    _mountAfterTransition();
+  }
+
+  void _onRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _mountAfterTransition();
+    } else {
+      // Returning or interrupting the page push should not trigger an
+      // expensive collage decode while the route is moving.
+      _mountTimer?.cancel();
+      _mountTimer = null;
+    }
+  }
+
+  void _mountAfterTransition() {
+    if (_artworkMounted || widget.covers.isEmpty || _mountTimer != null) {
+      return;
+    }
+    if (_routeAnimation != null &&
+        _routeAnimation!.status != AnimationStatus.completed) {
+      return;
+    }
+
+    // No image widgets are built until this callback fires. Merely hiding
+    // them with opacity would still compete with the 320 ms page transition.
+    _mountTimer = Timer(playlistHeroPostTransitionDelay, () {
+      _mountTimer = null;
+      if (!mounted) return;
+      _mountedPlaylistCollages.add(widget.playlistId);
+      setState(() => _artworkMounted = true);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaylistDiagonalCollage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playlistId != widget.playlistId) {
+      _mountTimer?.cancel();
+      _mountTimer = null;
+      _artworkMounted = _mountedPlaylistCollages.contains(widget.playlistId);
+    }
+    if (widget.covers.isEmpty) {
+      _mountTimer?.cancel();
+      _mountTimer = null;
+    } else {
+      _mountAfterTransition();
+    }
+  }
+
+  @override
+  void dispose() {
+    _mountTimer?.cancel();
+    _routeAnimation?.removeStatusListener(_onRouteStatus);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (covers.isEmpty) {
+    if (widget.covers.isEmpty) {
       return ColoredBox(
         color: context.lokal.surface2,
         child: Center(
@@ -205,6 +298,12 @@ class PlaylistDiagonalCollage extends StatelessWidget {
           ),
         ),
       );
+    }
+
+    // Keep the hero's height and theme background in place during the push,
+    // without creating 16 thumbnails or scheduling image decoding.
+    if (!_artworkMounted) {
+      return ColoredBox(color: context.lokal.surface2);
     }
 
     return LayoutBuilder(
@@ -233,11 +332,10 @@ class PlaylistDiagonalCollage extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16),
                               child: CachedImageWidget(
                                 key: ValueKey('playlist-collage-slot-${row * 4 + col}'),
-                                imagePath:
-                                    covers[(row * 4 + col) % covers.length].imagePath,
-                                audioSourcePath:
-                                    covers[(row * 4 + col) % covers.length]
-                                        .audioSourcePath,
+                                imagePath: widget.covers[
+                                    (row * 4 + col) % widget.covers.length].imagePath,
+                                audioSourcePath: widget.covers[
+                                    (row * 4 + col) % widget.covers.length].audioSourcePath,
                                 width: tile,
                                 height: tile,
                                 useThumbnail: true,
