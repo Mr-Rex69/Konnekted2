@@ -49,8 +49,9 @@ class LyricsPlaybackPrefetch {
       final fetched = await _service.loadLyricsForSong(
         song, fetchOnline: true,
       ).catchError((Object _) => null);
-      return lyricQualityRank(fetched) > lyricQualityRank(own)
+      final best = lyricQualityRank(fetched) > lyricQualityRank(own)
           ? fetched : own ?? fetched;
+      return LyricsService.mergeSupportingVocals(best, [own, fetched]);
     });
     while (_local.length > maxEntries) {
       final stale = _local.keys.first;
