@@ -3649,7 +3649,23 @@ class MainActivity: FlutterActivity() {
         return try {
             val uri = Uri.parse(audioUriString)
             when (uri.scheme) {
-                "content" -> contentResolver.openInputStream(uri)
+                "content" -> {
+                    // SAF providers do not all implement openInputStream
+                    // correctly. Fallback to a seekable file descriptor when
+                    // the app can already play the Uri but tag reads fail.
+                    val stream = try {
+                        contentResolver.openInputStream(uri)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    stream ?: try {
+                        contentResolver.openFileDescriptor(uri, "r")?.let {
+                            android.os.ParcelFileDescriptor.AutoCloseInputStream(it)
+                        }
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
                 "file" -> {
                     val path = uri.path
                     if (path.isNullOrBlank()) null else FileInputStream(path)
