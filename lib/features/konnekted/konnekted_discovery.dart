@@ -12,7 +12,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'package:flick/features/discovery/discovery_artwork.dart'
-    show discoveryImageUrl;
+    show discoveryImageUrl, resolveMissingAddonArtwork;
 import 'package:flick/features/discovery/discovery_http.dart';
 import 'package:flick/features/discovery/discovery_models.dart';
 import 'package:flick/features/discovery/discovery_playback.dart';
@@ -1858,12 +1858,25 @@ Future<Song> playOnlineTrack(
         '${track.sourceName ?? 'That source'} isn’t available any more.',
       );
     }
-    final resolved = await source.play(track);
+    // LastWave-compatible HTTP add-ons are allowed to omit artworkURL.
+    // Resolve cover metadata concurrently with the audio URL so normal
+    // playback does not queue the metadata requests ahead of stream setup.
+    final artworkLookup = canonicalId.startsWith('w-')
+        ? resolveMissingAddonArtwork(track)
+        : Future<DiscoveryTrack>.value(track);
+    // Downloads need the cover before staging so it can be embedded in the
+    // saved audio. Playback instead preserves the fast stream-setup path.
+    final playbackTrack = forDownload ? await artworkLookup : track;
+    final resolved = await source.play(playbackTrack);
+    final enrichedTrack = forDownload ? playbackTrack : await artworkLookup;
     _autoHttpAddonCooldown.succeeded(canonicalId);
     AppLog.instance.add('[OnlineSource] acquisition source=$canonicalId '
         'mode=${forDownload ? 'download' : 'playback'} '
         'elapsedMs=${acquisitionTimer.elapsedMilliseconds}');
-    final song = resolved.copyWith(sourceDisplayName: source.name);
+    final song = resolved.copyWith(
+      sourceDisplayName: source.name,
+      albumArt: resolved.albumArt ?? enrichedTrack.artwork,
+    );
     if (!forDownload && sourceId.startsWith('a-')) {
       _rememberOnlineAddon(song, sourceId.substring(2), track);
     }
