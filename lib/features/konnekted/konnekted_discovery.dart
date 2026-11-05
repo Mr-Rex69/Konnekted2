@@ -2277,7 +2277,10 @@ Future<Song?> findDiscoverySong(
         _autoHttpAddonCooldown.succeeded(source.id);
         AppLog.instance.add('[OnlineSource] discovery acquired source=${source.id} '
             'elapsedMs=${acquisitionTimer.elapsedMilliseconds}');
-        final song = resolved.copyWith(sourceDisplayName: source.name);
+        final song = resolved.copyWith(
+          sourceDisplayName: source.name,
+          albumArt: resolved.albumArt ?? artwork.artwork,
+        );
         if (source.id.startsWith('a-')) {
           _rememberOnlineAddon(song, source.id.substring(2), selected);
         }
