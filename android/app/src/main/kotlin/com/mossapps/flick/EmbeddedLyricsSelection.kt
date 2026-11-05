@@ -92,6 +92,51 @@ internal object EmbeddedLyricsSelection {
         return combineVorbisLyrics(found)
     }
 
+    /**
+     * Read FLAC's actual metadata stream, not just a synthetic lyric string.
+     * The stream may contain STREAMINFO and other blocks before VORBIS_COMMENT.
+     */
+    fun fromFlac(input: java.io.InputStream): String? {
+        fun readExact(bytes: ByteArray): Boolean {
+            var offset = 0
+            while (offset < bytes.size) {
+                val amount = input.read(bytes, offset, bytes.size - offset)
+                if (amount <= 0) return false
+                offset += amount
+            }
+            return true
+        }
+        val magic = ByteArray(4)
+        if (!readExact(magic) || !magic.contentEquals("fLaC".toByteArray(Charsets.US_ASCII))) {
+            return null
+        }
+        var last = false
+        while (!last) {
+            val blockHeader = ByteArray(4)
+            if (!readExact(blockHeader)) return null
+            val type = blockHeader[0].toInt() and 0x7f
+            last = (blockHeader[0].toInt() and 0x80) != 0
+            val length = ((blockHeader[1].toInt() and 0xff) shl 16) or
+                ((blockHeader[2].toInt() and 0xff) shl 8) or
+                (blockHeader[3].toInt() and 0xff)
+            if (type == 4) {
+                val data = ByteArray(length)
+                if (!readExact(data)) return null
+                return fromVorbisComments(data)
+            }
+            // Reading in small chunks handles SAF providers whose InputStream
+            // does not implement skip() reliably.
+            var remaining = length
+            val scratch = ByteArray(8192)
+            while (remaining > 0) {
+                val amount = input.read(scratch, 0, minOf(scratch.size, remaining))
+                if (amount <= 0) return null
+                remaining -= amount
+            }
+        }
+        return null
+    }
+
     /** The original timed tag with independent backing singers is more complete. */
     fun pick(candidates: List<String>): String? {
         val parts = candidates.filter { it.isNotBlank() }
