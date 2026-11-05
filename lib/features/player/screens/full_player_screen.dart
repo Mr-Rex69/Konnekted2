@@ -29,8 +29,7 @@ import 'package:flick/services/motion_art/animated_artwork_service.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 
 import '../widgets/player_transport_controls.dart';
-import '../widgets/artwork_gradient_backdrop.dart';
-import '../widgets/artwork_mesh_blur_backdrop.dart';
+import '../widgets/player_song_blur_background.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
 import 'package:flick/core/utils/app_log.dart';
@@ -1194,10 +1193,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               key: _playerBoundsKey,
               fit: StackFit.expand,
               children: [
-                ArtworkGradientBackdrop(colors: colors, vibrant: true),
-                ArtworkMeshBlurBackdrop(
+                // One crossfade owns both the mesh blur and its fallback
+                // palette. Independent transitions could expose a sudden
+                // palette swap before the next cover finished decoding.
+                PlayerSongBlurBackground(
                   song: song,
-                  preserveArtworkContrast: fullCover,
+                  colors: colors,
+                  fullCover: fullCover,
                 ),
                 if (fullCover)
                   FadeTransition(
@@ -2708,13 +2710,15 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
   late List<LyricsLine> _playbackLines;
   List<LyricsLine> _backgroundVocalLines = const [];
   List<double> _backgroundVocalHeights = const [];
-  int _activeBackground = -1;
+  final FlowingBackgroundVocalReveal _backingReveal =
+      FlowingBackgroundVocalReveal();
   // Project translations/romaji exactly once per source change, never during
   // the frame-driven scroll/reveal loop. Null means line-only or plain lyrics.
   List<LyricsLine?> _timedSublines = const [];
   List<LyricsLine> get _lines => _playbackLines;
 
   void _prepareLyrics() {
+    _backingReveal.reset();
     final resolved = LyricsService().playbackLines(widget.lyrics);
     _backgroundVocalLines = flowingBackgroundVocalLines(resolved);
     final leads = resolved.where((line) => line.voice != 'bg').toList();
@@ -2897,9 +2901,10 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     for (var i = 0; i < _baseHeights.length; i++) {
       tops.add(y);
       final backgroundHeight = i == _active &&
-              _activeBackground >= 0 &&
-              _activeBackground < _backgroundVocalHeights.length
-          ? _backgroundVocalHeights[_activeBackground]
+              _backingReveal.visibleIndex >= 0 &&
+              _backingReveal.visibleIndex < _backgroundVocalHeights.length
+          ? _backgroundVocalHeights[_backingReveal.visibleIndex] *
+              _backingReveal.value
           : 0.0;
       final height = _baseHeights[i] +
           _subHeights[i] * _sublineReveal + backgroundHeight;
@@ -2945,10 +2950,14 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final nextBackground = activeFlowingBackgroundVocalIndex(
       _backgroundVocalLines, Duration(milliseconds: ms),
     );
+    final backgroundMoving = _backingReveal.advance(
+      nextBackground,
+      dt,
+      reduceMotion: MediaQuery.disableAnimationsOf(context),
+    );
     if (previousReveal != _sublineReveal ||
-        nextBackground != _activeBackground || a != _active) {
+        backgroundMoving || a != _active) {
       _active = a;
-      _activeBackground = nextBackground;
       _geometry();
     }
     final aScroll = _indexAt(ms + 300);
@@ -2967,6 +2976,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final settled =
         !playing &&
         !subMoving &&
+        !backgroundMoving &&
         (target - _offset).abs() < 0.2 &&
         (a - _focus).abs() < 0.003 &&
         a == _active;
@@ -3016,9 +3026,9 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
 
     final sub = _translationOf(l);
     final backing = i == _active &&
-            _activeBackground >= 0 &&
-            _activeBackground < _backgroundVocalLines.length
-        ? _backgroundVocalLines[_activeBackground]
+            _backingReveal.visibleIndex >= 0 &&
+            _backingReveal.visibleIndex < _backgroundVocalLines.length
+        ? _backgroundVocalLines[_backingReveal.visibleIndex]
         : null;
     Widget child = Transform.scale(
       alignment: Alignment.centerLeft,
@@ -3033,13 +3043,27 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
                 // Keep the independently timed second singer directly beneath
                 // whichever lead line is currently focused.
                 if (backing != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: _subGap, bottom: 8),
-                    child: LyricMotionLine(
-                      line: backing,
-                      position: Duration(milliseconds: _posMs),
-                      lightweight: _ultra,
-                      style: _backingStyle,
+                  ClipRect(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      heightFactor: _backingReveal.value,
+                      child: Opacity(
+                        opacity: _backingReveal.value,
+                        child: Transform.translate(
+                          offset: Offset(0, (1 - _backingReveal.value) * 8),
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: _subGap, bottom: 8,
+                            ),
+                            child: LyricMotionLine(
+                              line: backing,
+                              position: Duration(milliseconds: _posMs),
+                              lightweight: _ultra,
+                              style: _backingStyle,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 if (sub != null)
