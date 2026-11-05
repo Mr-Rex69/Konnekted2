@@ -3221,60 +3221,59 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun readEmbeddedLyrics(audioUriString: String): Map<String, String>? {
+        // Read the file's native lyric tags first. MediaMetadataRetriever can
+        // reject a valid FLAC or a document-provider URI; that must never
+        // prevent our own stream-based Vorbis/ID3 reader from running.
+        val tagged = listOf(
+            "embedded:id3" to { parseId3EmbeddedLyrics(audioUriString) },
+            "embedded:vorbis" to { parseFlacVorbisLyrics(audioUriString) },
+            "embedded:mp4" to { parseMp4Lyrics(audioUriString) },
+            "embedded:ogg" to { parseOggLyrics(audioUriString) },
+        ).firstNotNullOfOrNull { (source, reader) ->
+            try {
+                reader()?.takeIf { it.isNotBlank() }?.let { source to it }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
         val retriever = MediaMetadataRetriever()
-        return try {
+        val platformLyrics = try {
             val uri = Uri.parse(audioUriString)
-
-            val handledByUri = when (uri.scheme) {
-                "content", "file" -> {
-                    retriever.setDataSource(this, uri)
-                    true
-                }
-                else -> false
+            when (uri.scheme) {
+                "content", "file" -> retriever.setDataSource(this, uri)
+                else -> retriever.setDataSource(audioUriString)
             }
-
-            if (!handledByUri) {
-                retriever.setDataSource(audioUriString)
-            }
-
             val lyricKey = try {
                 MediaMetadataRetriever::class.java.getField("METADATA_KEY_LYRIC").getInt(null)
             } catch (_: Exception) {
                 null
             }
-
-            val lyricText = lyricKey?.let { retriever.extractMetadata(it) }
-            // Desktop Lokal's rule: timed lyrics win over plain whichever tag
-            // holds them, so the platform's (often unsynced) lyric field only
-            // wins when the tags themselves have nothing timed.
-            val tagged = listOf(
-                "embedded:id3" to { parseId3EmbeddedLyrics(audioUriString) },
-                "embedded:vorbis" to { parseFlacVorbisLyrics(audioUriString) },
-                "embedded:mp4" to { parseMp4Lyrics(audioUriString) },
-                // ponytail: covers ID3/FLAC/MP4/Ogg; WMA and APE tags not parsed
-                "embedded:ogg" to { parseOggLyrics(audioUriString) },
-            ).firstNotNullOfOrNull { (source, read) ->
-                read()?.takeIf { it.isNotBlank() }?.let { source to it }
-            }
-            val candidates = listOfNotNull(
-                tagged,
-                lyricText?.takeIf { it.isNotBlank() }?.let { "embedded" to it },
-            )
-            val best = pickEmbeddedLyrics(candidates.map { it.second })
-            candidates.firstOrNull { it.second == best }?.let { (source, content) ->
-                mapOf(
-                    "content" to content,
-                    "source" to source,
-                )
-            }
+            lyricKey?.let { retriever.extractMetadata(it) }
         } catch (_: Exception) {
+            // Android metadata extraction is best effort, not a prerequisite
+            // for reading embedded lyrics from the file itself.
             null
         } finally {
             try {
                 retriever.release()
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
+
+        val candidates = listOfNotNull(
+            tagged,
+            platformLyrics?.takeIf { it.isNotBlank() }?.let { "embedded" to it },
+        )
+        val best = pickEmbeddedLyrics(candidates.map { it.second })
+        val chosen = candidates.firstOrNull { it.second == best } ?: return null
+        // Counts only: never write lyric content or a file path into logs.
+        android.util.Log.d(
+            "FlickLyrics",
+            "embedded source=${chosen.first} backgroundRows=${
+                best?.lineSequence()?.count { it.trimStart().startsWith("[bg:", true) } ?: 0
+            }"
+        )
+        return mapOf("content" to chosen.second, "source" to chosen.first)
     }
 
     private fun parseId3EmbeddedLyrics(audioUriString: String): String? {
@@ -3673,42 +3672,8 @@ class MainActivity: FlutterActivity() {
         return null
     }
 
-    private fun parseVorbisCommentLyrics(data: ByteArray): String? {
-        if (data.size < 8) return null
-        val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-
-        val vendorLength = readLeIntSafe(buffer) ?: return null
-        if (vendorLength < 0 || vendorLength > buffer.remaining()) return null
-        buffer.position(buffer.position() + vendorLength)
-
-        val commentCount = readLeIntSafe(buffer) ?: return null
-        if (commentCount < 0) return null
-
-        val wantedKeys = listOf(
-            "LYRICS",
-            "UNSYNCEDLYRICS",
-            "UNSYNCED_LYRICS",
-        )
-
-        val found = mutableListOf<String>()
-        repeat(commentCount) {
-            val len = readLeIntSafe(buffer) ?: return pickEmbeddedLyrics(found)
-            if (len < 0 || len > buffer.remaining()) return null
-
-            val bytes = ByteArray(len)
-            buffer.get(bytes)
-            val entry = bytes.toString(Charsets.UTF_8)
-            val sep = entry.indexOf('=')
-            if (sep <= 0) return@repeat
-
-            val key = entry.substring(0, sep).uppercase()
-            val value = entry.substring(sep + 1).trim()
-            if (value.isBlank()) return@repeat
-            if (wantedKeys.contains(key)) found.add(value)
-        }
-
-        return pickEmbeddedLyrics(found)
-    }
+    private fun parseVorbisCommentLyrics(data: ByteArray): String? =
+        EmbeddedLyricsSelection.fromVorbisComments(data)
 
     private fun openAudioInputStream(audioUriString: String): InputStream? {
         return try {
