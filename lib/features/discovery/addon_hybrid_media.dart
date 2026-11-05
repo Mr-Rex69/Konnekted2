@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'discovery_http.dart';
@@ -209,9 +210,13 @@ Future<void> downloadAddonHybrid(
       final segment = bytes[i];
       if (plan.encrypted) {
         try {
-          cenc.decryptSegment(
-            segment, keyBytes, ivSize, constantIv, batch[i].start,
-          );
+          // The AES work is CPU-bound and can span many megabytes.
+          // Keep decryption off Flutter's UI isolate.
+          await Isolate.run(() {
+            cenc.decryptSegment(
+              segment, keyBytes, ivSize, constantIv, batch[i].start,
+            );
+          });
         } on Object {
           throw const DiscoveryException(
             'The hybrid media segment could not be decrypted.',
