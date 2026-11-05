@@ -650,4 +650,103 @@ void main() {
       );
     });
   });
+
+  test('HTTP add-on without cover receives an exact Apple Music artwork match', () async {
+    final client = MockClient((request) async {
+      if (request.url.host == 'api.deezer.com') {
+        return _json({'data': []});
+      }
+      if (request.url.host == 'itunes.apple.com') {
+        return _json({'results': [
+          {
+            'trackName': 'Fixture Song',
+            'artistName': 'Fixture Artist',
+            'artworkUrl100': 'https://is7-ssl.mzstatic.com/fixture-100x100bb.jpg',
+          },
+        ]});
+      }
+      fail('Unexpected remote artwork request');
+    });
+    addTearDown(client.close);
+    final addon = DiscoveryTrack(
+      id: 'lastwave-recording',
+      title: 'Fixture Song',
+      artist: 'Fixture Artist',
+      source: DiscoverySource.addon,
+      addonBase: Uri.parse('https://addons.example/a/secret'),
+    );
+    final result = await resolveMissingAddonArtwork(
+      addon,
+      resolver: DiscoveryArtworkResolver(DiscoveryHttp(client)),
+    );
+    expect(result.artwork,
+        'https://is7-ssl.mzstatic.com/fixture-600x600bb.jpg');
+    expect(result.id, addon.id);
+    expect(result.addonBase, addon.addonBase);
+    expect(result.source, DiscoverySource.addon);
+  });
+
+  test('HTTP add-on artwork lookup reuses verified YouTube Music fallback', () async {
+    final client = MockClient((request) async {
+      if (request.url.host == 'api.deezer.com') return _json({'data': []});
+      if (request.url.host == 'itunes.apple.com') return _json({'results': []});
+      fail('Unexpected remote artwork request');
+    });
+    addTearDown(client.close);
+    final youtube = DiscoveryTrack(
+      id: 'youtube-recording',
+      title: 'Fixture Song',
+      artist: 'Fixture Artist',
+      source: DiscoverySource.youtubeMusic,
+      artwork: 'https://lh3.googleusercontent.com/fixture',
+    );
+    final result = await resolveMissingAddonArtwork(
+      DiscoveryTrack(
+        id: 'lastwave-recording',
+        title: 'Fixture Song',
+        artist: 'Fixture Artist',
+        source: DiscoverySource.addon,
+      ),
+      resolver: DiscoveryArtworkResolver(
+        DiscoveryHttp(client),
+        searchSongs: (_) async => [youtube],
+      ),
+    );
+    expect(result.artwork, youtube.artwork);
+  });
+
+  test('HTTP add-on artwork never overrides supplied art or holds up on a miss', () async {
+    var requests = 0;
+    final client = MockClient((_) async {
+      requests++;
+      return _json({'data': []});
+    });
+    addTearDown(client.close);
+    final resolver = DiscoveryArtworkResolver(DiscoveryHttp(client));
+    final covered = DiscoveryTrack(
+      id: 'has-cover',
+      title: 'Fixture Song',
+      artist: 'Fixture Artist',
+      source: DiscoverySource.addon,
+      artwork: 'https://art.example/original.jpg',
+    );
+    expect((await resolveMissingAddonArtwork(
+      covered, resolver: resolver,
+    )).artwork, covered.artwork);
+    expect(requests, 0);
+
+    final uncovered = DiscoveryTrack(
+      id: 'no-cover',
+      title: 'Fixture Song',
+      artist: 'Fixture Artist',
+      source: DiscoverySource.addon,
+    );
+    final result = await resolveMissingAddonArtwork(
+      uncovered,
+      resolver: resolver,
+      timeout: Duration.zero,
+    );
+    expect(result.id, uncovered.id);
+    expect(result.artwork, isNull);
+  });
 }
