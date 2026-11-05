@@ -381,7 +381,8 @@ class LyricsService {
         : data.isSynchronized
         ? 2
         : 1;
-    return rank(found) > rank(own) ? found : own ?? found;
+    final best = rank(found) > rank(own) ? found : own ?? found;
+    return mergeSupportingVocals(best, [own, found]);
   }
 
   /// Ordered online fallback, or an explicit source selected during playback.
