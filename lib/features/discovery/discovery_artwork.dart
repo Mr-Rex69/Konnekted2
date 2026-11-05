@@ -134,6 +134,20 @@ class DiscoveryArtworkResolver {
     if (_cache[id]?.image.isEmpty == true) _cache.remove(id);
   }
 
+  /// The cover already resolved for a visible Search thumbnail, without
+  /// starting another metadata request. Playback can use this synchronously
+  /// when constructing its queue so cover art is present from the first frame.
+  /// Misses and expired hits are not promoted to playback artwork.
+  String cachedArtwork(DiscoveryArtworkRequest request) {
+    if (!request.isComplete) return '';
+    final cached = _cache[request.cacheKey];
+    if (cached == null || cached.image.isEmpty ||
+        _now().difference(cached.at) >= hitLifetime) {
+      return '';
+    }
+    return cached.image;
+  }
+
   Future<String> resolve(DiscoveryArtworkRequest request) {
     if (!request.isComplete) return Future.value('');
     final id = request.cacheKey;

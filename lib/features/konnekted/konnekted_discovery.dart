@@ -1915,6 +1915,10 @@ Song onlinePendingSong(
     artist: track.artist,
     album: track.album,
     duration: track.duration,
+    // A Search result may have obtained its artwork from the shared UI
+    // fallback cache. Carry that same cover into Now Playing immediately,
+    // before asynchronous stream resolution replaces this placeholder.
+    artwork: track.artwork,
     resolve: ({onStatus, cancel}) => playOnlineTrack(
       sourceId,
       track,
