@@ -424,8 +424,10 @@ class _ClassicFullPlayerScreenState
         children: [
           Positioned.fill(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 520),
-              switchInCurve: Curves.easeOutCubic,
+              // The outgoing blurred cover should dissolve gradually into the
+              // next one rather than replacing the whole background mid-skip.
+              duration: const Duration(milliseconds: 950),
+              switchInCurve: Curves.easeInOutCubic,
               switchOutCurve: Curves.easeInCubic,
               layoutBuilder: (currentChild, previousChildren) {
                 return Stack(

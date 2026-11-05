@@ -68,7 +68,9 @@ class _ArtworkMeshBlurBackdropState
     extends ConsumerState<ArtworkMeshBlurBackdrop>
     with TickerProviderStateMixin {
   static const int _dimension = 224;
-  static const _maxLayers = 3;
+  // A rapid series of skips can overlap several one-second crossfades.
+  // Keep the recent small (224px) textures alive until they fade out.
+  static const _maxLayers = 5;
   static const _maxRecent = 5;
   static final Map<String, ui.Image> _recent = {};
   final ChangeNotifier _driftPaint = ChangeNotifier();
@@ -95,7 +97,7 @@ class _ArtworkMeshBlurBackdropState
   )..addListener(_onDriftTick);
   late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 540),
+    duration: const Duration(milliseconds: 1050),
     value: 1,
   )..addStatusListener((status) {
       if (status == AnimationStatus.completed) _pruneLayers();
@@ -294,7 +296,9 @@ class _ArtworkMeshBlurBackdropState
     while (_layers.length > _maxLayers) {
       _layers.removeAt(0).dispose();
     }
-    if (_reduceMotion || _ultraPerformance || _layers.length == 1) {
+    // Also fade in the first decoded artwork over the fallback palette;
+    // otherwise its appearance pops immediately after the sheet settles.
+    if (_reduceMotion || _ultraPerformance) {
       _fade.value = 1;
       _pruneLayers();
     } else {
