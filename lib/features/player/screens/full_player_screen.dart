@@ -213,6 +213,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   int _lyricsRequest = 0;
   LyricsData? _lyrics;
   LyricsData? _sublineLyrics;
+  LyricsData? _embeddedBackgroundLyrics;
   String? _lyricsForSongId;
 
   bool _isFav = false;
@@ -444,10 +445,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final request = ++_lyricsRequest;
     setState(() {
       _lyricsLoading = true;
-      if (_lyricsForSongId != song.id) _lyrics = null;
+      if (_lyricsForSongId != song.id) {
+        _lyrics = null;
+        _embeddedBackgroundLyrics = null;
+      }
       _lyricsForSongId = song.id;
     });
     _sublineLyrics = null;
+    // Always inspect the audio's independent bg lane. A lead-only online,
+    // cached or manually selected source must never suppress the backing voice.
+    unawaited(_loadEmbeddedBackgroundLyrics(song, request));
     final warm = !force && !refreshOnline && _lyricsSource == 'auto';
     try {
       // Display local sidecar/embedded lyrics as soon as filesystem lookup
@@ -462,7 +469,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           (_videoOverrideSong ?? widget.videoSong ??
            _player.currentSongNotifier.value)?.id != song.id) return;
       setState(() {
-        _lyrics = local;
+        _lyrics = LyricsService.mergeSupportingVocals(
+          local, [_embeddedBackgroundLyrics],
+        );
         _lyricsLoading = local == null;
       });
       final best = warm
@@ -483,7 +492,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         // An online lead-timing upgrade must not remove independently timed
         // backing vocals that came from the audio file.
         _lyrics = LyricsService.mergeSupportingVocals(
-          selected, [_lyrics, best],
+          selected, [_lyrics, best, _embeddedBackgroundLyrics],
         );
         _lyricsLoading = false;
       });
@@ -504,6 +513,32 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       _lyricsProgress.animateTo(target, curve: Curves.easeInOutCubicEmphasized);
     }
     if (open) unawaited(_loadLyrics());
+  }
+
+  Future<void> _loadEmbeddedBackgroundLyrics(Song song, int request) async {
+    LyricsData? background;
+    try {
+      background = await _lyricsService
+          .loadEmbeddedSupportingVocals(song)
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
+    } catch (error) {
+      AppLog.instance.add(
+        '[LyricsBG] fullscreenLookupError=${error.runtimeType}',
+      );
+    }
+    if (!mounted || request != _lyricsRequest ||
+        _lyricsForSongId != song.id) return;
+    final selected = LyricsService.mergeSupportingVocals(
+      _lyrics, [background],
+    );
+    AppLog.instance.add(
+      '[LyricsBG] fullscreenVisible embedded=${LyricsService.supportingVocalCount(background)} '
+      'selected=${LyricsService.supportingVocalCount(selected)}',
+    );
+    setState(() {
+      _embeddedBackgroundLyrics = background;
+      _lyrics = selected;
+    });
   }
 
   void _toggleImmersiveLyrics() {
