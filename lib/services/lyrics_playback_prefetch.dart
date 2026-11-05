@@ -49,8 +49,9 @@ class LyricsPlaybackPrefetch {
       final fetched = await _service.loadLyricsForSong(
         song, fetchOnline: true,
       ).catchError((Object _) => null);
-      return lyricQualityRank(fetched) > lyricQualityRank(own)
+      final best = lyricQualityRank(fetched) > lyricQualityRank(own)
           ? fetched : own ?? fetched;
+      return LyricsService.mergeSupportingVocals(best, [own, fetched]);
     });
     while (_local.length > maxEntries) {
       final stale = _local.keys.first;
@@ -81,8 +82,11 @@ class LyricsPlaybackPrefetch {
   }
 }
 
-int lyricQualityRank(LyricsData? data) => data == null
+int lyricQualityRank(LyricsData? data) => data == null ||
+        !data.lines.any((line) =>
+            line.voice != 'bg' && line.text.trim().isNotEmpty)
     ? 0
-    : data.lines.any((line) => line.words?.isNotEmpty == true)
+    : data.lines.any((line) =>
+            line.voice != 'bg' && line.words?.isNotEmpty == true)
         ? 3
         : data.isSynchronized ? 2 : 1;

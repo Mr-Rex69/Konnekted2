@@ -14,6 +14,26 @@ import 'package:flick/providers/app_preferences_provider.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/player_service.dart';
 
+/// Active background vocals may continue after a newer lead starts. Keep
+/// their independent word windows visible with the current lead, instead of
+/// making the background singer disappear when the parent row loses focus.
+List<int> overlappingBackgroundVocalIndices(
+  LyricsData lyrics, Duration position, int focusedIndex,
+) {
+  final active = <int>[];
+  for (var i = 0; i < lyrics.lines.length; i++) {
+    if (i == focusedIndex) continue;
+    final voice = lyrics.lines[i];
+    final words = voice.backgroundWords;
+    if (words == null || words.isEmpty) continue;
+    if (words.any((word) =>
+        word.start <= position && position < word.end)) {
+      active.add(i);
+    }
+  }
+  return active;
+}
+
 /// Synced lyrics list with a fixed focus anchor: the active line pins at
 /// [_anchorFraction] of the viewport height, per-line geometry comes from a
 /// measured-height registry (TextPainter estimates until real sizes arrive),
@@ -411,6 +431,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   }) {
     final line = widget.lyrics.lines[index];
     final isActive = index == _activeLineIndex;
+    final isSupportingVoice = line.voice == 'bg';
 
     final content = isActive && karaokeEnabled
         ? Padding(
@@ -421,8 +442,13 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               lyrics: widget.lyrics,
               lineIndex: index,
               textAlign: alignment.textAlign,
-              style: _textStyle(true, 1),
-              sungColor: _sungColor,
+              style: isSupportingVoice
+                  ? _textStyle(true, 1).copyWith(
+                      fontSize: 16, fontStyle: FontStyle.italic,
+                    )
+                  : _textStyle(true, 1),
+              sungColor: isSupportingVoice
+                  ? _sungColor.withValues(alpha: .83) : _sungColor,
               unsungColor: Colors.white.withValues(alpha: 0.30),
               positionNotifier: _positionNotifier,
               playingNotifier: widget.playingNotifier,
@@ -442,6 +468,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               style: _textStyle(
                 isActive,
                 isActive ? 1 : _opacityForIndex(index),
+              ).copyWith(
+                fontSize: isSupportingVoice ? 16 : null,
+                fontStyle: isSupportingVoice ? FontStyle.italic : null,
               ),
               strutStyle: _strutStyle(isActive),
             ),
@@ -461,6 +490,68 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 content,
+                if (isActive && widget.active)
+                  // A separately timed backing singer must remain visible
+                  // even after another lead row takes the scrolling focus.
+                  ValueListenableBuilder<Duration>(
+                    valueListenable: _positionNotifier,
+                    builder: (context, position, _) {
+                      final overlapping = overlappingBackgroundVocalIndices(
+                        widget.lyrics, position, index,
+                      );
+                      if (overlapping.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final bgIndex in overlapping)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 2,
+                              ),
+                              child: karaokeEnabled
+                                  ? KaraokeLyricLine(
+                                      key: ValueKey(
+                                        'overlapping-bg-$bgIndex',
+                                      ),
+                                      playerService: widget.playerService,
+                                      lyricsService: widget.lyricsService,
+                                      lyrics: widget.lyrics,
+                                      lineIndex: bgIndex,
+                                      backgroundVoice: true,
+                                      textAlign: alignment.textAlign,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        height: 1.3,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                      sungColor: _sungColor.withValues(
+                                        alpha: .83,
+                                      ),
+                                      unsungColor: Colors.white.withValues(
+                                        alpha: .28,
+                                      ),
+                                      positionNotifier: _positionNotifier,
+                                      playingNotifier: widget.playingNotifier,
+                                      active: widget.active,
+                                    )
+                                  : Text(
+                                      widget.lyrics.lines[bgIndex]
+                                          .backgroundText ?? '',
+                                      textAlign: alignment.textAlign,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        height: 1.3,
+                                        fontStyle: FontStyle.italic,
+                                        color: Colors.white.withValues(
+                                          alpha: .67,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                 if (line.backgroundText?.trim().isNotEmpty == true)
                   Padding(
                     padding: const EdgeInsets.symmetric(

@@ -154,6 +154,13 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
         } else {
           _lyricsData ??= best;
         }
+        // Preserve independent background-vocal timing across source upgrades.
+        // The manually chosen lead remains authoritative.
+        if (selected == 'auto') {
+          _lyricsData = LyricsService.mergeSupportingVocals(
+            _lyricsData, [local, best],
+          );
+        }
         _hasManualLyricsSelection =
             manualPath != null && manualPath.isNotEmpty;
         _isLoading = false;
