@@ -184,6 +184,73 @@ class LyricsService {
     );
   }
 
+  /// The independently timed supporting voice is part of the lyrics, not a
+  /// translation or a second online source. Existing source ranking only
+  /// measures lead timing and can silently replace a complete local lyric set
+  /// with a lead-only word-timed copy.
+  static int supportingVocalCount(LyricsData? lyrics) =>
+      lyrics?.lines.where(
+        (line) => line.backgroundText?.trim().isNotEmpty == true,
+      ).length ?? 0;
+
+  /// Merge backing vocals from different representations of this SAME song
+  /// without replacing the chosen lead, translation, or word timings.
+  /// Each voice is matched by its own onset rather than the previous LRC row.
+  static LyricsData? mergeSupportingVocals(
+    LyricsData? preferred,
+    Iterable<LyricsData?> others,
+  ) {
+    if (preferred == null || preferred.lines.isEmpty) return preferred;
+    final lines = preferred.lines.toList();
+    final seen = <String>{};
+
+    String signature(String text, Duration time) =>
+        '${time.inMilliseconds}|${text.trim().replaceAll(RegExp(r'\\s+'), ' ')}';
+
+    for (final line in lines) {
+      if (line.backgroundText?.trim().isNotEmpty != true) continue;
+      final onset = line.backgroundWords?.isNotEmpty == true
+          ? line.backgroundWords!.first.start
+          : line.timestamp;
+      seen.add(signature(line.backgroundText!, onset));
+    }
+
+    var changed = false;
+    for (final data in others) {
+      if (data == null || identical(data, preferred)) continue;
+      for (final voice in data.lines) {
+        final text = voice.backgroundText?.trim();
+        if (text == null || text.isEmpty) continue;
+        final words = voice.backgroundWords;
+        final onset = words?.isNotEmpty == true
+            ? words!.first.start
+            : voice.timestamp;
+        if (!seen.add(signature(text, onset))) continue;
+        var target = 0;
+        final limit = onset + const Duration(milliseconds: 20);
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].timestamp <= limit &&
+              (lines[target].timestamp > limit ||
+                  lines[i].timestamp >= lines[target].timestamp)) {
+            target = i;
+          }
+        }
+        lines[target] = lines[target].withBackground(text, words);
+        changed = true;
+      }
+    }
+
+    if (!changed) return preferred;
+    return LyricsData(
+      lines: lines,
+      isSynchronized: preferred.isSynchronized,
+      rawContent: preferred.rawContent,
+      source: preferred.source,
+      language: preferred.language,
+      translationLanguage: preferred.translationLanguage,
+    );
+  }
+
   LyricsService({this.online});
 
   /// Where lyrics are looked up online (LRCLIB unless given).
@@ -447,31 +514,31 @@ class LyricsService {
       await clearManualLyricsPathForSong(song);
     }
 
+    // Read the FLAC's own lyrics regardless of whether an earlier Desktop
+    // handoff supplied word-timed lead lyrics. A lead-only payload is NOT a
+    // complete replacement for local independently timed backing vocals.
     final desktop = await _desktopLyrics(song);
-    if (desktop != null &&
-        desktop.lines.any((l) => l.words?.isNotEmpty == true)) {
-      _cache[filePath] = desktop;
-      return desktop;
-    }
-    final loaded = await _loadLyricsText(filePath);
-    if (loaded == null || loaded.content.trim().isEmpty) {
-      if (desktop != null) {
-        _cache[filePath] = desktop;
-        return desktop;
-      }
-      final embedded = await _loadEmbeddedLyricsText(filePath);
-      if (embedded != null && embedded.content.trim().isNotEmpty) {
-        final parsed = _parseLyrics(embedded.content, source: embedded.source);
-        _cache[filePath] = parsed;
-        return parsed;
-      }
-      _cache[filePath] = null;
-      return null;
-    }
+    final sidecar = await _loadLyricsText(filePath);
+    final embedded = await _loadEmbeddedLyricsText(filePath);
+    final sidecarData = sidecar?.content.trim().isNotEmpty == true
+        ? _parseLyrics(sidecar!.content, source: sidecar.source)
+        : null;
+    final embeddedData = embedded?.content.trim().isNotEmpty == true
+        ? _parseLyrics(embedded!.content, source: embedded.source)
+        : null;
 
-    final parsed = _parseLyrics(loaded.content, source: loaded.source);
-    _cache[filePath] = parsed;
-    return parsed;
+    // A sidecar is the explicitly supplied local source. Otherwise preserve
+    // word timing from linked Desktop lyrics, but overlay backing vocals from
+    // the actual audio file even when the lead is equally word-synchronized.
+    final primary = sidecarData ??
+        ((desktop?.lines.any((l) => l.words?.isNotEmpty == true) == true)
+            ? desktop : embeddedData ?? desktop);
+    final selected = mergeSupportingVocals(
+      primary,
+      [embeddedData, sidecarData, desktop],
+    );
+    _cache[filePath] = selected;
+    return selected;
   }
 
   static LyricsData? fromDesktop(Map<String, dynamic> payload) {
