@@ -373,14 +373,16 @@ class LyricsService {
     if (!fetchOnline ||
         source == 'local' ||
         (!refreshOnline &&
-            own?.lines.any((l) => l.words?.isNotEmpty == true) == true))
+            own?.lines.any((l) =>
+                l.voice != 'bg' && l.words?.isNotEmpty == true) == true))
       return own;
     if (own != null && await getManualLyricsPathForSong(song) != null)
       return own;
     final found = await fetchOnlineLyrics(song, stillCurrent: stillCurrent);
     int rank(LyricsData? data) => data == null
         ? 0
-        : data.lines.any((l) => l.words?.isNotEmpty == true)
+        : data.lines.any((l) =>
+            l.voice != 'bg' && l.words?.isNotEmpty == true)
         ? 3
         : data.isSynchronized
         ? 2
