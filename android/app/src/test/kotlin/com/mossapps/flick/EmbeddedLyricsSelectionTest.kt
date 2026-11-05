@@ -82,4 +82,53 @@ class EmbeddedLyricsSelectionTest {
         assertEquals(null, EmbeddedLyricsSelection.fromVorbisComments(byteArrayOf(0, 1, 2)))
     }
 
+
+    private fun flacWithVorbisComments(block: ByteArray): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        out.write("fLaC".toByteArray(Charsets.US_ASCII))
+        // STREAMINFO: a 4-byte test block, followed by a final VORBIS_COMMENT.
+        out.write(byteArrayOf(0, 0, 0, 4))
+        out.write(byteArrayOf(0, 0, 0, 0))
+        out.write(byteArrayOf(
+            0x84.toByte(),
+            ((block.size ushr 16) and 0xff).toByte(),
+            ((block.size ushr 8) and 0xff).toByte(),
+            (block.size and 0xff).toByte(),
+        ))
+        out.write(block)
+        return out.toByteArray()
+    }
+
+    @Test
+    fun decodesRealFlacMetadataBlockLayoutAndMergesSplitBackingVocals() {
+        val lead = "[00:15.433]<00:15.433>Lead<00:22.852>"
+        val backing = "[bg:<00:17.254><00:17.254>Harmony<00:21.736>]"
+        val block = vorbisBlock(
+            "UNSYNCEDLYRICS=$backing",
+            "LYRICS=$lead",
+        )
+        val flac = flacWithVorbisComments(block)
+        assertEquals(
+            lead + "\n" + backing,
+            EmbeddedLyricsSelection.fromFlac(java.io.ByteArrayInputStream(flac)),
+        )
+    }
+
+    @Test
+    fun skipsUnrelatedFlacBlocksWithoutLosingLyricTags() {
+        val input = flacWithVorbisComments(
+            vorbisBlock("LYRICS=[00:01.00]Sung"),
+        )
+        assertEquals(
+            "[00:01.00]Sung",
+            EmbeddedLyricsSelection.fromFlac(java.io.ByteArrayInputStream(input)),
+        )
+        assertEquals(
+            null,
+            EmbeddedLyricsSelection.fromFlac(
+                java.io.ByteArrayInputStream("not-flac".toByteArray(Charsets.UTF_8)),
+            ),
+        )
+    }
+
 }
