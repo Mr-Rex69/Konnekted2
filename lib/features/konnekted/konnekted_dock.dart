@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
+import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/providers/app_preferences_provider.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
@@ -897,39 +899,58 @@ class KonnektedMiniPlayer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final song = ref.watch(currentSongProvider);
     if (song == null) return const SizedBox.shrink();
-    return KonnektedMiniPlayerContent(
-      song: song,
-      artworkKey: artworkKey,
-      isPlaying: ref.watch(isPlayingProvider),
-      onOpen: onOpen,
-      onQueue: onQueue,
-      onPullUpStart: onPullUpStart,
-      onPullUpUpdate: onPullUpUpdate,
-      onPullUpEnd: onPullUpEnd,
-      onPlayPause: () {
-        AppHaptics.doublePulse();
-        _transport(context, () => ref.read(playerProvider.notifier).togglePlayPause());
-      },
-      onNext: () {
-        AppHaptics.triplePulse();
-        _transport(context, () => ref.read(playerProvider.notifier).next());
-      },
-      onPrevious: () {
-        AppHaptics.triplePulse();
-        _transport(context, () => ref.read(playerProvider.notifier).previous());
-      },
-      progress: Consumer(
-        builder: (context, ref, _) {
-          final value = ref.watch(progressProvider);
-          return LinearProgressIndicator(
-            value: value.isFinite ? value.clamp(0.0, 1.0) : 0,
-            minHeight: 2,
-            backgroundColor: Colors.white.withValues(alpha: .06),
-            color: context.lokal.accent,
-            semanticsLabel: 'Track progress',
-          );
-        },
-      ),
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        KonnektedMiniPlayerContent(
+          song: song,
+          artworkKey: artworkKey,
+          isPlaying: ref.watch(isPlayingProvider),
+          onOpen: onOpen,
+          onQueue: onQueue,
+          onPullUpStart: onPullUpStart,
+          onPullUpUpdate: onPullUpUpdate,
+          onPullUpEnd: onPullUpEnd,
+          onPlayPause: () {
+            AppHaptics.doublePulse();
+            _transport(context, () => ref.read(playerProvider.notifier).togglePlayPause());
+          },
+          onNext: () {
+            AppHaptics.triplePulse();
+            _transport(context, () => ref.read(playerProvider.notifier).next());
+          },
+          onPrevious: () {
+            AppHaptics.triplePulse();
+            _transport(context, () => ref.read(playerProvider.notifier).previous());
+          },
+          progress: Consumer(
+            builder: (context, ref, _) {
+              final value = ref.watch(progressProvider);
+              return LinearProgressIndicator(
+                value: value.isFinite ? value.clamp(0.0, 1.0) : 0,
+                minHeight: 2,
+                backgroundColor: Colors.white.withValues(alpha: .06),
+                color: context.lokal.accent,
+                semanticsLabel: 'Track progress',
+              );
+            },
+          ),
+        ),
+        // Cache this track's blur while its mini player remains on screen.
+        // The preload is invisible and never starts a mesh ticker; reopening
+        // Now Playing after a scroll reuses the finished 224px texture.
+        Positioned(
+          left: 0,
+          top: 0,
+          child: ArtworkMeshBlurBackdrop(
+            song: song,
+            preserveArtworkContrast: ref.watch(
+              lokalAppearanceProvider.select((look) => look.fullscreenCover),
+            ),
+            prewarmOnly: true,
+          ),
+        ),
+      ],
     );
   }
 
