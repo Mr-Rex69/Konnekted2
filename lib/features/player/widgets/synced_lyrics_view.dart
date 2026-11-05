@@ -84,7 +84,7 @@ List<ActiveSupportingVocal> activeSupportingVocals(
     }
     final start = words.first.start;
     var end = words.last.end;
-    if (end <= start) {
+    if (end <= words.last.start) {
       end = words.last.start + const Duration(milliseconds: 500);
     }
     if (position >= start && position < end) {
