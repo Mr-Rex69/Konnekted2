@@ -29,8 +29,6 @@ import 'package:flick/services/motion_art/animated_artwork_service.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 
 import '../widgets/player_transport_controls.dart';
-import '../widgets/artwork_gradient_backdrop.dart';
-import '../widgets/artwork_mesh_blur_backdrop.dart';
 import '../widgets/player_song_blur_background.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
