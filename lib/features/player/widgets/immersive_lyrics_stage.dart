@@ -67,9 +67,13 @@ List<int> immersiveActiveLineIndices(
   final active = <int>[];
   for (var i = 0; i <= latest && i < lines.length; i++) {
     final line = lines[i];
-    final overlappingWords = line.words?.any(
-      (word) => word.start <= position && word.end > position,
-    ) ?? false;
+    final overlappingWords =
+        (line.words?.any(
+          (word) => word.start <= position && word.end > position,
+        ) ?? false) ||
+        (line.backgroundWords?.any(
+          (word) => word.start <= position && word.end > position,
+        ) ?? false);
     if (line.timestamp == latestTimestamp || overlappingWords) {
       active.add(i);
     }
@@ -316,6 +320,33 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
             style: _lyricStyle,
           ),
         ),
+        if (line.backgroundText?.trim().isNotEmpty == true) ...[
+          const SizedBox(height: 3),
+          RepaintBoundary(
+            child: LyricMotionLine(
+              key: ValueKey('space-bg:${line.timestamp.inMilliseconds}:$index'),
+              line: LyricsLine(
+                timestamp: line.backgroundWords?.isNotEmpty == true
+                    ? line.backgroundWords!.first.start
+                    : line.timestamp,
+                text: line.backgroundText!,
+                words: line.backgroundWords,
+              ),
+              position: position,
+              textAlign: TextAlign.center,
+              lightweight: true,
+              style: const TextStyle(
+                fontFamily: _font,
+                fontSize: 18,
+                height: 1.25,
+                fontWeight: FontWeight.w500,
+                fontStyle: FontStyle.italic,
+              ),
+              sung: Colors.white.withValues(alpha: .86),
+              unsung: Colors.white38,
+            ),
+          ),
+        ],
         if (line.translation?.trim().isNotEmpty == true) ...[
           const SizedBox(height: 5),
           // Reuse the very same frame-interpolated playhead as the original.

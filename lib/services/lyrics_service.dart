@@ -37,6 +37,10 @@ class LyricsLine {
   final String text;
   final List<LyricsWord>? words;
 
+  /// Independently timed backing vocals that overlap the lead line.
+  final String? backgroundText;
+  final List<LyricsWord>? backgroundWords;
+
   /// Optional voice label carried by Mornye/lrc.red LRC (not sung text).
   final String? voice;
 
@@ -50,6 +54,8 @@ class LyricsLine {
     this.words,
     this.translation,
     this.voice,
+    this.backgroundText,
+    this.backgroundWords,
   });
 
   LyricsLine withTranslation(String? translation) => LyricsLine(
@@ -58,6 +64,20 @@ class LyricsLine {
     words: words,
     translation: translation,
     voice: voice,
+    backgroundText: backgroundText,
+    backgroundWords: backgroundWords,
+  );
+
+  LyricsLine withBackground(String text, List<LyricsWord>? words) => LyricsLine(
+    timestamp: timestamp,
+    text: this.text,
+    words: this.words,
+    translation: translation,
+    voice: voice,
+    backgroundText: backgroundText == null || backgroundText!.isEmpty
+        ? text
+        : '$backgroundText $text',
+    backgroundWords: [...?backgroundWords, ...?words],
   );
 }
 
@@ -476,8 +496,23 @@ class LyricsService {
           ),
         );
       }
+      final backgroundWords = <LyricsWord>[];
+      for (final word
+          in (row['bgWords'] is List ? row['bgWords'] as List : const [])
+              .whereType<Map>()) {
+        if (word['time'] is! num || word['end'] is! num) continue;
+        backgroundWords.add(
+          LyricsWord(
+            start: seconds(word['time']),
+            end: seconds(word['end']),
+            text: "${word['word'] ?? ''}${word['space'] == true ? ' ' : ''}",
+          ),
+        );
+      }
+      final backgroundText = row['bgText']?.toString();
       final text = row['text']?.toString() ?? '';
-      if (text.trim().isEmpty) continue;
+      if (text.trim().isEmpty &&
+          (backgroundText?.trim().isEmpty ?? true)) continue;
       final (cleanText, cleanWords, voice) = _stripVoicePrefix(
         text,
         words.isEmpty ? null : words,
@@ -488,6 +523,8 @@ class LyricsService {
           timestamp: seconds(row['time']),
           text: cleanText,
           words: cleanWords,
+          backgroundText: backgroundText,
+          backgroundWords: backgroundWords.isEmpty ? null : backgroundWords,
           voice: voice ?? row['agent']?.toString(),
           translation: translation is Map
               ? translation['text']?.toString()
@@ -796,6 +833,8 @@ class LyricsService {
           words: resolveWords(lyrics, i),
           translation: line.translation,
           voice: line.voice,
+          backgroundText: line.backgroundText,
+          backgroundWords: line.backgroundWords,
         ),
       );
     }
@@ -938,6 +977,21 @@ class LyricsService {
         buffer.writeln('${formatTimestamp(line.timestamp)}$enhanced');
       } else {
         buffer.writeln('${formatTimestamp(line.timestamp)}${line.text}');
+      }
+      // Re-emit separately timed backing vocals in enhanced-LRC exports.
+      if (line.backgroundText?.trim().isNotEmpty == true) {
+        final bgWords = line.backgroundWords;
+        if (bgWords != null && bgWords.isNotEmpty) {
+          final timed = bgWords.map(
+            (w) => '<${_formatClock(w.start)}>${w.text}',
+          ).join();
+          final tail = bgWords.last.end > bgWords.last.start
+              ? '<${_formatClock(bgWords.last.end)}>'
+              : '';
+          buffer.writeln('[bg:$timed$tail]');
+        } else {
+          buffer.writeln('[bg:${line.backgroundText}]');
+        }
       }
       // Duplicate the timestamp so external bilingual-LRC parsers can pair
       // the translated line with the original rather than treating it as
@@ -1107,6 +1161,10 @@ class LyricsService {
       caseSensitive: false,
     );
     final metadataPattern = RegExp(r'^\s*\[[a-zA-Z]+:.*\]\s*$');
+    final backingPattern = RegExp(
+      r'^\s*\[bg\s*:(.*)\]\s*$',
+      caseSensitive: false,
+    );
 
     var offsetMs = 0;
     var hasTimestamps = false;
@@ -1139,6 +1197,47 @@ class LyricsService {
       if (marker != null) {
         taggedSourceIndex = int.tryParse(marker.group(1)!);
         previous = [];
+        continue;
+      }
+
+      // [bg:<time>...] is a separately timed supporting singer under the
+      // previous lead, not an LRC translation or metadata entry.
+      final backing = backingPattern.firstMatch(line);
+      if (backing != null) {
+        if (previous.isNotEmpty) {
+          final body = backing.group(1)!;
+          final text = body.replaceAll(_wordTimestampPattern, '').trim();
+          if (text.isNotEmpty) {
+            final rawWords = (_extractWords(body, offsetMs) ?? const <LyricsWord>[])
+                .where((w) => w.text.trim().isNotEmpty).toList();
+            final stamps = _wordTimestampPattern.allMatches(body).toList();
+            final tail = stamps.isEmpty
+                ? null
+                : _parseTimestamp(stamps.last.group(1) ?? '');
+            final tailMs = tail == null ? null : tail.inMilliseconds + offsetMs;
+            final words = <LyricsWord>[
+              for (var i = 0; i < rawWords.length; i++)
+                LyricsWord(
+                  start: rawWords[i].start,
+                  end: i + 1 < rawWords.length &&
+                          rawWords[i + 1].start > rawWords[i].start
+                      ? rawWords[i + 1].start
+                      : i + 1 == rawWords.length &&
+                            tailMs != null &&
+                            tailMs > rawWords[i].start.inMilliseconds
+                          ? Duration(milliseconds: tailMs)
+                          : rawWords[i].start + const Duration(milliseconds: 500),
+                  text: rawWords[i].text,
+                ),
+            ];
+            for (final index in previous) {
+              parsedLines[index] = parsedLines[index].withBackground(
+                text,
+                words.isEmpty ? null : words,
+              );
+            }
+          }
+        }
         continue;
       }
 

@@ -192,8 +192,12 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     final inactive = <double>[];
     final active = <double>[];
     for (final line in lines) {
-      inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth));
-      active.add(28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth));
+      final background = line.backgroundText;
+      final bgHeight = background == null || background.isEmpty
+          ? 0.0
+          : 6 + _estimateTextHeight(background, 15, 1.3, 2, textWidth);
+      inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth) + bgHeight);
+      active.add(28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth) + bgHeight);
     }
     _inactiveEstimates = inactive;
     _activeEstimates = active;
@@ -457,6 +461,44 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 content,
+                if (line.backgroundText?.trim().isNotEmpty == true)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 2,
+                    ),
+                    child: isActive && karaokeEnabled &&
+                            line.backgroundWords?.isNotEmpty == true
+                        ? KaraokeLyricLine(
+                            playerService: widget.playerService,
+                            lyricsService: widget.lyricsService,
+                            lyrics: widget.lyrics,
+                            lineIndex: index,
+                            backgroundVoice: true,
+                            textAlign: alignment.textAlign,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.3,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            sungColor: _sungColor.withValues(alpha: .83),
+                            unsungColor: Colors.white.withValues(alpha: .28),
+                            positionNotifier: _positionNotifier,
+                            playingNotifier: widget.playingNotifier,
+                            active: widget.active,
+                          )
+                        : Text(
+                            line.backgroundText!,
+                            textAlign: alignment.textAlign,
+                            style: TextStyle(
+                              fontSize: 15,
+                              height: 1.3,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.white.withValues(
+                                alpha: isActive ? .67 : .30,
+                              ),
+                            ),
+                          ),
+                  ),
                 AnimatedLyricSubline(
                   text: line.translation,
                   textAlign: alignment.textAlign,
