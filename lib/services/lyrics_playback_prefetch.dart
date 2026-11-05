@@ -84,6 +84,7 @@ class LyricsPlaybackPrefetch {
 
 int lyricQualityRank(LyricsData? data) => data == null
     ? 0
-    : data.lines.any((line) => line.words?.isNotEmpty == true)
+    : data.lines.any((line) =>
+            line.voice != 'bg' && line.words?.isNotEmpty == true)
         ? 3
         : data.isSynchronized ? 2 : 1;
