@@ -39,9 +39,20 @@ class PlayerSongBlurBackground extends StatelessWidget {
         fit: StackFit.expand,
         children: [...previous, if (current != null) current],
       ),
-      transitionBuilder: (child, fade) => FadeTransition(
-        opacity: fade,
+      transitionBuilder: (child, fade) => AnimatedBuilder(
+        animation: fade,
         child: child,
+        builder: (context, artwork) => FadeTransition(
+          opacity: fade,
+          // Hold the outgoing shader's last frame while compositing its
+          // opacity out. Otherwise two full-speed mesh tickers run for the
+          // entire transition and can cause precisely the skip jank this
+          // crossfade is meant to remove.
+          child: TickerMode(
+            enabled: fade.status != AnimationStatus.reverse,
+            child: artwork!,
+          ),
+        ),
       ),
       child: Stack(
         key: ValueKey(
