@@ -19,6 +19,7 @@ import '../../services/atmos_playback_support.dart';
 import 'discovery_http.dart';
 import 'discovery_models.dart';
 import 'discovery_sources.dart';
+import 'addon_hybrid_media.dart';
 
 typedef DiscoveryAudioProbe = Future<native.AudioProbeFormat> Function(
   String path,
@@ -128,7 +129,24 @@ class DiscoveryPlaybackCache {
       }
 
       final length = audio.length;
-      if (length == null) {
+      if (audio.hybridPlan case final hybrid?) {
+        // hybrid-v1: decrypt authorized CDN CENC ranges on this device.
+        // Never expose the key, pass ciphertext to the audio engine, or
+        // reinterpret other add-ons' progressive media requests.
+        await downloadAddonHybrid(
+          http,
+          hybrid,
+          maxBytes: maxFileBytes,
+          timeout: downloadTimeout,
+          cancel: cancel,
+          onData: write,
+        );
+        if (received != hybrid.outputLength) {
+          throw const DiscoveryException(
+            'The hybrid CDN returned an incomplete recording.',
+          );
+        }
+      } else if (length == null) {
         await http.transfer(
           audio.url,
           headers: audio.headers,

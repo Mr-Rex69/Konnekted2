@@ -1593,15 +1593,19 @@ Future<List<OnlineSource>> _playbackSources(
               rethrow;
             }
           }
-          if (forDownload) {
+          if (forDownload || audio.hybridPlan != null) {
+            // CENC hybrid-v1 is a set of encrypted CDN ranges, not a
+            // progressive media URL. Stage/decrypt it locally, then run the
+            // native audio probe before handing the file to PlayerService.
             return cache().prepare(
               found, audio, cancel: cancel,
               onProgress: (received) {
+                final activity = forDownload ? 'Downloading' : 'Preparing';
                 if (audio.length case final total? when total > 0) {
-                  onStatus?.call('Downloading from ${addon.displayName}… '
+                  onStatus?.call('$activity from ${addon.displayName}… '
                       '${(received * 100 / total).clamp(0, 100).round()}%');
                 } else {
-                  onStatus?.call('Downloading from ${addon.displayName}…');
+                  onStatus?.call('$activity from ${addon.displayName}…');
                 }
               },
             );
@@ -1737,6 +1741,34 @@ Future<T> boundedAutomaticAddonAttempt<T>(
 
 /// Classify without logging signed audio URLs or provider credentials.
 String _onlineFailureKind(Object error) {
+  // Stable, credential-free reasons distinguish incompatible add-on response
+  // formats without recording private URLs, listener tokens or signed media.
+  if (error is DiscoveryException) {
+    switch (error.message) {
+      case 'The addon returned no playable URL.':
+        return 'addon_no_direct_media';
+      case 'This source uses HLS/DASH. A progressive audio file is required.':
+      case 'A playlist URL cannot be played as an audio file.':
+        return 'addon_adaptive_manifest';
+      case 'Encrypted audio is not supported by this adapter.':
+      case 'DRM audio is not supported by this adapter.':
+        return 'addon_encrypted_media';
+      case 'The addon returned invalid transport metadata.':
+        return 'addon_transport_metadata';
+      case 'The addon could not resolve this recording.':
+        return 'addon_stream_error';
+      case 'The hybrid CDN returned an incomplete segment.':
+      case 'The hybrid CDN returned an incomplete recording.':
+        return 'addon_hybrid_incomplete';
+      case 'The hybrid init segment could not be decrypted.':
+      case 'The hybrid media segment could not be decrypted.':
+        return 'addon_hybrid_decryption';
+      case 'The hybrid recording exceeds the audio size limit.':
+      case 'The addon returned invalid hybrid byte ranges.':
+      case 'The addon returned an incomplete hybrid audio plan.':
+        return 'addon_hybrid_invalid';
+    }
+  }
   final message = error.toString().toLowerCase();
   final status = RegExp(r'http\s+(401|403|404|408|429|500|502|503|504)')
       .firstMatch(message);
