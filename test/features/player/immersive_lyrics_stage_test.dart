@@ -84,4 +84,60 @@ void main() {
     );
     expect(immersiveLyricsLineIndex(plain, const Duration(minutes: 2)), -1);
   });
+
+  test('Space treats a standalone backing singer as an independently timed line', () {
+    const vocals = LyricsData(
+      isSynchronized: true,
+      rawContent: '',
+      lines: [
+        LyricsLine(
+          timestamp: Duration(milliseconds: 17254),
+          voice: 'bg',
+          text: 'Harmony',
+          words: [
+            LyricsWord(
+              start: Duration(milliseconds: 17254),
+              end: Duration(milliseconds: 21736),
+              text: 'Harmony',
+            ),
+          ],
+        ),
+      ],
+    );
+    expect(hasImmersiveLyrics(vocals), isTrue);
+    expect(LyricsService.supportingVocalCount(vocals), 1);
+    expect(immersiveLyricsLineIndex(vocals, const Duration(seconds: 18)), 0);
+    expect(
+      immersiveActiveLineIndices(vocals, const Duration(seconds: 18)),
+      [0],
+    );
+  });
+
+  test('independent backing timing overlaps the next lead in Space', () {
+    const vocals = LyricsData(
+      isSynchronized: true,
+      rawContent: '',
+      lines: [
+        LyricsLine(
+          timestamp: Duration(seconds: 15),
+          text: 'Lead',
+          backgroundText: 'Harmony',
+          backgroundWords: [
+            LyricsWord(
+              start: Duration(seconds: 17),
+              end: Duration(seconds: 22),
+              text: 'Harmony',
+            ),
+          ],
+        ),
+        LyricsLine(timestamp: Duration(seconds: 19), text: 'Next lead'),
+      ],
+    );
+    expect(
+      immersiveActiveLineIndices(vocals, const Duration(seconds: 20)),
+      [0, 1],
+      reason: 'The background singer remains active after the next lead starts',
+    );
+  });
+
 }
