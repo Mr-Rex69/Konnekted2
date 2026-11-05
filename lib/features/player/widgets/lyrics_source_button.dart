@@ -101,6 +101,13 @@ class LyricsSourceButton extends StatelessWidget {
                 '${lyricsSourceLabel(lyrics, selected)} · ${lyricsTimingLabel(lyrics)}',
                 style: TextStyle(color: t.accent),
               ),
+              if (lyrics != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Supporting vocals: ${LyricsService.supportingVocalCount(lyrics)} detected',
+                  style: TextStyle(color: t.muted, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 12),
               ListTile(
                 contentPadding: EdgeInsets.zero,
