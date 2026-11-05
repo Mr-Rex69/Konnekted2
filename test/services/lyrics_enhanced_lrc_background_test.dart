@@ -112,4 +112,74 @@ void main() {
     expect(parsed.lines.last.backgroundText, 'Late');
   });
 
+
+  test('background-only embedded lyric payload is a standalone vocal track', () {
+    const onlyBacking =
+        '[bg:<00:17.254><00:17.254>Backing <00:17.726>voice <00:21.736>]\n'
+        '[bg:<00:27.000>Second <00:28.000>voice <00:30.000>]';
+    final parsed = service.parseLyricsText(
+      onlyBacking, source: 'embedded:vorbis',
+    );
+    expect(parsed.isSynchronized, isTrue);
+    expect(parsed.lines, hasLength(2));
+    expect(parsed.lines.every((line) => line.voice == 'bg'), isTrue);
+    expect(parsed.lines[0].text, 'Backing voice');
+    expect(parsed.lines[0].words!.first.start.inMilliseconds, 17254);
+    expect(LyricsService.supportingVocalCount(parsed), 2);
+  });
+
+  test('complete 16-voice standalone field overlays 41 rich lead rows', () {
+    String clock(int seconds) =>
+        (seconds ~/ 60).toString().padLeft(2, '0') + ':' +
+        (seconds % 60).toString().padLeft(2, '0');
+    final leads = List.generate(41, (i) {
+      final t = clock(i * 5);
+      return '[' + t + '.000]v1:<' + t + '.000>Lead ' +
+          (i + 1).toString() + '<' + t + '.900>';
+    });
+    final backing = List.generate(16, (i) {
+      final t = clock(76 + i * 5);
+      return '[bg:<' + t + '.100><' + t + '.100>Voice ' +
+          (i + 1).toString() + '<' + t + '.900>]';
+    });
+    final primary = service.parseLyricsText(leads.join('\n'), source: 'Desktop');
+    final bgOnly = service.parseLyricsText(backing.join('\n'),
+        source: 'embedded:vorbis');
+
+    expect(LyricsService.supportingVocalCount(primary), 0);
+    expect(LyricsService.supportingVocalCount(bgOnly), 16);
+
+    final merged = LyricsService.mergeSupportingVocals(
+      primary, [bgOnly],
+    )!;
+    expect(merged.lines, hasLength(41));
+    expect(merged.lines[15].text, primary.lines[15].text);
+    expect(merged.lines[15].words!.first.start,
+        primary.lines[15].words!.first.start);
+    expect(merged.lines[15].backgroundText, 'Voice 1');
+    expect(merged.lines[30].backgroundText, 'Voice 16');
+    expect(LyricsService.supportingVocalCount(merged), 16);
+
+    // Re-loading the same embedded tag must not double supporting vocals.
+    final mergedTwice = LyricsService.mergeSupportingVocals(merged, [bgOnly])!;
+    expect(LyricsService.supportingVocalCount(mergedTwice), 16);
+    expect(mergedTwice.lines[15].backgroundText, 'Voice 1');
+  });
+
+  test('background voice from a lead source survives a lead-only upgrade', () {
+    final local = service.parseLyricsText(
+      '[00:15.00]<00:15.00>Lead<00:22.00>\n'
+      '[bg:<00:17.00><00:17.00>Backing<00:21.00>]',
+      source: 'embedded:vorbis',
+    );
+    final online = service.parseLyricsText(
+      '[00:15.00]<00:15.00>Lead<00:22.00>',
+      source: 'online',
+    );
+    final resolved = LyricsService.mergeSupportingVocals(online, [local])!;
+    expect(resolved.source, 'online');
+    expect(resolved.lines.single.backgroundText, 'Backing');
+    expect(resolved.lines.single.backgroundWords!.first.start.inSeconds, 17);
+  });
+
 }
