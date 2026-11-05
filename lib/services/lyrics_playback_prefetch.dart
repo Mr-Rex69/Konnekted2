@@ -82,7 +82,9 @@ class LyricsPlaybackPrefetch {
   }
 }
 
-int lyricQualityRank(LyricsData? data) => data == null
+int lyricQualityRank(LyricsData? data) => data == null ||
+        !data.lines.any((line) =>
+            line.voice != 'bg' && line.text.trim().isNotEmpty)
     ? 0
     : data.lines.any((line) =>
             line.voice != 'bg' && line.words?.isNotEmpty == true)
