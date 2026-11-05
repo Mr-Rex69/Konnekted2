@@ -33,6 +33,110 @@ internal object EmbeddedLyricsSelection {
         return score
     }
 
+    /**
+     * Vorbis stores lyrics in separate comment entries. A file may put lead
+     * timing in LYRICS and independent [bg:] rows in UNSYNCEDLYRICS.
+     * Choosing one entry discards the other voice. Merge only the missing
+     * [bg:] rows from the *same file*, never duplicate already present rows.
+     */
+    fun combineVorbisLyrics(candidates: List<String>): String? {
+        val primary = pick(candidates) ?: return null
+        val seen = primary.lineSequence().map { it.trim() }.toMutableSet()
+        val extraBacking = candidates.asSequence()
+            .flatMap { it.replace("\r\n", "\n").replace('\r', '\n').lineSequence() }
+            .map { it.trim() }
+            .filter { backgroundPattern.containsMatchIn(it) && seen.add(it) }
+            .toList()
+        return if (extraBacking.isEmpty()) primary
+        else primary.trimEnd() + "\n" + extraBacking.joinToString("\n")
+    }
+
+    /**
+     * Decode the FLAC VORBIS_COMMENT metadata block independently from Android
+     * MediaMetadataRetriever so valid FLAC files remain readable if Android's
+     * platform metadata decoder rejects their URI.
+     */
+    fun fromVorbisComments(data: ByteArray): String? {
+        if (data.size < 8) return null
+        val buffer = java.nio.ByteBuffer.wrap(data)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+
+        fun length(): Int? {
+            if (buffer.remaining() < Int.SIZE_BYTES) return null
+            val count = buffer.int
+            return count.takeIf { it >= 0 && it <= buffer.remaining() }
+        }
+
+        val vendorLength = length() ?: return null
+        buffer.position(buffer.position() + vendorLength)
+        if (buffer.remaining() < Int.SIZE_BYTES) return null
+        val commentCount = buffer.int
+        if (commentCount < 0 || commentCount > 100000) return null
+
+        val wanted = setOf(
+            "LYRICS", "UNSYNCEDLYRICS", "UNSYNCED_LYRICS",
+            "SYNCEDLYRICS", "SYNCED_LYRICS",
+        )
+        val found = mutableListOf<String>()
+        repeat(commentCount) {
+            val size = length() ?: return combineVorbisLyrics(found)
+            val bytes = ByteArray(size)
+            buffer.get(bytes)
+            val entry = bytes.toString(Charsets.UTF_8)
+            val equal = entry.indexOf('=')
+            if (equal <= 0) return@repeat
+            val key = entry.substring(0, equal).uppercase(java.util.Locale.ROOT)
+            val value = entry.substring(equal + 1).trim()
+            if (key in wanted && value.isNotBlank()) found.add(value)
+        }
+        return combineVorbisLyrics(found)
+    }
+
+    /**
+     * Read FLAC's actual metadata stream, not just a synthetic lyric string.
+     * The stream may contain STREAMINFO and other blocks before VORBIS_COMMENT.
+     */
+    fun fromFlac(input: java.io.InputStream): String? {
+        fun readExact(bytes: ByteArray): Boolean {
+            var offset = 0
+            while (offset < bytes.size) {
+                val amount = input.read(bytes, offset, bytes.size - offset)
+                if (amount <= 0) return false
+                offset += amount
+            }
+            return true
+        }
+        val magic = ByteArray(4)
+        if (!readExact(magic) || !magic.contentEquals("fLaC".toByteArray(Charsets.US_ASCII))) {
+            return null
+        }
+        var last = false
+        while (!last) {
+            val blockHeader = ByteArray(4)
+            if (!readExact(blockHeader)) return null
+            val type = blockHeader[0].toInt() and 0x7f
+            last = (blockHeader[0].toInt() and 0x80) != 0
+            val length = ((blockHeader[1].toInt() and 0xff) shl 16) or
+                ((blockHeader[2].toInt() and 0xff) shl 8) or
+                (blockHeader[3].toInt() and 0xff)
+            if (type == 4) {
+                val data = ByteArray(length)
+                if (!readExact(data)) return null
+                return fromVorbisComments(data)
+            }
+            // Reading in small chunks handles SAF providers whose InputStream
+            // does not implement skip() reliably.
+            var remaining = length
+            val scratch = ByteArray(8192)
+            while (remaining > 0) {
+                val amount = input.read(scratch, 0, minOf(scratch.size, remaining))
+                if (amount <= 0) return null
+                remaining -= amount
+            }
+        }
+        return null
+    }
+
     /** The original timed tag with independent backing singers is more complete. */
     fun pick(candidates: List<String>): String? {
         val parts = candidates.filter { it.isNotBlank() }

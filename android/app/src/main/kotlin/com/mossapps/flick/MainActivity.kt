@@ -3221,60 +3221,60 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun readEmbeddedLyrics(audioUriString: String): Map<String, String>? {
-        val retriever = MediaMetadataRetriever()
-        return try {
-            val uri = Uri.parse(audioUriString)
-
-            val handledByUri = when (uri.scheme) {
-                "content", "file" -> {
-                    retriever.setDataSource(this, uri)
-                    true
-                }
-                else -> false
-            }
-
-            if (!handledByUri) {
-                retriever.setDataSource(audioUriString)
-            }
-
-            val lyricKey = try {
-                MediaMetadataRetriever::class.java.getField("METADATA_KEY_LYRIC").getInt(null)
+        // Read the file's native lyric tags first. MediaMetadataRetriever can
+        // reject a valid FLAC or a document-provider URI; that must never
+        // prevent our own stream-based Vorbis/ID3 reader from running.
+        val tagged = listOf(
+            "embedded:id3" to { parseId3EmbeddedLyrics(audioUriString) },
+            "embedded:vorbis" to { parseFlacVorbisLyrics(audioUriString) },
+            "embedded:mp4" to { parseMp4Lyrics(audioUriString) },
+            "embedded:ogg" to { parseOggLyrics(audioUriString) },
+        ).firstNotNullOfOrNull { (source, reader) ->
+            try {
+                reader()?.takeIf { it.isNotBlank() }?.let { source to it }
             } catch (_: Exception) {
                 null
             }
+        }
 
-            val lyricText = lyricKey?.let { retriever.extractMetadata(it) }
-            // Desktop Lokal's rule: timed lyrics win over plain whichever tag
-            // holds them, so the platform's (often unsynced) lyric field only
-            // wins when the tags themselves have nothing timed.
-            val tagged = listOf(
-                "embedded:id3" to { parseId3EmbeddedLyrics(audioUriString) },
-                "embedded:vorbis" to { parseFlacVorbisLyrics(audioUriString) },
-                "embedded:mp4" to { parseMp4Lyrics(audioUriString) },
-                // ponytail: covers ID3/FLAC/MP4/Ogg; WMA and APE tags not parsed
-                "embedded:ogg" to { parseOggLyrics(audioUriString) },
-            ).firstNotNullOfOrNull { (source, read) ->
-                read()?.takeIf { it.isNotBlank() }?.let { source to it }
-            }
-            val candidates = listOfNotNull(
-                tagged,
-                lyricText?.takeIf { it.isNotBlank() }?.let { "embedded" to it },
-            )
-            val best = pickEmbeddedLyrics(candidates.map { it.second })
-            candidates.firstOrNull { it.second == best }?.let { (source, content) ->
-                mapOf(
-                    "content" to content,
-                    "source" to source,
-                )
+        val platformLyrics = try {
+            val retriever = MediaMetadataRetriever()
+            try {
+                val uri = Uri.parse(audioUriString)
+                when (uri.scheme) {
+                    "content", "file" -> retriever.setDataSource(this, uri)
+                    else -> retriever.setDataSource(audioUriString)
+                }
+                val lyricKey = try {
+                    MediaMetadataRetriever::class.java.getField("METADATA_KEY_LYRIC").getInt(null)
+                } catch (_: Exception) {
+                    null
+                }
+                lyricKey?.let { retriever.extractMetadata(it) }
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Exception) {}
             }
         } catch (_: Exception) {
+            // Native tag reading is independent of Android's metadata decoder.
             null
-        } finally {
-            try {
-                retriever.release()
-            } catch (_: Exception) {
-            }
         }
+
+        val candidates = listOfNotNull(
+            tagged,
+            platformLyrics?.takeIf { it.isNotBlank() }?.let { "embedded" to it },
+        )
+        val best = pickEmbeddedLyrics(candidates.map { it.second })
+        val chosen = candidates.firstOrNull { it.second == best } ?: return null
+        // No lyric text or file path is written to diagnostics.
+        val backgroundCount = chosen.second.lineSequence()
+            .count { it.trimStart().startsWith("[bg:", ignoreCase = true) }
+        android.util.Log.i(
+            "FlickLyrics",
+            "embedded source=${chosen.first} bgRows=$backgroundCount"
+        )
+        return mapOf("content" to chosen.second, "source" to chosen.first)
     }
 
     private fun parseId3EmbeddedLyrics(audioUriString: String): String? {
@@ -3486,41 +3486,10 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private fun parseFlacVorbisLyrics(audioUriString: String): String? {
-        return openAudioInputStream(audioUriString)?.use { input ->
-            val signature = ByteArray(4)
-            if (!readExact(input, signature)) return@use null
-            if (!signature.contentEquals(byteArrayOf('f'.code.toByte(), 'L'.code.toByte(), 'a'.code.toByte(), 'C'.code.toByte()))) {
-                return@use null
-            }
-
-            var isLastBlock = false
-            while (!isLastBlock) {
-                val header = input.read()
-                if (header < 0) break
-
-                isLastBlock = (header and 0x80) != 0
-                val blockType = header and 0x7F
-                val lengthBytes = ByteArray(3)
-                if (!readExact(input, lengthBytes)) break
-                val blockLength =
-                    ((lengthBytes[0].toInt() and 0xFF) shl 16) or
-                    ((lengthBytes[1].toInt() and 0xFF) shl 8) or
-                    (lengthBytes[2].toInt() and 0xFF)
-
-                if (blockLength < 0) break
-
-                if (blockType == 4) {
-                    val commentData = ByteArray(blockLength)
-                    if (!readExact(input, commentData)) break
-                    return@use parseVorbisCommentLyrics(commentData)
-                } else {
-                    if (!skipFully(input, blockLength.toLong())) break
-                }
-            }
-            null
+    private fun parseFlacVorbisLyrics(audioUriString: String): String? =
+        openAudioInputStream(audioUriString)?.use { input ->
+            EmbeddedLyricsSelection.fromFlac(input)
         }
-    }
 
     private fun parseOggLyrics(audioUriString: String): String? {
         return openAudioInputStream(audioUriString)?.use { input ->
@@ -3673,42 +3642,8 @@ class MainActivity: FlutterActivity() {
         return null
     }
 
-    private fun parseVorbisCommentLyrics(data: ByteArray): String? {
-        if (data.size < 8) return null
-        val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-
-        val vendorLength = readLeIntSafe(buffer) ?: return null
-        if (vendorLength < 0 || vendorLength > buffer.remaining()) return null
-        buffer.position(buffer.position() + vendorLength)
-
-        val commentCount = readLeIntSafe(buffer) ?: return null
-        if (commentCount < 0) return null
-
-        val wantedKeys = listOf(
-            "LYRICS",
-            "UNSYNCEDLYRICS",
-            "UNSYNCED_LYRICS",
-        )
-
-        val found = mutableListOf<String>()
-        repeat(commentCount) {
-            val len = readLeIntSafe(buffer) ?: return pickEmbeddedLyrics(found)
-            if (len < 0 || len > buffer.remaining()) return null
-
-            val bytes = ByteArray(len)
-            buffer.get(bytes)
-            val entry = bytes.toString(Charsets.UTF_8)
-            val sep = entry.indexOf('=')
-            if (sep <= 0) return@repeat
-
-            val key = entry.substring(0, sep).uppercase()
-            val value = entry.substring(sep + 1).trim()
-            if (value.isBlank()) return@repeat
-            if (wantedKeys.contains(key)) found.add(value)
-        }
-
-        return pickEmbeddedLyrics(found)
-    }
+    private fun parseVorbisCommentLyrics(data: ByteArray): String? =
+        EmbeddedLyricsSelection.fromVorbisComments(data)
 
     private fun openAudioInputStream(audioUriString: String): InputStream? {
         return try {
