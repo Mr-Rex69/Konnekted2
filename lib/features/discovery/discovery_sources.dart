@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'discovery_http.dart';
 import 'discovery_models.dart';
 import 'addon_request_signing.dart';
+import 'addon_hybrid_media.dart';
 
 class YoutubeMusicCatalog {
   YoutubeMusicCatalog(this.http, {this.refreshClientContext = false});
@@ -418,8 +419,12 @@ class ResolvedDiscoveryAudio {
     this.quality,
     this.bitDepth,
     this.sampleRate,
+    this.hybridPlan,
   });
   final Uri url;
+  /// CENC content key and CDN range metadata are memory-only and never
+  /// serialized into the playback queue or forwarded to an audio URL.
+  final AddonHybridPlan? hybridPlan;
   /// Resolved stream metadata, never inferred from a catalogue maximum.
   final String? codec;
   /// Bits per second for the exact selected rendition, when the resolver knows it.
@@ -859,6 +864,11 @@ class DiscoveryAddon {
     final nested = stream is Map<String, dynamic>
         ? stream
         : data is Map<String, dynamic> ? data : null;
+    final hybridPlan = AddonHybridPlan.parse(
+      nested?['hybrid'] ?? json['hybrid'] ??
+          (data is Map ? data['hybrid'] : null),
+      addonBase: base,
+    );
     for (final layer in <Map<String, dynamic>>[
       json,
       if (data is Map<String, dynamic>) data,
@@ -867,9 +877,12 @@ class DiscoveryAddon {
       if (layer['error'] != null) {
         throw const DiscoveryException('The addon could not resolve this recording.');
       }
-      if (layer['encrypted'] != null && layer['encrypted'] != false ||
+      if ((layer['encrypted'] != null && layer['encrypted'] != false &&
+              hybridPlan?.encrypted != true) ||
           layer['drm'] != null && layer['drm'] != false) {
-        throw const DiscoveryException('Encrypted audio is not supported by this adapter.');
+        throw const DiscoveryException(
+          'Encrypted audio is not supported by this adapter.',
+        );
       }
       if (layer['headers'] != null &&
           !(layer['headers'] is Map && (layer['headers'] as Map).isEmpty)) {
@@ -882,7 +895,8 @@ class DiscoveryAddon {
         'The addon could not resolve this recording.',
       );
     }
-    if (json['encrypted'] != null && json['encrypted'] != false) {
+    if (json['encrypted'] != null && json['encrypted'] != false &&
+        hybridPlan?.encrypted != true) {
       throw const DiscoveryException(
         'Encrypted audio is not supported by this adapter.',
       );
@@ -898,19 +912,26 @@ class DiscoveryAddon {
         'Use a signed media URL; custom media headers are not supported.',
       );
     }
-    String? url;
-    for (final field in const [
-      'url', 'directUrl', 'streamUrl', 'downloadUrl', 'mediaUrl',
-    ]) {
-      url = discoveryText(json[field], maxLength: 8192);
-      if (url != null) break;
-    }
-    if (url == null) {
-      throw const DiscoveryException('The addon returned no playable URL.');
-    }
-    final uri = requireHttps(url);
-    if (_isAddonPreviewStream(json, uri, expectedDuration)) {
-      throw const _PreviewOnlyAddonStream();
+    Uri uri;
+    if (hybridPlan != null) {
+      // A signed hybrid-v1 plan is a CDN range contract, not a direct URL.
+      // Never hand the encrypted CDN URL to a progressive audio decoder.
+      uri = hybridPlan.cdnUrl;
+    } else {
+      String? url;
+      for (final field in const [
+        'url', 'directUrl', 'streamUrl', 'downloadUrl', 'mediaUrl',
+      ]) {
+        url = discoveryText(json[field], maxLength: 8192);
+        if (url != null) break;
+      }
+      if (url == null) {
+        throw const DiscoveryException('The addon returned no playable URL.');
+      }
+      uri = requireHttps(url);
+      if (_isAddonPreviewStream(json, uri, expectedDuration)) {
+        throw const _PreviewOnlyAddonStream();
+      }
     }
     // A "dash" default is a generic server hint, not a DASH manifest
     // when a separate progressive file URL is actually returned.
@@ -918,6 +939,7 @@ class DiscoveryAddon {
       r'\.(?:flac|mp3|m4a|mp4|ogg|opus|wav)$',
       caseSensitive: false,
     ).hasMatch(uri.path);
+    if (hybridPlan == null) {
     for (final key in [
       'manifest',
       'mediaType',
@@ -950,6 +972,7 @@ class DiscoveryAddon {
         'A playlist URL cannot be played as an audio file.',
       );
     }
+    } // Hybrid plans are independently validated CDN range contracts.
     // An explicitly configured LAN addon may serve its own media. An addon
     // cannot redirect the downloader to a different literal/private host.
     if (uri.origin != base.origin) {
@@ -1000,6 +1023,8 @@ class DiscoveryAddon {
             ? parsedBitrate * 1000 : parsedBitrate).round();
     return ResolvedDiscoveryAudio(
       uri,
+      hybridPlan: hybridPlan,
+      length: hybridPlan?.outputLength,
       codec: providerAudioCodec(details),
       quality: discoveryText(
         details['audioQuality'] ?? details['audio_quality'] ??
