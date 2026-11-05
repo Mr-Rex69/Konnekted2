@@ -2257,8 +2257,17 @@ Future<Song?> findDiscoverySong(
         if (automaticAddonAborts[source.id]?.isCompleted == true) return null;
         onStatus?.call('Getting ${track.title} from ${source.name}…');
         final selected = found!.withArtwork(_artworkOf(track));
+        // An auto-selected LastWave-compatible add-on may also omit cover
+        // metadata. Resolve in parallel with the stream and limit the
+        // additional wait on the automatic fallback path.
+        final artworkLookup = source.id.startsWith('w-')
+            ? resolveMissingAddonArtwork(
+                selected, timeout: const Duration(seconds: 2),
+              )
+            : Future<DiscoveryTrack>.value(selected);
         final acquisitionTimer = Stopwatch()..start();
         final resolved = await source.play(selected);
+        final artwork = await artworkLookup;
         if (automaticAddonAborts[source.id]?.isCompleted == true) return null;
         // Stop speculative searches that lost the priority race so they do
         // not continue hitting other add-on endpoints after playback is ready.
