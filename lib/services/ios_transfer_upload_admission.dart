@@ -5,6 +5,8 @@ import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/entities/song_entity.dart';
+import '../data/entities/network_server_entity.dart';
+import 'ios_transfer_upload_binding.dart';
 import '../models/ios_transfer_models.dart';
 import '../models/ios_transfer_upload.dart';
 import 'ios_library_scan_epoch.dart';
@@ -25,6 +27,7 @@ class IosTransferUploadAdmission {
     required void Function(IosTransferIntent intent) prepared,
     IosTransferIntent? frozenIntent,
     String? reviewedSourcePath,
+    int? serverId,
   }) => IosLibraryScanEpoch.run(() async {
     IosTransferUploadContext? context;
     IosTransferUploadGrant? grant;
@@ -35,9 +38,29 @@ class IosTransferUploadAdmission {
       );
     }
     final binding = _binding(song);
+    final server = serverId == null
+        ? null
+        : isar.networkServerEntitys.getSync(serverId);
+    if (serverId != null && server == null) {
+      throw StateError('The desktop library connection changed.');
+    }
+    final serverSnapshot = server == null
+        ? null
+        : IosUploadBinding.sourceId(song, server, 'review');
     void check() {
       IosLibraryScanEpoch.requireCurrent();
-      if (_binding(_current(songId)) != binding) {
+      final target = serverId == null
+          ? null
+          : isar.networkServerEntitys.getSync(serverId);
+      if ((serverId != null &&
+              (target == null ||
+                  IosUploadBinding.sourceId(
+                        _current(songId),
+                        target,
+                        'review',
+                      ) !=
+                      serverSnapshot)) ||
+          _binding(_current(songId)) != binding) {
         throw StateError('The library song changed. Select it again.');
       }
     }
@@ -49,6 +72,10 @@ class IosTransferUploadAdmission {
               jsonEncode(expectedPairing.scope.toJson()) ||
           context.pairing.desktopUserId != expectedPairing.desktopUserId) {
         throw StateError('The paired desktop changed. Review the copy again.');
+      }
+      if (server != null &&
+          !IosUploadBinding.serverMatches(server, context.pairing)) {
+        throw StateError('The desktop library connection changed.');
       }
       final canonical = await File(song.filePath).resolveSymbolicLinks();
       check();
@@ -81,10 +108,13 @@ class IosTransferUploadAdmission {
         identity: IosTransferIdentity(
           scope: context.pairing.scope,
           desktopUserId: context.pairing.desktopUserId,
-          sourceId: frozenIntent?.identity.sourceId ?? 'phone-song-$songId',
+          sourceId: server == null
+              ? (frozenIntent?.identity.sourceId ?? 'phone-song-$songId')
+              : IosUploadBinding.sourceId(song, server, relative),
+          localServerId: serverId,
           localSongId: songId.toString(),
         ),
-        metadata: _metadata(song),
+        metadata: iosUploadMetadata(song),
         expectedBytes: grant.bytes,
         expectedSha256: grant.sha256,
       );
@@ -130,25 +160,6 @@ class IosTransferUploadAdmission {
     return song;
   }
 
-  static IosTransferMetadata _metadata(SongEntity song) => IosTransferMetadata(
-    title: song.title,
-    artist: song.artist,
-    album: song.album,
-    albumArtist: song.albumArtist,
-    genre: song.genre,
-    fileExtension: p.posix
-        .extension(song.filePath)
-        .replaceFirst('.', '')
-        .toLowerCase(),
-    durationMs: song.durationMs,
-    sampleRate: song.sampleRate,
-    bitDepth: song.bitDepth,
-    bitrate: song.bitrate,
-    trackNumber: song.trackNumber,
-    discNumber: song.discNumber,
-    year: song.year,
-  );
-
   static String _binding(SongEntity song) => jsonEncode({
     'id': song.id,
     'path': song.filePath,
@@ -157,6 +168,6 @@ class IosTransferUploadAdmission {
     'end': song.endOffsetMs,
     'added': song.dateAdded.microsecondsSinceEpoch,
     'modified': song.lastModified?.microsecondsSinceEpoch,
-    'metadata': _metadata(song).toJson(),
+    'metadata': iosUploadMetadata(song).toJson(),
   });
 }

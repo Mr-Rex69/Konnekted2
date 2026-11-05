@@ -12,6 +12,8 @@ import '../services/ios_transfer_media_probe.dart';
 import '../services/ios_transfer_session.dart';
 import '../services/ios_transfer_transport.dart';
 import '../services/ios_transfer_upload_admission.dart';
+import '../services/ios_transfer_upload_binding.dart';
+import '../models/ios_transfer_models.dart';
 import '../services/ios_transfer_copy_plan.dart';
 import '../services/link/lokal_desktop_source.dart';
 
@@ -39,6 +41,29 @@ IosTransferSession? _createSession() {
         );
       },
       readMedia: const IosTransferMediaProbe().inspect,
+      reconcileUploads: (isCurrent) async {
+        if (!isCurrent() || !Database.isInitialized) return;
+        final capability = await native.capability();
+        if (!isCurrent() || !capability.upload) return;
+        final binding = IosTransferUploadBinding(
+          isar: Database.instance,
+          port: native,
+        );
+        var offset = 0;
+        while (isCurrent()) {
+          final jobs = await native.page(offset: offset);
+          if (!isCurrent()) return;
+          for (final job in jobs) {
+            if (!isCurrent()) return;
+            await binding.reconcile(job, isCurrent: isCurrent);
+          }
+          offset += jobs.length;
+          if (offset > iosTransferMaximumJobs) {
+            throw const FormatException('Upload receipt budget exceeded.');
+          }
+          if (jobs.length < 100 || offset == iosTransferMaximumJobs) return;
+        }
+      },
       didComplete: (result, isCurrent) async {
         if (!isCurrent() || !Database.isInitialized || result.song == null) {
           return;

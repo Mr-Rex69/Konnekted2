@@ -594,11 +594,13 @@ Future<void> main(List<String> arguments) async {
     IosTransferMediaReader? reader,
     Future<void> Function(IosTransferImportResult, bool Function())?
     didComplete,
+    Future<void> Function(bool Function())? reconcileUploads,
   }) => IosTransferImportCoordinator(
     native: native,
     store: () async => fixture.store(),
     readMedia: reader ?? readMedia,
     didComplete: didComplete,
+    reconcileUploads: reconcileUploads,
   );
   try {
     await scenario('committed-audio-before-optional-sidecars', (
@@ -1367,6 +1369,41 @@ Future<void> main(List<String> arguments) async {
       );
       await owner.dispose();
     });
+    await scenario('upload-receipt-mutation-barrier', (fixture, native) async {
+      final entered = Completer<void>(), finish = Completer<void>();
+      var paused = false, writes = 0;
+      final owner = coordinator(
+        fixture,
+        native,
+        reconcileUploads: (isCurrent) async {
+          entered.complete();
+          await finish.future;
+          require(
+            !isCurrent(),
+            'The same root epoch retires upload receipt writes',
+          );
+          if (isCurrent()) writes++;
+        },
+      );
+      final started = owner.start();
+      await entered.future;
+      final barrier = owner.pauseForMutation().then((_) {
+        paused = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      require(
+        !paused,
+        'The mutation waits for the upload receipt callback to release its native source',
+      );
+      finish.complete();
+      await barrier;
+      await started;
+      require(
+        writes == 0 && paused,
+        'No upload association follows the root mutation barrier',
+      );
+      await owner.dispose();
+    });
     await scenario('capability-off', (fixture, native) async {
       native.enabled = false;
       final owner = coordinator(fixture, native);
@@ -1386,7 +1423,7 @@ Future<void> main(List<String> arguments) async {
     });
     // ignore: avoid_print
     print(
-      'Actual root coordinator/Isar contracts passed: ordered completion, one identity, durable media, lost publication/staging and cleanup replies across database reopen, retiring/native-resolution/Isar-retired/finalization ordering, edited-file preservation, deleted committed history, missing reservation refusal, bookkeeping-only orphan retirement and public-file preservation across reopen, coalesced foreground/mutation barrier, blocked-reader retirement, capability gating and no idle/history polling. Native RPC/file custody is a fixture; reader=${options.containsKey('--ffprobe') ? 'actual host FFprobe.' : 'generated WAV fixture.'}',
+      'Actual root coordinator/Isar contracts passed: ordered completion, one identity, durable media, lost publication/staging and cleanup replies across database reopen, retiring/native-resolution/Isar-retired/finalization ordering, edited-file preservation, deleted committed history, missing reservation refusal, bookkeeping-only orphan retirement and public-file preservation across reopen, coalesced foreground/mutation barrier, blocked-reader and upload-receipt retirement, capability gating and no idle/history polling. Native RPC/file custody is a fixture; reader=${options.containsKey('--ffprobe') ? 'actual host FFprobe.' : 'generated WAV fixture.'}',
     );
   } finally {
     await root.delete(recursive: true);

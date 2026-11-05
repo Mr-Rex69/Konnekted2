@@ -51,6 +51,8 @@ flowchart TD
   Session --> Desktop[Desktop track and receipt transaction]
   Desktop --> Status[Bounded scoped outcome query]
   Status --> Native
+  Native --> Binding[Match frozen song and server plus fresh source grant]
+  Binding --> Writer[Isar rechecks and associates the current song]
   Owner --> Retire[Revoke consent and drain tasks, probes and files]
   Retire --> Metadata[Serialized library or pairing mutation]
 ```
@@ -59,9 +61,8 @@ Before admitting any native job, upload-containing plans now perform a bounded
 read-only capability query and retain the whole foreground path on older peers.
 Download-only plans do not require the upload extension. A library mutation during
 that query retires the preview; native admission still independently validates
-current authority. Durable safe retry/cancel/requeue semantics and successful receipt binding to the current local song remain part
-of completion item 2. Do not weaken the original-key guard or infer retry
-permission from an absent operation. Native import/upload flags stay false.
+current authority. Durable safe retry/cancel/requeue semantics remain part of
+completion item 2. Do not weaken the original-key guard or infer retry permission from an absent operation. Native import/upload flags stay false.
 
 ## Evidence and limits
 
@@ -100,3 +101,35 @@ No new Apple SDK, installed iOS 18.6/26, background-daemon or release/AOT IPA
 qualification is claimed. CI has not been polled or awaited. Existing qualified
 engineering artifacts refer to their older frozen source. Signing and physical
 installation/upgrade/playback acceptance remain the user's separate step.
+
+## Confirmed upload receipts and local library identity
+
+New upload intents carry the target server ID and a versioned SHA-256 binding
+fingerprint in their existing immutable identity. It covers the reviewed song's
+ID, relative Music path, creation/modification identity and metadata, plus the
+server protocol/origin/account. No extra database journal or schema is needed.
+The fingerprint survives native source admission, POST and journal reopen.
+
+The app-root coordinator reconciles qualified completed uploads. It requires the
+same current native pairing/account, matching Isar song/server snapshots and a
+fresh native grant for the source's exact bytes/hash. It checks the rows again in
+the Isar writer before setting only remoteServerId/remoteId. Existing desktop
+associations, user metadata and files are preserved. Legacy intents lack this
+proof and are never automatically associated. Already-linked receipts are
+idempotent and avoid repeated hashing. Relative paths tolerate sandbox relocation.
+
+Clear/Forget retires the coordinator epoch and waits for the reconciliation
+callback and source release before mutation. The durable song-ID floor prevents
+a later reimport from acquiring the old upload's ID. Missing/changed rows and
+changed bytes cannot create or relink a song. Unavailable or changed associations
+leave the historical native receipt intact.
+
+Validation: 48 focused Flutter cases pass, including 17 receipt-binding cases
+with actual Isar/reopen and filesystem changes (native grant RPC is a fixture).
+The actual Isar root-coordinator harness passes a held receipt callback versus
+mutation retirement. The full portable Swift transfer suite passes with the
+binding fingerprint and server ID carried through real native source admission,
+HTTP upload and independent journal reopen. These counts overlap earlier safety
+selections; the earlier 635-case catch-up run is retained as its own source freeze.
+Native background import/upload remains disabled pending the existing remaining
+protocol and Apple qualification gates.

@@ -42,6 +42,7 @@ class IosTransferSession {
     required void Function(IosTransferIntent intent) prepared,
     IosTransferIntent? frozenIntent,
     String? reviewedSourcePath,
+    int? serverId,
   }) async {
     final capability = await native.capability();
     if (_disposed ||
@@ -64,6 +65,7 @@ class IosTransferSession {
       prepared: prepared,
       frozenIntent: frozenIntent,
       reviewedSourcePath: reviewedSourcePath,
+      serverId: serverId,
     );
   }
 

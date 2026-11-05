@@ -86,6 +86,7 @@ class _Session extends IosTransferSession {
     required void Function(IosTransferIntent intent) prepared,
     IosTransferIntent? frozenIntent,
     String? reviewedSourcePath,
+    int? serverId,
   }) async {
     sourcePaths.add(reviewedSourcePath);
     final intent =

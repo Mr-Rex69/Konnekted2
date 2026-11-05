@@ -189,6 +189,7 @@ class IosTransferCopyAdapter {
       return IosTransferCopyPlan._(
         session,
         context.pairing,
+        server.id,
         List.unmodifiable(downloads),
         List.unmodifiable(uploads),
         current,
@@ -243,6 +244,7 @@ class IosTransferCopyPlan {
   IosTransferCopyPlan._(
     this._session,
     this._pairing,
+    this._serverId,
     this.downloads,
     this._uploads,
     this._check,
@@ -250,6 +252,7 @@ class IosTransferCopyPlan {
   );
   final IosTransferSession _session;
   final IosTransferPairing _pairing;
+  final int _serverId;
   final List<IosTransferIntent> downloads;
   final List<({int id, String path})> _uploads;
   final void Function() _check, _checkDownloads;
@@ -283,6 +286,7 @@ class IosTransferCopyPlan {
         _check();
         await _session.enqueueUploadSong(
           songId: song.id,
+          serverId: _serverId,
           reviewedSourcePath: song.path,
           expectedPairing: _pairing,
           frozenIntent: _frozenUploads[song.id],

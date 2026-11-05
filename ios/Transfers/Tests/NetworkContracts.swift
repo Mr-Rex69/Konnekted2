@@ -1626,8 +1626,8 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   try require(source.songID == "42" && source.bytes == length && source.sha256 == checksum, "actual source hash bound to current song")
   func job(_ song: String = "42", _ title: String = "upload-success") throws -> LokalTransferJob {
     try LokalTransferJob(direction: .upload,
-      identity: LokalTransferIdentity(desktopID: auth.desktopID, sourceID: "authorized-source-" + song, localSongID: song,
-        origin: origin, pairingID: auth.pairingID, desktopUserID: auth.desktopUserID),
+      identity: LokalTransferIdentity(desktopID: auth.desktopID, sourceID: "phone-bind-v1:" + String(repeating: "a", count: 64), localSongID: song,
+        origin: origin, pairingID: auth.pairingID, desktopUserID: auth.desktopUserID, localServerID: 3),
       metadata: LokalTransferMetadata(title: title, artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
       nowMs: 1000, expectedBytes: length, expectedSHA256: checksum)
   }
@@ -1679,6 +1679,8 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   try require(completed.uploadProtocolVersion == 1, "negotiated protocol is durable in the actual completed job")
   let stored = try LokalTransferJournal(container: root).snapshot().jobs.first(where: { $0.id == request.id })
   try require(stored?.uploadProtocolVersion == 1, "negotiation proof survives an independent journal reopen")
+  try require(stored?.identity == request.identity && stored?.identity.localServerID == 3,
+    "immutable app binding fingerprint and target server survive native admission, POST and journal reopen")
   try require(try Data(contentsOf: original) == bytes, "source authorization and POST preserve original bytes")
   let lostGrant = try grant(song: "43")
   let lost = try job("43", "upload-lost")

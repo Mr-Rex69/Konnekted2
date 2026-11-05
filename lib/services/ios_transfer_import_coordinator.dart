@@ -31,6 +31,7 @@ class IosTransferImportCoordinator {
     required Future<IosTransferImportStore> Function() store,
     required this.readMedia,
     this.didComplete,
+    this.reconcileUploads,
     this.allowUnreleasedAdapterForIntegration = false,
   }) : _openStore = store;
 
@@ -42,6 +43,7 @@ class IosTransferImportCoordinator {
     bool Function() isCurrent,
   )?
   didComplete;
+  final Future<void> Function(bool Function() isCurrent)? reconcileUploads;
   final bool allowUnreleasedAdapterForIntegration;
   final _updates = StreamController<void>.broadcast();
   final _issues = <String, IosTransferCoordinatorIssue>{};
@@ -228,6 +230,9 @@ class IosTransferImportCoordinator {
             }
           }
           _pendingReservations.clear();
+          _check(epoch);
+          await reconcileUploads?.call(() => _current(epoch));
+          _check(epoch);
           if (_needsHistoryMaintenance) {
             _needsHistoryMaintenance = false;
             await _compactHistory(epoch);
