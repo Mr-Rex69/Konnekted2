@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/core/navigation/lokal_page_motion.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/features/konnekted/library/playlist_hero_header.dart';
 
 void main() {
@@ -46,49 +48,42 @@ void main() {
     expect(playlistHeroCoversForSession('youtube:empty', []), isEmpty);
   });
 
-  testWidgets('generated collage stages its first reveal, not later visits',
+  testWidgets('first view builds no images until its short mount delay',
       (tester) async {
-    const artwork = [
-      PlaylistHeroCover(imagePath: '/missing-playlist-cover.jpg'),
-    ];
-
-    Widget page(String id, {List<PlaylistHeroCover> covers = artwork}) =>
-        MaterialApp(
+    Widget page(String id, {List<PlaylistHeroCover>? covers}) => MaterialApp(
           theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
           home: Scaffold(
             body: SizedBox(
               width: 390,
               height: 300,
-              child: PlaylistDiagonalCollage(playlistId: id, covers: covers),
+              child: PlaylistDiagonalCollage(
+                playlistId: id,
+                covers: covers ?? const [
+                  PlaylistHeroCover(imagePath: '/missing-playlist-art.jpg'),
+                ],
+              ),
             ),
           ),
         );
 
-    AnimatedOpacity reveal(String id) => tester.widget<AnimatedOpacity>(
-          find.byKey(ValueKey('playlist-collage-reveal:$id')),
-        );
-
     await tester.pumpWidget(page('test:playlist-first'));
-    expect(reveal('test:playlist-first').opacity, 0);
-
-    await tester.pump(const Duration(milliseconds: 349));
-    expect(reveal('test:playlist-first').opacity, 0);
-
+    expect(find.byType(CachedImageWidget), findsNothing);
+    await tester.pump(const Duration(milliseconds: 79));
+    expect(find.byType(CachedImageWidget), findsNothing);
     await tester.pump(const Duration(milliseconds: 1));
-    expect(reveal('test:playlist-first').opacity, 1);
+    expect(find.byType(CachedImageWidget), findsNWidgets(16));
 
-    // Opening the same playlist again in this process has no artificial wait.
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(page('test:playlist-first'));
-    expect(reveal('test:playlist-first').opacity, 1);
+    expect(find.byType(CachedImageWidget), findsNWidgets(16));
 
-    // Another playlist still gets its own first-visit head start.
+    // Every newly generated playlist collage has its own one-time delay.
     await tester.pumpWidget(page('test:playlist-second'));
-    expect(reveal('test:playlist-second').opacity, 0);
+    expect(find.byType(CachedImageWidget), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('empty artwork does not consume the first collage reveal',
+  testWidgets('empty artwork waits until there are candidates',
       (tester) async {
     Widget page(List<PlaylistHeroCover> covers) => MaterialApp(
           theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
@@ -105,18 +100,54 @@ void main() {
         );
 
     await tester.pumpWidget(page(const []));
-    expect(find.byType(AnimatedOpacity), findsNothing);
-
+    expect(find.byType(CachedImageWidget), findsNothing);
     await tester.pumpWidget(page(const [
-      PlaylistHeroCover(imagePath: '/missing-late-playlist-cover.jpg'),
+      PlaylistHeroCover(imagePath: '/missing-late-playlist-art.jpg'),
     ]));
-    final reveal = tester.widget<AnimatedOpacity>(
-      find.byKey(const ValueKey(
-        'playlist-collage-reveal:test:playlist-late-art',
-      )),
-    );
-    expect(reveal.opacity, 0);
-    await tester.pump(playlistHeroFirstRevealDelay);
+    expect(find.byType(CachedImageWidget), findsNothing);
+    await tester.pump(playlistHeroPostTransitionDelay);
+    expect(find.byType(CachedImageWidget), findsNWidgets(16));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('opening a route does not build playlist art during its slide',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+      home: Scaffold(
+        body: Builder(builder: (context) {
+          return TextButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              LokalPageRoute<void>(
+                builder: (_) => const Scaffold(
+                  body: PlaylistDiagonalCollage(
+                    playlistId: 'test:playlist-during-push',
+                    covers: [
+                      PlaylistHeroCover(imagePath: '/missing-push-art.jpg'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            child: const Text('Open playlist'),
+          );
+        }),
+      ),
+    ));
+
+    await tester.tap(find.text('Open playlist'));
+    await tester.pump();
+    expect(find.byType(CachedImageWidget), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(find.byType(CachedImageWidget), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 160));
+    // The route completed, but decoding is still deferred by 80 ms.
+    expect(find.byType(CachedImageWidget), findsNothing);
+
+    await tester.pump(playlistHeroPostTransitionDelay);
+    expect(find.byType(CachedImageWidget), findsNWidgets(16));
     expect(tester.takeException(), isNull);
   });
 }
