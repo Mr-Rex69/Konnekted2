@@ -538,9 +538,16 @@ class LyricsService {
     // A sidecar is the explicitly supplied local source. Otherwise preserve
     // word timing from linked Desktop lyrics, but overlay backing vocals from
     // the actual audio file even when the lead is equally word-synchronized.
-    final primary = sidecarData ??
-        ((desktop?.lines.any((l) => l.words?.isNotEmpty == true) == true)
-            ? desktop : embeddedData ?? desktop);
+    bool hasLead(LyricsData? data) => data?.lines.any(
+      (line) => line.voice != 'bg' && line.text.trim().isNotEmpty,
+    ) == true;
+    final primary = (hasLead(sidecarData) ? sidecarData : null) ??
+        ((hasLead(desktop) &&
+                desktop!.lines.any((l) => l.words?.isNotEmpty == true))
+            ? desktop
+            : (hasLead(embeddedData) ? embeddedData : null) ??
+                (hasLead(desktop) ? desktop : null) ??
+                sidecarData ?? embeddedData ?? desktop);
     final selected = mergeSupportingVocals(
       primary,
       [embeddedData, sidecarData, desktop],
