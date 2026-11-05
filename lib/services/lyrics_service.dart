@@ -190,7 +190,8 @@ class LyricsService {
   /// with a lead-only word-timed copy.
   static int supportingVocalCount(LyricsData? lyrics) =>
       lyrics?.lines.where(
-        (line) => line.backgroundText?.trim().isNotEmpty == true,
+        (line) => line.voice == 'bg' ||
+            line.backgroundText?.trim().isNotEmpty == true,
       ).length ?? 0;
 
   /// Merge backing vocals from different representations of this SAME song
@@ -219,9 +220,12 @@ class LyricsService {
     for (final data in others) {
       if (data == null || identical(data, preferred)) continue;
       for (final voice in data.lines) {
-        final text = voice.backgroundText?.trim();
+        // Supporting vocals may originate as independent LRC-only entries
+        // with no lead in their native metadata field.
+        final standalone = voice.voice == 'bg';
+        final text = (standalone ? voice.text : voice.backgroundText)?.trim();
         if (text == null || text.isEmpty) continue;
-        final words = voice.backgroundWords;
+        final words = standalone ? voice.words : voice.backgroundWords;
         final onset = words?.isNotEmpty == true
             ? words!.first.start
             : voice.timestamp;
@@ -1302,6 +1306,9 @@ class LyricsService {
               ),
           ];
           if (words.isNotEmpty) {
+            // Timed supporting vocals are real lyric events even if there is
+            // no lead row in the same tag. Do not discard bg-only payloads.
+            hasTimestamps = true;
             backingRows.add((text, words, words.first.start));
           } else if (previous.isNotEmpty) {
             // Untimed annotations can still follow their immediately
@@ -1376,6 +1383,19 @@ class LyricsService {
     }
 
     if (hasTimestamps) {
+      if (parsedLines.isEmpty && backingRows.isNotEmpty) {
+        // Some Vorbis tags contain ONLY [bg:] entries. Preserve them as
+        // independently timed vocals; another source may supply the lead.
+        for (final (text, words, onset) in backingRows) {
+          parsedLines.add(LyricsLine(
+            timestamp: onset,
+            text: text,
+            words: words,
+            voice: 'bg',
+          ));
+        }
+        backingRows.clear();
+      }
       // Pair background vocals with the latest lead whose timestamp is at
       // or before the background onset. This also handles [bg:] rows that
       // appear before their lead in file order.
