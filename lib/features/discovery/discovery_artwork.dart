@@ -565,16 +565,49 @@ DiscoveryArtworkResolver createDiscoveryArtworkResolver(
   );
 }
 
-/// One resolver for the app's lifetime, so its cache survives Home rebuilds.
-final discoveryArtworkResolverProvider = Provider<DiscoveryArtworkResolver>((
-  ref,
-) {
-  final client = GracefulHttpClient();
-  ref.onDispose(client.close);
-  return createDiscoveryArtworkResolver(
-    DiscoveryHttp(client, timeout: const Duration(seconds: 4)),
-  );
-});
+/// Shared by search-result covers and playback. In particular, an HTTP
+/// add-on's audio result may omit artworkURL (the field is optional in the
+/// LastWave protocol); reuse the existing exact-match Deezer / Apple Music /
+/// YouTube Music lookups rather than adding another metadata API.
+final DiscoveryArtworkResolver sharedDiscoveryArtworkResolver =
+    createDiscoveryArtworkResolver(
+  DiscoveryHttp(GracefulHttpClient(), timeout: const Duration(seconds: 4)),
+);
+
+/// Missing add-on artwork must never prevent a track from playing. A bounded,
+/// cached metadata lookup changes only its cover, not the selected stream.
+Future<DiscoveryTrack> resolveMissingAddonArtwork(
+  DiscoveryTrack track, {
+  DiscoveryArtworkResolver? resolver,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  if (track.source != DiscoverySource.addon ||
+      track.artwork?.isNotEmpty == true ||
+      track.title.trim().isEmpty ||
+      track.artist.trim().isEmpty ||
+      track.artist == 'Artist not supplied') {
+    return track;
+  }
+  try {
+    final found = await (resolver ?? sharedDiscoveryArtworkResolver)
+        .resolve(DiscoveryArtworkRequest(
+          kind: DiscoveryArtworkKind.track,
+          title: track.title,
+          artist: track.artist,
+        ))
+        .timeout(timeout, onTimeout: () => '');
+    final cover = discoveryImageUrl(found);
+    return cover.isEmpty ? track : track.withArtwork(cover);
+  } catch (_) {
+    return track;
+  }
+}
+
+/// One resolver for the app's lifetime, so cached search thumbnails can also
+/// be reused for playback without issuing a second lookup.
+final discoveryArtworkResolverProvider = Provider<DiscoveryArtworkResolver>(
+  (ref) => sharedDiscoveryArtworkResolver,
+);
 
 final discoveryLocalArtworkProvider =
     Provider.autoDispose<DiscoveryLocalArtwork>((ref) {
