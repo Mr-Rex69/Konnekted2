@@ -1737,6 +1737,24 @@ Future<T> boundedAutomaticAddonAttempt<T>(
 
 /// Classify without logging signed audio URLs or provider credentials.
 String _onlineFailureKind(Object error) {
+  // Stable, credential-free reasons distinguish incompatible add-on response
+  // formats without recording private URLs, listener tokens or signed media.
+  if (error is DiscoveryException) {
+    switch (error.message) {
+      case 'The addon returned no playable URL.':
+        return 'addon_no_direct_media';
+      case 'This source uses HLS/DASH. A progressive audio file is required.':
+      case 'A playlist URL cannot be played as an audio file.':
+        return 'addon_adaptive_manifest';
+      case 'Encrypted audio is not supported by this adapter.':
+      case 'DRM audio is not supported by this adapter.':
+        return 'addon_encrypted_media';
+      case 'The addon returned invalid transport metadata.':
+        return 'addon_transport_metadata';
+      case 'The addon could not resolve this recording.':
+        return 'addon_stream_error';
+    }
+  }
   final message = error.toString().toLowerCase();
   final status = RegExp(r'http\s+(401|403|404|408|429|500|502|503|504)')
       .firstMatch(message);
