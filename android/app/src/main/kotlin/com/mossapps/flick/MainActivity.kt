@@ -3668,10 +3668,45 @@ class MainActivity: FlutterActivity() {
                 }
                 "file" -> {
                     val path = uri.path
-                    if (path.isNullOrBlank()) null else FileInputStream(path)
+                    if (path.isNullOrBlank()) null else try {
+                        FileInputStream(path)
+                    } catch (_: Exception) {
+                        openMediaStoreAudioByPath(path)
+                    }
                 }
-                null, "" -> FileInputStream(File(audioUriString))
+                null, "" -> try {
+                    FileInputStream(File(audioUriString))
+                } catch (_: Exception) {
+                    openMediaStoreAudioByPath(audioUriString)
+                }
                 else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // Scoped storage may deny a raw FileInputStream even while MediaStore
+    // playback can read the exact same audio object through its content URI.
+    private fun openMediaStoreAudioByPath(path: String): InputStream? {
+        if (!path.startsWith("/")) return null
+        return try {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            }
+            val projection = arrayOf(MediaStore.Audio.Media._ID)
+            contentResolver.query(
+                collection, projection,
+                MediaStore.Audio.Media.DATA + " = ?", arrayOf(path), null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val mediaUri = ContentUris.withAppendedId(collection, cursor.getLong(0))
+                contentResolver.openInputStream(mediaUri) ?:
+                    contentResolver.openFileDescriptor(mediaUri, "r")?.let {
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(it)
+                    }
             }
         } catch (_: Exception) {
             null
