@@ -553,15 +553,49 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                 content,
                 // The backing singer sits immediately below the playing
                 // lead, never in a separate large lyric row.
-                if (isActive && widget.active)
-                  ValueListenableBuilder<Duration>(
+                ValueListenableBuilder<Duration>(
                     valueListenable: _positionNotifier,
                     builder: (context, position, _) {
-                      final backing = activeSupportingVocals(
-                        widget.lyrics, position, lyricIndex,
-                      );
-                      if (backing.isEmpty) return const SizedBox.shrink();
-                      return Column(
+                      final backing = isActive && widget.active
+                          ? activeSupportingVocals(
+                              widget.lyrics, position, lyricIndex,
+                            )
+                          : const <ActiveSupportingVocal>[];
+                      final reduceMotion = MediaQuery.disableAnimationsOf(context);
+                      return AnimatedSize(
+                        duration: reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 340),
+                        curve: Curves.easeInOutCubic,
+                        alignment: Alignment.topCenter,
+                        child: AnimatedSwitcher(
+                          duration: reduceMotion
+                              ? Duration.zero
+                              : const Duration(milliseconds: 300),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0, .14),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                          child: backing.isEmpty
+                              ? const SizedBox(
+                                  key: ValueKey('no-active-bg'),
+                                  width: double.infinity,
+                                )
+                              : Column(
+                                  key: ValueKey(
+                                    backing.map((voice) =>
+                                        voice.lineIndex.toString() + ':' +
+                                        voice.standalone.toString()).join('|'),
+                                  ),
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           for (final voice in backing)
@@ -608,6 +642,8 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                                     ),
                             ),
                         ],
+                              ),
+                        ),
                       );
                     },
                   ),
