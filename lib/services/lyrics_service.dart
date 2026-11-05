@@ -1,5 +1,6 @@
 import 'lyrics_matching.dart';
 import 'lyrics_flac_vorbis_reader.dart';
+import 'package:flick/data/database.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -528,7 +529,7 @@ class LyricsService {
     // complete replacement for local independently timed backing vocals.
     final desktop = await _desktopLyrics(song);
     final sidecar = await _loadLyricsText(filePath);
-    final embedded = await _loadEmbeddedLyricsText(filePath);
+    final embedded = await _loadEmbeddedLyricsText(song);
     final sidecarData = sidecar?.content.trim().isNotEmpty == true
         ? _parseLyrics(sidecar!.content, source: sidecar.source)
         : null;
@@ -1118,44 +1119,102 @@ class LyricsService {
     return '${parent.path}${Platform.pathSeparator}$stem.lrc';
   }
 
-  Future<_LoadedLyrics?> _loadEmbeddedLyricsText(String filePath) async {
-    _LoadedLyrics? native;
+  /// Android MediaStore / SAF can open a recording by content Uri when the
+  /// file path persisted by a scanner is inaccessible under scoped storage.
+  /// The Song model retains only filePath; the scanner also persists
+  /// mediaStoreUri on its Isar row, which playback can use but the lyrics
+  /// reader previously never attempted.
+  @visibleForTesting
+  static List<String> embeddedUriCandidates(
+    String filePath, {
+    String? mediaStoreUri,
+  }) {
+    final candidates = <String>[filePath];
+    final fallback = mediaStoreUri?.trim();
+    if (fallback != null &&
+        fallback.startsWith('content://') &&
+        !candidates.contains(fallback)) {
+      candidates.add(fallback);
+    }
+    return candidates;
+  }
+
+  Future<String?> _storedMediaStoreUriForSong(Song song) async {
+    // Only consult the local collection. External/network Song ids are not
+    // necessarily Isar ids and must never be redirected to unrelated files.
+    if (!Database.isInitialized || song.isNetworkSource || song.isExternal) {
+      return null;
+    }
+    final id = int.tryParse(song.id);
+    if (id == null) return null;
     try {
-      final result = await _storageChannel.invokeMapMethod<String, dynamic>(
-        'readEmbeddedLyrics',
-        {'audioUri': filePath},
-      );
-      final content = result?['content'] as String?;
-      if (content != null && content.trim().isNotEmpty) {
-        native = _LoadedLyrics(
-          content: content,
-          source: result?['source'] as String? ?? 'embedded',
+      final row = await Database.songs.get(id);
+      if (row == null || row.filePath != song.filePath) return null;
+      return row.mediaStoreUri;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_LoadedLyrics?> _loadEmbeddedLyricsText(Song song) async {
+    final filePath = song.filePath;
+    if (filePath == null || filePath.isEmpty) return null;
+    final storedUri = await _storedMediaStoreUriForSong(song);
+    final candidates = embeddedUriCandidates(
+      filePath, mediaStoreUri: storedUri,
+    );
+    _LoadedLyrics? selected;
+    var nativeSuccess = 0;
+    var persistedUriUsed = false;
+    var bestCount = -1;
+    for (final uri in candidates) {
+      try {
+        final result = await _storageChannel.invokeMapMethod<String, dynamic>(
+          'readEmbeddedLyrics',
+          {'audioUri': uri},
+        );
+        final content = result?['content'] as String?;
+        if (content == null || content.trim().isEmpty) continue;
+        nativeSuccess++;
+        final count = FlacVorbisLyricsReader.backgroundCount(content);
+        if (count > bestCount) {
+          bestCount = count;
+          persistedUriUsed = uri != filePath;
+          selected = _LoadedLyrics(
+            content: content,
+            source: (result?['source'] as String?) ?? 'embedded',
+          );
+        }
+      } catch (error) {
+        debugPrint(
+          '[LyricsEmbedded] nativeReadFailed='
+          '${error.runtimeType} usingMediaStore=${uri != filePath}',
         );
       }
-    } catch (error) {
-      // Do not silently treat a native-channel failure as "no bg lyrics".
-      debugPrint('[LyricsEmbedded] androidNativeError=${error.runtimeType}');
     }
 
-    // Independent metadata reader: some Android devices expose only the lead
-    // through the platform bridge. For a real filesystem-backed FLAC, decode
-    // the Vorbis block directly and prefer the version retaining [bg:] rows.
+    // A second, Flutter-native reader also supports filesystem-backed FLACs.
+    // Select the version containing most backing events, not merely the
+    // first metadata value Android reports.
     final path = _resolveLocalPath(filePath);
-    final direct = path == null
-        ? null
+    final direct = path == null ? null
         : await FlacVorbisLyricsReader.readFile(path);
-    final nativeBg = FlacVorbisLyricsReader.backgroundCount(native?.content);
     final directBg = FlacVorbisLyricsReader.backgroundCount(direct);
-    debugPrint(
-      '[LyricsEmbedded] nativeBg=$nativeBg directFlacBg=$directBg '
-      'nativeFound=${native != null} directFound=${direct != null}',
-    );
-    if (direct != null && directBg > nativeBg) {
-      return _LoadedLyrics(content: direct, source: 'embedded:vorbis:direct');
+    if (direct != null && directBg > bestCount) {
+      selected = _LoadedLyrics(
+        content: direct,
+        source: 'embedded:vorbis:direct',
+      );
+      bestCount = directBg;
     }
-    return native ?? (direct == null
-        ? null
-        : _LoadedLyrics(content: direct, source: 'embedded:vorbis:direct'));
+
+    debugPrint(
+      '[LyricsEmbedded] attempts=${candidates.length} '
+      'nativeSuccess=$nativeSuccess persistedMediaStoreUri='
+      '${storedUri != null} usedMediaStore=$persistedUriUsed '
+      'directBg=$directBg selectedBg=${bestCount.clamp(0, 1000000)}',
+    );
+    return selected;
   }
 
   Future<_LoadedLyrics?> _loadLyricsFromAbsolutePath(
