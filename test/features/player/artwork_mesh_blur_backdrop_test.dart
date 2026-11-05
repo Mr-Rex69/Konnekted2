@@ -1,8 +1,34 @@
 import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
 import 'package:flick/features/appearance/lokal_performance_advisor.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart' show AnimationStatus;
 
 void main() {
+  test('prewarmed blur is attached on the first player frame', () {
+    expect(artworkMeshCanResolve(
+      prewarmOnly: false,
+      cached: true,
+      routeStatus: AnimationStatus.forward,
+    ), isTrue);
+    expect(artworkMeshCanResolve(
+      prewarmOnly: false,
+      cached: false,
+      routeStatus: AnimationStatus.forward,
+    ), isFalse,
+        reason: 'A cold decode must not compete with the sheet animation');
+    expect(artworkMeshCanResolve(
+      prewarmOnly: true,
+      cached: false,
+      routeStatus: AnimationStatus.forward,
+    ), isTrue,
+        reason: 'The invisible mini-player cache warms independently');
+    expect(artworkMeshCanResolve(
+      prewarmOnly: false,
+      cached: false,
+      routeStatus: AnimationStatus.completed,
+    ), isTrue);
+  });
+
   test('ambient artwork mesh is continuous across repeated cycles', () {
     for (final u in [0.0, .2, .5, .8, 1.0]) {
       for (final v in [0.0, .25, .5, .75, 1.0]) {
