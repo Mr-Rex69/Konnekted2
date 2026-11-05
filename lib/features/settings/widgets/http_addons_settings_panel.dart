@@ -175,7 +175,17 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
                 error.message.contains('HTTP 404')
             ? 'The add-on manifest returned HTTP 404. Check that the '
                 'manifest.json link is valid and still accessible.'
-            : discoveryError(error);
+            : error is DiscoveryException &&
+                    error.message ==
+                        'The source returned an empty or incomplete response.'
+                ? 'The add-on manifest returned an empty response (HTTP 200), '
+                    'even after retrying. Check the HMAC signing key and '
+                    'whether the add-on server returns a manifest.'
+                : error is DiscoveryException &&
+                        error.message == 'The source returned invalid JSON.'
+                    ? 'The add-on manifest did not return JSON. Check the '
+                        'HMAC signing key and manifest endpoint.'
+                    : discoveryError(error);
         setState(() => _error = message);
       }
     } finally {

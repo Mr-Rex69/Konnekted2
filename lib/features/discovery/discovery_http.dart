@@ -21,24 +21,52 @@ class DiscoveryHttp {
     Map<String, Object?>? body,
     Future<void>? cancel,
   }) async {
-    final bytes = BytesBuilder(copy: false);
-    await transfer(
-      url,
-      headers: {'Accept': 'application/json', ...headers},
-      body: body,
-      maxBytes: jsonLimit,
-      isMetadata: true,
-      deadline: timeout,
-      onChunk: bytes.add,
-      cancel: cancel,
-    );
-    try {
-      final decoded = jsonDecode(utf8.decode(bytes.takeBytes()));
-      if (decoded is Map<String, dynamic>) return decoded;
-    } on FormatException {
-      // Do not expose response content, URLs or credentials in parse errors.
+    // Metadata is accepted only after its complete JSON value has decoded.
+    // The decoded byte count can differ from Content-Length when intermediaries
+    // transparently decompress the response; audio transfers stay strict.
+    // A 200 response with no body may be a stale intermediary response, so
+    // retry a GET only once with a fresh, uncompressed request.
+    for (var attempt = 0; attempt < (body == null ? 2 : 1); attempt++) {
+      final bytes = BytesBuilder(copy: false);
+      try {
+        await transfer(
+          url,
+          headers: {
+            'Accept': 'application/json',
+            ...headers,
+            if (attempt > 0) ...{
+              'Accept-Encoding': 'identity',
+              'Cache-Control': 'no-cache',
+              'Connection': 'close',
+            },
+          },
+          body: body,
+          maxBytes: jsonLimit,
+          isMetadata: true,
+          verifyContentLength: false,
+          deadline: timeout,
+          onChunk: bytes.add,
+          cancel: cancel,
+        );
+      } on DiscoveryException catch (error) {
+        if (attempt == 0 &&
+            body == null &&
+            error.message == 'The source returned an empty or incomplete response.') {
+          continue;
+        }
+        rethrow;
+      }
+      try {
+        final decoded = jsonDecode(utf8.decode(bytes.takeBytes()));
+        if (decoded is Map<String, dynamic>) return decoded;
+      } on FormatException {
+        // Do not expose response content, URLs or credentials in parse errors.
+      }
+      throw const DiscoveryException('The source returned invalid JSON.');
     }
-    throw const DiscoveryException('The source returned invalid JSON.');
+    throw const DiscoveryException(
+      'The source returned an empty or incomplete response.',
+    );
   }
 
   Future<int> transfer(
@@ -47,6 +75,7 @@ class DiscoveryHttp {
     Map<String, Object?>? body,
     required int maxBytes,
     bool isMetadata = false,
+    bool verifyContentLength = true,
     required Duration deadline,
     required FutureOr<void> Function(List<int>) onChunk,
     Future<void>? cancel,
@@ -60,6 +89,7 @@ class DiscoveryHttp {
     var cancelled = false;
     var finished = false;
     var succeeded = false;
+    var streamDrained = false;
     final timer = Timer(deadline, () {
       if (finished) return;
       timedOut = true;
@@ -186,8 +216,10 @@ class DiscoveryHttp {
         }
         await onChunk(chunk);
       }
+      streamDrained = true;
       if (received == 0 ||
-          (response.contentLength != null &&
+          (verifyContentLength &&
+              response.contentLength != null &&
               received != response.contentLength)) {
         throw const DiscoveryException(
           'The source returned an empty or incomplete response.',
@@ -210,8 +242,12 @@ class DiscoveryHttp {
       // The same abort trigger belongs to the underlying IOClient. Completing
       // it after a fully consumed successful response races with Dart's
       // asynchronous keep-alive connection handoff (_returnConnection).
-      // Abort only failed/incomplete requests, never a completed transfer.
-      if (!succeeded && !abort.isCompleted) abort.complete();
+      // Do not abort an already-drained response even when its content is
+      // invalid: aborting during IOClient's keep-alive handoff can race with
+      // _returnConnection. Interrupted transfers still abort normally.
+      if (!succeeded && !streamDrained && !abort.isCompleted) {
+        abort.complete();
+      }
       await chunks?.cancel();
     }
   }
