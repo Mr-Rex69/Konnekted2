@@ -68,7 +68,9 @@ class _ArtworkMeshBlurBackdropState
     extends ConsumerState<ArtworkMeshBlurBackdrop>
     with TickerProviderStateMixin {
   static const int _dimension = 224;
-  static const _maxLayers = 3;
+  // A rapid series of skips can overlap several one-second crossfades.
+  // Keep the recent small (224px) textures alive until they fade out.
+  static const _maxLayers = 5;
   static const _maxRecent = 5;
   static final Map<String, ui.Image> _recent = {};
   final ChangeNotifier _driftPaint = ChangeNotifier();
