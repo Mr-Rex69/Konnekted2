@@ -282,7 +282,26 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
                 .resolve(artworkRequest)
                 .timeout(const Duration(seconds: 6), onTimeout: () => '');
             if (!mounted || generation != _generation) return;
-            final cover = discoveryImageUrl(found);
+            var cover = discoveryImageUrl(found);
+            // Amazon may credit the recording differently from Deezer/iTunes.
+            // On an exact song-lookup miss, match its album independently
+            // before accepting the add-on's smaller thumbnail.
+            final albumTitle = song.album?.trim() ?? '';
+            if (preferAmazonIndependent &&
+                (cover.isEmpty || cover == song.albumArt) &&
+                albumTitle.isNotEmpty) {
+              final albumFound = await sharedDiscoveryArtworkResolver
+                  .resolve(DiscoveryArtworkRequest(
+                    kind: DiscoveryArtworkKind.album,
+                    title: albumTitle,
+                    artist: (song.albumArtist?.trim().isNotEmpty ?? false)
+                        ? song.albumArtist!.trim() : song.artist,
+                    exclude: discoveryImageUrl(song.albumArt),
+                  ))
+                  .timeout(const Duration(seconds: 6), onTimeout: () => '');
+              if (!mounted || generation != _generation) return;
+              cover = discoveryImageUrl(albumFound);
+            }
             if (cover.isEmpty || cover == song.albumArt) {
               if (preferAmazonIndependent && sources.isNotEmpty) {
                 resolveCandidate(sources, 0);
