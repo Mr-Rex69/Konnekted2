@@ -118,8 +118,9 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
         ? widget.decodeWidth.clamp(64, 768)
         : widget.decodeWidth;
     final amazonIdentity = '${song.id}|${song.sourcePackage ?? ''}';
+    final verifiedAmazonCover = _amazonIndependentArtwork[amazonIdentity];
     final preferAmazonIndependent = shouldPreferIndependentAmazonArtwork(song) &&
-        _amazonIndependentArtwork[amazonIdentity] != song.albumArt;
+        (verifiedAmazonCover == null || verifiedAmazonCover != song.albumArt);
     var amazonLookupAttempted = false;
     // Include the source-quality policy in the retained-frame identity. A
     // low-resolution poster cached before this upgrade must not be reused.
