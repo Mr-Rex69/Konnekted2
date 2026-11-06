@@ -21,6 +21,15 @@ bool shouldRecoverOnlineArtwork(Song song) =>
     song.isPending ||
     (song.sourcePackage?.startsWith('konnekted.') ?? false);
 
+/// Amazon's streamed artwork is usually a small catalogue thumbnail. Always
+/// prefer an independently matched Deezer/iTunes/YouTube sleeve in the full
+/// player, even if that Amazon thumbnail loads without an error.
+@visibleForTesting
+bool shouldPreferIndependentAmazonArtwork(Song song) =>
+    shouldRecoverOnlineArtwork(song) &&
+    RegExp(r'^amazon(?:\b|[-_])', caseSensitive: false)
+        .hasMatch(song.sourceDisplayName?.trim() ?? '');
+
 /// Holds decoded frames through a cover change. Painting RawImage avoids a
 /// second asynchronous image resolution when a carousel stage changes slots.
 class PlayerArtworkImage extends StatefulWidget {
@@ -52,6 +61,9 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
   // remounts so the incoming sleeve never flashes a placeholder.
   static final Map<String, ImageInfo> _recentFrames = {};
   static const int _maxRecentFrames = 4;
+  // A recovered catalogue URL is already independent of Amazon. After Now
+  // Playing adopts it, don't run a second lookup excluding that same image.
+  static final Map<String, String> _amazonIndependentArtwork = {};
 
   static void _rememberFrame(String key, ImageInfo info) {
     _recentFrames.remove(key)?.dispose();
@@ -105,6 +117,10 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
     final decodeWidth = LokalPerformanceScope.of(context)
         ? widget.decodeWidth.clamp(64, 768)
         : widget.decodeWidth;
+    final amazonIdentity = '${song.id}|${song.sourcePackage ?? ''}';
+    final preferAmazonIndependent = shouldPreferIndependentAmazonArtwork(song) &&
+        _amazonIndependentArtwork[amazonIdentity] != song.albumArt;
+    var amazonLookupAttempted = false;
     // Include the source-quality policy in the retained-frame identity. A
     // low-resolution poster cached before this upgrade must not be reused.
     final key = '${song.id}|${song.albumArt}|${song.filePath}|${decodeWidth}|full-res-v1';
@@ -160,6 +176,7 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
         int index, {
         String? recoveredArtwork,
         bool remoteAfterFailure = false,
+        bool independentAmazonCandidate = false,
       }) {
         if (!mounted || generation != _generation) return;
         _unsubscribe();
@@ -175,6 +192,31 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
             if (!mounted || generation != _generation) {
               info.dispose();
               return;
+            }
+            // HTTP 200 may return a tiny placeholder even for a 1200px URL.
+            // Prefer a genuinely usable independent catalogue cover.
+            if (independentAmazonCandidate &&
+                (info.image.width < 300 || info.image.height < 300)) {
+              info.dispose();
+              if (index + 1 < candidates.length) {
+                resolveCandidate(
+                  candidates, index + 1,
+                  recoveredArtwork: recoveredArtwork,
+                  independentAmazonCandidate: true,
+                );
+              } else if (sources.isNotEmpty) {
+                resolveCandidate(sources, 0);
+              } else {
+                tryFallback();
+              }
+              return;
+            }
+            if (independentAmazonCandidate && recoveredArtwork != null) {
+              _amazonIndependentArtwork[amazonIdentity] = recoveredArtwork;
+              if (_amazonIndependentArtwork.length > 150) {
+                _amazonIndependentArtwork.remove(
+                    _amazonIndependentArtwork.keys.first);
+              }
             }
             _showFrame(info, key);
             if (recoveredArtwork != null) {
@@ -195,7 +237,16 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
                 candidates, index + 1,
                 recoveredArtwork: recoveredArtwork,
                 remoteAfterFailure: remoteAfterFailure,
+                independentAmazonCandidate: independentAmazonCandidate,
               );
+            } else if (independentAmazonCandidate) {
+              // A failed catalogue rendition must not discard a working Amazon
+              // cover; treat it as the last-resort fallback.
+              if (sources.isNotEmpty) {
+                resolveCandidate(sources, 0);
+              } else {
+                tryFallback();
+              }
             } else if (remoteAfterFailure) {
               // Match Search: if its local-library art was itself broken,
               // continue to the independent Deezer/iTunes metadata lookup.
@@ -219,6 +270,11 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
       );
 
       tryRemoteFallback = () {
+        if (preferAmazonIndependent && amazonLookupAttempted) {
+          _showFrame(null, key);
+          return;
+        }
+        if (preferAmazonIndependent) amazonLookupAttempted = true;
         unawaited(() async {
           try {
             final found = await sharedDiscoveryArtworkResolver
@@ -227,7 +283,13 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
             if (!mounted || generation != _generation) return;
             final cover = discoveryImageUrl(found);
             if (cover.isEmpty || cover == song.albumArt) {
-              _showFrame(null, key);
+              if (preferAmazonIndependent && sources.isNotEmpty) {
+                resolveCandidate(sources, 0);
+              } else if (preferAmazonIndependent) {
+                tryFallback();
+              } else {
+                _showFrame(null, key);
+              }
               return;
             }
             resolveCandidate(
@@ -235,9 +297,17 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
                 NetworkImage(url)],
               0,
               recoveredArtwork: cover,
+              independentAmazonCandidate: preferAmazonIndependent,
             );
           } catch (_) {
-            if (mounted && generation == _generation) _showFrame(null, key);
+            if (!mounted || generation != _generation) return;
+            if (preferAmazonIndependent && sources.isNotEmpty) {
+              resolveCandidate(sources, 0);
+            } else if (preferAmazonIndependent) {
+              tryFallback();
+            } else {
+              _showFrame(null, key);
+            }
           }
         }());
       };
@@ -284,7 +354,11 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
         tryRemoteFallback();
       };
 
-      if (sources.isEmpty) {
+      if (preferAmazonIndependent) {
+        // Systematic primary lookup. Never gate this on a broken or low-res
+        // Amazon URL; the addon candidates are only an error fallback.
+        tryRemoteFallback();
+      } else if (sources.isEmpty) {
         tryFallback();
       } else {
         resolveCandidate(sources, 0);
