@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/konnekted_dock.dart';
@@ -8,6 +9,7 @@ import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('all three dock surfaces retain the same live glass optics',
@@ -99,6 +101,101 @@ void main() {
     expect(compactMini.right, lessThan(compactSearch.left));
     expect(compactMini.left - compactTabs.right, closeTo(14, .1));
     expect(compactSearch.left - compactMini.right, closeTo(14, .1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('footer uses the same real backdrop blur in both performance modes', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var collapsed = false;
+    var hasMini = true;
+    late StateSetter update;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return Align(
+                  alignment: Alignment.bottomCenter,
+                  child: KonnektedDock(
+                    selected: KonnektedTab.listen,
+                    onSelect: (_) {},
+                    miniPlayer: const SizedBox.expand(),
+                    hasMiniPlayer: hasMini,
+                    collapsed: collapsed,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    void expectFrost() {
+      final keys = <Key>[
+        if (hasMini) const ValueKey('dock-mini-glass'),
+        const ValueKey('dock-tab-glass'),
+        const ValueKey('dock-search-glass'),
+      ];
+      final glasses = tester.widgetList<LokalGlass>(
+        find.byType(LokalGlass),
+      ).toList();
+      expect(glasses, hasLength(keys.length));
+      for (final glass in glasses) {
+        expect(glass.backdropBlurSigma, 9);
+        expect(glass.performanceTintOpacity, closeTo(.44, .001));
+        expect(glass.singlePassLens, isTrue);
+      }
+      for (final key in keys) {
+        // Even in Performance Mode each capsule must keep an ordinary
+        // clipped Gaussian backdrop filter rather than a flat fill.
+        expect(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(BackdropFilter),
+          ),
+          findsOneWidget,
+        );
+      }
+      expect(find.byType(BackdropGroup), findsOneWidget);
+    }
+
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(KonnektedDock)),
+    );
+    // Performance Mode is on by default.
+    expect(container.read(lokalAppearanceProvider).performanceMode, isTrue);
+    expectFrost();
+    update(() => collapsed = true);
+    await tester.pumpAndSettle();
+    expectFrost();
+
+    // Full mode retains the same base frost, without adding extra lenses.
+    await container.read(lokalAppearanceProvider.notifier).setPerformanceMode(false);
+    await tester.pumpAndSettle();
+    expectFrost();
+    update(() => collapsed = false);
+    await tester.pumpAndSettle();
+    expectFrost();
+
+    // The footer also keeps its blur without a playing track (two capsules).
+    update(() => hasMini = false);
+    await tester.pumpAndSettle();
+    expectFrost();
+    await container.read(lokalAppearanceProvider.notifier).setPerformanceMode(true);
+    await tester.pumpAndSettle();
+    expectFrost();
     expect(tester.takeException(), isNull);
   });
 
