@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
+import 'package:flick/features/konnekted/library/playlist_hero_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Saved YouTube Music playlists, independent of Discovery recommendations.
@@ -165,14 +166,17 @@ class _YoutubeMusicPlaylistsScreenState
                                       : Icons.visibility_off_outlined),
                                   onPressed: () => unawaited(_setHidden(playlist.id, !hidden)),
                                 ),
-                                onTap: () => Navigator.of(context).push(
+                                onTap: () => unawaited(openPlaylistAfterFirstTap(
+                                  context,
+                                  'youtube:${_account}:${playlist.id}',
+                                  () => Navigator.of(context).push(
                                   MaterialPageRoute<void>(
                                     builder: (_) => _YoutubePlaylistDetail(
                                       playlist: playlist, onPlay: widget.onPlay,
                                       accountId: _account,
                                     ),
                                   ),
-                                ),
+                                ))),
                               );
                             },
                           ),
