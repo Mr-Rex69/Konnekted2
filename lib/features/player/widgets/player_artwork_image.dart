@@ -256,7 +256,7 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
 
         String? localCover;
         try {
-          localCover = ProviderScope.containerOf(context)
+          localCover = ProviderScope.containerOf(context, listen: false)
               .read(discoveryLocalArtworkProvider)
               .lookup(artworkRequest);
         } catch (_) {
