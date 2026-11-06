@@ -1412,15 +1412,101 @@ class LyricsService {
     }
   }
 
+  /// Desktop's post-processing separates a final parenthesized reply from
+  /// the sung lead. BiniLyrics TTML often encodes this as ordinary timed text,
+  /// rather than an explicit x-bg role, so Mobile must split the same units.
+  ///
+  /// Avoid splitting mid-word suffixes such as "wait(ing)", lines containing
+  /// only "(oh)", and any lyric that already has a structural backing lane.
+  LyricsLine _splitTrailingBackingVoice(LyricsLine line) {
+    if (line.voice == 'bg' ||
+        line.backgroundText?.trim().isNotEmpty == true ||
+        !line.text.trimRight().endsWith(')')) return line;
+    final text = line.text.trimRight();
+    var depth = 0;
+    int? opening;
+    for (var i = text.length - 1; i >= 0; i--) {
+      if (text[i] == ')') {
+        depth++;
+      } else if (text[i] == '(') {
+        depth--;
+        if (depth == 0) {
+          opening = i;
+          break;
+        }
+      }
+    }
+    if (opening == null || opening == 0) return line;
+    // A suffix inside a word is not a second vocalist: "wait(ing)".
+    // Real trailing replies have a word boundary before the open bracket.
+    if (!RegExp(r'\s').hasMatch(text[opening - 1])) return line;
+    final lead = text.substring(0, opening).trimRight();
+    final backing = text.substring(opening).trim();
+    if (lead.isEmpty ||
+        !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(backing)) return line;
+
+    final words = line.words;
+    List<LyricsWord>? leadWords;
+    List<LyricsWord>? backingWords;
+    if (words?.isNotEmpty == true) {
+      // Only divide genuinely timed syllables at a whole-unit boundary.
+      // If a bracket starts within a syllable, keep its original lyric and
+      // timings rather than fabricate a second vocalist's timestamps.
+      var prefix = '';
+      var splitAt = -1;
+      for (var i = 0; i < words!.length - 1; i++) {
+        prefix += words[i].text;
+        final normalized = prefix.replaceAll(RegExp(r'\s+'), ' ').trimRight();
+        if (normalized == lead &&
+            words[i + 1].text.trimLeft().startsWith('(')) {
+          splitAt = i + 1;
+          break;
+        }
+      }
+      if (splitAt <= 0) return line;
+      leadWords = words.sublist(0, splitAt);
+      backingWords = words.sublist(splitAt);
+    }
+
+    return LyricsLine(
+      timestamp: line.timestamp,
+      text: lead,
+      words: leadWords,
+      translation: line.translation,
+      voice: line.voice,
+      backgroundText: backing,
+      backgroundWords: backingWords,
+    );
+  }
+
+  LyricsData _splitTrailingBackingVoices(LyricsData lyrics) {
+    if (!lyrics.isSynchronized) return lyrics;
+    var changed = false;
+    final lines = lyrics.lines.map((line) {
+      final updated = _splitTrailingBackingVoice(line);
+      if (!identical(updated, line)) changed = true;
+      return updated;
+    }).toList();
+    if (!changed) return lyrics;
+    return LyricsData(
+      lines: lines,
+      isSynchronized: lyrics.isSynchronized,
+      source: lyrics.source,
+      rawContent: lyrics.rawContent,
+      language: lyrics.language,
+      translationLanguage: lyrics.translationLanguage,
+    );
+  }
+
   LyricsData _parseLyrics(String raw, {String? source}) {
     final trimmed = raw.trim();
     if (trimmed.startsWith('{')) {
       final private = _parseLokalPrivateLyrics(trimmed, source: source);
-      if (private != null) return private;
+      if (private != null) return _splitTrailingBackingVoices(private);
     }
     if (trimmed.startsWith('<?xml') || trimmed.startsWith('<')) {
       final xmlData = _parseXmlLyrics(trimmed, source: source);
-      if (xmlData != null) return xmlData;
+      if (xmlData != null) return _splitTrailingBackingVoices(xmlData);
     }
 
     final normalized = raw
@@ -1654,12 +1740,12 @@ class LyricsService {
         i = end;
       }
       bilingualLines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return LyricsData(
+      return _splitTrailingBackingVoices(LyricsData(
         lines: bilingualLines,
         isSynchronized: true,
         source: source,
         rawContent: raw,
-      );
+      ));
     }
 
     return LyricsData(
@@ -1700,6 +1786,38 @@ class LyricsService {
         return Duration(microseconds: (seconds * 1000000).round());
       }
 
+      // Apple Music/Bini TTML can mark answering singers with ttm:role="x-bg".
+      // Namespaced attributes must be read by local name, not getAttribute(),
+      // which misses the ttm prefix on Android.
+      String? role(XmlElement element) => element.attributes
+          .where((attribute) => attribute.name.local == 'role')
+          .firstOrNull?.value;
+
+      String leadText(XmlNode node) {
+        if (node is XmlText) return node.value;
+        if (node is! XmlElement) return '';
+        if (const {'x-bg', 'x-translation', 'x-roman'}.contains(role(node))) {
+          return '';
+        }
+        return node.children.map(leadText).join();
+      }
+
+      String backingText(XmlElement paragraph) {
+        final parts = <String>[];
+        void walk(XmlNode node) {
+          if (node is! XmlElement) return;
+          if (role(node) == 'x-bg') {
+            final text = node.innerText.trim();
+            if (text.isNotEmpty) parts.add(text);
+            return;
+          }
+          if (const {'x-translation', 'x-roman'}.contains(role(node))) return;
+          for (final child in node.children) walk(child);
+        }
+        walk(paragraph);
+        return parts.join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+      }
+
       final paragraphs = document.descendants.whereType<XmlElement>().where(
         (e) => e.name.local == 'p',
       );
@@ -1707,14 +1825,22 @@ class LyricsService {
       final plain = <LyricsLine>[];
       for (final paragraph in paragraphs) {
         final start = time(paragraph.getAttribute('begin'));
-        final rawText = paragraph.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
-        if (rawText.isEmpty) continue;
+        final rawText = leadText(paragraph)
+            .replaceAll(RegExp(r'\s+'), ' ').trim();
+        final bgText = backingText(paragraph);
+        if (rawText.isEmpty && bgText.isEmpty) continue;
         if (start == null) {
           final (text, _, voice) = _stripVoicePrefix(rawText, null);
-          plain.add(LyricsLine(timestamp: Duration.zero, text: text, voice: voice));
+          if (text.isNotEmpty) {
+            plain.add(LyricsLine(
+              timestamp: Duration.zero, text: text, voice: voice,
+              backgroundText: bgText.isEmpty ? null : bgText,
+            ));
+          }
           continue;
         }
         final words = <LyricsWord>[];
+        final bgWords = <LyricsWord>[];
         for (final span in paragraph.descendants.whereType<XmlElement>().where(
           (e) => e.name.local == 'span',
         )) {
@@ -1723,36 +1849,61 @@ class LyricsService {
           if (begin == null ||
               end == null ||
               end < begin ||
-              span.innerText.trim().isEmpty)
+              span.innerText.trim().isEmpty) {
             continue;
+          }
           if (span.descendants.whereType<XmlElement>().any(
             (child) => child.getAttribute('begin') != null,
-          ))
-            continue;
+          )) continue;
+          // The x-bg role is often on an untimed enclosing span. Walk back
+          // to the paragraph to assign each timed leaf to its own vocal lane.
+          var owner = span as XmlNode?;
+          var backing = false;
+          var skipped = false;
+          while (owner != null && !identical(owner, paragraph)) {
+            if (owner is XmlElement) {
+              final marking = role(owner);
+              if (marking == 'x-bg') backing = true;
+              if (marking == 'x-roman' || marking == 'x-translation') {
+                skipped = true;
+                break;
+              }
+            }
+            owner = owner.parent;
+          }
+          if (skipped) continue;
           final tail = span.nextSibling;
           final separator = tail is XmlText && tail.value.trim().isEmpty
               ? tail.value
               : '';
-          words.add(
-            LyricsWord(
-              start: begin,
-              end: end,
-              text: span.innerText + separator,
-            ),
-          );
+          (backing ? bgWords : words).add(LyricsWord(
+            start: begin,
+            end: end,
+            text: span.innerText + separator,
+          ));
         }
         final (text, cleanedWords, voice) = _stripVoicePrefix(
           rawText,
           words.isEmpty ? null : words,
         );
-        lines.add(
-          LyricsLine(
-            timestamp: start,
-            text: text,
-            words: cleanedWords,
-            voice: voice,
-          ),
-        );
+        // A background-only TTML paragraph must not become a new lead row.
+        if (text.isEmpty && bgText.isNotEmpty) {
+          lines.add(LyricsLine(
+            timestamp: bgWords.isNotEmpty ? bgWords.first.start : start,
+            text: bgText,
+            words: bgWords.isEmpty ? null : bgWords,
+            voice: 'bg',
+          ));
+          continue;
+        }
+        lines.add(LyricsLine(
+          timestamp: start,
+          text: text,
+          words: cleanedWords,
+          voice: voice,
+          backgroundText: bgText.isEmpty ? null : bgText,
+          backgroundWords: bgWords.isEmpty ? null : bgWords,
+        ));
       }
       if (lines.isNotEmpty || plain.isNotEmpty) {
         final timed = lines.isNotEmpty;
