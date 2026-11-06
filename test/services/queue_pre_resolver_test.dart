@@ -196,6 +196,36 @@ void main() {
     expect(replacePendingInPlace(songs, placeholder.id, _ready('k1')), isEmpty);
   });
 
+  test('LastWave Search cover survives resolution without provider artwork', () {
+    const cover = 'https://covers.example/lastwave-search.jpg';
+    final pending = Song(
+      id: 'pending:online:w-lastwave:track-1',
+      title: 'Song', artist: 'Artist', albumArt: cover,
+      duration: Duration.zero, fileType: 'ONLINE',
+      sourcePackage: Song.pendingSourcePackage,
+    );
+    final resolved = _ready('track-1');
+    expect(resolved.albumArt, isNull);
+    expect(preservePendingArtwork(pending, resolved).albumArt, cover);
+
+    final queue = [pending, _owned('other'), pending];
+    expect(replacePendingInPlace(queue, pending.id, resolved), [0, 2]);
+    expect(queue[0].albumArt, cover);
+    expect(queue[2].albumArt, cover);
+
+    // A valid cover supplied by the resolved provider takes precedence.
+    const fresh = 'https://covers.example/provider.jpg';
+    expect(
+      preservePendingArtwork(pending, resolved.copyWith(albumArt: fresh)).albumArt,
+      fresh,
+    );
+    // Empty strings are also missing artwork, not a reason to drop Search's.
+    expect(
+      preservePendingArtwork(pending, resolved.copyWith(albumArt: '')).albumArt,
+      cover,
+    );
+  });
+
   group('QueuePreResolver', () {
     late _Host host;
     late _Lookups lookups;
