@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
+import 'package:flick/features/konnekted/library/playlist_hero_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Read-only library browser using the already-configured Spotify cookie.
@@ -222,14 +223,17 @@ class _SpotifyPlaylistsScreenState
                             onPressed: () => unawaited(_changeHidden(playlist.id,
                                 !_hidden.contains(playlist.id))),
                           ),
-                          onTap: () => Navigator.of(context).push(
+                          onTap: () => unawaited(openPlaylistAfterFirstTap(
+                            context,
+                            'spotify:${_account}:${playlist.id}',
+                            () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => _SpotifyPlaylistDetail(
                                 playlist: playlist, onPlay: widget.onPlay,
                                 accountId: _account,
                               ),
                             ),
-                          ),
+                          ))),
                         );
                       },
                     ),
