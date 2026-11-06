@@ -1572,6 +1572,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         song: track,
                         radius: 0,
                         crossfade: false,
+                        onArtworkRecovered: current
+                            ? (cover) => _player.recoverCurrentOnlineArtwork(
+                                  songId: track.id,
+                                  originalArtwork: track.albumArt,
+                                  recoveredArtwork: cover,
+                                )
+                            : null,
                       );
                       Widget frame(Widget artwork, bool canvas) {
                         if (current) _reportCanvas(track.id, canvas);
@@ -1906,6 +1913,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       song: song,
       radius: radius.topLeft.x,
       crossfade: false,
+      onArtworkRecovered: current
+          ? (cover) => _player.recoverCurrentOnlineArtwork(
+                songId: song.id,
+                originalArtwork: song.albumArt,
+                recoveredArtwork: cover,
+              )
+          : null,
     );
     final motionEnabled =
         current &&
