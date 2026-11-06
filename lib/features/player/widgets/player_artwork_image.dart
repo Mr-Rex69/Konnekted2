@@ -4,10 +4,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/discovery/discovery_artwork.dart'
     show DiscoveryArtworkKind, DiscoveryArtworkRequest,
-         discoveryImageUrl, sharedDiscoveryArtworkResolver;
+         discoveryImageUrl, discoveryLocalArtworkProvider,
+         sharedDiscoveryArtworkResolver;
 import 'package:flick/services/album_art_service.dart';
 import 'package:flick/widgets/common/flick_artwork_placeholder.dart';
 import 'player_artwork_quality.dart';
@@ -152,10 +154,12 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
       if (!mounted || generation != _generation) return;
 
       late void Function() tryFallback;
+      late void Function() tryRemoteFallback;
       void resolveCandidate(
         List<ImageProvider> candidates,
         int index, {
         String? recoveredArtwork,
+        bool remoteAfterFailure = false,
       }) {
         if (!mounted || generation != _generation) return;
         _unsubscribe();
@@ -187,8 +191,15 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
           onError: (_, _) {
             if (!mounted || generation != _generation) return;
             if (index + 1 < candidates.length) {
-              resolveCandidate(candidates, index + 1,
-                  recoveredArtwork: recoveredArtwork);
+              resolveCandidate(
+                candidates, index + 1,
+                recoveredArtwork: recoveredArtwork,
+                remoteAfterFailure: remoteAfterFailure,
+              );
+            } else if (remoteAfterFailure) {
+              // Match Search: if its local-library art was itself broken,
+              // continue to the independent Deezer/iTunes metadata lookup.
+              tryRemoteFallback();
             } else if (recoveredArtwork == null) {
               tryFallback();
             } else {
@@ -200,26 +211,18 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
         stream.addListener(listener);
       }
 
-      tryFallback = () {
-        // Unlike Search's DiscoveryArtwork, the full player previously
-        // stopped at a placeholder when no URL existed or every URL failed.
-        // Use the same bounded, strict artist/title metadata lookup as Search.
-        if (!shouldRecoverOnlineArtwork(song) ||
-            song.title.trim().isEmpty ||
-            song.artist.trim().isEmpty ||
-            song.artist == 'Artist not supplied') {
-          _showFrame(null, key);
-          return;
-        }
+      final artworkRequest = DiscoveryArtworkRequest(
+        kind: DiscoveryArtworkKind.track,
+        title: song.title,
+        artist: song.artist,
+        exclude: discoveryImageUrl(song.albumArt),
+      );
+
+      tryRemoteFallback = () {
         unawaited(() async {
           try {
             final found = await sharedDiscoveryArtworkResolver
-                .resolve(DiscoveryArtworkRequest(
-                  kind: DiscoveryArtworkKind.track,
-                  title: song.title,
-                  artist: song.artist,
-                  exclude: discoveryImageUrl(song.albumArt),
-                ))
+                .resolve(artworkRequest)
                 .timeout(const Duration(seconds: 6), onTimeout: () => '');
             if (!mounted || generation != _generation) return;
             final cover = discoveryImageUrl(found);
@@ -237,6 +240,48 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
             if (mounted && generation == _generation) _showFrame(null, key);
           }
         }());
+      };
+
+      tryFallback = () {
+        // Search can show a local-library match or an online catalogue match
+        // when a LastWave image is missing/broken. Reproduce that exact order
+        // rather than leaving the full player at a permanent placeholder.
+        if (!shouldRecoverOnlineArtwork(song) ||
+            song.title.trim().isEmpty ||
+            song.artist.trim().isEmpty ||
+            song.artist == 'Artist not supplied') {
+          _showFrame(null, key);
+          return;
+        }
+
+        String? localCover;
+        try {
+          localCover = ProviderScope.containerOf(context)
+              .read(discoveryLocalArtworkProvider)
+              .lookup(artworkRequest);
+        } catch (_) {
+          // An unavailable library index must not prevent online recovery.
+        }
+        if (localCover != null && localCover.isNotEmpty &&
+            localCover != song.albumArt) {
+          final candidates = <ImageProvider>[];
+          if (localCover.startsWith('https://')) {
+            for (final url in PlayerArtworkQuality.candidates(localCover)) {
+              candidates.add(NetworkImage(url));
+            }
+          } else if (File(localCover).existsSync()) {
+            candidates.add(FileImage(File(localCover)));
+          }
+          if (candidates.isNotEmpty) {
+            resolveCandidate(
+              candidates, 0,
+              recoveredArtwork: localCover,
+              remoteAfterFailure: true,
+            );
+            return;
+          }
+        }
+        tryRemoteFallback();
       };
 
       if (sources.isEmpty) {
