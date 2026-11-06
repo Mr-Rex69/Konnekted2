@@ -332,10 +332,14 @@ class LokalPlaylistsPage extends ConsumerWidget {
               final playlist = playlists[index];
               final songs = lokalPlaylistCoverSongs(playlist, libraryById);
               return InkWell(
-                onTap: () => pushLokal(
+                onTap: () => unawaited(openPlaylistAfterFirstTap(
                   context,
-                  LokalPlaylistPage(playlistId: playlist.id),
-                ),
+                  'local:${playlist.id}',
+                  () => pushLokal(
+                    context,
+                    LokalPlaylistPage(playlistId: playlist.id),
+                  ),
+                )),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
