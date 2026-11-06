@@ -1,4 +1,5 @@
 import 'animated_lyric_subline.dart';
+import 'lyrics_focus_timing.dart';
 
 import 'dart:async';
 
@@ -47,12 +48,8 @@ List<int> visibleLeadLyricIndices(LyricsData lyrics) {
 /// The index here refers to the visible rows, not the backing-only source rows.
 int focusedVisibleLyricIndex(LyricsData lyrics, Duration position) {
   final visible = visibleLeadLyricIndices(lyrics);
-  var result = -1;
-  for (var i = 0; i < visible.length; i++) {
-    if (lyrics.lines[visible[i]].timestamp > position) break;
-    result = i;
-  }
-  return result;
+  final leads = [for (final i in visible) lyrics.lines[i]];
+  return focusedLeadUntilVocalsFinish(leads, position);
 }
 
 class ActiveSupportingVocal {
