@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'lokal_albums_artists.dart';
 import 'lokal_playlists.dart';
+import 'playlist_hero_header.dart';
 
 /// Opening Lokal's album, artist and playlist pages from anywhere: Search,
 /// Now Playing, song menus, Home.
@@ -153,4 +154,8 @@ Future<void> openLokalArtist(
 
 /// Opens the Library page of the playlist with [playlistId].
 Future<void> openLokalPlaylist(BuildContext context, String playlistId) =>
-    pushLokalPage(context, LokalPlaylistPage(playlistId: playlistId));
+    openPlaylistAfterFirstTap(
+      context,
+      'local:$playlistId',
+      () => pushLokalPage(context, LokalPlaylistPage(playlistId: playlistId)),
+    );
