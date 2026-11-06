@@ -74,6 +74,27 @@ class EmbeddedLyricsSelectionTest {
     }
 
     @Test
+    fun prioritizesDesktopNativeTimedBackingOverPortableLrc() {
+        // Anonymized structure from Pump It.flac: the same FLAC carries the
+        // complete native JSON and a flattened portable LRC.
+        val native = """{"lokal":1,"sync":"syllable","lines":[
+            {"t":15.902,"x":"Lead","w":[["Lead",15.902,16.564,0]],
+             "b":"Harmony","bw":[["Harmony",16.732,17.660,0]]}
+        ]}""".trimIndent()
+        val portable = "[00:15.90]Lead (Harmony)"
+        val block = vorbisBlock(
+            "LYRICS=$portable",
+            "LOKAL_LYRICS=$native",
+        )
+        assertEquals(native, EmbeddedLyricsSelection.fromVorbisComments(block))
+        assertEquals(native, EmbeddedLyricsSelection.pick(listOf(native, portable)))
+        assertEquals(native, EmbeddedLyricsSelection.pick(listOf(portable, native)))
+        assertEquals(native, EmbeddedLyricsSelection.fromFlac(
+            java.io.ByteArrayInputStream(flacWithVorbisComments(block)),
+        ))
+    }
+
+    @Test
     fun independentlyDecodesSyncedLyricTagsAndHandlesBrokenCommentBlocks() {
         val lead = "[00:15.433]<00:15.433>Lead<00:22.852>"
         assertEquals(lead, EmbeddedLyricsSelection.fromVorbisComments(

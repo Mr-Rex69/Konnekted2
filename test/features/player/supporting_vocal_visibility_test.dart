@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/player/widgets/synced_lyrics_view.dart';
+import 'package:flick/features/player/widgets/lyrics_focus_timing.dart';
 import 'package:flick/services/lyrics_service.dart';
 
 void main() {
@@ -126,6 +127,72 @@ void main() {
     expect(activeSupportingVocals(
       sample, const Duration(seconds: 17), 1,
     ), isEmpty);
+  });
+
+  test('Pump It timing: hold lead focus until background singer finishes', () {
+    const lines = <LyricsLine>[
+      LyricsLine(
+        timestamp: Duration(milliseconds: 15902), text: 'Lead A',
+        words: [
+          LyricsWord(start: Duration(milliseconds: 15902),
+              end: Duration(milliseconds: 16564), text: 'Lead A'),
+        ],
+        backgroundText: 'Harmony A',
+        backgroundWords: [
+          LyricsWord(start: Duration(milliseconds: 16732),
+              end: Duration(milliseconds: 17660), text: 'Harmony A'),
+        ],
+      ),
+      LyricsLine(
+        timestamp: Duration(milliseconds: 17669), text: 'Lead B',
+        words: [
+          LyricsWord(start: Duration(milliseconds: 17669),
+              end: Duration(milliseconds: 18330), text: 'Lead B'),
+        ],
+      ),
+      LyricsLine(
+        timestamp: Duration(milliseconds: 35223), text: 'Lead C',
+        words: [
+          LyricsWord(start: Duration(milliseconds: 35223),
+              end: Duration(milliseconds: 36282), text: 'Lead C'),
+        ],
+        backgroundText: 'Harmony C',
+        backgroundWords: [
+          LyricsWord(start: Duration(milliseconds: 36421),
+              end: Duration(milliseconds: 36739), text: 'Harmony C'),
+        ],
+      ),
+      LyricsLine(
+        timestamp: Duration(milliseconds: 36711), text: 'Lead D',
+        words: [
+          LyricsWord(start: Duration(milliseconds: 36711),
+              end: Duration(milliseconds: 38090), text: 'Lead D'),
+        ],
+      ),
+    ];
+    const data = LyricsData(isSynchronized: true, rawContent: '', lines: lines);
+    // Lead A already ended, yet its background is still sounding.
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 17000)), 0);
+    expect(focusedLeadUntilVocalsFinish(lines,
+        const Duration(milliseconds: 17000)), 0);
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 17659)), 0);
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 17669)), 1);
+    // Lead D starts at 36.711, but Lead C's backing ends at 36.739.
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 36720)), 2);
+    expect(focusedLeadUntilVocalsFinish(lines,
+        const Duration(milliseconds: 36720)), 2);
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 36739)), 3);
+    // A seek is determined purely by time, with no stale prior focus.
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 16500)), 0);
+    expect(focusedVisibleLyricIndex(data, const Duration(milliseconds: 36740)), 3);
+  });
+
+  test('start-only lyrics without actual word ends switch on next timestamp', () {
+    const data = LyricsData(isSynchronized: true, rawContent: '', lines: [
+      LyricsLine(timestamp: Duration(seconds: 10), text: 'Start-only'),
+      LyricsLine(timestamp: Duration(seconds: 12), text: 'Next'),
+    ]);
+    expect(focusedVisibleLyricIndex(data, const Duration(seconds: 12)), 1);
   });
 
   test('background-only file remains readable if there is no lead', () {

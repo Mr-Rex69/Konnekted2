@@ -32,6 +32,7 @@ import '../widgets/player_transport_controls.dart';
 import '../widgets/player_song_blur_background.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
+import '../widgets/lyrics_focus_timing.dart';
 import 'package:flick/core/utils/app_log.dart';
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
@@ -2821,18 +2822,9 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     return _anchorPos.inMilliseconds + (elapsed * speed).round();
   }
 
-  int _indexAt(int ms) {
-    var low = 0, high = _ts.length;
-    while (low < high) {
-      final mid = (low + high) ~/ 2;
-      if (_ts[mid] <= ms) {
-        low = mid + 1;
-      } else {
-        high = mid;
-      }
-    }
-    return low - 1;
-  }
+  int _indexAt(int ms) => focusedLeadUntilVocalsFinish(
+    _lines, Duration(milliseconds: ms),
+  );
 
   double _centerFor(int a) =>
       a < 0 ? -(_introHeight + _gap) : _tops[a.clamp(0, _tops.length - 1)];
@@ -2960,7 +2952,9 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
       _active = a;
       _geometry();
     }
-    final aScroll = _indexAt(ms + 300);
+    // Never pre-scroll into the next lead while either singer in the
+    // current row is still sounding, including overlapping [bg:] voices.
+    final aScroll = a;
     final target = _following ? _centerFor(aScroll) : _offset;
     final playing = widget.player.isPlayingNotifier.value;
 

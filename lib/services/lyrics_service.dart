@@ -1350,8 +1350,74 @@ class LyricsService {
     }
   }
 
+  /// Desktop stores full-resolution lead, backing and translation timelines
+  /// in the FLAC VORBIS_COMMENT named LOKAL_LYRICS. Portable LYRICS strips
+  /// backing voices into parentheses, so parsing only that tag loses the lane.
+  LyricsData? _parseLokalPrivateLyrics(String raw, {String? source}) {
+    if (!FlacVorbisLyricsReader.isLokalPrivateLyrics(raw)) return null;
+    try {
+      final data = jsonDecode(raw) as Map;
+      Duration? at(Object? seconds) {
+        if (seconds is! num || !seconds.isFinite || seconds < 0) return null;
+        return Duration(microseconds: (seconds * 1000000).round());
+      }
+      List<LyricsWord>? units(Object? entries) {
+        if (entries is! List) return null;
+        final output = <LyricsWord>[];
+        for (final unit in entries) {
+          if (unit is! List || unit.length < 3 || unit[0] is! String) continue;
+          final start = at(unit[1]);
+          final end = at(unit[2]);
+          if (start == null || end == null || end < start) continue;
+          final spaced = unit.length > 3 && unit[3] == 1;
+          output.add(LyricsWord(
+            start: start, end: end,
+            text: (unit[0] as String) + (spaced ? ' ' : ''),
+          ));
+        }
+        return output.isEmpty ? null : output;
+      }
+
+      final lines = <LyricsLine>[];
+      for (final value in data['lines'] as List) {
+        if (value is! Map) continue;
+        final time = at(value['t']);
+        if (time == null || value['x'] is! String) continue;
+        final text = value['x'] as String;
+        final background = value['b'] is String &&
+                (value['b'] as String).trim().isNotEmpty
+            ? value['b'] as String
+            : null;
+        lines.add(LyricsLine(
+          timestamp: time,
+          text: text,
+          words: units(value['w']),
+          backgroundText: background,
+          backgroundWords: units(value['bw']),
+          translation: value['tr'] is String ? value['tr'] as String : null,
+          voice: value['a'] is String ? value['a'] as String : null,
+        ));
+      }
+      if (lines.isEmpty) return null;
+      lines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      return LyricsData(
+        lines: lines,
+        isSynchronized: data['sync'] != 'none',
+        source: source ?? 'embedded:lokal',
+        rawContent: raw,
+        language: data['language'] is String ? data['language'] as String : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   LyricsData _parseLyrics(String raw, {String? source}) {
     final trimmed = raw.trim();
+    if (trimmed.startsWith('{')) {
+      final private = _parseLokalPrivateLyrics(trimmed, source: source);
+      if (private != null) return private;
+    }
     if (trimmed.startsWith('<?xml') || trimmed.startsWith('<')) {
       final xmlData = _parseXmlLyrics(trimmed, source: source);
       if (xmlData != null) return xmlData;

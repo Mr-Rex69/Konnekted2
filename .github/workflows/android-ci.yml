@@ -81,6 +81,9 @@ jobs:
             lib/features/player/widgets/synced_lyrics_view.dart \
             lib/features/player/widgets/karaoke_lyric_line.dart \
             lib/features/player/widgets/flowing_background_vocals.dart \
+            lib/features/player/widgets/lyrics_focus_timing.dart \
+            lib/services/lyrics_service.dart \
+            lib/services/lyrics_flac_vorbis_reader.dart \
             lib/features/player/widgets/player_song_blur_background.dart \
             lib/features/player/screens/full_player_screen.dart \
             lib/providers/player_provider.dart \

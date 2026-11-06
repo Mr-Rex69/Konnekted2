@@ -147,6 +147,49 @@ void main() {
     );
   });
 
+  // Anonymized structural fixture from Pump It.flac. That file stores
+  // 126 lead rows and 41 [b]/[bw] backing events in LOKAL_LYRICS, while its
+  // ordinary LYRICS field contains the backing only as inline parentheses.
+  // Use the actual timing relationships; no audio or copyrighted lines.
+  test('native LOKAL_LYRICS beats portable lead-only FLAC text', () {
+    const native = '{"lokal":1,"sync":"syllable","language":"en","lines":['
+      '{"t":15.902,"x":"Lead A","w":[["Lead",15.902,16.564,0]],'
+      '"b":"Harmony A","bw":[["Harmony",16.732,17.660,0]]},'
+      '{"t":17.669,"x":"Lead B","w":[["Lead",17.669,18.330,0]],'
+      '"b":"Harmony B","bw":[["Harmony",18.334,19.216,0]]},'
+      '{"t":35.223,"x":"Lead C","w":[["Lead",35.223,36.282,0]],'
+      '"b":"Harmony C","bw":[["Harmony",36.421,36.739,0]]},'
+      '{"t":36.711,"x":"Lead D","w":[["Lead",36.711,38.090,0]]}'
+      ']}';
+    const portable = '[00:15.90]Lead A (Harmony A)\\n[00:17.67]Lead B';
+    final bytes = BytesBuilder(copy: false);
+    void le32(int n) => bytes.add([n & 255, (n >> 8) & 255,
+      (n >> 16) & 255, (n >> 24) & 255]);
+    final vendor = utf8.encode('Fixture encoder');
+    le32(vendor.length);
+    bytes.add(vendor);
+    final comments = ['LYRICS=$portable', 'LOKAL_LYRICS=$native'];
+    le32(comments.length);
+    for (final comment in comments) {
+      final encoded = utf8.encode(comment);
+      le32(encoded.length);
+      bytes.add(encoded);
+    }
+    final extracted = FlacVorbisLyricsReader.fromVorbisCommentBlock(
+      bytes.toBytes(),
+    );
+    expect(extracted, native);
+    expect(FlacVorbisLyricsReader.backgroundCount(extracted), 3);
+    final parsed = LyricsService().parseLyricsText(extracted!);
+    expect(parsed.isSynchronized, isTrue);
+    expect(parsed.lines, hasLength(4));
+    expect(LyricsService.supportingVocalCount(parsed), 3);
+    expect(parsed.lines[0].words!.last.end.inMilliseconds, 16564);
+    expect(parsed.lines[0].backgroundWords!.last.end.inMilliseconds, 17660);
+    expect(parsed.lines[2].backgroundWords!.last.end.inMilliseconds, 36739);
+    expect(flowingBackgroundVocalLines(parsed.lines), hasLength(3));
+  });
+
   test('independent vocal events cannot replace fullscreen lead timeline', () {
     const lead = LyricsLine(
       timestamp: Duration(seconds: 15),

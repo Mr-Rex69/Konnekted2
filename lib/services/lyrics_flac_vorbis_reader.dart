@@ -15,8 +15,29 @@ class FlacVorbisLyricsReader {
     'SYNCEDLYRICS', 'SYNCED_LYRICS',
   };
 
-  static int backgroundCount(String? text) =>
-      text == null ? 0 : _bg.allMatches(text).length;
+  /// Native Lokal FLAC tags carry backing vocals as JSON line.b/bw, not [bg:]
+  /// strings. They must outrank the flattened portable LRC on the same file.
+  static bool isLokalPrivateLyrics(String? text) {
+    if (text == null || !text.trimLeft().startsWith('{')) return false;
+    try {
+      final value = jsonDecode(text);
+      return value is Map && value['lokal'] == 1 &&
+          value['lines'] is List && (value['lines'] as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static int backgroundCount(String? text) {
+    if (text == null) return 0;
+    if (isLokalPrivateLyrics(text)) {
+      final data = jsonDecode(text) as Map;
+      return (data['lines'] as List).where((line) =>
+          line is Map && line['b'] is String &&
+          (line['b'] as String).trim().isNotEmpty).length;
+    }
+    return _bg.allMatches(text).length;
+  }
 
   /// Reads FLAC metadata only; does not read audio frames.
   static Future<String?> readFile(String path) async {
@@ -79,6 +100,7 @@ class FlacVorbisLyricsReader {
     if (count < 0 || count > 100000) return null;
 
     final lyrics = <String>[];
+    String? nativeLokal;
     for (var i = 0; i < count; i++) {
       final size = takeLength();
       if (size == null) break;
@@ -89,16 +111,23 @@ class FlacVorbisLyricsReader {
       final equals = entry.indexOf('=');
       if (equals <= 0) continue;
       final key = entry.substring(0, equals).toUpperCase();
-      if (!_keys.contains(key)) continue;
+      if (!_keys.contains(key) && key != 'LOKAL_LYRICS') continue;
       final value = entry.substring(equals + 1).trim();
-      if (value.isNotEmpty) lyrics.add(value);
+      if (key == 'LOKAL_LYRICS') {
+        if (isLokalPrivateLyrics(value)) nativeLokal = value;
+      } else if (value.isNotEmpty) {
+        lyrics.add(value);
+      }
     }
-    return selectWithBacking(lyrics);
+    return nativeLokal ?? selectWithBacking(lyrics);
   }
 
   static String? selectWithBacking(Iterable<String> candidates) {
     final values = candidates.where((x) => x.trim().isNotEmpty).toList();
     if (values.isEmpty) return null;
+    for (final value in values) {
+      if (isLokalPrivateLyrics(value)) return value;
+    }
     final timed = values.where((v) => _synced.hasMatch(v)).toList();
     final pool = timed.isEmpty ? values : timed;
     var best = pool.first;
