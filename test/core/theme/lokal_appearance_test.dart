@@ -19,6 +19,7 @@ void main() {
       textScale: 1.2,
       performanceMode: true,
       fullscreenCover: true,
+      showHomeGreeting: false,
       resolutionTagsInLists: true,
       resolutionTagsInFullPlayer: true,
     );
@@ -28,19 +29,14 @@ void main() {
       LokalAppearance.maxTextScale,
     );
     expect(LokalAppearance.fromJson(const {}), const LokalAppearance());
-    expect(
-      LokalAppearance.fromJson(const {'resolutionTagsInLists': 'yes'})
-          .resolutionTagsInLists,
-      isFalse,
-    );
-    expect(
-      const LokalAppearance().copyWith(resolutionTagsInLists: true),
-      isNot(const LokalAppearance()),
-    );
-    expect(
-      const LokalAppearance().copyWith(resolutionTagsInFullPlayer: true),
-      isNot(const LokalAppearance()),
-    );
+    expect(LokalAppearance.fromJson(const {}).showHomeGreeting, isTrue);
+    expect(LokalAppearance.fromJson(const {'showHomeGreeting': 'invalid'}).showHomeGreeting, isTrue);
+    expect(const LokalAppearance().copyWith(showHomeGreeting: false).showHomeGreeting, isFalse);
+    expect(LokalAppearance.fromJson(const {'resolutionTagsInLists': 'yes'}).resolutionTagsInLists, isFalse);
+    expect(const LokalAppearance().copyWith(resolutionTagsInLists: true),
+        isNot(const LokalAppearance()));
+    expect(const LokalAppearance().copyWith(resolutionTagsInFullPlayer: true),
+        isNot(const LokalAppearance()));
   });
 
   test('picking a theme drops a custom accent but keeps the rest', () async {
@@ -52,11 +48,13 @@ void main() {
     await notifier.setAccent(LokalAccent.orange);
     await notifier.setTextScale(1.3);
     await notifier.setFullscreenCover(true);
+    await notifier.setShowHomeGreeting(false);
     await notifier.setResolutionTagsInLists(true);
     await notifier.setResolutionTagsInFullPlayer(false);
     await notifier.selectTheme(LokalThemeId.forest);
     final look = container.read(lokalAppearanceProvider);
     expect(look.theme, LokalThemeId.forest);
+    expect(look.showHomeGreeting, isFalse);
     expect(look.accent, isNull);
     expect(look.textScale, 1.3);
     expect(look.fullscreenCover, isTrue);
@@ -75,17 +73,15 @@ void main() {
         .read(lokalAppearanceProvider.notifier)
         .setAccent(LokalAccent.cyan);
     await first.read(lokalAppearanceProvider.notifier).setFullscreenCover(true);
-    await first
-        .read(lokalAppearanceProvider.notifier)
-        .setResolutionTagsInLists(true);
-    await first
-        .read(lokalAppearanceProvider.notifier)
-        .setResolutionTagsInFullPlayer(true);
+    await first.read(lokalAppearanceProvider.notifier).setShowHomeGreeting(false);
+    await first.read(lokalAppearanceProvider.notifier).setResolutionTagsInLists(true);
+    await first.read(lokalAppearanceProvider.notifier).setResolutionTagsInFullPlayer(true);
     first.dispose();
 
     final prefs = await SharedPreferences.getInstance();
     final saved = jsonDecode(prefs.getString(LokalAppearanceNotifier.prefKey)!);
     expect(saved['theme'], 'rosegold');
+    expect(saved['showHomeGreeting'], isFalse);
 
     final second = ProviderContainer();
     addTearDown(second.dispose);
@@ -94,6 +90,7 @@ void main() {
     final look = second.read(lokalAppearanceProvider);
     expect(look.theme, LokalThemeId.rosegold);
     expect(look.accent, LokalAccent.cyan);
+    expect(look.showHomeGreeting, isFalse);
     expect(look.fullscreenCover, isTrue);
     expect(look.resolutionTagsInLists, isTrue);
     expect(look.resolutionTagsInFullPlayer, isTrue);

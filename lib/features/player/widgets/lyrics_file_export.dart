@@ -125,6 +125,19 @@ String _renderLyrics(
         : originalText;
     final stamp = '[${_timestamp(line.timestamp)}]';
     output.add(lyrics.isSynchronized ? '$stamp$text' : text);
+    // Bilingual exports rebuild the LRC; keep independently timed backing
+    // vocals instead of silently losing them in that conversion.
+    if (line.backgroundText?.trim().isNotEmpty == true) {
+      final backgroundWords = line.backgroundWords;
+      final background =
+          lyrics.isSynchronized &&
+              backgroundWords != null &&
+              backgroundWords.isNotEmpty
+          ? '${backgroundWords.map((w) => '<${_timestamp(w.start)}>${w.text}').join()}'
+                '<${_timestamp(backgroundWords.last.end)}>'
+          : line.backgroundText!;
+      output.add(lyrics.isSynchronized ? '[bg:$background]' : background);
+    }
     final translation = line.translation?.trim();
     if (!includeDisplayedSubline ||
         translation == null ||

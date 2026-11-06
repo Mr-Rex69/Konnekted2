@@ -80,6 +80,7 @@ Future<void> showIosTransferQueue(
       }
       await session.enqueueUploadSong(
         songId: id,
+        serverId: job.intent.identity.localServerId,
         frozenIntent: job.intent,
         expectedPairing: IosTransferPairing(
           scope: job.intent.identity.scope,
@@ -147,24 +148,34 @@ class _QueueState extends State<IosTransferQueueScreen> {
     await queue.act(job, action);
   }
 
-  String _phase(IosTransferJob job) => lokalText(switch (job.phase) {
-    IosTransferPhase.queued => 'Queued',
-    IosTransferPhase.waiting => 'Waiting to prepare file',
-    IosTransferPhase.transferring =>
-      job.direction == 'upload' ? 'Sending to desktop' : 'Receiving on iPhone',
-    IosTransferPhase.received ||
-    IosTransferPhase.downloaded ||
-    IosTransferPhase.staged => 'Verifying file',
-    IosTransferPhase.validating ||
-    IosTransferPhase.importing => 'Adding to library',
-    IosTransferPhase.complete => 'Complete',
-    IosTransferPhase.interrupted => 'Interrupted',
-    IosTransferPhase.cancelled => 'Cancelled',
-    IosTransferPhase.failed => 'Needs attention',
-  });
+  String _phase(IosTransferJob job) => lokalText(
+    job.uploadRequeueAuthorized
+        ? 'Ready for a new copy'
+        : job.uploadBindingRetired && job.phase == IosTransferPhase.complete
+        ? 'Copied before cancellation'
+        : switch (job.phase) {
+            IosTransferPhase.queued => 'Queued',
+            IosTransferPhase.waiting => 'Waiting to prepare file',
+            IosTransferPhase.transferring =>
+              job.direction == 'upload'
+                  ? 'Sending to desktop'
+                  : 'Receiving on iPhone',
+            IosTransferPhase.received ||
+            IosTransferPhase.downloaded ||
+            IosTransferPhase.staged => 'Verifying file',
+            IosTransferPhase.validating ||
+            IosTransferPhase.importing => 'Adding to library',
+            IosTransferPhase.complete => 'Complete',
+            IosTransferPhase.interrupted => 'Interrupted',
+            IosTransferPhase.cancelled => 'Cancelled',
+            IosTransferPhase.failed => 'Needs attention',
+          },
+  );
   String _action(IosTransferQueueAction action) => lokalText(switch (action) {
     IosTransferQueueAction.cancel => 'Cancel transfer',
     IosTransferQueueAction.retryDownload => 'Retry download',
+    IosTransferQueueAction.retryUpload => 'Retry this upload',
+    IosTransferQueueAction.confirmUploadRetirement => 'Check desktop copy',
     IosTransferQueueAction.prepareUpload => 'Resume preparation',
     IosTransferQueueAction.matchUpload => 'Check desktop receipt',
     IosTransferQueueAction.cleanupUpload => 'Free temporary copy',
@@ -177,7 +188,11 @@ class _QueueState extends State<IosTransferQueueScreen> {
     IosTransferQueueNotice.changed =>
       'Transfers changed while loading. Refresh for current status.',
     IosTransferQueueNotice.actionFailed => 'The action could not finish. Refresh and check the connection and available storage before trying again.',
+    IosTransferQueueNotice.requeueReady => 'The previous desktop copy is cancelled or no longer available. You can review a new copy from the desktop link.',
+    IosTransferQueueNotice.alreadyCopied =>
+      'The desktop already has this copy. No audio was resent by this check.',
     IosTransferQueueNotice.noMatch => 'The desktop has not confirmed this file. The upload remains paused; no audio was resent.',
+    IosTransferQueueNotice.cancellationPending => 'Cancelled on this iPhone. Check the desktop copy before starting a new copy.',
     IosTransferQueueNotice.cleanupPending => 'The transfer is settled. Its temporary copy will stay until file activity has stopped. You can free it later.',
   };
 
@@ -368,7 +383,8 @@ class _QueueState extends State<IosTransferQueueScreen> {
                             style: TextStyle(color: t.muted),
                           ),
                         ),
-                      if (queue.loading || {'recovery', 'connection'}.contains(queue.acting))
+                      if (queue.loading ||
+                          {'recovery', 'connection'}.contains(queue.acting))
                         const Padding(
                           padding: EdgeInsets.only(top: 12),
                           child: LinearProgressIndicator(),

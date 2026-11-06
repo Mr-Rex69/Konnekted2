@@ -34,6 +34,7 @@ def serve_fixture():
     slow_match_reply = threading.Event()
     storage_reply = threading.Event()
     capability_reply = threading.Event()
+    pending_upload_reply = threading.Event()
     state = {'requests': {}, 'redirectHits': 0, 'cookiesSeen': False,
              'uploadRequests': {}, 'uploadHashes': {}, 'uploadMetadataValid': True, 'uploadLeakHits': 0,
              'matchRequests': 0, 'matchMode': 'positive', 'matchQueryValid': True, 'matchLeakHits': 0}
@@ -88,12 +89,22 @@ def serve_fixture():
                     except (BrokenPipeError, ConnectionResetError):
                         pass
                 return
+            if self.path.startswith('/__delete_upload?'):
+                operation_id = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['id'][0]
+                with lock:
+                    operations[operation_id]['available'] = False
+                self.respond(200)
+                return
+            if self.path == '/__release_pending_upload':
+                pending_upload_reply.set()
+                self.respond(200)
+                return
             if self.path.startswith('/api/remote/files/operations/'):
                 operation_id = self.path.rsplit('/', 1)[-1]
                 with lock:
                     result = operations.get(operation_id)
                 result = result or {'protocolVersion': 1, 'operationID': operation_id, 'state': 'absent'}
-                self.respond(404 if result['state'] == 'absent' else 200, json.dumps(result).encode(), Content_Type='application/json')
+                self.respond(404 if result['state'] == 'absent' else 410 if result.get('available') is False else 200, json.dumps(result).encode(), Content_Type='application/json')
                 return
             if self.path == '/__hold_storage':
                 storage_reply.clear()
@@ -179,6 +190,29 @@ def serve_fixture():
                 self.respond(413)
                 return
             body = self.rfile.read(size)
+            if self.path.startswith('/api/remote/files/operations/') and self.path.endswith('/cancel'):
+                if self.headers.get('x-remote-token') != 'transfer-fixture-token':
+                    self.respond(401, b'{}', Content_Type='application/json')
+                    return
+                operation_id = self.path.split('/')[-2]
+                query = json.loads(body)
+                metadata = query['metadata']
+                fields = ''.join(str(len(metadata.get(key, '').encode())) + ':' + metadata.get(key, '')
+                                 for key in ['title', 'artist', 'album', 'extension', 'originalFilename'])
+                fingerprint = hashlib.sha256(('lokal.upload.v1\n' + str(query['bytes']) + '\n' + metadata['sha256'] + '\n' + fields).encode()).hexdigest()
+                with lock:
+                    prior = operations.get(operation_id)
+                    if prior and prior['fingerprint'] != fingerprint:
+                        self.respond(409, b'{}', Content_Type='application/json')
+                        return
+                    if prior and prior['state'] == 'committed':
+                        result = dict(prior)
+                    else:
+                        result = dict(protocolVersion=1, operationID=operation_id, state='cancelled',
+                                      bytes=query['bytes'], sha256=metadata['sha256'], fingerprint=fingerprint)
+                        operations[operation_id] = result
+                self.respond(410 if result.get('available') is False else 200, json.dumps(result).encode(), Content_Type='application/json')
+                return
             if self.path == '/match-leak':
                 with lock:
                     state['matchLeakHits'] += 1
@@ -253,6 +287,11 @@ def serve_fixture():
                                          sha256=actual, fingerprint=fingerprint, available=True,
                                          trackId='desktop-' + mode, file_hash=actual)
                 with lock:
+                    first_retry = mode == 'upload-retryable' and state['uploadRequests'].get(mode, 0) == 0
+                    if first_retry or mode == 'upload-cancel-pending':
+                        operation_receipt['state'] = 'retryable' if first_retry else 'receiving'
+                        for field in ['available', 'trackId', 'file_hash']:
+                            operation_receipt.pop(field)
                     operations[operation_id] = operation_receipt
             with lock:
                 state['uploadRequests'][mode] = state['uploadRequests'].get(mode, 0) + 1
@@ -266,6 +305,13 @@ def serve_fixture():
             try:
                 if self.headers.get('x-remote-token') != 'transfer-fixture-token' or mode == 'upload-unauthorized':
                     self.respond(401, b'{}', Content_Type='application/json')
+                elif mode == 'upload-retryable' and first_retry:
+                    self.respond(503, b'{}', Content_Type='application/json')
+                elif mode == 'upload-cancel-pending':
+                    pending_upload_reply.wait(timeout=10)
+                    with lock:
+                        result = operations[operation_id]
+                    self.respond(409, json.dumps(result).encode(), Content_Type='application/json')
                 elif mode == 'upload-lost':
                     # The peer committed the body; only its response is lost.
                     self.close_connection = True

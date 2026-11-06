@@ -288,8 +288,15 @@ void main() {
     expect(find.text('Qobuz [Heisenbergg]'), findsOneWidget);
     final id = store.settings.addons.single.id;
     await tester.tap(find.byKey(ValueKey('http-addon-settings-$id')));
-    for (var frame = 0; frame < 40 &&
-        find.byKey(const ValueKey('http-addon-setting-quality')).evaluate().isEmpty; frame++) {
+    for (
+      var frame = 0;
+      frame < 40 &&
+          find
+              .byKey(const ValueKey('http-addon-setting-quality'))
+              .evaluate()
+              .isEmpty;
+      frame++
+    ) {
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -307,4 +314,78 @@ void main() {
     expect(store.settings.addons.single.settings['quality'], 'HI_RES');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'HMAC key can be configured, replaced and removed without exposure',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PlaybackSourcePriority.key: ['yt'],
+      });
+      final store = _MemoryStore(const DiscoverySettings());
+      final client = MockClient((request) async {
+        expect(request.headers['X-LW-Sign'], isNotNull);
+        return http.Response(
+          jsonEncode({
+            'id': 'signed-fixture',
+            'name': 'Fixture',
+            'resources': ['search', 'stream'],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        _host(HttpAddonsSettingsPanel(store: store, client: client)),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('http-addon-manifest-url')),
+        'https://addon.example/a/token/manifest.json',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('http-addon-hmac-key')),
+        'test-key-one',
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('http-addon-add')));
+      expect(tester.widget<TextField>(find.byKey(const ValueKey('http-addon-manifest-url'))).controller!.text, 'https://addon.example/a/token/manifest.json');
+      expect(tester.widget<TextField>(find.byKey(const ValueKey('http-addon-hmac-key'))).controller!.text, 'test-key-one');
+      await tester.runAsync(() async {
+        // Await injected HTTP work on the real event loop, outside fake frames.
+        await Function.apply(tester.widget<IconButton>(find.byKey(const ValueKey('http-addon-add'))).onPressed!, const []);
+      });
+      for (var frame = 0; frame < 40 && store.saves == 0; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump();
+      expect(store.saves, greaterThan(0), reason: tester.widgetList<Text>(find.byType(Text)).map((w) => w.data).join(' / '));
+      expect(store.settings.addons.single.signingKey, 'test-key-one');
+      final id = store.settings.addons.single.id;
+      await tester.runAsync(() async {
+        Function.apply(tester.widget<IconButton>(find.byKey(ValueKey('http-addon-settings-$id'))).onPressed!, const []);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pumpAndSettle();
+      final keyFinder = find.byKey(ValueKey('http-addon-hmac-key-$id'));
+      expect(tester.widget<TextField>(keyFinder).obscureText, isTrue);
+      await tester.enterText(keyFinder, 'test-key-two');
+      await tester.tap(find.widgetWithText(TextButton, 'Save'));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pumpAndSettle();
+      expect(store.settings.addons.single.signingKey, 'test-key-two');
+      await tester.runAsync(() async {
+        Function.apply(tester.widget<IconButton>(find.byKey(ValueKey('http-addon-settings-$id'))).onPressed!, const []);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove saved HMAC key'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Save'));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pumpAndSettle();
+      expect(store.settings.addons.single.signingKey, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

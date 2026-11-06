@@ -36,6 +36,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--swiftc', default=shutil.which('swiftc'))
     parser.add_argument('--check-ios-sdks', action='store_true')
+    parser.add_argument('--only-upload-source', action='store_true', help='Run the focused actual upload-source/operation contracts; not a full qualification run.')
     parser.add_argument('--preserve-binary', type=pathlib.Path,
                         help='Copy the compiled host contract executable for failure diagnosis.')
     parser.add_argument('--check-flutter-bridge', action='store_true',
@@ -114,9 +115,9 @@ def main() -> None:
             print(f'Preserved host contract binary: {args.preserve_binary}', flush=True)
         for round_index in range(args.repeat_native):
             with serve_fixture() as (origin, length, checksum):
-                subprocess.run([str(binary), '--network-fixture', origin, str(length), checksum],
+                subprocess.run([str(binary), '--upload-source-fixture' if args.only_upload_source else '--network-fixture', origin, str(length), checksum],
                                check=True, timeout=120, cwd=ROOT)
-            print(f'Native transfer contract round {round_index + 1}/{args.repeat_native} passed.', flush=True)
+            print(f'Native {"upload-source" if args.only_upload_source else "transfer"} contract round {round_index + 1}/{args.repeat_native} passed.', flush=True)
         if sdk_failed:
             raise SystemExit('One or more iOS SDK type checks failed.')
 

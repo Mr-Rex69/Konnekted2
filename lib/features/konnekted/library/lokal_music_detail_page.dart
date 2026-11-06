@@ -49,6 +49,7 @@ import 'lokal_detail_scroll_chrome.dart';
 import 'lokal_library_groups.dart';
 import 'lokal_library_kit.dart';
 import 'lokal_online_catalogue.dart';
+import 'lokal_online_page_mode.dart';
 import 'package:flick/core/utils/album_match.dart';
 import 'package:flick/features/discovery/discovery_artwork.dart';
 import 'lokal_radio.dart';
@@ -291,7 +292,11 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
       }
     }
     if (!mounted) return;
-    if (widget.initialOnline || prefs.getBool(_consentKey) == true) {
+    if (shouldOpenLibraryPageOnline(
+      initialOnline: widget.initialOnline,
+      pagePreference: prefs.getBool(_consentKey),
+      defaultOnline: prefs.getBool(onlinePagesDefaultPreferenceKey) ?? true,
+    )) {
       setState(() => _online = true);
       _load();
     }

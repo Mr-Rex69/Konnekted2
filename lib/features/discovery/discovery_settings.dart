@@ -13,17 +13,20 @@ class DiscoveryAddonConfig {
     this.manifestUrl,
     this.label = '',
     this.token = '',
+    this.signingKey = '',
     this.settings = const {},
     this.enabled = false,
   });
 
   final String id;
   final String endpoint;
+
   /// Exact optional manifest URI. Kept in secure storage with the endpoint:
   /// path encodings can be significant to credential-bearing addon servers.
   final String? manifestUrl;
   final String label;
   final String token;
+  final String signingKey;
   final Map<String, String> settings;
   final bool enabled;
 
@@ -45,6 +48,10 @@ class DiscoveryAddonConfig {
       throw const DiscoveryException(
         'The bearer token contains invalid characters or is too long.',
       );
+    }
+    if (signingKey.length > 1024 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(signingKey)) {
+      throw const DiscoveryException('Invalid HMAC signing key.');
     }
     final String normalizedEndpoint;
     try {
@@ -72,13 +79,15 @@ class DiscoveryAddonConfig {
       }
     }
     if (settings.length > 16 ||
-        settings.entries.any((entry) =>
-          entry.key.length > 40 ||
-          !RegExp(r'^[A-Za-z][A-Za-z0-9_]*$').hasMatch(entry.key) ||
-          entry.key == 'q' ||
-          entry.value.isEmpty ||
-          entry.value.length > 120 ||
-          RegExp(r'[\x00-\x1f\x7f]').hasMatch(entry.value))) {
+        settings.entries.any(
+          (entry) =>
+              entry.key.length > 40 ||
+              !RegExp(r'^[A-Za-z][A-Za-z0-9_]*$').hasMatch(entry.key) ||
+              entry.key == 'q' ||
+              entry.value.isEmpty ||
+              entry.value.length > 120 ||
+              RegExp(r'[\x00-\x1f\x7f]').hasMatch(entry.value),
+        )) {
       throw const DiscoveryException('The addon settings are invalid.');
     }
     return DiscoveryAddonConfig(
@@ -87,6 +96,7 @@ class DiscoveryAddonConfig {
       manifestUrl: manifestUrl,
       label: label.trim(),
       token: trimmedToken,
+      signingKey: signingKey,
       settings: Map.unmodifiable(settings),
       enabled: enabled,
     );
@@ -213,10 +223,15 @@ class DiscoverySettingsStore {
       manifestUrl: value['manifestUrl'] == null
           ? null
           : value['manifestUrl'] is String
-              ? value['manifestUrl'] as String
-              : throw const FormatException(),
+          ? value['manifestUrl'] as String
+          : throw const FormatException(),
       label: value['label'] as String,
       token: value['token'] as String,
+      signingKey: value['signingKey'] == null
+          ? ''
+          : value['signingKey'] is String
+          ? value['signingKey'] as String
+          : throw const FormatException(),
       enabled: value['enabled'] as bool,
       settings: value['settings'] == null
           ? const {}
@@ -225,7 +240,8 @@ class DiscoverySettingsStore {
   }
 
   static Map<String, String> _decodeSettings(Object? raw) {
-    if (raw is! Map || raw.length > 16 ||
+    if (raw is! Map ||
+        raw.length > 16 ||
         raw.keys.any((key) => key is! String) ||
         raw.values.any((value) => value is! String)) {
       throw const FormatException();
@@ -249,6 +265,7 @@ class DiscoverySettingsStore {
                 if (addon.manifestUrl != null) 'manifestUrl': addon.manifestUrl,
                 'label': addon.label,
                 'token': addon.token,
+                if (addon.signingKey.isNotEmpty) 'signingKey': addon.signingKey,
                 if (addon.settings.isNotEmpty) 'settings': addon.settings,
                 'enabled': addon.enabled,
               },

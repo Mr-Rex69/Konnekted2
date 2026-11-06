@@ -115,7 +115,10 @@ VolumeTier determineVolumeTier({
   required bool isPassthrough,
   required bool usingRustBackend,
 }) {
-  final hwTrusted = volumeMode == Uac2VolumeMode.hardware && volumeControlWritable && !hwVolumeFailed;
+  final hwTrusted =
+      volumeMode == Uac2VolumeMode.hardware &&
+      volumeControlWritable &&
+      !hwVolumeFailed;
   // Wire DSD is protected even when the user's PCM bit-perfect toggle is off.
   // `isDoP` also covers USB native DSD: neither may enter the gain path.
   if (isDoP) {
@@ -469,6 +472,19 @@ bool shouldTrackReplayFromPlaybackState({
 
 /// Puts [resolved] in place of every placeholder [pendingId] in [songs],
 /// keeping the order; returns the positions changed.
+/// Keep the cover already visible for a queued Search result when its stream
+/// resolves without artwork. A missing/empty URL must not erase the picture
+/// displayed throughout the preparation phase. A provider-supplied resolved
+/// cover still takes precedence.
+@visibleForTesting
+Song preservePendingArtwork(Song pending, Song resolved) {
+  if ((resolved.albumArt?.trim().isNotEmpty ?? false) ||
+      !(pending.albumArt?.trim().isNotEmpty ?? false)) {
+    return resolved;
+  }
+  return resolved.copyWith(albumArt: pending.albumArt);
+}
+
 @visibleForTesting
 List<int> replacePendingInPlace(
   List<Song> songs,
@@ -478,7 +494,7 @@ List<int> replacePendingInPlace(
   final changed = <int>[];
   for (var i = 0; i < songs.length; i++) {
     if (songs[i].id == pendingId) {
-      songs[i] = resolved;
+      songs[i] = preservePendingArtwork(songs[i], resolved);
       changed.add(i);
     }
   }
@@ -939,7 +955,10 @@ class PlayerService {
     for (var i = 0; i < _queuedEntries.length; i++) {
       final entry = _queuedEntries[i];
       if (entry.song.id == pendingId) {
-        _queuedEntries[i] = _QueueEntry(id: entry.id, song: resolved);
+        _queuedEntries[i] = _QueueEntry(
+          id: entry.id,
+          song: preservePendingArtwork(entry.song, resolved),
+        );
         queueChanged = true;
       }
     }
@@ -953,7 +972,7 @@ class PlayerService {
       for (final index in changed) {
         if (index == _currentIndex) continue;
         _removeFromAudioSequence(index);
-        unawaited(_insertIntoAudioSequence(index, resolved));
+        unawaited(_insertIntoAudioSequence(index, _playlist[index]));
       }
     }
     // Now ready as the next song: hand it to the engine for a gapless start.
@@ -1012,7 +1031,9 @@ class PlayerService {
       return;
     unawaited(() async {
       final result = await lookup;
-      final resolved = result.song;
+      final resolved = result.song == null
+          ? null
+          : preservePendingArtwork(pending, result.song!);
       final failure = result.failure;
       if (failure != null)
         _debugLog('[Playback] lookup failed for ${pending.title}: $failure');
@@ -1856,6 +1877,46 @@ class PlayerService {
       currentSongNotifier.value = update(current);
     _notifyQueueChanged();
     _notifyUpNextChanged();
+  }
+
+  /// Promote a successfully decoded online fallback to the active track,
+  /// its queue entries and the Android notification. Ignore late image
+  /// responses for a different song or artwork that has since changed.
+  void recoverCurrentOnlineArtwork({
+    required String songId,
+    required String? originalArtwork,
+    required String recoveredArtwork,
+  }) {
+    // A decoded library match is as valid as a decoded HTTPS catalogue
+    // image. Never accept an unverified/expired local path as artwork.
+    if (!recoveredArtwork.startsWith('https://') &&
+        !File(recoveredArtwork).existsSync())
+      return;
+    final current = currentSongNotifier.value;
+    if (current == null ||
+        current.id != songId ||
+        current.albumArt != originalArtwork ||
+        current.albumArt == recoveredArtwork)
+      return;
+
+    Song update(Song song) =>
+        song.id == songId && song.albumArt == originalArtwork
+        ? song.copyWith(albumArt: recoveredArtwork)
+        : song;
+    for (var i = 0; i < _playlist.length; i++) {
+      _playlist[i] = update(_playlist[i]);
+    }
+    for (var i = 0; i < _originalPlaylist.length; i++) {
+      _originalPlaylist[i] = update(_originalPlaylist[i]);
+    }
+    for (var i = 0; i < _queuedEntries.length; i++) {
+      final entry = _queuedEntries[i];
+      _queuedEntries[i] = _QueueEntry(id: entry.id, song: update(entry.song));
+    }
+    currentSongNotifier.value = update(current);
+    _notifyQueueChanged();
+    _notifyUpNextChanged();
+    _updateNotificationState();
   }
 
   void syncAlbumArtPaths({

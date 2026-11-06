@@ -235,7 +235,7 @@ final class LokalTransferBridge {
       } catch { reply.failure(error) }
       return
     }
-    if ["queueResumeScope", "queueCancel", "queueRetryDownload", "uploadSourceContext", "authorizeUploadSource", "releaseUploadSource", "enqueueUpload", "matchUploadedOriginal", "cleanupUploadBody", "cancelNetworkScopePreservingFiles", "preserveImportPublicFile", "retireNetworkScope", "drainImports", "completedHistoryPage", "compactCompletedImport", "importCandidatesPage", "importWorkPage", "claimImport", "claimImportCleanup", "claimOrphanCleanup", "validateOrphanCleanup", "resolveImportCleanup", "finalizeImportCleanup", "publishImport", "acknowledgeImport", "validateImport", "validateImportCleanup", "validateImportReconciliation", "releaseImport"].contains(call.method) {
+    if ["queueResumeScope", "queueCancel", "queueRetryDownload", "uploadSourceContext", "authorizeUploadSource", "releaseUploadSource", "enqueueUpload", "matchUploadedOriginal", "retryUpload", "confirmUploadRetirement", "cleanupUploadBody", "cancelNetworkScopePreservingFiles", "preserveImportPublicFile", "retireNetworkScope", "drainImports", "completedHistoryPage", "compactCompletedImport", "importCandidatesPage", "importWorkPage", "claimImport", "claimImportCleanup", "claimOrphanCleanup", "validateOrphanCleanup", "resolveImportCleanup", "finalizeImportCleanup", "publishImport", "acknowledgeImport", "validateImport", "validateImportCleanup", "validateImportReconciliation", "releaseImport"].contains(call.method) {
       handleImport(call, reply: reply)
       return
     }
@@ -317,7 +317,7 @@ final class LokalTransferBridge {
         host.withRuntime({ runtime in
           runtime.enqueueAuthorizedUpload(request.job, grantID: request.grantID, submission: ticket) { reply.encode($0) }
         }, unavailable: { reply.failure($0) })
-      } else if call.method == "matchUploadedOriginal" || call.method == "cleanupUploadBody" {
+      } else if ["matchUploadedOriginal", "retryUpload", "confirmUploadRetirement", "cleanupUploadBody"].contains(call.method) {
         // Same strict owner-bound job control envelope; no path or credential.
         let request = try LokalTransferProtocol.importCleanupClaim(data.data)
         guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
@@ -325,6 +325,14 @@ final class LokalTransferBridge {
         if call.method == "matchUploadedOriginal" {
           host.withRuntime({ runtime in
             runtime.matchUploadedOriginal(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          }, unavailable: { reply.failure($0) })
+        } else if call.method == "retryUpload" {
+          host.withRuntime({ runtime in
+            runtime.retryUpload(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          }, unavailable: { reply.failure($0) })
+        } else if call.method == "confirmUploadRetirement" {
+          host.withRuntime({ runtime in
+            runtime.confirmUploadRetirement(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
           }, unavailable: { reply.failure($0) })
         } else {
           host.withRuntime({ runtime in

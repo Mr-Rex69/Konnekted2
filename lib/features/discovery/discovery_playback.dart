@@ -19,12 +19,17 @@ import '../../services/atmos_playback_support.dart';
 import 'discovery_http.dart';
 import 'discovery_models.dart';
 import 'discovery_sources.dart';
+import 'addon_hybrid_media.dart';
+import 'addon_dash_media.dart';
 
 typedef DiscoveryAudioProbe = Future<native.AudioProbeFormat> Function(
   String path,
 );
 
-typedef DiscoverySpatialProbe = Future<bool> Function(String path, String codec);
+typedef DiscoverySpatialProbe = Future<bool> Function(
+  String path,
+  String codec,
+);
 
 /// Downloads actual media before engine handoff. Never treats a URL as a File.
 /// The native probe is mandatory; provider file/quality labels are ignored.
@@ -42,8 +47,9 @@ class DiscoveryPlaybackCache {
     Future<void> Function(String audio, String cover)? embedCover,
   }) : _embedCover = embedCover ?? _embedCoverInFile,
        _probe = probe ?? ((path) => native.audioProbeFormat(path: path)),
-       _spatialProbe = spatialProbe ?? ((path, codec) =>
-           codec == 'ac4'
+       _spatialProbe =
+           spatialProbe ??
+           ((path, codec) => codec == 'ac4'
                ? AtmosPlaybackSupport.isAc4File(path)
                : AtmosPlaybackSupport.isJocFile(path)),
        _directory = directory ?? _defaultDirectory,
@@ -88,8 +94,10 @@ class DiscoveryPlaybackCache {
     var cancelled = false;
     if (cancel != null) unawaited(cancel.then((_) => cancelled = true));
     try {
-      if (requestedSpatialCodec != null && requireNativeOutput &&
-          (requestedSpatialCodec == 'ac4' || !await AtmosPlaybackSupport.available)) {
+      if (requestedSpatialCodec != null &&
+          requireNativeOutput &&
+          (requestedSpatialCodec == 'ac4' ||
+              !await AtmosPlaybackSupport.available)) {
         throw const DiscoveryException(
           'The device cannot decode the selected native spatial audio tier. '
           'Change the HTTP add-on quality to lossless, or use a compatible output.',
@@ -128,7 +136,34 @@ class DiscoveryPlaybackCache {
       }
 
       final length = audio.length;
-      if (length == null) {
+      if (audio.dashMedia case final dash?) {
+        await downloadAddonDash(
+          http,
+          dash,
+          addonBase: track.addonBase ?? dash.manifestBase,
+          maxBytes: maxFileBytes,
+          timeout: downloadTimeout,
+          cancel: cancel,
+          onData: write,
+        );
+      } else if (audio.hybridPlan case final hybrid?) {
+        // hybrid-v1: decrypt authorized CDN CENC ranges on this device.
+        // Never expose the key, pass ciphertext to the audio engine, or
+        // reinterpret other add-ons' progressive media requests.
+        await downloadAddonHybrid(
+          http,
+          hybrid,
+          maxBytes: maxFileBytes,
+          timeout: downloadTimeout,
+          cancel: cancel,
+          onData: write,
+        );
+        if (received != hybrid.outputLength) {
+          throw const DiscoveryException(
+            'The hybrid CDN returned an incomplete recording.',
+          );
+        }
+      } else if (length == null) {
         await http.transfer(
           audio.url,
           headers: audio.headers,
@@ -209,8 +244,8 @@ class DiscoveryPlaybackCache {
       final format = requestedSpatialCodec == 'ac4'
           ? 'mp4'
           : requestedSpatialCodec == 'eac3-joc'
-              ? 'm4a'
-              : sniffAudioContainer(prefix);
+          ? 'm4a'
+          : sniffAudioContainer(prefix);
       ready = await partial.rename(p.setExtension(partial.path, '.$format'));
       partial = null;
       if (requestedSpatialCodec != null) {
@@ -224,10 +259,14 @@ class DiscoveryPlaybackCache {
       }
       final song = requestedSpatialCodec == null
           ? await _verified(track, ready, format, hash)
-          : await _verifiedAtmos(track, ready, hash,
+          : await _verifiedAtmos(
+              track,
+              ready,
+              hash,
               sourceInfo: {
                 'codec': requestedSpatialCodec == 'ac4' ? 'ac4' : 'eac3-joc',
-              });
+              },
+            );
       if (cancelled) throw const DiscoveryException('Request cancelled.');
       ready = null; // Ownership passes to bounded cache / PlayerService.
       return song;

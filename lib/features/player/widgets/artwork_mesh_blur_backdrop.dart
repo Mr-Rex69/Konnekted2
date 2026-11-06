@@ -35,6 +35,20 @@ bool artworkMeshNeedsFrame(Duration elapsed, Duration? previous,
   return elapsed - previous >= const Duration(microseconds: 33333);
 }
 
+/// Whether artwork may be resolved while a player sheet is still opening.
+/// Prewarmed textures are cheap to attach immediately; cache misses still
+/// defer decoding until the sheet animation has settled.
+@visibleForTesting
+bool artworkMeshCanResolve({
+  required bool prewarmOnly,
+  required bool cached,
+  required AnimationStatus? routeStatus,
+}) =>
+    prewarmOnly ||
+    cached ||
+    routeStatus == null ||
+    routeStatus == AnimationStatus.completed;
+
 /// Artwork-driven mesh blur. Preserves the contrasting color regions in the
 /// cover instead of reducing the entire image to one dominant hue.
 ///
@@ -45,10 +59,13 @@ class ArtworkMeshBlurBackdrop extends ConsumerStatefulWidget {
     super.key,
     required this.song,
     this.preserveArtworkContrast = false,
+    this.prewarmOnly = false,
   });
   final Song song;
   /// Preserve cover color separation in the fullscreen reflection.
   final bool preserveArtworkContrast;
+  /// Populate the shared texture cache without painting or animating a mesh.
+  final bool prewarmOnly;
 
   @override
   ConsumerState<ArtworkMeshBlurBackdrop> createState() =>
@@ -68,7 +85,9 @@ class _ArtworkMeshBlurBackdropState
     extends ConsumerState<ArtworkMeshBlurBackdrop>
     with TickerProviderStateMixin {
   static const int _dimension = 224;
-  static const _maxLayers = 3;
+  // A rapid series of skips can overlap several one-second crossfades.
+  // Keep the recent small (224px) textures alive until they fade out.
+  static const _maxLayers = 5;
   static const _maxRecent = 5;
   static final Map<String, ui.Image> _recent = {};
   final ChangeNotifier _driftPaint = ChangeNotifier();
@@ -95,7 +114,7 @@ class _ArtworkMeshBlurBackdropState
   )..addListener(_onDriftTick);
   late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 540),
+    duration: const Duration(milliseconds: 1050),
     value: 1,
   )..addStatusListener((status) {
       if (status == AnimationStatus.completed) _pruneLayers();
@@ -127,10 +146,13 @@ class _ArtworkMeshBlurBackdropState
       _route = animation;
       _route?.addStatusListener(_onRouteStatus);
     }
-    // Decoding and preblurring a cover competes with the first sheet frames.
-    // A cached artwork is still available via the fallback gradient while
-    // opening; start the asynchronous image pipeline only after settling.
-    if (_route == null || _route!.status == AnimationStatus.completed) {
+    // Attach prewarmed artwork during opening instead of showing a transient
+    // palette fallback. Cold decoding is still deferred to protect FPS.
+    if (artworkMeshCanResolve(
+      prewarmOnly: widget.prewarmOnly,
+      cached: _recent.containsKey(_key),
+      routeStatus: _route?.status,
+    )) {
       _resolve();
     }
     _syncMotion();
@@ -157,7 +179,11 @@ class _ArtworkMeshBlurBackdropState
       oldWidget.song.filePath,
       oldWidget.preserveArtworkContrast,
     ].join('|') &&
-        (_route == null || _route!.status == AnimationStatus.completed)) {
+        artworkMeshCanResolve(
+          prewarmOnly: widget.prewarmOnly,
+          cached: _recent.containsKey(_key),
+          routeStatus: _route?.status,
+        )) {
       _resolve();
     }
   }
@@ -165,8 +191,8 @@ class _ArtworkMeshBlurBackdropState
   void _syncMotion([AnimationStatus? status]) {
     final settled = _route == null ||
         _route!.status == AnimationStatus.completed;
-    if (_ultraPerformance || _reduceMotion || _layers.isEmpty ||
-        !TickerMode.of(context) || !settled) {
+    if (widget.prewarmOnly || _ultraPerformance || _reduceMotion ||
+        _layers.isEmpty || !TickerMode.of(context) || !settled) {
       _drift.stop(canceled: false);
     } else if (!_drift.isAnimating) {
       _drift.repeat();
@@ -190,7 +216,7 @@ class _ArtworkMeshBlurBackdropState
     final cached = _recent.remove(key);
     if (cached != null) {
       _recent[key] = cached;
-      _show(cached.clone());
+      _show(cached.clone(), immediateIfFirst: true);
       return;
     }
     unawaited(_load(key, generation));
@@ -282,7 +308,13 @@ class _ArtworkMeshBlurBackdropState
     }
   }
 
-  void _show(ui.Image image) {
+  void _show(ui.Image image, {bool immediateIfFirst = false}) {
+    if (widget.prewarmOnly) {
+      // _recent retains its own clone; invisible preloaders own no layers.
+      image.dispose();
+      return;
+    }
+    final firstLayer = _layers.isEmpty;
     final t = Curves.easeInOutCubic.transform(_fade.value);
     // When next/previous is pressed during an existing crossfade, continue
     // from every layer's *current* opacity rather than snapping to one cover.
@@ -294,7 +326,10 @@ class _ArtworkMeshBlurBackdropState
     while (_layers.length > _maxLayers) {
       _layers.removeAt(0).dispose();
     }
-    if (_reduceMotion || _ultraPerformance || _layers.length == 1) {
+    // Also fade in the first decoded artwork over the fallback palette;
+    // otherwise its appearance pops immediately after the sheet settles.
+    if ((firstLayer && immediateIfFirst) || _reduceMotion ||
+        _ultraPerformance) {
       _fade.value = 1;
       _pruneLayers();
     } else {
@@ -339,6 +374,7 @@ class _ArtworkMeshBlurBackdropState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.prewarmOnly) return const SizedBox.shrink();
     final appearance = ref.watch(lokalAppearanceProvider);
     // Regular Performance Mode keeps the ambient mesh alive; only Ultra
     // disables decorative animation. System reduced-motion is independent.

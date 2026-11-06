@@ -359,6 +359,62 @@ void main() {
     },
   );
   test(
+    'a new reviewed copy replaces only its exact reviewed desktop association',
+    () async {
+      await isar.writeTxn(() async {
+        final row = (await isar.songEntitys.get(42))!;
+        row.remoteServerId = 3;
+        row.remoteId = 'deleted-historical-original';
+        await isar.songEntitys.put(row);
+      });
+      await expectLater(
+        IosTransferUploadAdmission(isar: isar, port: port).enqueueSong(
+          songId: 42,
+          serverId: 3,
+          expectedPairing: _pairing,
+          prepared: (_) {},
+        ),
+        throwsStateError,
+      );
+      final fresh = IosTransferJob.fromJson({
+        ...port.intent!.toJson(),
+        'revision': 1,
+        'direction': 'upload',
+        'phase': 'complete',
+        'uploadProtocolVersion': 1,
+        'updatedMs': port.intent!.createdMs,
+        'resultOriginalID': 'new-reviewed-original',
+      });
+      expect(await binding.reconcile(fresh, isCurrent: () => true), isTrue);
+      expect(isar.songEntitys.getSync(42)!.remoteId, 'new-reviewed-original');
+      expect(isar.songEntitys.getSync(42)!.title, 'Original');
+    },
+  );
+  test(
+    'a revoked or superseded native receipt cannot bind a recording',
+    () async {
+      for (final requeue in [false, true]) {
+        final retired = IosTransferJob.fromJson({
+          ...port.intent!.toJson(),
+          'revision': 2,
+          'direction': 'upload',
+          'phase': 'complete',
+          'uploadProtocolVersion': 1,
+          'updatedMs': port.intent!.createdMs,
+          'resultOriginalID': 'desktop-original',
+          'uploadBindingRetired': true,
+          if (requeue) 'uploadRequeueAuthorized': true,
+        });
+        expect(
+          await binding.reconcile(retired, isCurrent: () => true),
+          isFalse,
+        );
+      }
+      expect(port.grants, 0);
+      expect(isar.songEntitys.getSync(42)!.remoteId, isNull);
+    },
+  );
+  test(
     'legacy upload completion has no authority to associate a song',
     () async {
       final legacy = IosTransferJob.fromJson({
@@ -372,6 +428,22 @@ void main() {
       expect(await binding.reconcile(legacy, isCurrent: () => true), isFalse);
       expect(port.contexts, 0);
       expect(isar.songEntitys.getSync(42)!.remoteId, isNull);
+    },
+  );
+  test(
+    'preparation recovery retains the frozen target without a new review',
+    () async {
+      final frozen = port.intent!;
+      await expectLater(
+        IosTransferUploadAdmission(isar: isar, port: port).enqueueSong(
+          songId: 42,
+          expectedPairing: _pairing,
+          frozenIntent: frozen,
+          prepared: (_) {},
+        ),
+        throwsStateError,
+      );
+      expect(port.intent!.toJson(), frozen.toJson());
     },
   );
 }

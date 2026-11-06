@@ -32,6 +32,8 @@ dependencies:
   archive: ^4.0.9
   audio_session: ^0.2.4
   crypto: ^3.0.3
+  # Locally decrypt only hybrid-v1 CENC media for which the addon supplies a key.
+  pointycastle: ^4.0.0
   # Mornye's native SMB2/3 transport: required for NAS signing/encryption.
   dart_smb2: 0.1.3
   connectivity_plus: ^7.0.0

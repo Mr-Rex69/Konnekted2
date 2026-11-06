@@ -15,11 +15,16 @@ enum IosTransferQueueNotice {
   actionFailed,
   noMatch,
   cleanupPending,
+  cancellationPending,
+  requeueReady,
+  alreadyCopied,
 }
 
 enum IosTransferQueueAction {
   cancel,
   retryDownload,
+  retryUpload,
+  confirmUploadRetirement,
   prepareUpload,
   matchUpload,
   cleanupUpload,
@@ -208,6 +213,15 @@ class IosTransferQueueController extends ChangeNotifier {
     if (job.direction == 'download' && job.phase.canRetry)
       IosTransferQueueAction.retryDownload,
     if (job.direction == 'upload') ...{
+      if (job.uploadProtocolVersion == 1 && job.phase.canRetry)
+        IosTransferQueueAction.retryUpload,
+      if (job.uploadProtocolVersion == 1 &&
+          !job.uploadRequeueAuthorized &&
+          {
+            IosTransferPhase.cancelled,
+            IosTransferPhase.complete,
+          }.contains(job.phase))
+        IosTransferQueueAction.confirmUploadRetirement,
       if ({
         IosTransferPhase.queued,
         IosTransferPhase.waiting,
@@ -284,12 +298,32 @@ class IosTransferQueueController extends ChangeNotifier {
         case IosTransferQueueAction.cancel:
           final cancelled = await native.cancelFromQueue(job);
           if (cancelled.direction == 'upload' && !_disposed) {
+            if (cancelled.uploadProtocolVersion == 1) {
+              try {
+                final result = await native.confirmUploadRetirement(cancelled);
+                _notice = result.uploadRequeueAuthorized
+                    ? IosTransferQueueNotice.requeueReady
+                    : IosTransferQueueNotice.alreadyCopied;
+              } catch (_) {
+                _notice = IosTransferQueueNotice.cancellationPending;
+              }
+            }
             try {
               await native.cleanupUploadBody(cancelled);
             } catch (_) {
               _notice = IosTransferQueueNotice.cleanupPending;
             }
           }
+        case IosTransferQueueAction.retryUpload:
+          final result = await native.retryUploadFromQueue(job);
+          if (result.revision == job.revision &&
+              result.phase == IosTransferPhase.complete)
+            _notice = IosTransferQueueNotice.alreadyCopied;
+        case IosTransferQueueAction.confirmUploadRetirement:
+          final result = await native.confirmUploadRetirement(job);
+          _notice = result.uploadRequeueAuthorized
+              ? IosTransferQueueNotice.requeueReady
+              : IosTransferQueueNotice.alreadyCopied;
         case IosTransferQueueAction.retryDownload:
           await native.retryDownloadFromQueue(job);
         case IosTransferQueueAction.prepareUpload:

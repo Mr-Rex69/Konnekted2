@@ -1,5 +1,6 @@
 import 'package:flick/features/flow/flow_screen.dart';
 import 'package:flick/l10n/l10n.dart';
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
@@ -201,7 +202,7 @@ class _KonnektedHomeState extends ConsumerState<KonnektedHome> {
 }
 
 /// Home's top bar: the Lokal logo and glass buttons floating over content.
-class KonnektedHomeTopBar extends StatelessWidget {
+class KonnektedHomeTopBar extends ConsumerWidget {
   const KonnektedHomeTopBar({
     super.key,
     required this.onSettings,
@@ -227,7 +228,10 @@ class KonnektedHomeTopBar extends StatelessWidget {
   final DateTime? now;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showGreeting = ref.watch(
+      lokalAppearanceProvider.select((look) => look.showHomeGreeting),
+    );
     final at = now ?? DateTime.now();
     return Padding(
       padding: konnektedTopBarPadding,
@@ -267,36 +271,38 @@ class KonnektedHomeTopBar extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          // Desktop's greeting: a salutation, then a line from your listening.
-          Semantics(
-            header: true,
-            child: Text(
-              lokalText(
-                (greeting ?? lokalHomeMessages(const [], now: at)).headline,
-              ),
-              style: TextStyle(
-                fontSize: context.responsiveText(34),
-                fontWeight: FontWeight.w600,
-                letterSpacing: -.7,
-                color: context.lokal.text,
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: Text(
-              lokalText(
-                (greeting ?? lokalHomeMessages(const [], now: at)).subheader,
-              ),
-              key: ValueKey(greeting),
-              style: TextStyle(
-                fontSize: context.responsiveText(15),
-                color: context.lokal.muted,
+          if (showGreeting) ...[
+            const SizedBox(height: 14),
+            // Desktop's greeting: a salutation, then a line from your listening.
+            Semantics(
+              header: true,
+              child: Text(
+                lokalText(
+                  (greeting ?? lokalHomeMessages(const [], now: at)).headline,
+                ),
+                style: TextStyle(
+                  fontSize: context.responsiveText(34),
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -.7,
+                  color: context.lokal.text,
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 2),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: Text(
+                lokalText(
+                  (greeting ?? lokalHomeMessages(const [], now: at)).subheader,
+                ),
+                key: ValueKey(greeting),
+                style: TextStyle(
+                  fontSize: context.responsiveText(15),
+                  color: context.lokal.muted,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

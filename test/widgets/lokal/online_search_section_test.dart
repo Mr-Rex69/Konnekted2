@@ -93,10 +93,12 @@ class _FakePlayer extends PlayerNotifier {
 
 // Layout tests do not start independent network portrait operations.
 class _QuietArtwork extends DiscoveryArtworkResolver {
-  _QuietArtwork() : super(DiscoveryHttp(MockClient((_) async => http.Response('{}', 200))));
+  _QuietArtwork()
+    : super(DiscoveryHttp(MockClient((_) async => http.Response('{}', 200))));
   @override
   Future<String> resolve(DiscoveryArtworkRequest request) async => '';
 }
+
 final _quietArtwork = [
   discoveryLocalArtworkProvider.overrideWithValue(DiscoveryLocalArtwork.empty),
   discoveryArtworkResolverProvider.overrideWithValue(_QuietArtwork()),
@@ -111,11 +113,22 @@ Future<void> _pump(
   prepare,
   LibraryDownloader? downloader,
   Future<String?> Function(String, Future<void>)? qualityLookup,
+  DiscoveryLocalArtwork? localArtwork,
+  DiscoveryArtworkResolver? artworkResolver,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        ..._quietArtwork,
+        if (localArtwork == null && artworkResolver == null)
+          ..._quietArtwork
+        else ...[
+          discoveryLocalArtworkProvider.overrideWithValue(
+            localArtwork ?? DiscoveryLocalArtwork.empty,
+          ),
+          discoveryArtworkResolverProvider.overrideWithValue(
+            artworkResolver ?? _QuietArtwork(),
+          ),
+        ],
         if (player != null) playerProvider.overrideWith(() => player),
       ],
       child: MaterialApp(
@@ -377,6 +390,140 @@ void main() {
     expect(player.played.single.title, 'From Tidal');
     expect(player.played.single.isPending, isTrue);
   });
+
+  testWidgets(
+    'LastWave Search local cover is handed to the player immediately',
+    (tester) async {
+      const cover = 'https://covers.example/lastwave-from-library.jpg';
+      final player = _FakePlayer();
+      final local = DiscoveryLocalArtwork([
+        const Song(
+          id: 'owned',
+          title: 'From LastWave',
+          artist: 'Artist',
+          albumArt: cover,
+          fileType: 'FLAC',
+          duration: Duration(minutes: 3),
+        ),
+      ]);
+      final source = OnlineSource(
+        id: 'w-lastwave',
+        name: 'LastWave',
+        addon: true,
+        results: (_) async => [
+          const OnlineResult(
+            DiscoveryTrack(
+              id: 'lastwave-song',
+              title: 'From LastWave',
+              artist: 'Artist',
+              source: DiscoverySource.addon,
+            ),
+          ),
+        ],
+        play: (_) async => throw StateError('not reached'),
+      );
+      await _pump(
+        tester,
+        player: player,
+        sources: [source],
+        localArtwork: local,
+        pendingSong: (source, track) =>
+            onlinePendingSong(source.id, track, resolver: QueuePreResolver()),
+      );
+      await tester.tap(find.text('From LastWave'));
+      await tester.pumpAndSettle();
+      expect(player.played.single.albumArt, cover);
+      expect(player.played.single.isPending, isTrue);
+      expect(player.playedPlaylists.single.single.albumArt, cover);
+    },
+  );
+
+  testWidgets('LastWave Search cached online cover stays on play and queue', (
+    tester,
+  ) async {
+    const cover = 'https://is7-ssl.mzstatic.com/lastwave-600x600bb.jpg';
+    final client = MockClient((request) async {
+      if (request.url.host == 'api.deezer.com')
+        return http.Response('{"data":[]}', 200);
+      if (request.url.host == 'itunes.apple.com') {
+        return http.Response(
+          jsonEncode({
+            'results': [
+              {
+                'trackName': 'From LastWave',
+                'artistName': 'Artist',
+                'artworkUrl100':
+                    'https://is7-ssl.mzstatic.com/lastwave-100x100bb.jpg',
+              },
+            ],
+          }),
+          200,
+        );
+      }
+      fail('Unexpected artwork network request');
+    });
+    addTearDown(client.close);
+    final resolver = DiscoveryArtworkResolver(DiscoveryHttp(client));
+    const request = DiscoveryArtworkRequest(
+      kind: DiscoveryArtworkKind.track,
+      artist: 'Artist',
+      title: 'From LastWave',
+    );
+    expect(await tester.runAsync(() => resolver.resolve(request)), cover);
+    final player = _FakePlayer(current: _nowPlaying);
+    final source = OnlineSource(
+      id: 'w-lastwave',
+      name: 'LastWave',
+      addon: true,
+      results: (_) async => [
+        const OnlineResult(
+          DiscoveryTrack(
+            id: 'lastwave-song',
+            title: 'From LastWave',
+            artist: 'Artist',
+            source: DiscoverySource.addon,
+          ),
+        ),
+      ],
+      play: (_) async => throw StateError('not reached'),
+    );
+    await _pump(
+      tester,
+      player: player,
+      sources: [source],
+      artworkResolver: resolver,
+      pendingSong: (source, track) =>
+          onlinePendingSong(source.id, track, resolver: QueuePreResolver()),
+    );
+    await tester.longPress(find.text('From LastWave'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play next'));
+    await tester.pumpAndSettle();
+    expect(player.queued.single.albumArt, cover);
+    expect(player.queued.single.isPending, isTrue);
+    LokalToast.dismiss();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test(
+    'a queued online track preserves its provider artwork without Search UI',
+    () {
+      const cover = 'https://covers.example/lastwave-provider.jpg';
+      final pending = onlinePendingSong(
+        'w-lastwave',
+        const DiscoveryTrack(
+          id: 'lastwave-song',
+          title: 'From LastWave',
+          artist: 'Artist',
+          source: DiscoverySource.addon,
+          artwork: cover,
+        ),
+        resolver: QueuePreResolver(),
+      );
+      expect(pending.albumArt, cover);
+      expect(pending.isPending, isTrue);
+    },
+  );
 
   testWidgets(
     'tapping a middle online result enqueues following search results',

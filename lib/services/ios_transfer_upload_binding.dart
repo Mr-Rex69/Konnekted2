@@ -36,7 +36,8 @@ IosTransferMetadata iosUploadMetadata(SongEntity song) => IosTransferMetadata(
 /// the source identifier. The durable iPhone ID floor prevents ID reuse after
 /// deletion/clear. A legacy intent has no such proof and is never auto-linked.
 abstract final class IosUploadBinding {
-  static const prefix = 'phone-bind-v1:';
+  static const prefix = 'phone-bind-v2:';
+  static const legacyPrefix = 'phone-bind-v1:';
   static bool serverMatches(
     NetworkServerEntity server,
     IosTransferPairing pairing,
@@ -78,14 +79,15 @@ abstract final class IosUploadBinding {
   static String sourceId(
     SongEntity song,
     NetworkServerEntity server,
-    String relative,
-  ) =>
-      prefix +
+    String relative, {
+    bool legacy = false,
+  }) =>
+      (legacy ? legacyPrefix : prefix) +
       sha256
           .convert(
             utf8.encode(
               jsonEncode({
-                'version': 1,
+                'version': legacy ? 1 : 2,
                 'song': song.id,
                 'relative': relative,
                 'added': song.dateAdded.microsecondsSinceEpoch,
@@ -95,6 +97,8 @@ abstract final class IosUploadBinding {
                 'protocol': server.protocol,
                 'origin': server.baseUrl,
                 'account': server.username,
+                if (!legacy) 'previousServer': song.remoteServerId,
+                if (!legacy) 'previousOriginal': song.remoteId,
               }),
             ),
           )
@@ -116,12 +120,15 @@ class IosTransferUploadBinding {
     if (job.direction != 'upload' ||
         job.phase != IosTransferPhase.complete ||
         job.uploadProtocolVersion != 1 ||
+        job.uploadBindingRetired ||
+        job.uploadRequeueAuthorized ||
         job.resultOriginalId == null ||
-        !RegExp(r'^phone-bind-v1:[0-9a-f]{64}$')
+        !RegExp(r'^phone-bind-v[12]:[0-9a-f]{64}$')
             .hasMatch(job.intent.identity.sourceId)) {
       return false;
     }
     final identity = job.intent.identity;
+    final legacy = identity.sourceId.startsWith(IosUploadBinding.legacyPrefix);
     final songId = int.tryParse(identity.localSongId ?? '');
     final serverId = identity.localServerId;
     if (songId == null || songId < 1 || serverId == null) return false;
@@ -140,7 +147,8 @@ class IosTransferUploadBinding {
         song.remoteId == job.resultOriginalId) {
       return true;
     }
-    if (song.remoteServerId != null || song.remoteId != null) return false;
+    if (legacy && (song.remoteServerId != null || song.remoteId != null))
+      return false;
     IosTransferUploadContext? context;
     IosTransferUploadGrant? grant;
     try {
@@ -156,7 +164,7 @@ class IosTransferUploadBinding {
       }
       final relative = IosUploadBinding.currentRelativePath(song, context);
       if (relative == null) return false;
-      if (IosUploadBinding.sourceId(song, server, relative) !=
+      if (IosUploadBinding.sourceId(song, server, relative, legacy: legacy) !=
               identity.sourceId ||
           jsonEncode(iosUploadMetadata(song).toJson()) !=
               jsonEncode(job.intent.metadata.toJson())) {
@@ -202,7 +210,8 @@ class IosTransferUploadBinding {
             row.remoteId == job.resultOriginalId) {
           return true;
         }
-        if (row.remoteServerId != null || row.remoteId != null) return false;
+        if (legacy && (row.remoteServerId != null || row.remoteId != null))
+          return false;
         row.remoteServerId = serverId;
         row.remoteId = job.resultOriginalId;
         await isar.songEntitys.put(row);

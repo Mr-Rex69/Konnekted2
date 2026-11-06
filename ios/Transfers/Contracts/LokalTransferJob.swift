@@ -153,6 +153,9 @@ struct LokalTransferJob: Codable, Equatable, Sendable {
   /// Native-owned negotiation proof. Nil means the POST used the legacy
   /// protocol, whose missing operation key can never prove a safe retry.
   let uploadProtocolVersion: Int?
+  /// Native-owned durable decisions; never accepted in a Flutter intent.
+  private(set) var uploadRequeueAuthorized: Bool?
+  private(set) var uploadBindingRetired: Bool?
   private(set) var receivedBytes: Int64?
   private(set) var receivedSHA256: String?
   private(set) var resultOriginalID: String?
@@ -177,7 +180,7 @@ struct LokalTransferJob: Codable, Equatable, Sendable {
           let row = try JSONSerialization.jsonObject(with: data) as? [String: Any],
           Set(row.keys).isSubset(of: ["id", "revision", "direction", "identity", "metadata", "createdMs", "updatedMs",
             "phase", "taskID", "expectedBytes", "expectedSHA256", "receivedBytes", "receivedSHA256", "resultOriginalID",
-            "responseBytes", "responseSHA256", "lastFailure", "uploadProtocolVersion"]),
+            "responseBytes", "responseSHA256", "lastFailure", "uploadProtocolVersion", "uploadRequeueAuthorized", "uploadBindingRetired"]),
           let identity = row["identity"] as? [String: Any],
           Set(identity.keys).isSubset(of: ["desktopID", "sourceID", "localSongID", "origin", "pairingID", "desktopUserID", "localServerID"]),
           let metadata = row["metadata"] as? [String: Any],
@@ -229,9 +232,15 @@ struct LokalTransferJob: Codable, Equatable, Sendable {
     try previous.validate()
     return previous
   }
-  var uploadName: String { id + "-" + String(revision) + ".upload" }
+  // Protocol1 has one immutable private body per operation. Retries advance
+  // task revisions, not body provenance; crash recovery never copies or adopts
+  // a new audio source for an uncertain POST.
+  var uploadName: String { id + "-" + String(uploadProtocolVersion == 1 ? 1 : revision) + ".upload" }
 
   func validate() throws {
+    guard uploadBindingRetired == nil || (uploadBindingRetired == true && direction == .upload && [.cancelled, .complete].contains(phase)),
+          uploadRequeueAuthorized == nil || (uploadRequeueAuthorized == true && uploadProtocolVersion == 1 &&
+            uploadBindingRetired == true && [.cancelled, .complete].contains(phase)) else { throw LokalTransferError.invalidRecord }
     guard uploadProtocolVersion == nil || (direction == .upload && uploadProtocolVersion == 1) else {
       throw LokalTransferError.invalidRecord
     }
@@ -444,6 +453,7 @@ struct LokalTransferJob: Codable, Equatable, Sendable {
     revision += 1
     phase = .cancelled
     taskID = nil
+    if direction == .upload { uploadBindingRetired = true }
   }
 
   /// Private cleanup driver only, after revocation/file drainage and a durable
@@ -458,6 +468,23 @@ struct LokalTransferJob: Codable, Equatable, Sendable {
     revision += 1
     phase = .cancelled
     taskID = nil
+  }
+
+  mutating func authorizeUploadRequeue(nowMs: Int64) throws {
+    guard direction == .upload, uploadProtocolVersion == 1,
+          [.cancelled, .complete].contains(phase) else { throw LokalTransferError.invalidTransition }
+    try touch(nowMs)
+    uploadBindingRetired = true
+    uploadRequeueAuthorized = true
+  }
+
+  mutating func acknowledgeUploadCommittedBeforeCancellation(originalID: String, nowMs: Int64) throws {
+    guard direction == .upload, uploadProtocolVersion == 1, phase == .cancelled else { throw LokalTransferError.invalidTransition }
+    try touch(nowMs)
+    phase = .complete; taskID = nil; lastFailure = nil
+    resultOriginalID = originalID
+    uploadBindingRetired = true
+    try validate()
   }
 
   mutating func retry(nowMs: Int64) throws {

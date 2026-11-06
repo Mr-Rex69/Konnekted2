@@ -25,13 +25,15 @@ class HttpAddonsSettingsPanel extends StatefulWidget {
   final http.Client? client;
 
   @override
-  State<HttpAddonsSettingsPanel> createState() => _HttpAddonsSettingsPanelState();
+  State<HttpAddonsSettingsPanel> createState() =>
+      _HttpAddonsSettingsPanelState();
 }
 
 class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
   late final DiscoverySettingsStore _store;
   late final http.Client _client;
   final _url = TextEditingController();
+  final _hmacKey = TextEditingController();
   DiscoverySettings? _settings;
   bool _loading = true;
   bool _busy = false;
@@ -109,17 +111,18 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
       final exactManifest = pastedUri.pathSegments.lastOrNull == 'manifest.json'
           ? pastedUri
           : null;
+      final signingKey = _hmacKey.text;
       final health = await DiscoveryAddon(
         DiscoveryHttp(_client),
         endpoint: endpoint,
+        signingKey: signingKey,
       ).health(exactManifestUrl: exactManifest);
       // Streaming-only addons (allowDownloads: 0) are valid sources.
       // Explicit saves remain blocked by DiscoveryAddon.resolve(forDownload: true).
 
-      final host = Uri.parse(endpoint).host.toLowerCase().replaceFirst(
-        RegExp(r'^www\\.'),
-        '',
-      );
+      final host = Uri.parse(endpoint).host
+          .toLowerCase()
+          .replaceFirst(RegExp(r'^www\\.'), '');
       final baseLabel = _manifestLabel(
         health.name,
         host.isEmpty ? 'Music source' : host,
@@ -138,6 +141,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
         manifestUrl: exactManifest?.toString(),
         // Safe manifest name, never the credential-bearing endpoint.
         label: label,
+        signingKey: signingKey,
         settings: {
           for (final setting in health.settings)
             setting.key: setting.defaultValue,
@@ -156,6 +160,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
       }
       if (!mounted) return;
       _url.clear();
+      _hmacKey.clear();
       setState(() {
         _settings = next;
         _message = prioritySaved
@@ -167,10 +172,20 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
         // Installation only probes the manifest, not a search or stream.
         // Report the failing stage and status without disclosing private
         // addon URLs (which may contain path-based access tokens).
-        final message = error is DiscoveryException &&
-                error.message.contains('HTTP 404')
+        final message =
+            error is DiscoveryException && error.message.contains('HTTP 404')
             ? 'The add-on manifest returned HTTP 404. Check that the '
-                'manifest.json link is valid and still accessible.'
+                  'manifest.json link is valid and still accessible.'
+            : error is DiscoveryException &&
+                  error.message ==
+                      'The source returned an empty or incomplete response.'
+            ? 'The add-on manifest returned an empty response (HTTP 200), '
+                  'even after retrying. Check the HMAC signing key and '
+                  'whether the add-on server returns a manifest.'
+            : error is DiscoveryException &&
+                  error.message == 'The source returned invalid JSON.'
+            ? 'The add-on manifest did not return JSON. Check the '
+                  'HMAC signing key and manifest endpoint.'
             : discoveryError(error);
         setState(() => _error = message);
       }
@@ -210,6 +225,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
       manifestUrl: old.manifestUrl,
       label: old.label,
       token: old.token,
+      signingKey: old.signingKey,
       settings: old.settings,
       enabled: enabled,
     );
@@ -220,7 +236,10 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
 
   Future<void> _editSettings(int index) async {
     final current = _settings;
-    if (_busy || current == null || index < 0 || index >= current.addons.length) {
+    if (_busy ||
+        current == null ||
+        index < 0 ||
+        index >= current.addons.length) {
       return;
     }
     final old = current.addons[index];
@@ -234,6 +253,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
         DiscoveryHttp(_client),
         endpoint: old.endpoint,
         token: old.token,
+        signingKey: old.signingKey,
         exactManifestUrl: old.manifestUrl == null
             ? null
             : Uri.parse(old.manifestUrl!),
@@ -247,12 +267,15 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
     if (!mounted) return;
     final selected = <String, String>{
       for (final setting in health.settings)
-        setting.key: setting.options.any(
-          (option) => option.value == old.settings[setting.key],
-        )
-          ? old.settings[setting.key]!
-          : setting.defaultValue,
+        setting.key:
+            setting.options.any(
+              (option) => option.value == old.settings[setting.key],
+            )
+            ? old.settings[setting.key]!
+            : setting.defaultValue,
     };
+    var enteredKey = '';
+    var removeSavedKey = false;
     final choices = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -263,37 +286,59 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: health.settings.isEmpty
-                    ? [const Text('This add-on has no configurable options.')]
-                    : [
-                        for (final setting in health.settings)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: DropdownButtonFormField<String>(
-                              key: ValueKey('http-addon-setting-${setting.key}'),
-                              value: selected[setting.key],
-                              decoration: InputDecoration(
-                                labelText: setting.label,
-                                border: const OutlineInputBorder(),
-                              ),
-                              isExpanded: true,
-                              items: [
-                                for (final option in setting.options)
-                                  DropdownMenuItem(
-                                    value: option.value,
-                                    child: Text(option.label),
-                                  ),
-                              ],
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setDialogState(
-                                    () => selected[setting.key] = value,
-                                  );
-                                }
-                              },
+                children: [
+                  if (health.settings.isEmpty)
+                    const Text('This add-on has no manifest options.'),
+                  for (final setting in health.settings)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey('http-addon-setting-${setting.key}'),
+                        value: selected[setting.key],
+                        decoration: InputDecoration(
+                          labelText: setting.label,
+                          border: const OutlineInputBorder(),
+                        ),
+                        isExpanded: true,
+                        items: [
+                          for (final option in setting.options)
+                            DropdownMenuItem(
+                              value: option.value,
+                              child: Text(option.label),
                             ),
-                          ),
-                      ],
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => selected[setting.key] = value);
+                          }
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: ValueKey('http-addon-hmac-key-${old.id}'),
+                    onChanged: (value) => enteredKey = value,
+                    obscureText: true,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    enabled: !removeSavedKey,
+                    decoration: InputDecoration(
+                      labelText: 'HMAC signing key (optional)',
+                      hintText: old.signingKey.isEmpty
+                          ? 'Leave blank for unsigned requests'
+                          : 'Configured — enter a replacement',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  if (old.signingKey.isNotEmpty)
+                    CheckboxListTile(
+                      title: const Text('Remove saved HMAC key'),
+                      contentPadding: EdgeInsets.zero,
+                      value: removeSavedKey,
+                      onChanged: (value) =>
+                          setDialogState(() => removeSavedKey = value ?? false),
+                    ),
+                ],
               ),
             ),
           ),
@@ -303,9 +348,9 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(
-                Map<String, String>.from(selected),
-              ),
+              onPressed: () =>
+                  Navigator.of(dialogContext)
+                      .pop(Map<String, String>.from(selected)),
               child: const Text('Save'),
             ),
           ],
@@ -314,13 +359,14 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
     );
     if (!mounted || choices == null) return;
     final latest = _settings;
-    if (latest == null || index >= latest.addons.length ||
+    if (latest == null ||
+        index >= latest.addons.length ||
         latest.addons[index].id != old.id ||
-        latest.addons[index].endpoint != old.endpoint) return;
-    final domain = Uri.parse(old.endpoint).host.toLowerCase().replaceFirst(
-      RegExp(r'^www\.'),
-      '',
-    );
+        latest.addons[index].endpoint != old.endpoint)
+      return;
+    final domain = Uri.parse(old.endpoint).host
+        .toLowerCase()
+        .replaceFirst(RegExp(r'^www\.'), '');
     final label = old.label == domain || old.label == 'Music addon'
         ? _manifestLabel(health.name, domain)
         : old.label;
@@ -330,6 +376,11 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
       manifestUrl: old.manifestUrl,
       label: label,
       token: old.token,
+      signingKey: removeSavedKey
+          ? ''
+          : enteredKey.isNotEmpty
+          ? enteredKey
+          : old.signingKey,
       settings: choices,
       enabled: old.enabled,
     );
@@ -348,6 +399,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
   @override
   void dispose() {
     _url.dispose();
+    _hmacKey.dispose();
     if (widget.client == null) _client.close();
     super.dispose();
   }
@@ -381,7 +433,8 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
                   textInputAction: TextInputAction.done,
                   autocorrect: false,
                   enableSuggestions: false,
-                  enabled: !_loading &&
+                  enabled:
+                      !_loading &&
                       !_busy &&
                       addons.length < DiscoverySettings.maxAddons,
                   onSubmitted: (_) => _add(),
@@ -397,7 +450,8 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
               IconButton.filled(
                 key: const ValueKey('http-addon-add'),
                 tooltip: 'Add source',
-                onPressed: _loading ||
+                onPressed:
+                    _loading ||
                         _busy ||
                         _settings == null ||
                         addons.length >= DiscoverySettings.maxAddons
@@ -411,6 +465,26 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
                     : const Icon(Icons.add_rounded),
               ),
             ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: TextField(
+              key: const ValueKey('http-addon-hmac-key'),
+              controller: _hmacKey,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              enabled:
+                  !_loading &&
+                  !_busy &&
+                  addons.length < DiscoverySettings.maxAddons,
+              decoration: const InputDecoration(
+                labelText: 'HMAC signing key (optional)',
+                hintText: 'Leave empty for unsigned add-ons',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
           ),
           if (_loading) ...[
             const SizedBox(height: 12),

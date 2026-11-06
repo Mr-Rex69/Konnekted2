@@ -424,8 +424,10 @@ class _ClassicFullPlayerScreenState
         children: [
           Positioned.fill(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 520),
-              switchInCurve: Curves.easeOutCubic,
+              // The outgoing blurred cover should dissolve gradually into the
+              // next one rather than replacing the whole background mid-skip.
+              duration: const Duration(milliseconds: 950),
+              switchInCurve: Curves.easeInOutCubic,
               switchOutCurve: Curves.easeInCubic,
               layoutBuilder: (currentChild, previousChildren) {
                 return Stack(
@@ -576,42 +578,44 @@ class _ClassicFullPlayerScreenState
                 icon: Icons.more_vert,
                 albumColor: albumColor,
                 albumColorMode: albumColorMode,
-                onTap: () => unawaited(showFullPlayerSongMenu(
-                  context,
-                  song: song,
-                  player: _playerService,
-                  keepBrowseActions: true,
-                  extras: [
-                    LokalSongMenuAction(
-                      icon: Icons.lyrics_outlined,
-                      label: 'Lyrics',
-                      onTap: () => _setLyricsMode(true),
-                    ),
-                    LokalSongMenuAction(
-                      icon: Icons.dashboard_customize_outlined,
-                      label: 'Player layout',
-                      onTap: () => PlayerLayoutSheet.show(
-                        context,
-                        playerService: _playerService,
-                        currentMode: _playerScreenMode,
-                        onModeChanged: _setPlayerScreenMode,
-                        song: _playerService.currentSongNotifier.value,
+                onTap: () => unawaited(
+                  showFullPlayerSongMenu(
+                    context,
+                    song: song,
+                    player: _playerService,
+                    keepBrowseActions: true,
+                    extras: [
+                      LokalSongMenuAction(
+                        icon: Icons.lyrics_outlined,
+                        label: 'Lyrics',
+                        onTap: () => _setLyricsMode(true),
                       ),
-                    ),
-                    LokalSongMenuAction(
-                      icon: Icons.speed_rounded,
-                      label: 'Playback speed',
-                      onTap: () =>
-                          SpeedBottomSheet.show(context, _playerService),
-                    ),
-                    LokalSongMenuAction(
-                      icon: Icons.bedtime_outlined,
-                      label: 'Sleep timer',
-                      onTap: () =>
-                          SleepTimerBottomSheet.show(context, _playerService),
-                    ),
-                  ],
-                )),
+                      LokalSongMenuAction(
+                        icon: Icons.dashboard_customize_outlined,
+                        label: 'Player layout',
+                        onTap: () => PlayerLayoutSheet.show(
+                          context,
+                          playerService: _playerService,
+                          currentMode: _playerScreenMode,
+                          onModeChanged: _setPlayerScreenMode,
+                          song: _playerService.currentSongNotifier.value,
+                        ),
+                      ),
+                      LokalSongMenuAction(
+                        icon: Icons.speed_rounded,
+                        label: 'Playback speed',
+                        onTap: () =>
+                            SpeedBottomSheet.show(context, _playerService),
+                      ),
+                      LokalSongMenuAction(
+                        icon: Icons.bedtime_outlined,
+                        label: 'Sleep timer',
+                        onTap: () =>
+                            SleepTimerBottomSheet.show(context, _playerService),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -1536,9 +1540,8 @@ class _OutputDevicePopupState extends State<OutputDevicePopup> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               IconButton(
-                                onPressed: () => unawaited(
-                                  widget.playerService.previous(),
-                                ),
+                                onPressed: () =>
+                                    unawaited(widget.playerService.previous()),
                                 icon: const Icon(LucideIcons.skipBack),
                                 color: context.lokal.text,
                                 iconSize: 26,

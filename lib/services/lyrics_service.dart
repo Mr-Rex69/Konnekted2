@@ -1,4 +1,7 @@
 import 'lyrics_matching.dart';
+import 'lyrics_flac_vorbis_reader.dart';
+
+import 'package:flick/data/database.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -12,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/online_lyrics_service.dart';
 
@@ -37,6 +41,10 @@ class LyricsLine {
   final String text;
   final List<LyricsWord>? words;
 
+  /// Independently timed backing vocals that overlap the lead line.
+  final String? backgroundText;
+  final List<LyricsWord>? backgroundWords;
+
   /// Optional voice label carried by Mornye/lrc.red LRC (not sung text).
   final String? voice;
 
@@ -50,6 +58,8 @@ class LyricsLine {
     this.words,
     this.translation,
     this.voice,
+    this.backgroundText,
+    this.backgroundWords,
   });
 
   LyricsLine withTranslation(String? translation) => LyricsLine(
@@ -58,6 +68,20 @@ class LyricsLine {
     words: words,
     translation: translation,
     voice: voice,
+    backgroundText: backgroundText,
+    backgroundWords: backgroundWords,
+  );
+
+  LyricsLine withBackground(String text, List<LyricsWord>? words) => LyricsLine(
+    timestamp: timestamp,
+    text: this.text,
+    words: this.words,
+    translation: translation,
+    voice: voice,
+    backgroundText: backgroundText == null || backgroundText!.isEmpty
+        ? text
+        : '$backgroundText $text',
+    backgroundWords: [...?backgroundWords, ...?words],
   );
 }
 
@@ -161,6 +185,81 @@ class LyricsService {
       cleanedText,
       remaining == 0 && cleanedWords.isNotEmpty ? cleanedWords : null,
       voice,
+    );
+  }
+
+  /// The independently timed supporting voice is part of the lyrics, not a
+  /// translation or a second online source. Existing source ranking only
+  /// measures lead timing and can silently replace a complete local lyric set
+  /// with a lead-only word-timed copy.
+  static int supportingVocalCount(LyricsData? lyrics) =>
+      lyrics?.lines
+          .where(
+            (line) =>
+                line.voice == 'bg' ||
+                line.backgroundText?.trim().isNotEmpty == true,
+          )
+          .length ??
+      0;
+
+  /// Merge backing vocals from different representations of this SAME song
+  /// without replacing the chosen lead, translation, or word timings.
+  /// Each voice is matched by its own onset rather than the previous LRC row.
+  static LyricsData? mergeSupportingVocals(
+    LyricsData? preferred,
+    Iterable<LyricsData?> others,
+  ) {
+    if (preferred == null || preferred.lines.isEmpty) return preferred;
+    final lines = preferred.lines.toList();
+    final seen = <String>{};
+
+    String signature(String text, Duration time) =>
+        '${time.inMilliseconds}|${text.trim().replaceAll(RegExp(r'\s+'), ' ')}';
+
+    for (final line in lines) {
+      if (line.backgroundText?.trim().isNotEmpty != true) continue;
+      final onset = line.backgroundWords?.isNotEmpty == true
+          ? line.backgroundWords!.first.start
+          : line.timestamp;
+      seen.add(signature(line.backgroundText!, onset));
+    }
+
+    var changed = false;
+    for (final data in others) {
+      if (data == null || identical(data, preferred)) continue;
+      for (final voice in data.lines) {
+        // Supporting vocals may originate as independent LRC-only entries
+        // with no lead in their native metadata field.
+        final standalone = voice.voice == 'bg';
+        final text = (standalone ? voice.text : voice.backgroundText)?.trim();
+        if (text == null || text.isEmpty) continue;
+        final words = standalone ? voice.words : voice.backgroundWords;
+        final onset = words?.isNotEmpty == true
+            ? words!.first.start
+            : voice.timestamp;
+        if (!seen.add(signature(text, onset))) continue;
+        var target = 0;
+        final limit = onset + const Duration(milliseconds: 20);
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].timestamp <= limit &&
+              (lines[target].timestamp > limit ||
+                  lines[i].timestamp >= lines[target].timestamp)) {
+            target = i;
+          }
+        }
+        lines[target] = lines[target].withBackground(text, words);
+        changed = true;
+      }
+    }
+
+    if (!changed) return preferred;
+    return LyricsData(
+      lines: lines,
+      isSynchronized: preferred.isSynchronized,
+      rawContent: preferred.rawContent,
+      source: preferred.source,
+      language: preferred.language,
+      translationLanguage: preferred.translationLanguage,
     );
   }
 
@@ -290,19 +389,25 @@ class LyricsService {
     if (!fetchOnline ||
         source == 'local' ||
         (!refreshOnline &&
-            own?.lines.any((l) => l.words?.isNotEmpty == true) == true))
+            own?.lines.any(
+                  (l) => l.voice != 'bg' && l.words?.isNotEmpty == true,
+                ) ==
+                true))
       return own;
     if (own != null && await getManualLyricsPathForSong(song) != null)
       return own;
     final found = await fetchOnlineLyrics(song, stillCurrent: stillCurrent);
-    int rank(LyricsData? data) => data == null
+    int rank(LyricsData? data) =>
+        data == null ||
+            !data.lines.any((l) => l.voice != 'bg' && l.text.trim().isNotEmpty)
         ? 0
-        : data.lines.any((l) => l.words?.isNotEmpty == true)
+        : data.lines.any((l) => l.voice != 'bg' && l.words?.isNotEmpty == true)
         ? 3
         : data.isSynchronized
         ? 2
         : 1;
-    return rank(found) > rank(own) ? found : own ?? found;
+    final best = rank(found) > rank(own) ? found : own ?? found;
+    return mergeSupportingVocals(best, [own, found]);
   }
 
   /// Ordered online fallback, or an explicit source selected during playback.
@@ -442,31 +547,60 @@ class LyricsService {
       await clearManualLyricsPathForSong(song);
     }
 
+    // Read the FLAC's own lyrics regardless of whether an earlier Desktop
+    // handoff supplied word-timed lead lyrics. A lead-only payload is NOT a
+    // complete replacement for local independently timed backing vocals.
     final desktop = await _desktopLyrics(song);
-    if (desktop != null &&
-        desktop.lines.any((l) => l.words?.isNotEmpty == true)) {
-      _cache[filePath] = desktop;
-      return desktop;
-    }
-    final loaded = await _loadLyricsText(filePath);
-    if (loaded == null || loaded.content.trim().isEmpty) {
-      if (desktop != null) {
-        _cache[filePath] = desktop;
-        return desktop;
-      }
-      final embedded = await _loadEmbeddedLyricsText(filePath);
-      if (embedded != null && embedded.content.trim().isNotEmpty) {
-        final parsed = _parseLyrics(embedded.content, source: embedded.source);
-        _cache[filePath] = parsed;
-        return parsed;
-      }
-      _cache[filePath] = null;
-      return null;
-    }
+    final sidecar = await _loadLyricsText(filePath);
+    final embedded = await _loadEmbeddedLyricsText(song);
+    final sidecarData = sidecar?.content.trim().isNotEmpty == true
+        ? _parseLyrics(sidecar!.content, source: sidecar.source)
+        : null;
+    final embeddedData = embedded?.content.trim().isNotEmpty == true
+        ? _parseLyrics(embedded!.content, source: embedded.source)
+        : null;
+    AppLog.instance.add(
+      '[LyricsLocalParsed] embeddedBg=${supportingVocalCount(embeddedData)} '
+      'sidecarBg=${supportingVocalCount(sidecarData)} '
+      'desktopBg=${supportingVocalCount(desktop)}',
+    );
 
-    final parsed = _parseLyrics(loaded.content, source: loaded.source);
-    _cache[filePath] = parsed;
-    return parsed;
+    // A sidecar is the explicitly supplied local source. Otherwise preserve
+    // word timing from linked Desktop lyrics, but overlay backing vocals from
+    // the actual audio file even when the lead is equally word-synchronized.
+    bool hasLead(LyricsData? data) =>
+        data?.lines.any(
+          (line) => line.voice != 'bg' && line.text.trim().isNotEmpty,
+        ) ==
+        true;
+    final desktopTimed =
+        desktop?.lines.any(
+          (line) => line.voice != 'bg' && line.words?.isNotEmpty == true,
+        ) ==
+        true;
+    final ordered = <LyricsData?>[
+      sidecarData,
+      if (desktopTimed) desktop,
+      embeddedData,
+      desktop,
+    ];
+    // Never choose a bg-only field over another source's actual lead.
+    final primary = ordered.firstWhere(
+      hasLead,
+      orElse: () =>
+          ordered.firstWhere((data) => data != null, orElse: () => null),
+    );
+    final selected = mergeSupportingVocals(primary, [
+      embeddedData,
+      sidecarData,
+      desktop,
+    ]);
+    AppLog.instance.add(
+      '[LyricsLocalSelected] bg=${supportingVocalCount(selected)} '
+      'leadLines=${selected?.lines.where((l) => l.voice != 'bg').length ?? 0}',
+    );
+    _cache[filePath] = selected;
+    return selected;
   }
 
   static LyricsData? fromDesktop(Map<String, dynamic> payload) {
@@ -491,8 +625,23 @@ class LyricsService {
           ),
         );
       }
+      final backgroundWords = <LyricsWord>[];
+      for (final word
+          in (row['bgWords'] is List ? row['bgWords'] as List : const [])
+              .whereType<Map>()) {
+        if (word['time'] is! num || word['end'] is! num) continue;
+        backgroundWords.add(
+          LyricsWord(
+            start: seconds(word['time']),
+            end: seconds(word['end']),
+            text: "${word['word'] ?? ''}${word['space'] == true ? ' ' : ''}",
+          ),
+        );
+      }
+      final backgroundText = row['bgText']?.toString();
       final text = row['text']?.toString() ?? '';
-      if (text.trim().isEmpty) continue;
+      if (text.trim().isEmpty && (backgroundText?.trim().isEmpty ?? true))
+        continue;
       final (cleanText, cleanWords, voice) = _stripVoicePrefix(
         text,
         words.isEmpty ? null : words,
@@ -503,6 +652,8 @@ class LyricsService {
           timestamp: seconds(row['time']),
           text: cleanText,
           words: cleanWords,
+          backgroundText: backgroundText,
+          backgroundWords: backgroundWords.isEmpty ? null : backgroundWords,
           voice: voice ?? row['agent']?.toString(),
           translation: translation is Map
               ? translation['text']?.toString()
@@ -811,6 +962,8 @@ class LyricsService {
           words: resolveWords(lyrics, i),
           translation: line.translation,
           voice: line.voice,
+          backgroundText: line.backgroundText,
+          backgroundWords: line.backgroundWords,
         ),
       );
     }
@@ -971,7 +1124,24 @@ class LyricsService {
       } else {
         buffer.writeln('${formatTimestamp(line.timestamp)}${line.text}');
       }
-      // Portable bilingual LRC pairs share a timestamp in other players too.
+      // Re-emit separately timed backing vocals in enhanced-LRC exports.
+      if (line.backgroundText?.trim().isNotEmpty == true) {
+        final bgWords = line.backgroundWords;
+        if (bgWords != null && bgWords.isNotEmpty) {
+          final timed = bgWords
+              .map((w) => '<${_formatClock(w.start)}>${w.text}')
+              .join();
+          final tail = bgWords.last.end > bgWords.last.start
+              ? '<${_formatClock(bgWords.last.end)}>'
+              : '';
+          buffer.writeln('[bg:$timed$tail]');
+        } else {
+          buffer.writeln('[bg:${line.backgroundText}]');
+        }
+      }
+      // Duplicate the timestamp so external bilingual-LRC parsers can pair
+      // the translated line with the original rather than treating it as
+      // unsynchronized commentary.
       if (line.translation case final translation?
           when translation.trim().isNotEmpty &&
               translation.trim() != line.text.trim()) {
@@ -1000,23 +1170,132 @@ class LyricsService {
     return '${parent.path}${Platform.pathSeparator}$stem.lrc';
   }
 
-  Future<_LoadedLyrics?> _loadEmbeddedLyricsText(String filePath) async {
+  /// Android MediaStore / SAF can open a recording by content Uri when the
+  /// file path persisted by a scanner is inaccessible under scoped storage.
+  /// The Song model retains only filePath; the scanner also persists
+  /// mediaStoreUri on its Isar row, which playback can use but the lyrics
+  /// reader previously never attempted.
+  @visibleForTesting
+  static List<String> embeddedUriCandidates(
+    String filePath, {
+    String? mediaStoreUri,
+  }) {
+    final candidates = <String>[filePath];
+    final fallback = mediaStoreUri?.trim();
+    if (fallback != null &&
+        fallback.startsWith('content://') &&
+        !candidates.contains(fallback)) {
+      candidates.add(fallback);
+    }
+    return candidates;
+  }
+
+  Future<String?> _storedMediaStoreUriForSong(Song song) async {
+    // Only consult the local collection. External/network Song ids are not
+    // necessarily Isar ids and must never be redirected to unrelated files.
+    if (!Database.isInitialized || song.isNetworkSource || song.isExternal) {
+      return null;
+    }
+    final id = int.tryParse(song.id);
+    if (id == null) return null;
     try {
-      final result = await _storageChannel.invokeMapMethod<String, dynamic>(
-        'readEmbeddedLyrics',
-        {'audioUri': filePath},
+      final row = await Database.songs.get(id);
+      if (row == null || row.filePath != song.filePath) return null;
+      return row.mediaStoreUri;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Supporting vocals are an independently timed vocal lane, not a choice
+  /// of lead lyric source. Resolve them directly from the stored recording,
+  /// including its MediaStore URI, without relying on cached lead lyrics.
+  Future<LyricsData?> loadEmbeddedSupportingVocals(Song song) async {
+    if (song.filePath == null || song.filePath!.isEmpty) {
+      AppLog.instance.add('[LyricsBG] embedded skipped=no-audio-path');
+      return null;
+    }
+    try {
+      final embedded = await _loadEmbeddedLyricsText(song);
+      final parsed = embedded == null
+          ? null
+          : _parseLyrics(embedded.content, source: embedded.source);
+      final count = supportingVocalCount(parsed);
+      AppLog.instance.add(
+        '[LyricsBG] directExtract bg=$count '
+        'source=${embedded?.source ?? 'none'} '
+        'hasLead=${parsed?.lines.any((line) => line.voice != 'bg') == true}',
       );
-      final content = result?['content'] as String?;
-      if (content != null && content.trim().isNotEmpty) {
-        return _LoadedLyrics(
-          content: content,
-          source: result?['source'] as String? ?? 'embedded',
+      return count == 0 ? null : parsed;
+    } catch (error) {
+      AppLog.instance.add(
+        '[LyricsBG] embeddedExtractionError=${error.runtimeType}',
+      );
+      return null;
+    }
+  }
+
+  Future<_LoadedLyrics?> _loadEmbeddedLyricsText(Song song) async {
+    final filePath = song.filePath;
+    if (filePath == null || filePath.isEmpty) return null;
+    final storedUri = await _storedMediaStoreUriForSong(song);
+    final candidates = embeddedUriCandidates(
+      filePath,
+      mediaStoreUri: storedUri,
+    );
+    _LoadedLyrics? selected;
+    var nativeSuccess = 0;
+    var persistedUriUsed = false;
+    var bestCount = -1;
+    for (final uri in candidates) {
+      try {
+        final result = await _storageChannel.invokeMapMethod<String, dynamic>(
+          'readEmbeddedLyrics',
+          {'audioUri': uri},
+        );
+        final content = result?['content'] as String?;
+        if (content == null || content.trim().isEmpty) continue;
+        nativeSuccess++;
+        final count = FlacVorbisLyricsReader.backgroundCount(content);
+        if (count > bestCount) {
+          bestCount = count;
+          persistedUriUsed = uri != filePath;
+          selected = _LoadedLyrics(
+            content: content,
+            source: (result?['source'] as String?) ?? 'embedded',
+          );
+        }
+      } catch (error) {
+        AppLog.instance.add(
+          '[LyricsEmbedded] nativeReadFailed='
+          '${error.runtimeType} usingMediaStore=${uri != filePath}',
         );
       }
-    } catch (_) {
-      // Best-effort lookup. Fall back to sidecar lookup.
     }
-    return null;
+
+    // A second, Flutter-native reader also supports filesystem-backed FLACs.
+    // Select the version containing most backing events, not merely the
+    // first metadata value Android reports.
+    final path = _resolveLocalPath(filePath);
+    final direct = path == null
+        ? null
+        : await FlacVorbisLyricsReader.readFile(path);
+    final directBg = FlacVorbisLyricsReader.backgroundCount(direct);
+    if (direct != null && directBg > bestCount) {
+      selected = _LoadedLyrics(
+        content: direct,
+        source: 'embedded:vorbis:direct',
+      );
+      bestCount = directBg;
+    }
+
+    AppLog.instance.add(
+      '[LyricsEmbedded] attempts=${candidates.length} '
+      'nativeSuccess=$nativeSuccess persistedMediaStoreUri='
+      '${storedUri != null} usedMediaStore=$persistedUriUsed '
+      'directBg=$directBg selectedBg=${bestCount.clamp(0, 1000000)}',
+    );
+    return selected;
   }
 
   Future<_LoadedLyrics?> _loadLyricsFromAbsolutePath(
@@ -1123,11 +1402,173 @@ class LyricsService {
     }
   }
 
+  /// Desktop stores full-resolution lead, backing and translation timelines
+  /// in the FLAC VORBIS_COMMENT named LOKAL_LYRICS. Portable LYRICS strips
+  /// backing voices into parentheses, so parsing only that tag loses the lane.
+  LyricsData? _parseLokalPrivateLyrics(String raw, {String? source}) {
+    if (!FlacVorbisLyricsReader.isLokalPrivateLyrics(raw)) return null;
+    try {
+      final data = jsonDecode(raw) as Map;
+      Duration? at(Object? seconds) {
+        if (seconds is! num || !seconds.isFinite || seconds < 0) return null;
+        return Duration(microseconds: (seconds * 1000000).round());
+      }
+
+      List<LyricsWord>? units(Object? entries) {
+        if (entries is! List) return null;
+        final output = <LyricsWord>[];
+        for (final unit in entries) {
+          if (unit is! List || unit.length < 3 || unit[0] is! String) continue;
+          final start = at(unit[1]);
+          final end = at(unit[2]);
+          if (start == null || end == null || end < start) continue;
+          final spaced = unit.length > 3 && unit[3] == 1;
+          output.add(
+            LyricsWord(
+              start: start,
+              end: end,
+              text: (unit[0] as String) + (spaced ? ' ' : ''),
+            ),
+          );
+        }
+        return output.isEmpty ? null : output;
+      }
+
+      final lines = <LyricsLine>[];
+      for (final value in data['lines'] as List) {
+        if (value is! Map) continue;
+        final time = at(value['t']);
+        if (time == null || value['x'] is! String) continue;
+        final text = value['x'] as String;
+        final background =
+            value['b'] is String && (value['b'] as String).trim().isNotEmpty
+            ? value['b'] as String
+            : null;
+        lines.add(
+          LyricsLine(
+            timestamp: time,
+            text: text,
+            words: units(value['w']),
+            backgroundText: background,
+            backgroundWords: units(value['bw']),
+            translation: value['tr'] is String ? value['tr'] as String : null,
+            voice: value['a'] is String ? value['a'] as String : null,
+          ),
+        );
+      }
+      if (lines.isEmpty) return null;
+      lines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      return LyricsData(
+        lines: lines,
+        isSynchronized: data['sync'] != 'none',
+        source: source ?? 'embedded:lokal',
+        rawContent: raw,
+        language: data['language'] is String
+            ? data['language'] as String
+            : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Desktop's post-processing separates a final parenthesized reply from
+  /// the sung lead. BiniLyrics TTML often encodes this as ordinary timed text,
+  /// rather than an explicit x-bg role, so Mobile must split the same units.
+  ///
+  /// Avoid splitting mid-word suffixes such as "wait(ing)", lines containing
+  /// only "(oh)", and any lyric that already has a structural backing lane.
+  LyricsLine _splitTrailingBackingVoice(LyricsLine line) {
+    if (line.voice == 'bg' ||
+        line.backgroundText?.trim().isNotEmpty == true ||
+        !line.text.trimRight().endsWith(')'))
+      return line;
+    final text = line.text.trimRight();
+    var depth = 0;
+    int? opening;
+    for (var i = text.length - 1; i >= 0; i--) {
+      if (text[i] == ')') {
+        depth++;
+      } else if (text[i] == '(') {
+        depth--;
+        if (depth == 0) {
+          opening = i;
+          break;
+        }
+      }
+    }
+    if (opening == null || opening == 0) return line;
+    // A suffix inside a word is not a second vocalist: "wait(ing)".
+    // Real trailing replies have a word boundary before the open bracket.
+    if (!RegExp(r'\s').hasMatch(text[opening - 1])) return line;
+    final lead = text.substring(0, opening).trimRight();
+    final backing = text.substring(opening).trim();
+    if (lead.isEmpty ||
+        !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(backing))
+      return line;
+
+    final words = line.words;
+    List<LyricsWord>? leadWords;
+    List<LyricsWord>? backingWords;
+    if (words?.isNotEmpty == true) {
+      // Only divide genuinely timed syllables at a whole-unit boundary.
+      // If a bracket starts within a syllable, keep its original lyric and
+      // timings rather than fabricate a second vocalist's timestamps.
+      var prefix = '';
+      var splitAt = -1;
+      for (var i = 0; i < words!.length - 1; i++) {
+        prefix += words[i].text;
+        final normalized = prefix.replaceAll(RegExp(r'\s+'), ' ').trimRight();
+        if (normalized == lead &&
+            words[i + 1].text.trimLeft().startsWith('(')) {
+          splitAt = i + 1;
+          break;
+        }
+      }
+      if (splitAt <= 0) return line;
+      leadWords = words.sublist(0, splitAt);
+      backingWords = words.sublist(splitAt);
+    }
+
+    return LyricsLine(
+      timestamp: line.timestamp,
+      text: lead,
+      words: leadWords,
+      translation: line.translation,
+      voice: line.voice,
+      backgroundText: backing,
+      backgroundWords: backingWords,
+    );
+  }
+
+  LyricsData _splitTrailingBackingVoices(LyricsData lyrics) {
+    if (!lyrics.isSynchronized) return lyrics;
+    var changed = false;
+    final lines = lyrics.lines.map((line) {
+      final updated = _splitTrailingBackingVoice(line);
+      if (!identical(updated, line)) changed = true;
+      return updated;
+    }).toList();
+    if (!changed) return lyrics;
+    return LyricsData(
+      lines: lines,
+      isSynchronized: lyrics.isSynchronized,
+      source: lyrics.source,
+      rawContent: lyrics.rawContent,
+      language: lyrics.language,
+      translationLanguage: lyrics.translationLanguage,
+    );
+  }
+
   LyricsData _parseLyrics(String raw, {String? source}) {
     final trimmed = raw.trim();
+    if (trimmed.startsWith('{')) {
+      final private = _parseLokalPrivateLyrics(trimmed, source: source);
+      if (private != null) return _splitTrailingBackingVoices(private);
+    }
     if (trimmed.startsWith('<?xml') || trimmed.startsWith('<')) {
       final xmlData = _parseXmlLyrics(trimmed, source: source);
-      if (xmlData != null) return xmlData;
+      if (xmlData != null) return _splitTrailingBackingVoices(xmlData);
     }
 
     final normalized = raw
@@ -1144,6 +1585,10 @@ class LyricsService {
       caseSensitive: false,
     );
     final metadataPattern = RegExp(r'^\s*\[[a-zA-Z]+:.*\]\s*$');
+    final backingPattern = RegExp(
+      r'^\s*\[bg\s*:(.*)\]\s*$',
+      caseSensitive: false,
+    );
 
     var offsetMs = 0;
     var hasTimestamps = false;
@@ -1152,9 +1597,12 @@ class LyricsService {
     // line is that line's translation; the rest are notes and credits.
     final plainLines = <LyricsLine>[];
     final translations = <(List<int>, String)>[];
-    // An optional association tag identifies known translated rows in
-    // simultaneous vocals and enhanced bilingual exports. Untagged enhanced
-    // rows retain their independent vocal identities.
+    // A backing voice's timestamp, not the previous text row, determines
+    // which lead it belongs to. Some enhanced-LRC tags group [bg:] rows.
+    final backingRows = <(String, List<LyricsWord>, Duration)>[];
+    // An optional association tag is emitted only for simultaneous vocal
+    // groups, where an otherwise portable timestamped translation would be
+    // indistinguishable from another sung voice.
     final taggedTranslation = RegExp(r'^\[lokaltr:(\d+)\]$');
     int? taggedSourceIndex;
     var previous = <int>[]; // indexes the last stamped row made
@@ -1176,6 +1624,58 @@ class LyricsService {
       if (marker != null) {
         taggedSourceIndex = int.tryParse(marker.group(1)!);
         previous = [];
+        continue;
+      }
+
+      // [bg:] is timed separately and might be interleaved, separated by
+      // blank lines or collected in its own block. Keep it until all leads
+      // have been parsed; never interpret it as metadata or translation.
+      final backing = backingPattern.firstMatch(line);
+      if (backing != null) {
+        final body = backing.group(1)!;
+        final text = body.replaceAll(_wordTimestampPattern, '').trim();
+        if (text.isNotEmpty) {
+          final rawWords =
+              (_extractWords(body, offsetMs) ?? const <LyricsWord>[])
+                  .where((w) => w.text.trim().isNotEmpty)
+                  .toList();
+          final stamps = _wordTimestampPattern.allMatches(body).toList();
+          final tail = stamps.isEmpty
+              ? null
+              : _parseTimestamp(stamps.last.group(1) ?? '');
+          final tailMs = tail == null ? null : tail.inMilliseconds + offsetMs;
+          final words = <LyricsWord>[
+            for (var i = 0; i < rawWords.length; i++)
+              LyricsWord(
+                start: rawWords[i].start,
+                end:
+                    i + 1 < rawWords.length &&
+                        rawWords[i + 1].start > rawWords[i].start
+                    ? rawWords[i + 1].start
+                    : i + 1 == rawWords.length &&
+                          tailMs != null &&
+                          tailMs > rawWords[i].start.inMilliseconds
+                    ? Duration(milliseconds: tailMs)
+                    : rawWords[i].start + const Duration(milliseconds: 500),
+                text: rawWords[i].text,
+              ),
+          ];
+          if (words.isNotEmpty) {
+            // Timed supporting vocals are real lyric events even if there is
+            // no lead row in the same tag. Do not discard bg-only payloads.
+            hasTimestamps = true;
+            backingRows.add((text, words, words.first.start));
+          } else if (previous.isNotEmpty) {
+            // Untimed annotations can still follow their immediately
+            // preceding lead; timed vocals never depend on textual ordering.
+            for (final index in previous) {
+              parsedLines[index] = parsedLines[index].withBackground(
+                text,
+                null,
+              );
+            }
+          }
+        }
         continue;
       }
 
@@ -1242,6 +1742,33 @@ class LyricsService {
     }
 
     if (hasTimestamps) {
+      if (parsedLines.isEmpty && backingRows.isNotEmpty) {
+        // Some Vorbis tags contain ONLY [bg:] entries. Preserve them as
+        // independently timed vocals; another source may supply the lead.
+        for (final (text, words, onset) in backingRows) {
+          parsedLines.add(
+            LyricsLine(timestamp: onset, text: text, words: words, voice: 'bg'),
+          );
+        }
+        backingRows.clear();
+      }
+      // Pair background vocals with the latest lead whose timestamp is at
+      // or before the background onset. This also handles [bg:] rows that
+      // appear before their lead in file order.
+      for (final (text, words, onset) in backingRows) {
+        if (parsedLines.isEmpty) break;
+        var target = 0;
+        final tolerance = onset + const Duration(milliseconds: 20);
+        for (var i = 0; i < parsedLines.length; i++) {
+          final candidate = parsedLines[i].timestamp;
+          if (candidate <= tolerance &&
+              (parsedLines[target].timestamp > tolerance ||
+                  candidate >= parsedLines[target].timestamp)) {
+            target = i;
+          }
+        }
+        parsedLines[target] = parsedLines[target].withBackground(text, words);
+      }
       // A stray note isn't a translation: a translated file has one under at
       // least half its sung lines.
       final sung = parsedLines.map((line) => line.timestamp).toSet().length;
@@ -1279,11 +1806,13 @@ class LyricsService {
         i = end;
       }
       bilingualLines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return LyricsData(
-        lines: bilingualLines,
-        isSynchronized: true,
-        source: source,
-        rawContent: raw,
+      return _splitTrailingBackingVoices(
+        LyricsData(
+          lines: bilingualLines,
+          isSynchronized: true,
+          source: source,
+          rawContent: raw,
+        ),
       );
     }
 
@@ -1325,6 +1854,40 @@ class LyricsService {
         return Duration(microseconds: (seconds * 1000000).round());
       }
 
+      // Apple Music/Bini TTML can mark answering singers with ttm:role="x-bg".
+      // Namespaced attributes must be read by local name, not getAttribute(),
+      // which misses the ttm prefix on Android.
+      String? role(XmlElement element) => element.attributes
+          .where((attribute) => attribute.name.local == 'role')
+          .firstOrNull
+          ?.value;
+
+      String leadText(XmlNode node) {
+        if (node is XmlText) return node.value;
+        if (node is! XmlElement) return '';
+        if (const {'x-bg', 'x-translation', 'x-roman'}.contains(role(node))) {
+          return '';
+        }
+        return node.children.map(leadText).join();
+      }
+
+      String backingText(XmlElement paragraph) {
+        final parts = <String>[];
+        void walk(XmlNode node) {
+          if (node is! XmlElement) return;
+          if (role(node) == 'x-bg') {
+            final text = node.innerText.trim();
+            if (text.isNotEmpty) parts.add(text);
+            return;
+          }
+          if (const {'x-translation', 'x-roman'}.contains(role(node))) return;
+          for (final child in node.children) walk(child);
+        }
+
+        walk(paragraph);
+        return parts.join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+      }
+
       final paragraphs = document.descendants.whereType<XmlElement>().where(
         (e) => e.name.local == 'p',
       );
@@ -1332,18 +1895,27 @@ class LyricsService {
       final plain = <LyricsLine>[];
       for (final paragraph in paragraphs) {
         final start = time(paragraph.getAttribute('begin'));
-        final rawText = paragraph.innerText
+        final rawText = leadText(paragraph)
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
-        if (rawText.isEmpty) continue;
+        final bgText = backingText(paragraph);
+        if (rawText.isEmpty && bgText.isEmpty) continue;
         if (start == null) {
           final (text, _, voice) = _stripVoicePrefix(rawText, null);
-          plain.add(
-            LyricsLine(timestamp: Duration.zero, text: text, voice: voice),
-          );
+          if (text.isNotEmpty) {
+            plain.add(
+              LyricsLine(
+                timestamp: Duration.zero,
+                text: text,
+                voice: voice,
+                backgroundText: bgText.isEmpty ? null : bgText,
+              ),
+            );
+          }
           continue;
         }
         final words = <LyricsWord>[];
+        final bgWords = <LyricsWord>[];
         for (final span in paragraph.descendants.whereType<XmlElement>().where(
           (e) => e.name.local == 'span',
         )) {
@@ -1352,17 +1924,35 @@ class LyricsService {
           if (begin == null ||
               end == null ||
               end < begin ||
-              span.innerText.trim().isEmpty)
+              span.innerText.trim().isEmpty) {
             continue;
+          }
           if (span.descendants.whereType<XmlElement>().any(
             (child) => child.getAttribute('begin') != null,
           ))
             continue;
+          // The x-bg role is often on an untimed enclosing span. Walk back
+          // to the paragraph to assign each timed leaf to its own vocal lane.
+          var owner = span as XmlNode?;
+          var backing = false;
+          var skipped = false;
+          while (owner != null && !identical(owner, paragraph)) {
+            if (owner is XmlElement) {
+              final marking = role(owner);
+              if (marking == 'x-bg') backing = true;
+              if (marking == 'x-roman' || marking == 'x-translation') {
+                skipped = true;
+                break;
+              }
+            }
+            owner = owner.parent;
+          }
+          if (skipped) continue;
           final tail = span.nextSibling;
           final separator = tail is XmlText && tail.value.trim().isEmpty
               ? tail.value
               : '';
-          words.add(
+          (backing ? bgWords : words).add(
             LyricsWord(
               start: begin,
               end: end,
@@ -1374,12 +1964,26 @@ class LyricsService {
           rawText,
           words.isEmpty ? null : words,
         );
+        // A background-only TTML paragraph must not become a new lead row.
+        if (text.isEmpty && bgText.isNotEmpty) {
+          lines.add(
+            LyricsLine(
+              timestamp: bgWords.isNotEmpty ? bgWords.first.start : start,
+              text: bgText,
+              words: bgWords.isEmpty ? null : bgWords,
+              voice: 'bg',
+            ),
+          );
+          continue;
+        }
         lines.add(
           LyricsLine(
             timestamp: start,
             text: text,
             words: cleanedWords,
             voice: voice,
+            backgroundText: bgText.isEmpty ? null : bgText,
+            backgroundWords: bgWords.isEmpty ? null : bgWords,
           ),
         );
       }

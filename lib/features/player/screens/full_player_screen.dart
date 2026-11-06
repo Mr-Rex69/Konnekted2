@@ -1,4 +1,3 @@
-
 import 'desktop_remote_full_player.dart';
 
 import 'package:flick/providers/lokal_remote_provider.dart';
@@ -34,9 +33,13 @@ import 'package:flick/services/motion_art/animated_artwork_service.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 
 import '../widgets/player_transport_controls.dart';
-import '../widgets/artwork_gradient_backdrop.dart';
-import '../widgets/artwork_mesh_blur_backdrop.dart';
+import '../widgets/player_song_blur_background.dart';
 import '../widgets/lyric_motion_line.dart';
+import '../widgets/flowing_background_vocals.dart';
+import '../widgets/lyrics_focus_timing.dart';
+
+import 'package:flick/core/utils/app_log.dart';
+
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
 import '../widgets/immersive_lyrics_stage.dart';
@@ -240,6 +243,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   int _lyricsRequest = 0;
   LyricsData? _lyrics;
   LyricsData? _sublineLyrics;
+  LyricsData? _embeddedBackgroundLyrics;
   String? _lyricsForSongId;
 
   bool _isFav = false;
@@ -508,10 +512,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final request = ++_lyricsRequest;
     setState(() {
       _lyricsLoading = true;
-      if (_lyricsForSongId != song.id) _lyrics = null;
+      if (_lyricsForSongId != song.id) {
+        _lyrics = null;
+        _embeddedBackgroundLyrics = null;
+      }
       _lyricsForSongId = song.id;
     });
     _sublineLyrics = null;
+    // Always inspect the audio's independent bg lane. A lead-only online,
+    // cached or manually selected source must never suppress the backing voice.
+    unawaited(_loadEmbeddedBackgroundLyrics(song, request));
     final warm = !force && !refreshOnline && _lyricsSource == 'auto';
     try {
       // Display local sidecar/embedded lyrics as soon as filesystem lookup
@@ -532,7 +542,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               song.id)
         return;
       setState(() {
-        _lyrics = local;
+        _lyrics = LyricsService.mergeSupportingVocals(local, [
+          _embeddedBackgroundLyrics,
+        ]);
         _lyricsLoading = local == null;
       });
       final best = warm
@@ -555,11 +567,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               song.id)
         return;
       setState(() {
-        if (lyricQualityRank(best) > lyricQualityRank(_lyrics)) {
-          _lyrics = best;
-        } else if (_lyrics == null) {
-          _lyrics = best;
-        }
+        final selected = lyricQualityRank(best) > lyricQualityRank(_lyrics)
+            ? best
+            : _lyrics ?? best;
+        // An online lead-timing upgrade must not remove independently timed
+        // backing vocals that came from the audio file.
+        _lyrics = LyricsService.mergeSupportingVocals(selected, [
+          _lyrics,
+          best,
+          _embeddedBackgroundLyrics,
+        ]);
         _lyricsLoading = false;
       });
     } catch (_) {
@@ -579,6 +596,30 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       _lyricsProgress.animateTo(target, curve: Curves.easeInOutCubicEmphasized);
     }
     if (open) unawaited(_loadLyrics());
+  }
+
+  Future<void> _loadEmbeddedBackgroundLyrics(Song song, int request) async {
+    LyricsData? background;
+    try {
+      background = await _lyricsService
+          .loadEmbeddedSupportingVocals(song)
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
+    } catch (error) {
+      AppLog.instance.add(
+        '[LyricsBG] fullscreenLookupError=${error.runtimeType}',
+      );
+    }
+    if (!mounted || request != _lyricsRequest || _lyricsForSongId != song.id)
+      return;
+    final selected = LyricsService.mergeSupportingVocals(_lyrics, [background]);
+    AppLog.instance.add(
+      '[LyricsBG] fullscreenVisible embedded=${LyricsService.supportingVocalCount(background)} '
+      'selected=${LyricsService.supportingVocalCount(selected)}',
+    );
+    setState(() {
+      _embeddedBackgroundLyrics = background;
+      _lyrics = selected;
+    });
   }
 
   void _toggleImmersiveLyrics() {
@@ -1370,7 +1411,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final videoSong = _videoOverrideSong ?? widget.videoSong;
     final videoId = _activeVideoId;
     if (_videoActive && _videoOutputLease?.isReleased != false) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
     if (_videoFullscreen && videoSong != null && videoId != null) {
       return _videoScaffold(videoSong, videoId);
@@ -1380,225 +1424,242 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _immersiveLyrics && _usesEmbeddedVideo && videoSong != null && videoId != null
-        ? _embeddedVideoSpace(videoSong, videoId)
-        : ValueListenableBuilder<Song?>(
-        valueListenable: _player.currentSongNotifier,
-        builder: (context, playingSong, _) {
-          final song = videoSong ?? playingSong;
-          if (song == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final clearViewAvailable =
-              fullCover &&
-              _motionEnabled(song) &&
-              _canvasReadyForSong == song.id &&
-              !_showLyrics &&
-              !_immersiveLyrics &&
-              !_queue.engaged;
-          final hidden = clearViewAvailable && _canvasHidden;
-          return GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _immersiveLyrics
-                ? _toggleImmersiveLyrics
-                : (clearViewAvailable ? _toggleCanvasControls : null),
-            onLongPress: _immersiveLyrics ? _showSpaceOptions : null,
-            child: Stack(
-              key: _playerBoundsKey,
-              fit: StackFit.expand,
-              children: [
-                ArtworkGradientBackdrop(colors: colors, vibrant: true),
-                ArtworkMeshBlurBackdrop(
-                  song: song,
-                  preserveArtworkContrast: fullCover,
-                ),
-                if (fullCover)
-                  FadeTransition(
-                    opacity: _canvasChrome,
-                    child: const IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0x33000000),
-                              Color(0x08000000),
-                              Color(0x10000000),
-                              Color(0x40000000),
-                            ],
-                            stops: [0, .28, .66, 1],
-                          ),
-                        ),
+      body:
+          _immersiveLyrics &&
+              _usesEmbeddedVideo &&
+              videoSong != null &&
+              videoId != null
+          ? _embeddedVideoSpace(videoSong, videoId)
+          : ValueListenableBuilder<Song?>(
+              valueListenable: _player.currentSongNotifier,
+              builder: (context, playingSong, _) {
+                final song = videoSong ?? playingSong;
+                if (song == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final clearViewAvailable =
+                    fullCover &&
+                    _motionEnabled(song) &&
+                    _canvasReadyForSong == song.id &&
+                    !_showLyrics &&
+                    !_immersiveLyrics &&
+                    !_queue.engaged;
+                final hidden = clearViewAvailable && _canvasHidden;
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _immersiveLyrics
+                      ? _toggleImmersiveLyrics
+                      : (clearViewAvailable ? _toggleCanvasControls : null),
+                  onLongPress: _immersiveLyrics ? _showSpaceOptions : null,
+                  child: Stack(
+                    key: _playerBoundsKey,
+                    fit: StackFit.expand,
+                    children: [
+                      PlayerSongBlurBackground(
+                        song: song,
+                        colors: colors,
+                        fullCover: fullCover,
                       ),
-                    ),
-                  )
-                else
-                  Container(color: Colors.black.withValues(alpha: 0.10)),
-                if (fullCover) _fullscreenArtwork(song),
-                // Keep the controls, title and quality metadata above the
-                // fullscreen Canvas while its artwork travels out of the
-                // mini-player. The same chrome continues its sheet motion;
-                // the Canvas clear-view toggle still fades this entire tree.
-                LokalPlayerChrome(
-                  enabled: fullCover,
-                  child: IgnorePointer(
-                    ignoring: hidden,
-                    child: FadeTransition(
-                      opacity: _canvasChrome,
-                      child: TickerMode(
-                        enabled: !hidden,
-                        child: SafeArea(
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              23,
-                              0,
-                              23,
-                              14, // keeps the chip row clear of the system nav bar
+                      if (fullCover)
+                        FadeTransition(
+                          opacity: _canvasChrome,
+                          child: const IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x33000000),
+                                    Color(0x08000000),
+                                    Color(0x10000000),
+                                    Color(0x40000000),
+                                  ],
+                                  stops: [0, .28, .66, 1],
+                                ),
+                              ),
                             ),
-                            child: LayoutBuilder(
-                              builder: (context, c) {
-                                final compact = c.maxHeight < 640;
-                                return AnimatedBuilder(
-                                  animation: _lyricsProgress,
-                                  builder: (context, _) {
-                                    final l = _lyricsProgress.value;
-                                    return Column(
-                                      children: [
-                                        ClipRect(
-                                          child: Align(
-                                            heightFactor: 1 - l,
-                                            alignment: Alignment.topCenter,
-                                            child: IgnorePointer(
-                                              ignoring: _showLyrics,
-                                              child: Opacity(
-                                                opacity: 1 - l,
-                                                child: _spaceHidden(
-                                                  _topBar(
+                          ),
+                        )
+                      else
+                        Container(color: Colors.black.withValues(alpha: 0.10)),
+                      if (fullCover) _fullscreenArtwork(song),
+                      // Keep the controls, title and quality metadata above the
+                      // fullscreen Canvas while its artwork travels out of the
+                      // mini-player. The same chrome continues its sheet motion;
+                      // the Canvas clear-view toggle still fades this entire tree.
+                      LokalPlayerChrome(
+                        enabled: fullCover,
+                        child: IgnorePointer(
+                          ignoring: hidden,
+                          child: FadeTransition(
+                            opacity: _canvasChrome,
+                            child: TickerMode(
+                              enabled: !hidden,
+                              child: SafeArea(
+                                child: Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    23,
+                                    0,
+                                    23,
+                                    14, // keeps the chip row clear of the system nav bar
+                                  ),
+                                  child: LayoutBuilder(
+                                    builder: (context, c) {
+                                      final compact = c.maxHeight < 640;
+                                      return AnimatedBuilder(
+                                        animation: _lyricsProgress,
+                                        builder: (context, _) {
+                                          final l = _lyricsProgress.value;
+                                          return Column(
+                                            children: [
+                                              ClipRect(
+                                                child: Align(
+                                                  heightFactor: 1 - l,
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: IgnorePointer(
+                                                    ignoring: _showLyrics,
+                                                    child: Opacity(
+                                                      opacity: 1 - l,
+                                                      child: _spaceHidden(
+                                                        _topBar(
+                                                          song,
+                                                          isCasting,
+                                                          diagnostics,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              Expanded(
+                                                child: SizedBox.expand(
+                                                  key: _spacePanelKey,
+                                                  child: _panelStage(
                                                     song,
-                                                    isCasting,
-                                                    diagnostics,
+                                                    compact,
+                                                    fullCover: fullCover,
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: SizedBox.expand(
-                                            key: _spacePanelKey,
-                                            child: _panelStage(
-                                              song,
-                                              compact,
-                                              fullCover: fullCover,
-                                            ),
-                                          ),
-                                        ),
-                                        // Keep the timeline anchor painted in Space mode.
-                                        CompositedTransformTarget(
-                                          link: _seekbarSubtitleLink,
-                                          child: _spaceHidden(_seekRow()),
-                                        ),
-                                        // The timeline sits above the transport pads,
-                                        // rather than being visually glued to them.
-                                        SizedBox(height: compact ? 12 : 24),
-                                        SizedBox(
-                                          height: lerpDouble(
-                                            compact ? 6 : 10,
-                                            6,
-                                            l,
-                                          ),
-                                        ),
-                                        _spaceHidden(_transport(compact, l)),
-                                        ClipRect(
-                                          child: Align(
-                                            heightFactor: 1 - l,
-                                            alignment: Alignment.topCenter,
-                                            child: IgnorePointer(
-                                              ignoring: _showLyrics,
-                                              child: Opacity(
-                                                opacity: 1 - l,
-                                                child: Padding(
-                                                  padding: EdgeInsets.only(
-                                                    top: compact ? 13 : 17,
-                                                  ),
-                                                  child: _spaceHidden(
-                                                    _optionsStrip(),
+                                              // Keep the timeline anchor painted in Space mode.
+                                              CompositedTransformTarget(
+                                                link: _seekbarSubtitleLink,
+                                                child: _spaceHidden(_seekRow()),
+                                              ),
+                                              // The timeline sits above the transport pads,
+                                              // rather than being visually glued to them.
+                                              SizedBox(
+                                                height: compact ? 12 : 24,
+                                              ),
+                                              SizedBox(
+                                                height: lerpDouble(
+                                                  compact ? 6 : 10,
+                                                  6,
+                                                  l,
+                                                ),
+                                              ),
+                                              _spaceHidden(
+                                                _transport(compact, l),
+                                              ),
+                                              ClipRect(
+                                                child: Align(
+                                                  heightFactor: 1 - l,
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: IgnorePointer(
+                                                    ignoring: _showLyrics,
+                                                    child: Opacity(
+                                                      opacity: 1 - l,
+                                                      child: Padding(
+                                                        padding:
+                                                            EdgeInsets.only(
+                                                              top: compact
+                                                                  ? 13
+                                                                  : 17,
+                                                            ),
+                                                        child: _spaceHidden(
+                                                          _optionsStrip(),
+                                                        ),
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(height: compact ? 13 : 17),
-                                        _spaceHidden(_chipRow()),
-                                      ],
-                                    );
-                                  },
-                                );
-                              },
+                                              SizedBox(
+                                                height: compact ? 13 : 17,
+                                              ),
+                                              _spaceHidden(_chipRow()),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-                if (_spaceLayerMounted)
-                  Positioned.fill(
-                    child: SpaceCoverBloomReveal(
-                      coverRect: _spaceCoverRect,
-                      coverRectResolver: () =>
-                          _spaceArtworkBounds(_spaceFullCover),
-                      coverMotion: _spaceCoverMotion,
-                      coverCornerRadiusResolver: _spaceArtworkCornerRadius,
-                      canvasMode: _spaceCanvasMode,
-                      coverCornerRadius: _spaceFullCover ? 0 : 20,
-                      surfaceColor: colors.last,
-                      progress: _spaceProgress,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          SeekbarAlignedSpaceSubtitle(
-                            seekbarLink: _seekbarSubtitleLink,
-                            subtitle: _videoActive
-                                ? ValueListenableBuilder<bool>(
-                                    valueListenable:
-                                        _videoController.timingAvailableNotifier,
-                                    builder: (context, native, _) => native
-                                        ? _spaceSubtitle(song)
-                                        : const Text(
-                                            'Waiting for video timing',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                  )
-                                : _spaceSubtitle(song),
+                      if (_spaceLayerMounted)
+                        Positioned.fill(
+                          child: SpaceCoverBloomReveal(
+                            coverRect: _spaceCoverRect,
+                            coverRectResolver: () =>
+                                _spaceArtworkBounds(_spaceFullCover),
+                            coverMotion: _spaceCoverMotion,
+                            coverCornerRadiusResolver:
+                                _spaceArtworkCornerRadius,
+                            canvasMode: _spaceCanvasMode,
+                            coverCornerRadius: _spaceFullCover ? 0 : 20,
+                            surfaceColor: colors.last,
+                            progress: _spaceProgress,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                SeekbarAlignedSpaceSubtitle(
+                                  seekbarLink: _seekbarSubtitleLink,
+                                  subtitle: _videoActive
+                                      ? ValueListenableBuilder<bool>(
+                                          valueListenable: _videoController
+                                              .timingAvailableNotifier,
+                                          builder: (context, native, _) =>
+                                              native
+                                              ? _spaceSubtitle(song)
+                                              : const Text(
+                                                  'Waiting for video timing',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                        )
+                                      : _spaceSubtitle(song),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      if (_spaceLayerMounted)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            ignoring: !_immersiveLyrics,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _toggleImmersiveLyrics,
+                              onLongPress: _showSpaceOptions,
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                if (_spaceLayerMounted)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      ignoring: !_immersiveLyrics,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _toggleImmersiveLyrics,
-                        onLongPress: _showSpaceOptions,
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                  ),
-              ],
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 
@@ -1833,6 +1894,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         song: track,
                         radius: 0,
                         crossfade: false,
+                        onArtworkRecovered: current
+                            ? (cover) => _player.recoverCurrentOnlineArtwork(
+                                songId: track.id,
+                                originalArtwork: track.albumArt,
+                                recoveredArtwork: cover,
+                              )
+                            : null,
                       );
                       Widget frame(Widget artwork, bool canvas) {
                         if (current) _reportCanvas(track.id, canvas);
@@ -2204,6 +2272,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       song: song,
       radius: radius.topLeft.x,
       crossfade: false,
+      onArtworkRecovered: current
+          ? (cover) => _player.recoverCurrentOnlineArtwork(
+              songId: song.id,
+              originalArtwork: song.albumArt,
+              recoveredArtwork: cover,
+            )
+          : null,
     );
     final motionEnabled =
         current &&
@@ -3052,6 +3127,13 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     color: Colors.white,
   );
   static const double _subGap = 6;
+  static const TextStyle _backingStyle = TextStyle(
+    fontFamily: _font,
+    fontSize: 18,
+    height: 1.25,
+    fontWeight: FontWeight.w600,
+    color: Color(0xD9FFFFFF),
+  );
   static const TextStyle _sub = TextStyle(
     fontFamily: _font,
     fontSize: 18,
@@ -3074,13 +3156,26 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
   // The parser keeps start-only enhanced-LRC words for lossless editing.
   // Resolve their end windows once for painting; never do it on each tick.
   late List<LyricsLine> _playbackLines;
+  List<LyricsLine> _backgroundVocalLines = const [];
+  List<double> _backgroundVocalHeights = const [];
+  final FlowingBackgroundVocalReveal _backingReveal =
+      FlowingBackgroundVocalReveal();
   // Project translations/romaji exactly once per source change, never during
   // the frame-driven scroll/reveal loop. Null means line-only or plain lyrics.
   List<LyricsLine?> _timedSublines = const [];
   List<LyricsLine> get _lines => _playbackLines;
 
   void _prepareLyrics() {
-    _playbackLines = LyricsService().playbackLines(widget.lyrics);
+    _backingReveal.reset();
+    final resolved = LyricsService().playbackLines(widget.lyrics);
+    _backgroundVocalLines = flowingBackgroundVocalLines(resolved);
+    final leads = resolved.where((line) => line.voice != 'bg').toList();
+    _playbackLines = leads.isEmpty ? resolved : leads;
+    _ts = [for (final line in _playbackLines) line.timestamp.inMilliseconds];
+    AppLog.instance.add(
+      '[LyricsBG] fullscreenRenderer supporting=${_backgroundVocalLines.length} '
+      'leadLines=${_playbackLines.length}',
+    );
     _timedSublines = [
       for (final line in _playbackLines)
         if (line.words?.isNotEmpty == true &&
@@ -3091,9 +3186,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     ];
   }
 
-  late List<int> _ts = [
-    for (final l in widget.lyrics.lines) l.timestamp.inMilliseconds,
-  ];
+  List<int> _ts = const [];
 
   List<double> _heights = const [];
   List<double> _baseHeights = const [], _subHeights = const [];
@@ -3177,18 +3270,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     return _anchorPos.inMilliseconds + (elapsed * speed).round();
   }
 
-  int _indexAt(int ms) {
-    var low = 0, high = _ts.length;
-    while (low < high) {
-      final mid = (low + high) ~/ 2;
-      if (_ts[mid] <= ms) {
-        low = mid + 1;
-      } else {
-        high = mid;
-      }
-    }
-    return low - 1;
-  }
+  int _indexAt(int ms) =>
+      focusedLeadUntilVocalsFinish(_lines, Duration(milliseconds: ms));
 
   double _centerFor(int a) =>
       a < 0 ? -(_introHeight + _gap) : _tops[a.clamp(0, _tops.length - 1)];
@@ -3239,6 +3322,17 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     }
     _baseHeights = hs;
     _subHeights = subs;
+    _backgroundVocalHeights = [
+      for (final bg in _backgroundVocalLines)
+        _subGap +
+            LyricMotionLine.height(
+              context,
+              bg.text,
+              _backingStyle,
+              math.max(w, 40),
+            ) +
+            8,
+    ];
     _layoutLyrics = widget.lyrics;
     _layoutScaler = MediaQuery.textScalerOf(context);
     _layoutLocale = Localizations.maybeLocaleOf(context);
@@ -3251,7 +3345,15 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final tops = <double>[], heights = <double>[];
     for (var i = 0; i < _baseHeights.length; i++) {
       tops.add(y);
-      final height = _baseHeights[i] + _subHeights[i] * _sublineReveal;
+      final backgroundHeight =
+          i == _active &&
+              _backingReveal.visibleIndex >= 0 &&
+              _backingReveal.visibleIndex < _backgroundVocalHeights.length
+          ? _backgroundVocalHeights[_backingReveal.visibleIndex] *
+                _backingReveal.value
+          : 0.0;
+      final height =
+          _baseHeights[i] + _subHeights[i] * _sublineReveal + backgroundHeight;
       heights.add(height);
       y += height + _gap;
     }
@@ -3289,10 +3391,24 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
         : _sublineReveal +
               (targetReveal - _sublineReveal) * (1 - math.exp(-dt * 10));
     if (!subMoving) _sublineReveal = targetReveal;
-    if (previousReveal != _sublineReveal) _geometry();
     final ms = _posNowMs();
     final a = _indexAt(ms);
-    final aScroll = _indexAt(ms + 300);
+    final nextBackground = activeFlowingBackgroundVocalIndex(
+      _backgroundVocalLines,
+      Duration(milliseconds: ms),
+    );
+    final backgroundMoving = _backingReveal.advance(
+      nextBackground,
+      dt,
+      reduceMotion: MediaQuery.disableAnimationsOf(context),
+    );
+    if (previousReveal != _sublineReveal || backgroundMoving || a != _active) {
+      _active = a;
+      _geometry();
+    }
+    // Never pre-scroll into the next lead while either singer in the
+    // current row is still sounding, including overlapping [bg:] voices.
+    final aScroll = a;
     final target = _following ? _centerFor(aScroll) : _offset;
     final playing = widget.player.isPlayingNotifier.value;
 
@@ -3308,6 +3424,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final settled =
         !playing &&
         !subMoving &&
+        !backgroundMoving &&
         (target - _offset).abs() < 0.2 &&
         (a - _focus).abs() < 0.003 &&
         a == _active;
@@ -3356,55 +3473,87 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           );
 
     final sub = _translationOf(l);
+    final backing =
+        i == _active &&
+            _backingReveal.visibleIndex >= 0 &&
+            _backingReveal.visibleIndex < _backgroundVocalLines.length
+        ? _backgroundVocalLines[_backingReveal.visibleIndex]
+        : null;
     Widget child = Transform.scale(
       alignment: Alignment.centerLeft,
       scale: scale,
-      child: sub == null
+      child: backing == null && sub == null
           ? text
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 text,
-                ClipRect(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    heightFactor: _sublineReveal,
-                    child: Opacity(
-                      opacity: _sublineReveal,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: _subGap),
+                // This fullscreen renderer is separate from SyncedLyricsView.
+                // Keep the independently timed second singer directly beneath
+                // whichever lead line is currently focused.
+                if (backing != null)
+                  ClipRect(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      heightFactor: _backingReveal.value,
+                      child: Opacity(
+                        opacity: _backingReveal.value,
                         child: Transform.translate(
-                          offset: Offset(0, (1 - _sublineReveal) * 6),
-                          child: FlowingLyricSubline(
-                            text: sub,
-                            // Source translation is available only after
-                            // Translate/Romanize; old memorized sublines must
-                            // not inherit the next source's timings.
-                            timedLine:
-                                widget.showTranslation &&
-                                    i < _timedSublines.length &&
-                                    _timedSublines[i]?.text == sub
-                                ? _timedSublines[i]
-                                : null,
-                            position: Duration(milliseconds: _posMs),
-                            singing: singing,
-                            lightweight: _ultra,
-                            style: _sub.copyWith(
-                              color:
-                                  (_sub.color ??
-                                          Theme.of(context)
-                                              .colorScheme
-                                              .onSurface)
-                                      .withValues(
-                                        alpha: i == _active ? .82 : op * .8,
-                                      ),
+                          offset: Offset(0, (1 - _backingReveal.value) * 8),
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: _subGap,
+                              bottom: 8,
+                            ),
+                            child: LyricMotionLine(
+                              line: backing,
+                              position: Duration(milliseconds: _posMs),
+                              lightweight: _ultra,
+                              style: _backingStyle,
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                if (sub != null)
+                  ClipRect(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      heightFactor: _sublineReveal,
+                      child: Opacity(
+                        opacity: _sublineReveal,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: _subGap),
+                          child: Transform.translate(
+                            offset: Offset(0, (1 - _sublineReveal) * 6),
+                            child: FlowingLyricSubline(
+                              text: sub,
+                              timedLine:
+                                  widget.showTranslation &&
+                                      i < _timedSublines.length &&
+                                      _timedSublines[i]?.text == sub
+                                  ? _timedSublines[i]
+                                  : null,
+                              position: Duration(milliseconds: _posMs),
+                              singing: singing,
+                              lightweight: _ultra,
+                              style: _sub.copyWith(
+                                color:
+                                    (_sub.color ??
+                                            Theme.of(context)
+                                                .colorScheme
+                                                .onSurface)
+                                        .withValues(
+                                          alpha: i == _active ? .82 : op * .8,
+                                        ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
     );

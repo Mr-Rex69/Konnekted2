@@ -27,6 +27,9 @@ class KaraokeLyricLine extends StatefulWidget {
   /// Optional translated or romanized text to animate to the source vocal.
   final String? sublineText;
 
+  /// Use the independent backing-vocal timing instead of lead word timings.
+  final bool backgroundVoice;
+
   /// Position source to sweep against. Defaults to the player's own position;
   /// carousel peek stages pass a static source so their sweep stays put.
   final ValueNotifier<Duration>? positionNotifier;
@@ -47,6 +50,7 @@ class KaraokeLyricLine extends StatefulWidget {
     required this.sungColor,
     required this.unsungColor,
     this.sublineText,
+    this.backgroundVoice = false,
     this.positionNotifier,
     this.playingNotifier,
     this.active = true,
@@ -101,7 +105,8 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
     }
     if (!identical(oldWidget.lyrics, widget.lyrics) ||
         oldWidget.lineIndex != widget.lineIndex ||
-        oldWidget.sublineText != widget.sublineText) {
+        oldWidget.sublineText != widget.sublineText ||
+        oldWidget.backgroundVoice != widget.backgroundVoice) {
       _resolveWords();
       _onPositionTick();
       return;
@@ -129,9 +134,20 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
     final sourceLine = widget.sublineText == null
         ? widget.lyrics.lines[widget.lineIndex]
         : widget.lyricsService.playbackLines(widget.lyrics)[widget.lineIndex];
-    _displayLine = widget.sublineText == null
-        ? sourceLine
-        : projectLyricsSubline(sourceLine, widget.sublineText!);
+    if (widget.backgroundVoice) {
+      final words = sourceLine.backgroundWords;
+      _displayLine = LyricsLine(
+        timestamp: words != null && words.isNotEmpty
+            ? words.first.start
+            : sourceLine.timestamp,
+        text: sourceLine.backgroundText ?? '',
+        words: words,
+      );
+    } else {
+      _displayLine = widget.sublineText == null
+          ? sourceLine
+          : projectLyricsSubline(sourceLine, widget.sublineText!);
+    }
     _segments = _displayLine.words ?? const [];
     _builtForLineIndex = widget.lineIndex;
     _builtForLyrics = widget.lyrics;

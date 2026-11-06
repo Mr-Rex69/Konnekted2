@@ -147,6 +147,15 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
   private var progress: [String: LokalTransferProgress] = [:]
   private var uploadResponses: [Int: Data] = [:]
   private var preparingUploads: [String: LokalTransferJob] = [:]
+  private struct DeferredUpload: Sendable {
+    let job: LokalTransferJob
+    let source: Int32
+    let submission: LokalTransferImportOwnership.SubmissionTicket
+    let validateSource: @Sendable () throws -> Void
+    let reply: LokalTransferCompletion<LokalTransferSummary>
+  }
+  private var deferredUploads: [String: DeferredUpload] = [:]
+
   private var uploadPreparationCancellation: [String: LokalTransferCopyCancellation] = [:]
   private struct UploadMatch {
     let job: LokalTransferJob
@@ -522,7 +531,7 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
 
   private var storageDrained: Bool {
     !storageEnumerationPending && !storageWorkerPending && tasks.isEmpty &&
-      preparingUploads.isEmpty && sourceReads.isEmpty && uploadMatches.isEmpty && verifications.isEmpty
+      preparingUploads.isEmpty && deferredUploads.isEmpty && sourceReads.isEmpty && uploadMatches.isEmpty && verifications.isEmpty
   }
 
   /// Never keep sending or publishing against a journal whose last durable
@@ -531,6 +540,7 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
   private func storageFailed(_ error: Error) {
     guard !persistenceFailed else { notify(); return }
     persistenceFailed = true
+    cancelDeferredUploads()
     sourceGrants.removeAll(); sourceContexts.removeAll(); progress.removeAll()
     for read in sourceReads.values { read.cancel() }
     for preparation in uploadPreparationCancellation.values { preparation.cancel() }
@@ -701,6 +711,7 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
   func drainUploadSources(_ reply: @escaping LokalTransferCompletion<Bool>) {
     queue.async {
       self.pruneUploadSources()
+      self.cancelDeferredUploads()
       for read in self.sourceReads.values { read.cancel() }
       let id = UUID().uuidString.lowercased()
       let probes = Set(self.uploadMatches.keys)
@@ -882,6 +893,41 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     } catch { reply(.failure(error)) }
   }
 
+  private func cancelDeferredUploads(scope selected: LokalTransferScope? = nil) {
+    let pending = deferredUploads.values.filter { selected == nil || scope($0.job) == selected }
+    for item in pending {
+      deferredUploads.removeValue(forKey: item.job.id)
+      if item.source >= 0 { close(item.source) }
+      item.reply(.failure(LokalTransferError.staleRevision))
+    }
+  }
+
+  /// Reserve the next network slot without rejecting a mixed copy plan. No
+  /// job or POST is admitted until the original live submission ticket can be
+  /// revalidated. Clear/Forget/engine replacement retires this pending source.
+  private func resumeDeferredUpload(_ id: String) {
+    queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+      guard let self, let item = self.deferredUploads[id] else { return }
+      do {
+        try self.importOwnership.validateSubmission(item.submission)
+        guard !self.shuttingDown, !self.persistenceFailed, self.pauses[self.scope(item.job)] == nil else {
+          throw LokalTransferError.invalidTransition
+        }
+        if self.tasks.count + self.preparingUploads.count >= 2 {
+          self.resumeDeferredUpload(id); return
+        }
+        self.deferredUploads.removeValue(forKey: id)
+        self.enqueueUpload(item.job, source: item.source < 0 ? nil : item.source,
+          submission: item.submission, validateSource: item.validateSource, reply: item.reply)
+        if item.source >= 0 { close(item.source) } // enqueueUpload duplicated it synchronously.
+      } catch {
+        self.deferredUploads.removeValue(forKey: id)
+        if item.source >= 0 { close(item.source) }
+        item.reply(.failure(error))
+      }
+    }
+  }
+
   /// Native-only admission: caller supplies already-authorized source access
   /// and consent captured before dispatch. A nil source recovers an existing
   /// verified private snapshot; it can never manufacture bytes or consent.
@@ -902,8 +948,16 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
           if owned >= 0 { close(owned) }
           reply(.success(self.summaryValue())); return
         }
-        guard self.tasks.count + self.preparingUploads.count < 2,
-              self.preparingUploads[requested.id] == nil, self.unknownTasks.isEmpty,
+        guard self.preparingUploads[requested.id] == nil, self.deferredUploads[requested.id] == nil,
+              self.unknownTasks.isEmpty else { throw LokalTransferError.limitExceeded }
+        if self.tasks.count + self.preparingUploads.count >= 2 {
+          guard self.deferredUploads.count < 2 else { throw LokalTransferError.limitExceeded }
+          self.deferredUploads[requested.id] = DeferredUpload(job: requested, source: owned,
+            submission: submission, validateSource: validateSource, reply: reply)
+          self.resumeDeferredUpload(requested.id)
+          return
+        }
+        guard self.preparingUploads[requested.id] == nil, self.unknownTasks.isEmpty,
               !self.tasks.values.contains(where: { LokalTransferTaskBinding($0.taskDescription)?.id == requested.id }) else { throw LokalTransferError.limitExceeded }
         guard owned >= 0 || self.jobs[requested.id] != nil else { throw LokalTransferError.unsafeFile }
         try validateSource()
@@ -1003,8 +1057,8 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
       guard [.queued, .waiting, .transferring, .complete].contains(existing.phase) else { throw LokalTransferError.invalidTransition }
     }
     let key = try original(job)
-    for other in Array(jobs.values) + Array(preparingUploads.values) where other.id != job.id {
-      guard try original(other) != key else { throw LokalTransferError.duplicateJob }
+    for other in Array(jobs.values) + Array(preparingUploads.values) + deferredUploads.values.map(\.job) where other.id != job.id {
+      guard try other.uploadRequeueAuthorized == true || original(other) != key else { throw LokalTransferError.duplicateJob }
     }
   }
 
@@ -1080,6 +1134,113 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     }
   }
 
+  /// Explicit same-operation retry only. The peer's durable key fences a late
+  /// old POST; no new UUID, metadata or source file is admitted on this path.
+  func retryUpload(id: String, revision: Int,
+      submission: LokalTransferImportOwnership.SubmissionTicket,
+      reply: @escaping LokalTransferCompletion<LokalTransferJob>) {
+    queue.async {
+      do {
+        guard let job = self.jobs[id], job.revision == revision, job.direction == .upload,
+              job.uploadProtocolVersion == 1, [.interrupted, .failed].contains(job.phase) else {
+          throw LokalTransferError.invalidTransition
+        }
+        self.probeUploadOperation(job, submission: submission, statuses: [200, 404, 410],
+          request: { try LokalTransferUploadOperation.statusRequest($0, job: job) }) { result in
+          do {
+            let exchange = try result.get()
+            let outcome = try LokalTransferUploadOperation.outcome(exchange.body, status: exchange.status, job: job)
+            if outcome.state == .committed, outcome.available == true, let original = outcome.originalID {
+              let complete = try self.update(job) { try $0.acknowledgeMatchedUpload(originalID: original, nowMs: Self.now()) }
+              reply(.success(complete)); return
+            }
+            guard outcome.state == .absent || outcome.state == .retryable else { throw LokalTransferError.invalidTransition }
+            self.session.getAllTasks { actual in
+              self.queue.async {
+                do {
+                  try self.importOwnership.validateSubmission(submission)
+                  guard self.jobs[id] == job, !self.persistenceFailed, !self.shuttingDown,
+                        self.preparingUploads[id] == nil, self.unknownTasks.isEmpty,
+                        !actual.contains(where: { task in
+                          guard task.state != .completed else { return false }
+                          guard let binding = LokalTransferTaskBinding(task.taskDescription) else { return true }
+                          return binding.id == id
+                        }), !self.tasks.values.contains(where: { LokalTransferTaskBinding($0.taskDescription)?.id == id }) else {
+                    throw LokalTransferError.invalidTransition
+                  }
+                  self.fileQueue.async {
+                    let checked: Result<Void, Error> = Result {
+                      _ = try self.files.uploadURL(job) {
+                        try self.importOwnership.validateSubmission(submission)
+                        guard try self.journal.currentJob(id) == job else { throw LokalTransferError.staleRevision }
+                      }
+                    }
+                    self.queue.async {
+                      do {
+                        try checked.get()
+                        try self.importOwnership.validateSubmission(submission)
+                        guard self.jobs[id] == job, !self.persistenceFailed, !self.shuttingDown,
+                              self.pauses[self.scope(job)] == nil else { throw LokalTransferError.staleRevision }
+                        let pending = try self.update(job) { try $0.retry(nowMs: Self.now()) }
+                        self.enqueueUpload(try pending.uploadAdmissionIntent(protocolVersion: 1), submission: submission) { result in
+                          switch result {
+                          case .failure(let error): reply(.failure(error))
+                          case .success:
+                            self.queue.async {
+                              guard let current = self.jobs[id] else { reply(.failure(LokalTransferError.missingJob)); return }
+                              reply(.success(current))
+                            }
+                          }
+                        }
+                      } catch { reply(.failure(error)) }
+                    }
+                  }
+                } catch { reply(.failure(error)) }
+              }
+            }
+          } catch { reply(.failure(error)) }
+        }
+      } catch { reply(.failure(error)) }
+    }
+  }
+
+  /// Persist a scoped desktop cancellation tombstone before permitting a fresh
+  /// reviewed copy. A completed-but-deleted historical original is also fenced
+  /// by the peer. An available committed original never permits duplication.
+  func confirmUploadRetirement(id: String, revision: Int,
+      submission: LokalTransferImportOwnership.SubmissionTicket,
+      reply: @escaping LokalTransferCompletion<LokalTransferJob>) {
+    queue.async {
+      do {
+        guard let job = self.jobs[id], job.revision == revision, job.direction == .upload,
+              job.uploadProtocolVersion == 1, [.cancelled, .complete].contains(job.phase) else {
+          throw LokalTransferError.invalidTransition
+        }
+        try self.importOwnership.validateSubmission(submission)
+        guard self.reconciled, !self.shuttingDown, !self.persistenceFailed,
+              self.pauses[self.scope(job)] == nil, let auth = try self.credentials() else { throw LokalTransferError.invalidTransition }
+        _ = try auth.uploadRequest(for: job)
+        if job.uploadRequeueAuthorized == true { reply(.success(job)); return }
+        self.probeUploadOperation(job, submission: submission, statuses: [200, 410],
+          request: { try LokalTransferUploadOperation.cancellationRequest($0, job: job) }) { result in
+          do {
+            let exchange = try result.get()
+            let outcome = try LokalTransferUploadOperation.outcome(exchange.body, status: exchange.status, job: job)
+            if outcome.state == .cancelled || (outcome.state == .committed && outcome.available == false) {
+              let retired = try self.update(job) { try $0.authorizeUploadRequeue(nowMs: Self.now()) }
+              reply(.success(retired))
+            } else if outcome.state == .committed, outcome.available == true, let original = outcome.originalID {
+              let complete = job.phase == .complete ? job : try self.update(job) {
+                try $0.acknowledgeUploadCommittedBeforeCancellation(originalID: original, nowMs: Self.now())
+              }
+              reply(.success(complete))
+            } else { throw LokalTransferError.invalidTransition }
+          } catch { reply(.failure(error)) }
+        }
+      } catch { reply(.failure(error)) }
+    }
+  }
+
   /// Replay-safe private-body cleanup. Terminal intent must still be durable;
   /// no matching or unattributed OS task may hold a body, and the worker queue
   /// must have drained preparation before the exact private name is unlinked.
@@ -1117,13 +1278,13 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
   }
 
   private func pump() {
-    guard reconciled, !shuttingDown, !persistenceFailed, tasks.count + preparingUploads.count < 2 else { return }
+    guard reconciled, !shuttingDown, !persistenceFailed, tasks.count + preparingUploads.count + deferredUploads.count < 2 else { return }
     let authorization: LokalTransferAuthorization?
     do { authorization = try credentials() }
     catch { return }
     guard let authorization else { return }
     for id in order {
-      guard tasks.count + preparingUploads.count < 2 else { return }
+      guard tasks.count + preparingUploads.count + deferredUploads.count < 2 else { return }
       guard let job = jobs[id], job.direction == .download,
             job.phase == .queued || job.phase == .waiting, pauses[scope(job)] == nil else { continue }
       let request: URLRequest
@@ -1394,6 +1555,7 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
       self.shutdownReplies.append(reply)
       guard !self.shuttingDown else { return }
       self.shuttingDown = true
+      self.cancelDeferredUploads()
       self.finishRecovery(.failure(LokalTransferError.invalidTransition))
       self.sourceGrants.removeAll(); self.sourceContexts.removeAll()
       for read in self.sourceReads.values { read.cancel() }
@@ -1407,6 +1569,7 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
 
   func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
     shuttingDown = true
+    cancelDeferredUploads()
     finishRecovery(.failure(LokalTransferError.invalidTransition))
     sourceGrants.removeAll(); sourceContexts.removeAll()
     for read in sourceReads.values { read.cancel() }
@@ -1471,6 +1634,7 @@ class LokalTransferRuntime: NSObject, URLSessionDownloadDelegate, @unchecked Sen
           throw LokalTransferError.invalidTransition
         }
         try self.importOwnership.validateRetirement(ticket, scope: scope)
+        self.cancelDeferredUploads(scope: scope)
         self.pruneUploadSources()
         self.sourceGrants = self.sourceGrants.filter { $0.value.context.value.pairing.scope != scope }
         self.sourceContexts = self.sourceContexts.filter { $0.value.value.pairing.scope != scope }

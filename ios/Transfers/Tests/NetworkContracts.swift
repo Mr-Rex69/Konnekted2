@@ -322,6 +322,7 @@ func runNetworkContracts(origin: String, length: Int64, checksum: String) throws
   try runUploadRuntimeContracts(origin: origin, length: length, checksum: checksum)
   try runUploadMatchContracts(origin: origin, length: length, checksum: checksum)
   try runUploadSourceContracts(origin: origin, length: length, checksum: checksum)
+  try runDeferredUploadContracts(origin: origin, length: length, checksum: checksum)
   try runOwnedQueueContracts(origin: origin, length: length, checksum: checksum)
   try runStorageFailureContracts(origin: origin, length: length, checksum: checksum)
   try runNetworkRetirementContracts(origin: origin, length: length, checksum: checksum)
@@ -1580,7 +1581,116 @@ private func runUploadMatchContracts(origin: String, length: Int64, checksum: St
   print("Native upload content-match/cleanup contracts passed: positive/negative/bounded query, durable no-resend recovery, reply replay, source-preparation retry, exact terminal cleanup, consent/account fencing and Forget drainage. No desktop exactly-once or Apple lifecycle claim.")
 }
 
+func runUploadSourceContractsOnly(origin: String, length: Int64, checksum: String) throws {
+  try runUploadSourceContracts(origin: origin, length: length, checksum: checksum)
+  try runDeferredUploadContracts(origin: origin, length: length, checksum: checksum)
+}
+
+private func runDeferredUploadContracts(origin: String, length: Int64, checksum: String) throws {
+  let manager = FileManager.default
+  let root = manager.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("lokal-deferred-upload-" + UUID().uuidString)
+  let music = root.appendingPathComponent("Music")
+  try manager.createDirectory(at: music, withIntermediateDirectories: true)
+  defer { try? manager.removeItem(at: root) }
+  func control(_ path: String) throws -> Data {
+    try native { reply in
+      URLSession.shared.dataTask(with: URL(string: origin + path)!) { data, _, error in
+        if let error { reply(.failure(error)) } else { reply(.success(data ?? Data())) }
+      }.resume()
+    }
+  }
+  let bytes = try control("/__upload_payload")
+  let source = music.appendingPathComponent("source.wav")
+  try bytes.write(to: source)
+  let auth = try LokalTransferAuthorization(desktopID: "fixture-pc", origin: origin,
+    token: "transfer-fixture-token", pairingID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", desktopUserID: "fixture-account")
+  let ownership = LokalTransferImportOwnership()
+  let runtime = try PortableNativeUploadRuntime(container: root, importOwnership: ownership,
+    library: { try LokalTransferLibrary(root: music) }, credentials: { auth })
+  defer {
+    let done = DispatchSemaphore(value: 0)
+    runtime.shutdown { done.signal() }; _ = done.wait(timeout: .now() + 10)
+  }
+  let _: LokalTransferSummary = try native { runtime.recover($0) }
+  let owner = try ownership.attachClient(engineID: ownership.attachEngine(), clientID: UUID().uuidString.lowercased())
+  let ticket = try ownership.captureSubmission(owner)
+  let context: LokalTransferUploadSourceContext = try native { runtime.uploadSourceContext(submission: ticket, reply: $0) }
+  func prepared(_ song: String, _ title: String) throws -> (LokalTransferJob, LokalTransferUploadSourceGrant) {
+    let grant: LokalTransferUploadSourceGrant = try native {
+      runtime.authorizeUploadSource(contextID: context.contextID, relativePath: "source.wav", songID: song,
+        submission: ticket, reply: $0)
+    }
+    let job = try LokalTransferJob(direction: .upload,
+      identity: LokalTransferIdentity(desktopID: auth.desktopID, sourceID: "deferred-" + song, localSongID: song,
+        origin: origin, pairingID: auth.pairingID, desktopUserID: auth.desktopUserID),
+      metadata: LokalTransferMetadata(title: title, artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
+      nowMs: 1000, expectedBytes: length, expectedSHA256: checksum)
+    return (job, grant)
+  }
+  func enqueue(_ song: String, _ title: String) throws -> LokalTransferJob {
+    let (job, grant) = try prepared(song, title)
+    let _: LokalTransferSummary = try native {
+      runtime.enqueueAuthorizedUpload(job, grantID: grant.grantID, submission: ticket, reply: $0)
+    }
+    return job
+  }
+  func fillSlots(_ suffix: String) throws -> [LokalTransferJob] {
+    _ = try control("/__hold_storage")
+    let first = try enqueue("6" + suffix + "0", "storage-upload-slot-" + suffix + "-0")
+    #if canImport(Darwin)
+    let second = try LokalTransferJob(direction: .download,
+      identity: LokalTransferIdentity(desktopID: auth.desktopID, sourceID: "storage-download-slot-" + suffix,
+        localSongID: nil, origin: origin, pairingID: auth.pairingID, desktopUserID: auth.desktopUserID),
+      metadata: LokalTransferMetadata(title: "Held mixed download", artist: "Fixture", album: nil, fileExtension: "wav"),
+      nowMs: 1000, expectedBytes: length, expectedSHA256: checksum)
+    let _: LokalTransferSummary = try native { runtime.enqueue([second], submission: ticket, reply: $0) }
+    #else
+    // Corelibs Foundation's combined download/data delegate is broken; Apple
+    // runs the mixed-direction branch above. Portable checks hold two uploads.
+    let second = try enqueue("6" + suffix + "1", "storage-upload-slot-" + suffix + "-1")
+    #endif
+    _ = try awaitJob(runtime, id: first.id, phase: [.transferring])
+    _ = try awaitJob(runtime, id: second.id, phase: [.transferring])
+    return [first, second]
+  }
+  let held = try fillSlots("1")
+  let (waiting, grant) = try prepared("612", "upload-deferred-slot")
+  let pending = NativeResult<LokalTransferSummary>(), ready = DispatchSemaphore(value: 0)
+  runtime.enqueueAuthorizedUpload(waiting, grantID: grant.grantID, submission: ticket) { pending.set($0); ready.signal() }
+  try require(ready.wait(timeout: .now() + 0.3) == .timedOut,
+    "a busy mixed plan waits for its reserved slot instead of failing admission")
+  _ = try control("/__release_storage")
+  try require(ready.wait(timeout: .now() + 10) == .success, "slot handoff completes pending upload admission")
+  _ = try pending.get()
+  _ = try awaitJob(runtime, id: waiting.id, phase: [.complete])
+  for job in held { _ = try awaitJob(runtime, id: job.id, phase: job.direction == .upload ? [.complete] : [.received, .downloaded, .staged]) }
+  try require((try state(origin)["uploadRequests"] as! [String: Int])["upload-deferred-slot"] == 1,
+    "slot handoff sends the accepted frozen upload exactly once")
+
+  _ = try fillSlots("2")
+  let (retired, retiredGrant) = try prepared("622", "upload-deferred-retired")
+  let cancelled = NativeResult<LokalTransferSummary>(), cancelledReady = DispatchSemaphore(value: 0)
+  runtime.enqueueAuthorizedUpload(retired, grantID: retiredGrant.grantID, submission: ticket) { cancelled.set($0); cancelledReady.signal() }
+  try require(cancelledReady.wait(timeout: .now() + 0.3) == .timedOut, "source waits while both slots are held")
+  try ownership.retireSubmissions(owner)
+  let _: Bool = try native { runtime.drainUploadSources($0) }
+  try require(cancelledReady.wait(timeout: .now() + 2) == .success, "source drain acknowledges the waiting source's cancellation")
+  try rejects("retired pending upload must not report admission") { _ = try cancelled.get() }
+  let jobs: [LokalTransferJob] = try native { runtime.page(offset: 0, limit: 100, reply: $0) }
+  try require(!jobs.contains(where: { $0.id == retired.id }) &&
+    (try state(origin)["uploadRequests"] as! [String: Int])["upload-deferred-retired"] == nil,
+    "retirement leaves no pending job or audio POST")
+  let scope = LokalTransferScope(desktopID: auth.desktopID, origin: origin, pairingID: auth.pairingID)
+  let retirement = try ownership.beginScopeRetirement(owner, scope: scope)
+  let _: LokalTransferSummary = try native { runtime.retireNetworkScope(scope, ticket: retirement, reply: $0) }
+  _ = try control("/__release_storage")
+  try require(try Data(contentsOf: source) == bytes, "waiting/cancellation never mutates the original")
+  print("Native slot handoff passed: held network slots, accepted deferred upload, one POST, source-retirement drainage and original preservation. Darwin also exercises mixed download/upload; portable corelibs uses two uploads.")
+}
+
 private func runUploadSourceContracts(origin: String, length: Int64, checksum: String) throws {
+  func stage(_ value: String) { FileHandle.standardError.write(Data(("Native operation stage: " + value + "\n").utf8)) }
+  stage("source admission")
   let manager = FileManager.default
   let root = manager.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("lokal-upload-sources-" + UUID().uuidString)
   let music = root.appendingPathComponent("Music")
@@ -1608,7 +1718,13 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   let owner = try ownership.attachClient(engineID: ownership.attachEngine(), clientID: UUID().uuidString.lowercased())
   let ticket = try ownership.captureSubmission(owner)
   let context: LokalTransferUploadSourceContext = try native { runtime.uploadSourceContext(submission: ticket, reply: $0) }
-  try require(context.rootPath == music.path && context.canonicalRootPath == music.path, "source root comes only from native library")
+  var selectedRoot = stat(), canonicalRoot = stat()
+  try require(context.rootPath == music.path &&
+    fstatat(AT_FDCWD, music.path, &selectedRoot, 0) == 0 &&
+    fstatat(AT_FDCWD, context.canonicalRootPath, &canonicalRoot, AT_SYMLINK_NOFOLLOW) == 0 &&
+    selectedRoot.st_dev == canonicalRoot.st_dev && selectedRoot.st_ino == canonicalRoot.st_ino &&
+    canonicalRoot.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+    "source root is the native-selected directory, including canonical Darwin path aliases")
   func grant(_ path: String = "Café/recording.wav", song: String = "42") throws -> LokalTransferUploadSourceGrant {
     try native { runtime.authorizeUploadSource(contextID: context.contextID, relativePath: path, songID: song, submission: ticket, reply: $0) }
   }
@@ -1696,6 +1812,74 @@ private func runUploadSourceContracts(origin: String, length: Int64, checksum: S
   try require(reopened?.uploadProtocolVersion == 1 && reopened?.resultOriginalID == "desktop-upload-lost",
     "exact operation receipt and native negotiation proof survive recovery/reopen")
 
+  stage("retry admission")
+  let retryGrant = try grant(song: "45")
+  let retriable = try job("45", "upload-retryable")
+  let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(retriable, grantID: retryGrant.grantID, submission: ticket, reply: $0) }
+  let failedRetry = try awaitJob(runtime, id: retriable.id, phase: [.failed, .interrupted])
+  stage("same-key retry")
+  let _: LokalTransferJob = try native { runtime.retryUpload(id: failedRetry.id, revision: failedRetry.revision, submission: ticket, reply: $0) }
+  let retried = try awaitJob(runtime, id: retriable.id, phase: [.complete])
+  try require(retried.revision == 2 && retried.id == retriable.id && retried.identity == retriable.identity &&
+    retried.uploadName == retriable.uploadName && retried.resultOriginalID == "desktop-upload-retryable",
+    "explicit retry advances only task revision and reuses the same immutable operation/body")
+  try require((try state(origin)["uploadRequests"] as! [String: Int])["upload-retryable"] == 2,
+    "one failed POST and one same-key retry")
+  let _: Bool = try native { runtime.cleanupUploadBody(id: retried.id, revision: 2, reply: $0) }
+  try require(!manager.fileExists(atPath: root.appendingPathComponent(LokalTransferJournal.directoryName).appendingPathComponent(retried.uploadName).path),
+    "completed retry cleanup retires its original private body name")
+
+  stage("cancellation admission")
+  let cancelGrant = try grant(song: "46")
+  let pendingCancel = try job("46", "upload-cancel-pending")
+  let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(pendingCancel, grantID: cancelGrant.grantID, submission: ticket, reply: $0) }
+  _ = try awaitJob(runtime, id: pendingCancel.id, phase: [.transferring])
+  for _ in 0..<100 {
+    if (try state(origin)["uploadRequests"] as! [String: Int])["upload-cancel-pending"] == 1 { break }
+    Thread.sleep(forTimeInterval: 0.01)
+  }
+  try require((try state(origin)["uploadRequests"] as! [String: Int])["upload-cancel-pending"] == 1,
+    "fixture has received the frozen audio before cancellation races its reply")
+  let cancelled: LokalTransferJob = try native { runtime.cancel(id: pendingCancel.id, revision: 1, reply: $0) }
+  let freshGrant = try grant(song: "46")
+  let freshCopy = try job("46", "upload-success")
+  try rejects("local cancellation alone never permits a new UUID") {
+    let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(freshCopy, grantID: freshGrant.grantID, submission: ticket, reply: $0) }
+  }
+  stage("remote tombstone")
+  let fenced: LokalTransferJob = try native { runtime.confirmUploadRetirement(id: cancelled.id, revision: cancelled.revision, submission: ticket, reply: $0) }
+  try require(fenced.phase == .cancelled && fenced.uploadRequeueAuthorized == true && fenced.uploadBindingRetired == true,
+    "only a positive remote cancellation tombstone permits a fresh reviewed copy")
+  let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(freshCopy, grantID: freshGrant.grantID, submission: ticket, reply: $0) }
+  _ = try awaitJob(runtime, id: freshCopy.id, phase: [.complete])
+  let _: Data = try native { reply in
+    URLSession.shared.dataTask(with: URL(string: origin + "/__release_pending_upload")!) { data, _, error in
+      if let error { reply(.failure(error)) } else { reply(.success(data ?? Data())) }
+    }.resume()
+  }
+  let durableFence = try LokalTransferJournal(container: root).snapshot().jobs.first(where: { $0.id == fenced.id })
+  try require(durableFence?.uploadRequeueAuthorized == true, "remote fence survives journal reopen")
+
+  stage("late commit before cancellation")
+  let committedGrant = try grant(song: "47")
+  let committedLost = try job("47", "upload-lost")
+  let _: LokalTransferSummary = try native { runtime.enqueueAuthorizedUpload(committedLost, grantID: committedGrant.grantID, submission: ticket, reply: $0) }
+  _ = try awaitJob(runtime, id: committedLost.id, phase: [.interrupted])
+  let localCancel: LokalTransferJob = try native { runtime.cancel(id: committedLost.id, revision: 1, reply: $0) }
+  let alreadyCopied: LokalTransferJob = try native { runtime.confirmUploadRetirement(id: localCancel.id, revision: localCancel.revision, submission: ticket, reply: $0) }
+  try require(alreadyCopied.phase == .complete && alreadyCopied.uploadBindingRetired == true && alreadyCopied.uploadRequeueAuthorized != true,
+    "copy committed before cancellation is recorded without reviving app binding or duplicate permission")
+  let _: Data = try native { reply in
+    URLSession.shared.dataTask(with: URL(string: origin + "/__delete_upload?id=" + alreadyCopied.id)!) { data, _, error in
+      if let error { reply(.failure(error)) } else { reply(.success(data ?? Data())) }
+    }.resume()
+  }
+  stage("deleted historical receipt")
+  let deleted: LokalTransferJob = try native { runtime.confirmUploadRetirement(id: alreadyCopied.id, revision: alreadyCopied.revision, submission: ticket, reply: $0) }
+  try require(deleted.uploadRequeueAuthorized == true && deleted.uploadBindingRetired == true,
+    "positive historical-unavailable receipt permits only a fresh explicit review")
+
+  stage("source replacement guards")
   let replaced = try grant()
   try manager.moveItem(at: original, to: album.appendingPathComponent("old.wav"))
   try bytes.write(to: original)

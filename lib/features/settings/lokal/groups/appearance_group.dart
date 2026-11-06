@@ -137,33 +137,37 @@ List<LokalSettingsSection> appearanceSettings(
         if (Platform.isIOS)
           LokalSettingRow(
             label: lokalText('Video quality'),
-            description: lokalText('Adjust video quality in the YouTube player.'),
+            description: lokalText(
+              'Adjust video quality in the YouTube player.',
+            ),
           )
         else
-        LokalSettingRow(
-          label: lokalText('Video quality'),
-          description: lokalText(
-            'Maximum resolution for music videos. Higher quality uses more data; the nearest available stream is selected.',
+          LokalSettingRow(
+            label: lokalText('Video quality'),
+            description: lokalText(
+              'Maximum resolution for music videos. Higher quality uses more data; the nearest available stream is selected.',
+            ),
+            stacked: true,
+            trailing: DropdownButtonFormField<int>(
+              key: ValueKey(ref.watch(videoQualityProvider)),
+              initialValue: ref.watch(videoQualityProvider),
+              isExpanded: true,
+              items: [
+                for (final height in videoQualityHeights)
+                  DropdownMenuItem(
+                    value: height,
+                    child: Text(lokalText(videoQualityLabel(height))),
+                  ),
+              ],
+              onChanged: (height) {
+                if (height != null) {
+                  unawaited(
+                    ref.read(videoQualityProvider.notifier).select(height),
+                  );
+                }
+              },
+            ),
           ),
-          stacked: true,
-          trailing: DropdownButtonFormField<int>(
-            key: ValueKey(ref.watch(videoQualityProvider)),
-            initialValue: ref.watch(videoQualityProvider),
-            isExpanded: true,
-            items: [
-              for (final height in videoQualityHeights)
-                DropdownMenuItem(
-                  value: height,
-                  child: Text(lokalText(videoQualityLabel(height))),
-                ),
-            ],
-            onChanged: (height) {
-              if (height != null) {
-                unawaited(ref.read(videoQualityProvider.notifier).select(height));
-              }
-            },
-          ),
-        ),
         LokalSettingRow.toggle(
           label: lokalText('Moving covers'),
           description: lokalText(
@@ -208,6 +212,14 @@ List<LokalSettingsSection> appearanceSettings(
     LokalSettingsSection(
       title: lokalText('Interface'),
       children: [
+        LokalSettingRow.toggle(
+          label: lokalText('Home greeting and subheader'),
+          description: lokalText(
+            'Show the greeting and listening subtitle on Local, Discovery and Flow. Turn off to free up vertical space.',
+          ),
+          value: appearance.showHomeGreeting,
+          onChanged: look.setShowHomeGreeting,
+        ),
         LokalSettingRow.toggle(
           label: lokalText('Full resolution tags in lists'),
           description: lokalText(
@@ -294,35 +306,37 @@ List<LokalSettingsSection> appearanceSettings(
           },
         ),
         if (Platform.isAndroid)
-        LokalSettingRow(
-          label: lokalText('Refresh rate'),
-          description: lokalText(
-            'Adaptive lets the phone decide. 120 Hz is smoothest and uses more battery.',
+          LokalSettingRow(
+            label: lokalText('Refresh rate'),
+            description: lokalText(
+              'Adaptive lets the phone decide. 120 Hz is smoothest and uses more battery.',
+            ),
+            stacked: true,
+            trailing: LokalSegmented<String>(
+              expand: true,
+              segments: [
+                LokalSegment('adaptive', lokalText('Adaptive')),
+                LokalSegment('standard', lokalText('60 Hz')),
+                LokalSegment('high', lokalText('120 Hz')),
+              ],
+              value: prefs.refreshRateMode,
+              onChanged: notifier.setRefreshRateMode,
+            ),
           ),
-          stacked: true,
-          trailing: LokalSegmented<String>(
-            expand: true,
-            segments: [
-              LokalSegment('adaptive', lokalText('Adaptive')),
-              LokalSegment('standard', lokalText('60 Hz')),
-              LokalSegment('high', lokalText('120 Hz')),
-            ],
-            value: prefs.refreshRateMode,
-            onChanged: notifier.setRefreshRateMode,
-          ),
-        ),
       ],
     ),
     if (Platform.isAndroid)
-    LokalSettingsSection(
-      title: lokalText('Home-screen widget'),
-      children: [
-        LokalSettingLink(
-          label: lokalText('Home-screen widget'),
-          description: lokalText('What the widget on your home screen shows.'),
-          onTap: () => _push(context, const WidgetSettingsScreen()),
-        ),
-      ],
-    ),
+      LokalSettingsSection(
+        title: lokalText('Home-screen widget'),
+        children: [
+          LokalSettingLink(
+            label: lokalText('Home-screen widget'),
+            description: lokalText(
+              'What the widget on your home screen shows.',
+            ),
+            onTap: () => _push(context, const WidgetSettingsScreen()),
+          ),
+        ],
+      ),
   ];
 }

@@ -32,6 +32,29 @@ import 'package:flick/services/queue_pre_resolver.dart';
 import 'package:flick/services/atmos_playback_support.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
 
+/// Return the cover currently visible in Search without repeating metadata
+/// requests on tap. Search tiles already resolve missing images through either
+/// the local-art index or [DiscoveryArtworkResolver]'s cached provider match;
+/// those two paths must also feed the playable track, not only the thumbnail.
+@visibleForTesting
+String? onlineSearchArtworkForPlayback(
+  OnlineResult result, {
+  required DiscoveryLocalArtwork local,
+  required DiscoveryArtworkResolver remote,
+}) {
+  final direct = discoveryImageUrl(result.artwork);
+  if (direct.isNotEmpty) return direct;
+  final request = DiscoveryArtworkRequest(
+    kind: DiscoveryArtworkKind.track,
+    artist: result.track.artist,
+    title: result.track.title,
+  );
+  final localCover = local.lookup(request);
+  if (localCover?.isNotEmpty == true) return localCover;
+  final cached = discoveryImageUrl(remote.cachedArtwork(request));
+  return cached.isEmpty ? null : cached;
+}
+
 /// All results in one selected provider belong to the same playback queue.
 /// The selected result may request Atmos, but its neighbours remain normal
 /// playable versions until the user explicitly selects Atmos for each one.
@@ -310,6 +333,21 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
     if (mounted) _progress.fail(message);
   }
 
+  /// Resolve only already-visible artwork here. This is synchronous, so a
+  /// missing thumbnail never delays audio and the prior background resolver
+  /// remains free to find a cover when one was not yet available.
+  OnlineResult _withSearchArtwork(OnlineResult result) {
+    final artwork = onlineSearchArtworkForPlayback(
+      result,
+      local: ref.read(discoveryLocalArtworkProvider),
+      remote: ref.read(discoveryArtworkResolverProvider),
+    );
+    return OnlineResult(
+      result.track.withArtwork(artwork),
+      artwork: artwork ?? result.artwork,
+    );
+  }
+
   Future<void> _play(
     OnlineSource source,
     OnlineResult result, {
@@ -342,7 +380,7 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
             RecentSearchTrack(
               title: result.track.title,
               artist: result.track.artist,
-              artwork: result.artwork,
+              artwork: _withSearchArtwork(result).artwork,
             ),
           ),
     );
@@ -350,9 +388,14 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
         widget.pendingSong ??
         (OnlineSource source, DiscoveryTrack track) =>
             onlinePendingSong(source.id, track);
+    // Image fallbacks used by Search are otherwise absent from the pending
+    // songs and remain absent after the HTTP add-on returns its audio stream.
+    final playable = [
+      for (final row in results ?? [result]) _withSearchArtwork(row),
+    ];
     final playback = buildOnlineSearchPlaybackQueue(
-      results: results ?? [result],
-      selected: result,
+      results: playable,
+      selected: _withSearchArtwork(result),
       atmos: atmos,
       pendingSong: (track) => createPending(source, track),
     );
@@ -379,7 +422,7 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
   }) async {
     if (source.id == 'yt') _prioritizePlayback();
     if (!await _verify(source)) return;
-    final track = result.track;
+    final track = _withSearchArtwork(result).track;
     if (ref.read(playerProvider).currentSong == null) {
       return _play(source, result);
     }

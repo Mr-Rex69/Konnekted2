@@ -426,7 +426,8 @@ final class LokalTransferFiles: @unchecked Sendable {
   func resetUnsentUpload(_ job: LokalTransferJob, checkCancellation: () throws -> Void) throws {
     try locked {
       try job.validate()
-      guard job.direction == .upload, [.queued, .waiting].contains(job.phase) else {
+      guard job.direction == .upload, [.queued, .waiting].contains(job.phase),
+            job.uploadProtocolVersion != 1 || job.revision == 1 else {
         throw LokalTransferError.invalidTransition
       }
       try checkCancellation()

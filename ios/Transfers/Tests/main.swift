@@ -82,6 +82,11 @@ do {
       audio: URL(fileURLWithPath: CommandLine.arguments[4]))
     exit(0)
   }
+  if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--upload-source-fixture",
+     let length = Int64(CommandLine.arguments[3]) {
+    try runUploadSourceContractsOnly(origin: CommandLine.arguments[2], length: length, checksum: CommandLine.arguments[4])
+    exit(0)
+  }
   try runUploadOperationDocumentContracts()
   if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--upload-copy-crash" {
     try uploadCopyCrashChild(root: URL(fileURLWithPath: CommandLine.arguments[2]))

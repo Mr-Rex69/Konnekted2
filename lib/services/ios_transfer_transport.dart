@@ -423,6 +423,55 @@ class IosTransferTransport
 
   /// Read-only original-file query for an uncertain upload. A null match never
   /// grants permission to resend audio. Product upload capability stays gated.
+  Future<IosTransferJob> retryUploadFromQueue(IosTransferJob job) async {
+    if (job.direction != 'upload' ||
+        job.uploadProtocolVersion != 1 ||
+        !job.phase.canRetry) {
+      throw const FormatException('Invalid upload retry.');
+    }
+    final result = IosTransferJob.fromJson(
+      await _uploadControl('retryUpload', job),
+    );
+    if (result.id != job.id ||
+        result.direction != 'upload' ||
+        jsonEncode(result.intent.toJson()) != jsonEncode(job.intent.toJson()) ||
+        result.uploadProtocolVersion != 1 ||
+        result.revision < job.revision ||
+        result.revision > job.revision + 1 ||
+        result.uploadBindingRetired ||
+        result.uploadRequeueAuthorized) {
+      throw const FormatException('Upload retry changed its frozen intent.');
+    }
+    return result;
+  }
+
+  Future<IosTransferJob> confirmUploadRetirement(IosTransferJob job) async {
+    if (job.direction != 'upload' ||
+        job.uploadProtocolVersion != 1 ||
+        !{
+          IosTransferPhase.cancelled,
+          IosTransferPhase.complete,
+        }.contains(job.phase)) {
+      throw const FormatException('Invalid upload retirement.');
+    }
+    final result = IosTransferJob.fromJson(
+      await _uploadControl('confirmUploadRetirement', job),
+    );
+    if (result.id != job.id ||
+        result.revision != job.revision ||
+        result.uploadProtocolVersion != 1 ||
+        jsonEncode(result.intent.toJson()) != jsonEncode(job.intent.toJson()) ||
+        !{
+          IosTransferPhase.cancelled,
+          IosTransferPhase.complete,
+        }.contains(result.phase)) {
+      throw const FormatException(
+        'Upload retirement changed its frozen intent.',
+      );
+    }
+    return result;
+  }
+
   Future<IosTransferJob?> matchUploadedOriginal(IosTransferJob job) async {
     if (job.direction != 'upload' ||
         !{

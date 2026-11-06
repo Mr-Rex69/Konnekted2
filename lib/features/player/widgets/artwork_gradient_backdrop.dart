@@ -32,7 +32,7 @@ class _ArtworkGradientBackdropState
   );
   late final _palette = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 650),
+    duration: const Duration(milliseconds: 1000),
     value: 1,
   );
   late List<Color> _from = widget.colors;

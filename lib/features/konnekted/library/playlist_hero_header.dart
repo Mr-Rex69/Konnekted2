@@ -19,6 +19,30 @@ class PlaylistHeroCover {
 /// selection; force-closing and relaunching changes the artwork arrangement.
 final int _playlistHeroSessionSeed = math.Random().nextInt(0x7fffffff);
 
+// Stage the first playlist opening on tap instead of hiding the artwork
+// during the route animation. Repeated openings in this session are immediate.
+const playlistHeroFirstOpenTapDelay = Duration(milliseconds: 80);
+final Set<String> _openedPlaylistPages = <String>{};
+final Set<String> _openingPlaylistPages = <String>{};
+
+Future<void> openPlaylistAfterFirstTap(
+  BuildContext context,
+  String playlistId,
+  Future<void> Function() open,
+) async {
+  if (!_openingPlaylistPages.add(playlistId)) return;
+  try {
+    if (!_openedPlaylistPages.contains(playlistId)) {
+      await Future<void>.delayed(playlistHeroFirstOpenTapDelay);
+    }
+    if (!context.mounted) return;
+    _openedPlaylistPages.add(playlistId);
+    await open();
+  } finally {
+    _openingPlaylistPages.remove(playlistId);
+  }
+}
+
 /// Sized against display height, not screen width, so the artwork never
 /// dominates more than roughly a third of a phone's vertical viewport.
 double playlistHeroHeightForScreen(double height) =>
@@ -133,6 +157,18 @@ class PlaylistHeroHeader extends StatelessWidget {
               ),
             ),
           ),
+          // Keep the last device pixels identical to the following search
+          // sliver. This hides fractional-pixel seams during scrolling.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 2,
+            child: ColoredBox(
+              key: const ValueKey('playlist-hero-seam-fill'),
+              color: theme.bg,
+            ),
+          ),
           Positioned(
             left: 22,
             right: 22,
@@ -233,11 +269,10 @@ class PlaylistDiagonalCollage extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16),
                               child: CachedImageWidget(
                                 key: ValueKey('playlist-collage-slot-${row * 4 + col}'),
-                                imagePath:
-                                    covers[(row * 4 + col) % covers.length].imagePath,
-                                audioSourcePath:
-                                    covers[(row * 4 + col) % covers.length]
-                                        .audioSourcePath,
+                                imagePath: covers[
+                                    (row * 4 + col) % covers.length].imagePath,
+                                audioSourcePath: covers[
+                                    (row * 4 + col) % covers.length].audioSourcePath,
                                 width: tile,
                                 height: tile,
                                 useThumbnail: true,

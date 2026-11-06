@@ -14,7 +14,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'package:flick/features/discovery/discovery_artwork.dart'
-    show discoveryImageUrl;
+    show discoveryImageUrl, resolveMissingAddonArtwork;
 import 'package:flick/features/discovery/discovery_http.dart';
 import 'package:flick/features/discovery/discovery_models.dart';
 import 'package:flick/features/discovery/discovery_playback.dart';
@@ -1777,6 +1777,19 @@ Future<List<OnlineSource>> _playbackSources(
                 cancel: sourceCancel,
                 forDownload: forDownload,
               );
+              // Never log signed URLs, raw manifest XML or the CENC key. The
+              // transport classification is enough to troubleshoot the actual
+              // path used rather than guessing from a generic exception.
+              final transport = audio.hybridPlan != null
+                  ? 'hybrid_cenc'
+                  : audio.dashMedia != null
+                  ? 'dash_mpd'
+                  : audio.requiresStaging
+                  ? 'opaque_verified'
+                  : 'progressive';
+              AppLog.instance.add(
+                '[HttpAddon] resolved source=w-${addon.configId} transport=$transport',
+              );
               final selectedSpatial = await addon.requestedSpatialCodec(
                 cancel: sourceCancel,
               );
@@ -1810,19 +1823,26 @@ Future<List<OnlineSource>> _playbackSources(
                   rethrow;
                 }
               }
-              if (forDownload) {
+              if (forDownload ||
+                  audio.hybridPlan != null ||
+                  audio.dashMedia != null ||
+                  audio.requiresStaging) {
+                // CENC hybrid-v1 is a set of encrypted CDN ranges, not a
+                // progressive media URL. Stage/decrypt it locally, then run the
+                // native audio probe before handing the file to PlayerService.
                 return cache().prepare(
                   found,
                   audio,
                   cancel: cancel,
                   onProgress: (received) {
+                    final activity = forDownload ? 'Downloading' : 'Preparing';
                     if (audio.length case final total? when total > 0) {
                       onStatus?.call(
-                        'Downloading from ${addon.displayName}… '
+                        '$activity from ${addon.displayName}… '
                         '${(received * 100 / total).clamp(0, 100).round()}%',
                       );
                     } else {
-                      onStatus?.call('Downloading from ${addon.displayName}…');
+                      onStatus?.call('$activity from ${addon.displayName}…');
                     }
                   },
                 );
@@ -1969,6 +1989,44 @@ Future<T> boundedAutomaticAddonAttempt<T>(
 
 /// Classify without logging signed audio URLs or provider credentials.
 String _onlineFailureKind(Object error) {
+  // Stable, credential-free reasons distinguish incompatible add-on response
+  // formats without recording private URLs, listener tokens or signed media.
+  if (error is DiscoveryException) {
+    switch (error.message) {
+      case 'The addon returned no playable URL.':
+        return 'addon_no_direct_media';
+      case 'This source uses HLS/DASH. A progressive audio file is required.':
+      case 'A playlist URL cannot be played as an audio file.':
+        return 'addon_adaptive_manifest';
+      case 'Encrypted audio is not supported by this adapter.':
+      case 'DRM audio is not supported by this adapter.':
+        return 'addon_encrypted_media';
+      case 'The addon returned invalid transport metadata.':
+        return 'addon_transport_metadata';
+      case 'The addon could not resolve this recording.':
+        return 'addon_stream_error';
+      case 'The hybrid CDN returned an incomplete segment.':
+      case 'The hybrid CDN returned an incomplete recording.':
+        return 'addon_hybrid_incomplete';
+      case 'The hybrid init segment could not be decrypted.':
+      case 'The hybrid media segment could not be decrypted.':
+        return 'addon_hybrid_decryption';
+      case 'The hybrid recording exceeds the audio size limit.':
+      case 'The addon returned invalid hybrid byte ranges.':
+      case 'The addon returned an incomplete hybrid audio plan.':
+        return 'addon_hybrid_invalid';
+      case 'The add-on returned an unsupported DASH manifest.':
+      case 'The add-on DASH manifest is invalid.':
+      case 'The add-on DASH manifest is invalid UTF-8.':
+        return 'addon_dash_manifest_invalid';
+      case 'The DASH init is not a supported MP4 file.':
+        return 'addon_dash_init_invalid';
+      case 'The add-on DASH rendition requires DRM.':
+        return 'addon_dash_drm';
+      case 'The DASH recording timed out.':
+        return 'addon_dash_timeout';
+    }
+  }
   final message = error.toString().toLowerCase();
   final status = RegExp(r'http\s+(401|403|404|408|429|500|502|503|504)')
       .firstMatch(message);
@@ -2038,7 +2096,17 @@ Future<Song> playOnlineTrack(
         '${track.sourceName ?? 'That source'} isn’t available any more.',
       );
     }
-    final resolved = await source.play(track);
+    // LastWave-compatible HTTP add-ons are allowed to omit artworkURL.
+    // Resolve cover metadata concurrently with the audio URL so normal
+    // playback does not queue the metadata requests ahead of stream setup.
+    final artworkLookup = canonicalId.startsWith('w-')
+        ? resolveMissingAddonArtwork(track)
+        : Future<DiscoveryTrack>.value(track);
+    // Downloads need the cover before staging so it can be embedded in the
+    // saved audio. Playback instead preserves the fast stream-setup path.
+    final playbackTrack = forDownload ? await artworkLookup : track;
+    final resolved = await source.play(playbackTrack);
+    final enrichedTrack = forDownload ? playbackTrack : await artworkLookup;
     _autoHttpAddonCooldown.succeeded(canonicalId);
     AppLog.instance.add(
       '[OnlineSource] acquisition source=${onlineSourceLogLabel(canonicalId)} '
@@ -2049,6 +2117,7 @@ Future<Song> playOnlineTrack(
       sourceDisplayName: source.id == 'sc'
           ? (resolved.sourceDisplayName ?? source.name)
           : source.name,
+      albumArt: resolved.albumArt ?? enrichedTrack.artwork,
     );
     if (!forDownload && sourceId.startsWith('a-')) {
       _rememberOnlineAddon(song, sourceId.substring(2), track);
@@ -2088,6 +2157,10 @@ Song onlinePendingSong(
     artist: track.artist,
     album: track.album,
     duration: track.duration,
+    // A Search result may have obtained its artwork from the shared UI
+    // fallback cache. Carry that same cover into Now Playing immediately,
+    // before asynchronous stream resolution replaces this placeholder.
+    artwork: track.artwork,
     resolve: ({onStatus, cancel}) => playOnlineTrack(
       sourceId,
       track,
@@ -2441,8 +2514,18 @@ Future<Song?> findDiscoverySong(
         if (automaticAddonAborts[source.id]?.isCompleted == true) return null;
         onStatus?.call('Getting ${track.title} from ${source.name}…');
         final selected = found!.withArtwork(_artworkOf(track));
+        // An auto-selected LastWave-compatible add-on may also omit cover
+        // metadata. Resolve in parallel with the stream and limit the
+        // additional wait on the automatic fallback path.
+        final artworkLookup = source.id.startsWith('w-')
+            ? resolveMissingAddonArtwork(
+                selected,
+                timeout: const Duration(seconds: 2),
+              )
+            : Future<DiscoveryTrack>.value(selected);
         final acquisitionTimer = Stopwatch()..start();
         final resolved = await source.play(selected);
+        final artwork = await artworkLookup;
         if (automaticAddonAborts[source.id]?.isCompleted == true) return null;
         // Stop speculative searches that lost the priority race so they do
         // not continue hitting other add-on endpoints after playback is ready.
@@ -2454,7 +2537,10 @@ Future<Song?> findDiscoverySong(
           '[OnlineSource] discovery acquired source=${onlineSourceLogLabel(source.id)} '
           'elapsedMs=${acquisitionTimer.elapsedMilliseconds}',
         );
-        final song = resolved.copyWith(sourceDisplayName: source.name);
+        final song = resolved.copyWith(
+          sourceDisplayName: source.name,
+          albumArt: resolved.albumArt ?? artwork.artwork,
+        );
         if (source.id.startsWith('a-')) {
           _rememberOnlineAddon(song, source.id.substring(2), selected);
         }

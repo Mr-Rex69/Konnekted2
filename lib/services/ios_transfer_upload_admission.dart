@@ -29,6 +29,7 @@ class IosTransferUploadAdmission {
     String? reviewedSourcePath,
     int? serverId,
   }) => IosLibraryScanEpoch.run(() async {
+    final bindingServerId = serverId ?? frozenIntent?.identity.localServerId;
     IosTransferUploadContext? context;
     IosTransferUploadGrant? grant;
     final song = _current(songId);
@@ -38,10 +39,10 @@ class IosTransferUploadAdmission {
       );
     }
     final binding = _binding(song);
-    final server = serverId == null
+    final server = bindingServerId == null
         ? null
-        : isar.networkServerEntitys.getSync(serverId);
-    if (serverId != null && server == null) {
+        : isar.networkServerEntitys.getSync(bindingServerId);
+    if (bindingServerId != null && server == null) {
       throw StateError('The desktop library connection changed.');
     }
     final serverSnapshot = server == null
@@ -49,10 +50,10 @@ class IosTransferUploadAdmission {
         : IosUploadBinding.sourceId(song, server, 'review');
     void check() {
       IosLibraryScanEpoch.requireCurrent();
-      final target = serverId == null
+      final target = bindingServerId == null
           ? null
-          : isar.networkServerEntitys.getSync(serverId);
-      if ((serverId != null &&
+          : isar.networkServerEntitys.getSync(bindingServerId);
+      if ((bindingServerId != null &&
               (target == null ||
                   IosUploadBinding.sourceId(
                         _current(songId),
@@ -110,8 +111,17 @@ class IosTransferUploadAdmission {
           desktopUserId: context.pairing.desktopUserId,
           sourceId: server == null
               ? (frozenIntent?.identity.sourceId ?? 'phone-song-$songId')
-              : IosUploadBinding.sourceId(song, server, relative),
-          localServerId: serverId,
+              : IosUploadBinding.sourceId(
+                  song,
+                  server,
+                  relative,
+                  legacy:
+                      frozenIntent?.identity.sourceId.startsWith(
+                        IosUploadBinding.legacyPrefix,
+                      ) ??
+                      false,
+                ),
+          localServerId: bindingServerId,
           localSongId: songId.toString(),
         ),
         metadata: iosUploadMetadata(song),

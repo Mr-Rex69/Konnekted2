@@ -91,10 +91,16 @@ void main() {
     final registry = DiscoveryProgressiveStreams.instance;
     registry.clear();
     addTearDown(registry.clear);
-    final handle = registry.register(Uri.parse('https://cdn.example.com/audio.flac'));
+    final handle = registry.register(
+      Uri.parse('https://cdn.example.com/audio.flac'),
+    );
     final song = Song(
-      id: 'remote', title: 'Song', artist: 'Artist',
-      duration: Duration.zero, fileType: 'FLAC', filePath: handle,
+      id: 'remote',
+      title: 'Song',
+      artist: 'Artist',
+      duration: Duration.zero,
+      fileType: 'FLAC',
+      filePath: handle,
       sourcePackage: 'konnekted.progressive',
     );
     expect(QueuePreResolver.isPlayableResolvedSource(song), isTrue);
@@ -199,6 +205,48 @@ void main() {
     expect(replacePendingInPlace(songs, placeholder.id, _ready('k1')), isEmpty);
   });
 
+  test(
+    'LastWave Search cover survives resolution without provider artwork',
+    () {
+      const cover = 'https://covers.example/lastwave-search.jpg';
+      final pending = Song(
+        id: 'pending:online:w-lastwave:track-1',
+        title: 'Song',
+        artist: 'Artist',
+        albumArt: cover,
+        duration: Duration.zero,
+        fileType: 'ONLINE',
+        sourcePackage: Song.pendingSourcePackage,
+      );
+      final resolved = _ready('track-1');
+      expect(resolved.albumArt, isNull);
+      expect(preservePendingArtwork(pending, resolved).albumArt, cover);
+
+      final queue = [pending, _owned('other'), pending];
+      expect(replacePendingInPlace(queue, pending.id, resolved), [0, 2]);
+      expect(queue[0].albumArt, cover);
+      expect(queue[2].albumArt, cover);
+
+      // A valid cover supplied by the resolved provider takes precedence.
+      const fresh = 'https://covers.example/provider.jpg';
+      expect(
+        preservePendingArtwork(
+          pending,
+          resolved.copyWith(albumArt: fresh),
+        ).albumArt,
+        fresh,
+      );
+      // Empty strings are also missing artwork, not a reason to drop Search's.
+      expect(
+        preservePendingArtwork(
+          pending,
+          resolved.copyWith(albumArt: ''),
+        ).albumArt,
+        cover,
+      );
+    },
+  );
+
   group('QueuePreResolver', () {
     late _Host host;
     late _Lookups lookups;
@@ -242,34 +290,35 @@ void main() {
       expect(_owned('x').isPending, isFalse);
     });
 
-    testResolver('playlist starts its first pending track before any prefetch', (
-      tester,
-    ) async {
-      final first = pending('first');
-      host.playlist = [first, pending('second'), pending('third')];
-      // The player publishes a new pending Song before stopping the old
-      // engine. That change must not start downloads for tracks 2 and 3.
-      host.playAt(0);
-      expect(resolver.schedule(), isEmpty);
-      host.queue.value++;
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(lookups.asked, isEmpty);
+    testResolver(
+      'playlist starts its first pending track before any prefetch',
+      (tester) async {
+        final first = pending('first');
+        host.playlist = [first, pending('second'), pending('third')];
+        // The player publishes a new pending Song before stopping the old
+        // engine. That change must not start downloads for tracks 2 and 3.
+        host.playAt(0);
+        expect(resolver.schedule(), isEmpty);
+        host.queue.value++;
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(lookups.asked, isEmpty);
 
-      // Its foreground resolution is now the only add-on request.
-      final started = resolver.resolveNow(first);
-      expect(lookups.asked, ['first']);
-      resolver.schedule();
-      await tester.pump(const Duration(seconds: 3));
-      expect(lookups.asked, ['first']);
+        // Its foreground resolution is now the only add-on request.
+        final started = resolver.resolveNow(first);
+        expect(lookups.asked, ['first']);
+        resolver.schedule();
+        await tester.pump(const Duration(seconds: 3));
+        expect(lookups.asked, ['first']);
 
-      lookups.answer('first');
-      expect((await started)?.id, 'discovery:first');
-      // After the foreground handoff the next-four window opens normally.
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(lookups.asked, ['first', 'second']);
-      await tester.pump(const Duration(seconds: 2));
-      expect(lookups.asked, ['first', 'second', 'third']);
-    });
+        lookups.answer('first');
+        expect((await started)?.id, 'discovery:first');
+        // After the foreground handoff the next-four window opens normally.
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(lookups.asked, ['first', 'second']);
+        await tester.pump(const Duration(seconds: 2));
+        expect(lookups.asked, ['first', 'second', 'third']);
+      },
+    );
 
     testResolver('new playlist first track cancels stale add-on lookups', (
       tester,
@@ -299,54 +348,61 @@ void main() {
       expect(lookups.asked, ['old-next', 'new-first', 'new-second']);
     });
 
-    testResolver('new mid-list context cancels stale lookahead before foreground lookup', (
-      tester,
-    ) async {
-      host.playlist = [
-        _owned('old'),
-        pending('old-next'),
-        pending('old-later'),
-      ];
-      resolver.schedule();
-      expect(lookups.asked, ['old-next']);
-      final first = pending('new-first');
-      host.contextRevision++;
-      host.playlist = [_owned('before-a'), _owned('before-b'), first, pending('new-second')];
-      host.playAt(2);
-      await tester.pump();
-      expect(lookups.cancelled, contains('old-next'));
-      expect(resolver.running, isEmpty);
-      // A slow answer from the previous queue cannot replace the new one.
-      lookups.answer('old-next');
-      await tester.pump();
-      expect(host.swaps, isEmpty);
-      final started = resolver.resolveNow(first);
-      expect(lookups.asked, ['old-next', 'new-first']);
-      lookups.answer('new-first');
-      expect((await started)?.id, 'discovery:new-first');
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(lookups.asked, ['old-next', 'new-first', 'new-second']);
-    });
+    testResolver(
+      'new mid-list context cancels stale lookahead before foreground lookup',
+      (tester) async {
+        host.playlist = [
+          _owned('old'),
+          pending('old-next'),
+          pending('old-later'),
+        ];
+        resolver.schedule();
+        expect(lookups.asked, ['old-next']);
+        final first = pending('new-first');
+        host.contextRevision++;
+        host.playlist = [
+          _owned('before-a'),
+          _owned('before-b'),
+          first,
+          pending('new-second'),
+        ];
+        host.playAt(2);
+        await tester.pump();
+        expect(lookups.cancelled, contains('old-next'));
+        expect(resolver.running, isEmpty);
+        // A slow answer from the previous queue cannot replace the new one.
+        lookups.answer('old-next');
+        await tester.pump();
+        expect(host.swaps, isEmpty);
+        final started = resolver.resolveNow(first);
+        expect(lookups.asked, ['old-next', 'new-first']);
+        lookups.answer('new-first');
+        expect((await started)?.id, 'discovery:new-first');
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(lookups.asked, ['old-next', 'new-first', 'new-second']);
+      },
+    );
 
-    testResolver('pending selection defers existing stagger without losing work', (
-      tester,
-    ) async {
-      final first = pending('first');
-      host.playlist = [_owned('old'), first, pending('second')];
-      resolver.schedule();
-      expect(lookups.asked, ['first']);
-      // Existing background work for the selected track is retained.
-      host.playAt(1);
-      await tester.pump(const Duration(seconds: 2));
-      expect(lookups.asked, ['first']);
-      final started = resolver.resolveNow(first);
-      expect(lookups.asked, ['first']);
-      lookups.answer('first');
-      expect((await started)?.id, 'discovery:first');
-      // A next track that was deferred during the handoff is still resolved.
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(lookups.asked, ['first', 'second']);
-    });
+    testResolver(
+      'pending selection defers existing stagger without losing work',
+      (tester) async {
+        final first = pending('first');
+        host.playlist = [_owned('old'), first, pending('second')];
+        resolver.schedule();
+        expect(lookups.asked, ['first']);
+        // Existing background work for the selected track is retained.
+        host.playAt(1);
+        await tester.pump(const Duration(seconds: 2));
+        expect(lookups.asked, ['first']);
+        final started = resolver.resolveNow(first);
+        expect(lookups.asked, ['first']);
+        lookups.answer('first');
+        expect((await started)?.id, 'discovery:first');
+        // A next track that was deferred during the handoff is still resolved.
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(lookups.asked, ['first', 'second']);
+      },
+    );
 
     testResolver('the first lookup runs at once, the rest 2 s apart', (
       tester,
@@ -374,25 +430,30 @@ void main() {
       expect(lookups.asked, hasLength(4), reason: 'only four ahead');
     });
 
-    testResolver('repeated queue updates do not postpone the two-second stagger', (tester) async {
-      host.playlist = [
-        _owned('now'),
-        for (var i = 1; i <= 5; i++) pending('k$i'),
-      ];
-      resolver.schedule();
-      expect(lookups.asked, ['k1']);
-      await tester.pump(const Duration(seconds: 1));
-      resolver.schedule(); // e.g. Discovery refreshed the upcoming queue.
-      await tester.pump(const Duration(seconds: 1));
-      expect(lookups.asked, ['k1', 'k2']);
-      resolver.schedule();
-      await tester.pump(const Duration(seconds: 2));
-      expect(lookups.asked, ['k1', 'k2', 'k3']);
-      await tester.pump(const Duration(seconds: 2));
-      expect(lookups.asked, ['k1', 'k2', 'k3', 'k4']);
-    });
+    testResolver(
+      'repeated queue updates do not postpone the two-second stagger',
+      (tester) async {
+        host.playlist = [
+          _owned('now'),
+          for (var i = 1; i <= 5; i++) pending('k$i'),
+        ];
+        resolver.schedule();
+        expect(lookups.asked, ['k1']);
+        await tester.pump(const Duration(seconds: 1));
+        resolver.schedule(); // e.g. Discovery refreshed the upcoming queue.
+        await tester.pump(const Duration(seconds: 1));
+        expect(lookups.asked, ['k1', 'k2']);
+        resolver.schedule();
+        await tester.pump(const Duration(seconds: 2));
+        expect(lookups.asked, ['k1', 'k2', 'k3']);
+        await tester.pump(const Duration(seconds: 2));
+        expect(lookups.asked, ['k1', 'k2', 'k3', 'k4']);
+      },
+    );
 
-    testResolver('skipping to a pending song retains other preloading work', (tester) async {
+    testResolver('skipping to a pending song retains other preloading work', (
+      tester,
+    ) async {
       host.playlist = [
         _owned('now'),
         for (var i = 1; i <= 6; i++) pending('k$i'),
@@ -437,7 +498,11 @@ void main() {
       expect(host.playlist.map((s) => s.id), ['now', 'discovery:k1', 'b']);
       expect(resolver.resolvedPaths, {cached.path});
       await tester.runAsync(cached.delete);
-      expect(resolver.resolvedPaths, isEmpty, reason: 'deleted cache files are not retained');
+      expect(
+        resolver.resolvedPaths,
+        isEmpty,
+        reason: 'deleted cache files are not retained',
+      );
       expect(resolver.running, isEmpty);
     });
 

@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 
 import 'discovery_http.dart';
 import 'discovery_models.dart';
+import 'addon_request_signing.dart';
+import 'addon_hybrid_media.dart';
+import 'addon_dash_media.dart';
 
 class YoutubeMusicCatalog {
   YoutubeMusicCatalog(this.http, {this.refreshClientContext = false});
@@ -433,11 +436,24 @@ class ResolvedDiscoveryAudio {
     this.bitDepth,
     this.sampleRate,
     this.isPreview = false,
+    this.hybridPlan,
+    this.dashMedia,
+    this.requiresStaging = false,
   });
   final Uri url;
 
-  /// True only when the resolver confirms a limited preview rendition.
+  /// Confirmed limited preview rendition, never guessed from duration.
   final bool isPreview;
+
+  /// A DASH MPD is a transport descriptor, never a progressive audio URL.
+  final AddonDashMedia? dashMedia;
+
+  /// Unclassified signed media must pass the native file probe before playback.
+  final bool requiresStaging;
+
+  /// CENC content key and CDN range metadata are memory-only and never
+  /// serialized into the playback queue or forwarded to an audio URL.
+  final AddonHybridPlan? hybridPlan;
 
   /// Resolved stream metadata, never inferred from a catalogue maximum.
   final String? codec;
@@ -603,6 +619,7 @@ class DiscoveryAddon {
     this.configId,
     this.displayName = 'Music addon',
     this.settings = const {},
+    this.signingKey = '',
   }) : base = normalizeAddonEndpoint(endpoint),
        _token = token.trim() {
     if (_token.length > 4096 || RegExp(r'[\x00-\x20\x7f]').hasMatch(_token)) {
@@ -619,6 +636,7 @@ class DiscoveryAddon {
   final String? configId;
   final String displayName;
   final Map<String, String> settings;
+  final String signingKey;
 
   /// A provider may use a custom quality value with an explicitly Atmos-
   /// labeled option. Inspect that manifest label only if the selected ID is
@@ -669,11 +687,18 @@ class DiscoveryAddon {
     List<String> suffix, {
     Map<String, String>? query,
     Future<void>? cancel,
-  }) => http.json(
-    _endpoint(suffix, query),
-    headers: {if (_token.isNotEmpty) 'Authorization': 'Bearer $_token'},
-    cancel: cancel,
-  );
+    String? intent,
+  }) {
+    final url = _endpoint(suffix, query);
+    return http.json(
+      url,
+      headers: {
+        if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+        ...signedAddonHeaders(url, intent: intent, signingKey: signingKey),
+      },
+      cancel: cancel,
+    );
+  }
 
   Future<AddonHealth> health({
     Future<void>? cancel,
@@ -696,7 +721,10 @@ class DiscoveryAddon {
         ? await _get(['manifest.json'], cancel: cancel)
         : await http.json(
             exactManifestUrl,
-            headers: {if (_token.isNotEmpty) 'Authorization': 'Bearer $_token'},
+            headers: {
+              if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+              ...signedAddonHeaders(exactManifestUrl, signingKey: signingKey),
+            },
             cancel: cancel,
           );
     final id = discoveryText(json['id']);
@@ -738,8 +766,15 @@ class DiscoveryAddon {
       ['search'],
       query: {...settings, 'q': trimmed},
       cancel: cancel,
+      intent: 'stream',
     );
-    final rows = json['tracks'];
+    // HTTP add-on providers may nest their catalogue in "data".
+    final nested = json['data'];
+    final rows =
+        json['tracks'] ??
+        (nested is Map ? nested['tracks'] : null) ??
+        json['results'] ??
+        json['items'];
     if (rows is! List) {
       throw const DiscoveryException(
         'The addon search response must contain a tracks array.',
@@ -879,22 +914,82 @@ class DiscoveryAddon {
         // Give the full stream endpoint one opportunity to replace a preview.
       }
     }
-    return parseStream(
-      await _get(['stream', track.id], query: settings, cancel: cancel),
-      expectedDuration: track.duration,
+    Future<Map<String, dynamic>> fetchStream() => _get(
+      ['stream', track.id],
+      query: settings,
+      cancel: cancel,
+      intent: forDownload ? 'download' : 'stream',
     );
+    Map<String, dynamic> response;
+    try {
+      response = await fetchStream();
+    } on DiscoveryException catch (error) {
+      // An upstream minting failure can be transient. Re-sign exactly one
+      // fresh request, but never retry an authentication or quota failure.
+      if (!error.message.contains('HTTP 502') &&
+          !error.message.contains('HTTP 503'))
+        rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      response = await fetchStream();
+    }
+    return parseStream(response, expectedDuration: track.duration);
   }
 
   ResolvedDiscoveryAudio parseStream(
     Map<String, dynamic> json, {
     Duration? expectedDuration,
   }) {
+    // An add-on may return the same stream at top level and inside "data".
+    // Check security-sensitive flags on both layers before merging them.
+    // HTTP add-ons may wrap the rendition under "stream" or "data".
+    // All response layers are checked before selecting a playable URL.
+    final data = json['data'];
+    final stream = json['stream'];
+    final nested = stream is Map<String, dynamic>
+        ? stream
+        : data is Map<String, dynamic>
+        ? data
+        : null;
+    final hybridPlan = AddonHybridPlan.parse(
+      nested?['hybrid'] ??
+          json['hybrid'] ??
+          (data is Map ? data['hybrid'] : null),
+      addonBase: base,
+    );
+    for (final layer in <Map<String, dynamic>>[
+      json,
+      if (data is Map<String, dynamic>) data,
+      if (stream is Map<String, dynamic>) stream,
+    ]) {
+      if (layer['error'] != null) {
+        throw const DiscoveryException(
+          'The addon could not resolve this recording.',
+        );
+      }
+      if ((layer['encrypted'] != null &&
+              layer['encrypted'] != false &&
+              hybridPlan?.encrypted != true) ||
+          layer['drm'] != null && layer['drm'] != false) {
+        throw const DiscoveryException(
+          'Encrypted audio is not supported by this adapter.',
+        );
+      }
+      if (layer['headers'] != null &&
+          !(layer['headers'] is Map && (layer['headers'] as Map).isEmpty)) {
+        throw const DiscoveryException(
+          'Use a signed media URL; custom media headers are not supported.',
+        );
+      }
+    }
+    if (nested != null) json = {...json, ...nested};
     if (json['error'] != null) {
       throw const DiscoveryException(
         'The addon could not resolve this recording.',
       );
     }
-    if (json['encrypted'] != null && json['encrypted'] != false) {
+    if (json['encrypted'] != null &&
+        json['encrypted'] != false &&
+        hybridPlan?.encrypted != true) {
       throw const DiscoveryException(
         'Encrypted audio is not supported by this adapter.',
       );
@@ -910,43 +1005,100 @@ class DiscoveryAddon {
         'Use a signed media URL; custom media headers are not supported.',
       );
     }
-    final url = discoveryText(json['url'], maxLength: 8192);
-    if (url == null) {
+    // The LastWave protocol defaults both "format" and "manifest" to
+    // "dash" even for a plain direct media file. Those two strings alone
+    // are not proof of an adaptive rendition. Prefer a real progressive URL,
+    // then a signed hybrid plan, then an explicit inline/remote MPD.
+    final urls = <Uri>[];
+    for (final field in const [
+      'url',
+      'directUrl',
+      'streamUrl',
+      'downloadUrl',
+      'mediaUrl',
+    ]) {
+      final raw = discoveryText(json[field], maxLength: 8192);
+      if (raw == null || raw.startsWith('data:')) continue;
+      final parsed = requireHttps(raw);
+      urls.add(parsed);
+    }
+    final direct = urls
+        .where(
+          (candidate) => RegExp(
+            r'\.(?:flac|mp3|m4a|mp4|ogg|opus|wav|aac|webm)$',
+            caseSensitive: false,
+          ).hasMatch(candidate.path),
+        )
+        .firstOrNull;
+    final dash = hybridPlan == null && direct == null
+        ? addonDashFromResponse(json, addonBase: base)
+        : null;
+    final fallback = urls
+        .where(
+          (candidate) => !RegExp(
+            r'\.(?:mpd|m3u8)$',
+            caseSensitive: false,
+          ).hasMatch(candidate.path),
+        )
+        .firstOrNull;
+    final dashMedia = dash;
+    final Uri uri;
+    if (hybridPlan != null) {
+      uri = hybridPlan.cdnUrl;
+    } else if (dashMedia != null) {
+      uri = dashMedia.manifestUrl ?? base;
+    } else if (direct != null || fallback != null) {
+      uri = direct ?? fallback!;
+      if (_isAddonPreviewStream(json, uri, expectedDuration)) {
+        throw const _PreviewOnlyAddonStream();
+      }
+    } else {
       throw const DiscoveryException('The addon returned no playable URL.');
     }
-    final uri = requireHttps(url);
-    if (_isAddonPreviewStream(json, uri, expectedDuration)) {
-      throw const _PreviewOnlyAddonStream();
-    }
-    for (final key in [
-      'manifest',
-      'mediaType',
-      'format',
-      'container',
-      'containerFormat',
-      'mimeType',
-    ]) {
-      final value = json[key];
-      if (value != null && value is! String) {
-        throw const DiscoveryException(
-          'The addon returned invalid transport metadata.',
-        );
-      }
-      if (value is String &&
-          RegExp(
-            r'hls|dash|mpegurl|m3u8|mpd',
-            caseSensitive: false,
-          ).hasMatch(value)) {
+    // Match MIME and transport to the resolved object rather than to the
+    // server's default labels. Explicit HLS still requires its own player.
+    if (hybridPlan == null && dashMedia == null) {
+      if (urls.any(
+            (candidate) => candidate.path.toLowerCase().endsWith('.m3u8'),
+          ) &&
+          direct == null &&
+          fallback == null) {
         throw const DiscoveryException(
           'This source uses HLS/DASH. A progressive audio file is required.',
         );
       }
+      for (final key in const [
+        'manifest',
+        'mediaType',
+        'format',
+        'container',
+        'containerFormat',
+        'mimeType',
+      ]) {
+        final value = json[key];
+        if (key == 'manifest' && value == false) continue;
+        if (value != null && value is! String) {
+          throw const DiscoveryException(
+            'The addon returned invalid transport metadata.',
+          );
+        }
+        if (value is String) {
+          final lower = value.trim().toLowerCase();
+          if ((key == 'manifest' || key == 'format') && lower == 'dash') {
+            continue; // Protocol default, not a manifest.
+          }
+          if (RegExp(r'hls|dash|mpegurl|m3u8|mpd').hasMatch(lower)) {
+            throw const DiscoveryException(
+              'This source uses HLS/DASH. A progressive audio file is required.',
+            );
+          }
+        }
+      }
     }
-    if (RegExp(r'\.(m3u8|mpd)$', caseSensitive: false).hasMatch(uri.path)) {
-      throw const DiscoveryException(
-        'A playlist URL cannot be played as an audio file.',
-      );
-    }
+    // An opaque signed URL might actually return a JSON error or MPD.
+    // Stage and inspect its bytes rather than hand it to the audio engine.
+    final requiresStaging =
+        hybridPlan == null && dashMedia == null && direct == null;
     // An explicitly configured LAN addon may serve its own media. An addon
     // cannot redirect the downloader to a different literal/private host.
     if (uri.origin != base.origin) {
@@ -1003,6 +1155,10 @@ class DiscoveryAddon {
               .round();
     return ResolvedDiscoveryAudio(
       uri,
+      hybridPlan: hybridPlan,
+      dashMedia: dashMedia,
+      requiresStaging: requiresStaging,
+      length: hybridPlan?.outputLength,
       codec: providerAudioCodec(details),
       quality: discoveryText(
         details['audioQuality'] ??
