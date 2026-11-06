@@ -24,6 +24,7 @@ class LokalAppearance {
     this.ultraPerformanceMode = false,
     this.fullscreenCover = false,
     this.unboxedPlayerControls = false,
+    this.showHomeGreeting = true,
     this.resolutionTagsInLists = false,
     this.resolutionTagsInFullPlayer = false,
   });
@@ -52,6 +53,9 @@ class LokalAppearance {
   final bool fullscreenCover;
   final bool unboxedPlayerControls;
 
+  /// Whether both greeting lines appear in every Home mode.
+  final bool showHomeGreeting;
+
   /// Show measured/explicit audio resolution instead of quality tiers in lists.
   final bool resolutionTagsInLists;
 
@@ -72,6 +76,7 @@ class LokalAppearance {
     bool? ultraPerformanceMode,
     bool? fullscreenCover,
     bool? unboxedPlayerControls,
+    bool? showHomeGreeting,
     bool? resolutionTagsInLists,
     bool? resolutionTagsInFullPlayer,
   }) => LokalAppearance(
@@ -82,6 +87,7 @@ class LokalAppearance {
     ultraPerformanceMode: ultraPerformanceMode ?? this.ultraPerformanceMode,
     fullscreenCover: fullscreenCover ?? this.fullscreenCover,
     unboxedPlayerControls: unboxedPlayerControls ?? this.unboxedPlayerControls,
+    showHomeGreeting: showHomeGreeting ?? this.showHomeGreeting,
     resolutionTagsInLists: resolutionTagsInLists ?? this.resolutionTagsInLists,
     resolutionTagsInFullPlayer: resolutionTagsInFullPlayer ?? this.resolutionTagsInFullPlayer,
   );
@@ -94,6 +100,7 @@ class LokalAppearance {
     'ultraPerformanceMode': ultraPerformanceMode,
     'fullscreenCover': fullscreenCover,
     'unboxedPlayerControls': unboxedPlayerControls,
+    'showHomeGreeting': showHomeGreeting,
     'resolutionTagsInLists': resolutionTagsInLists,
     'resolutionTagsInFullPlayer': resolutionTagsInFullPlayer,
   };
@@ -113,6 +120,7 @@ class LokalAppearance {
       ultraPerformanceMode: json['ultraPerformanceMode'] as bool? ?? false,
       fullscreenCover: json['fullscreenCover'] as bool? ?? false,
       unboxedPlayerControls: json['unboxedPlayerControls'] as bool? ?? false,
+      showHomeGreeting: json['showHomeGreeting'] != false,
       resolutionTagsInLists: json['resolutionTagsInLists'] == true,
       resolutionTagsInFullPlayer: json['resolutionTagsInFullPlayer'] == true,
     );
@@ -128,6 +136,7 @@ class LokalAppearance {
       other.ultraPerformanceMode == ultraPerformanceMode &&
       other.fullscreenCover == fullscreenCover &&
       other.unboxedPlayerControls == unboxedPlayerControls &&
+      other.showHomeGreeting == showHomeGreeting &&
       other.resolutionTagsInLists == resolutionTagsInLists &&
       other.resolutionTagsInFullPlayer == resolutionTagsInFullPlayer;
 
@@ -140,6 +149,7 @@ class LokalAppearance {
     ultraPerformanceMode,
     fullscreenCover,
     unboxedPlayerControls,
+    showHomeGreeting,
     resolutionTagsInLists,
     resolutionTagsInFullPlayer,
   );
@@ -230,6 +240,9 @@ class LokalAppearanceNotifier extends Notifier<LokalAppearance> {
 
   Future<void> setUnboxedPlayerControls(bool value) =>
       _commit(state.copyWith(unboxedPlayerControls: value));
+
+  Future<void> setShowHomeGreeting(bool value) =>
+      _commit(state.copyWith(showHomeGreeting: value));
 
   Future<void> setFullscreenCover(bool value) =>
       _commit(state.copyWith(fullscreenCover: value));
