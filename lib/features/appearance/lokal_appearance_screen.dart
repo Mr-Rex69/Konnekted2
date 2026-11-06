@@ -69,6 +69,15 @@ class LokalAppearanceScreen extends ConsumerWidget {
                   value: appearance.textScale,
                   onChanged: notifier.setTextScale,
                 ),
+                Divider(height: 1, color: t.border, indent: 16),
+                SwitchListTile.adaptive(
+                  title: Text(lokalText('Home greeting and subheader')),
+                  subtitle: Text(lokalText(
+                    'Show the greeting in Local, Discovery and Flow.',
+                  )),
+                  value: appearance.showHomeGreeting,
+                  onChanged: notifier.setShowHomeGreeting,
+                ),
               ],
             ),
           ],
