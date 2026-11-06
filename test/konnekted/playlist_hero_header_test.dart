@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
@@ -48,42 +50,7 @@ void main() {
     expect(playlistHeroCoversForSession('youtube:empty', []), isEmpty);
   });
 
-  testWidgets('first view builds no images until its short mount delay',
-      (tester) async {
-    Widget page(String id, {List<PlaylistHeroCover>? covers}) => MaterialApp(
-          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-          home: Scaffold(
-            body: SizedBox(
-              width: 390,
-              height: 300,
-              child: PlaylistDiagonalCollage(
-                playlistId: id,
-                covers: covers ?? const [
-                  PlaylistHeroCover(imagePath: '/missing-playlist-art.jpg'),
-                ],
-              ),
-            ),
-          ),
-        );
-
-    await tester.pumpWidget(page('test:playlist-first'));
-    expect(find.byType(CachedImageWidget), findsNothing);
-    await tester.pump(const Duration(milliseconds: 79));
-    expect(find.byType(CachedImageWidget), findsNothing);
-    await tester.pump(const Duration(milliseconds: 1));
-    expect(find.byType(CachedImageWidget), findsNWidgets(16));
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(page('test:playlist-first'));
-    expect(find.byType(CachedImageWidget), findsNWidgets(16));
-
-    // Every newly generated playlist collage has its own one-time delay.
-    await tester.pumpWidget(page('test:playlist-second'));
-    expect(find.byType(CachedImageWidget), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('empty artwork waits until there are candidates',
+  testWidgets('generated collage builds immediately, including late covers',
       (tester) async {
     Widget page(List<PlaylistHeroCover> covers) => MaterialApp(
           theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
@@ -91,44 +58,50 @@ void main() {
             body: SizedBox(
               width: 390,
               height: 300,
-              child: PlaylistDiagonalCollage(
-                playlistId: 'test:playlist-late-art',
-                covers: covers,
-              ),
+              child: PlaylistDiagonalCollage(covers: covers),
             ),
           ),
         );
 
+    await tester.pumpWidget(page(const [
+      PlaylistHeroCover(imagePath: '/missing-playlist-art.jpg'),
+    ]));
+    expect(find.byType(CachedImageWidget), findsNWidgets(16));
+
     await tester.pumpWidget(page(const []));
     expect(find.byType(CachedImageWidget), findsNothing);
+
     await tester.pumpWidget(page(const [
-      PlaylistHeroCover(imagePath: '/missing-late-playlist-art.jpg'),
+      PlaylistHeroCover(imagePath: '/missing-late-art.jpg'),
     ]));
-    expect(find.byType(CachedImageWidget), findsNothing);
-    await tester.pump(playlistHeroPostTransitionDelay);
     expect(find.byType(CachedImageWidget), findsNWidgets(16));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('opening a route does not build playlist art during its slide',
+  testWidgets('first tap waits before push, repeat visit is immediate',
       (tester) async {
+    var pushes = 0;
     await tester.pumpWidget(MaterialApp(
       theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
       home: Scaffold(
         body: Builder(builder: (context) {
           return TextButton(
-            onPressed: () => Navigator.of(context).push<void>(
-              LokalPageRoute<void>(
-                builder: (_) => const Scaffold(
-                  body: PlaylistDiagonalCollage(
-                    playlistId: 'test:playlist-during-push',
-                    covers: [
-                      PlaylistHeroCover(imagePath: '/missing-push-art.jpg'),
-                    ],
+            onPressed: () => unawaited(openPlaylistAfterFirstTap(
+              context,
+              'test:playlist-tap-delay',
+              () async {
+                pushes++;
+                await Navigator.of(context).push<void>(
+                  LokalPageRoute<void>(
+                    builder: (_) => const Scaffold(
+                      body: PlaylistDiagonalCollage(covers: [
+                        PlaylistHeroCover(imagePath: '/missing-push-art.jpg'),
+                      ]),
+                    ),
                   ),
-                ),
-              ),
-            ),
+                );
+              },
+            )),
             child: const Text('Open playlist'),
           );
         }),
@@ -137,17 +110,48 @@ void main() {
 
     await tester.tap(find.text('Open playlist'));
     await tester.pump();
-    expect(find.byType(CachedImageWidget), findsNothing);
+    expect(pushes, 0);
+    // Ignore a second tap while the opening is pending.
+    await tester.tap(find.text('Open playlist'));
+    await tester.pump(const Duration(milliseconds: 79));
+    expect(pushes, 0);
 
-    await tester.pump(const Duration(milliseconds: 160));
-    expect(find.byType(CachedImageWidget), findsNothing);
-
-    await tester.pump(const Duration(milliseconds: 160));
-    // The route completed, but decoding is still deferred by 80 ms.
-    expect(find.byType(CachedImageWidget), findsNothing);
-
-    await tester.pump(playlistHeroPostTransitionDelay);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
+    expect(pushes, 1);
+    // The collage is built on the first route frame, not after the slide.
     expect(find.byType(CachedImageWidget), findsNWidgets(16));
+
+    final routeContext = tester.element(find.byType(PlaylistDiagonalCollage));
+    Navigator.of(routeContext).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open playlist'));
+    await tester.pump();
+    expect(pushes, 2);
+    expect(find.byType(CachedImageWidget), findsNWidgets(16));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('hero bottom is opaque and matches the following page surface',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+      home: const Scaffold(
+        body: PlaylistHeroHeader(
+          playlistId: 'test:hero-seam',
+          title: 'Sample',
+          metadata: '2 songs',
+          covers: [],
+        ),
+      ),
+    ));
+
+    final fill = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('playlist-hero-seam-fill')),
+    );
+    final context = tester.element(find.byType(PlaylistHeroHeader));
+    expect(fill.color, context.lokal.bg);
     expect(tester.takeException(), isNull);
   });
 }
