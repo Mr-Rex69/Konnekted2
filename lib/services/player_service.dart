@@ -1929,7 +1929,10 @@ class PlayerService {
     required String? originalArtwork,
     required String recoveredArtwork,
   }) {
-    if (!recoveredArtwork.startsWith('https://')) return;
+    // A decoded library match is as valid as a decoded HTTPS catalogue
+    // image. Never accept an unverified/expired local path as artwork.
+    if (!recoveredArtwork.startsWith('https://') &&
+        !File(recoveredArtwork).existsSync()) return;
     final current = currentSongNotifier.value;
     if (current == null || current.id != songId ||
         current.albumArt != originalArtwork ||
