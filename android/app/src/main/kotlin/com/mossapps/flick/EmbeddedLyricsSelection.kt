@@ -9,6 +9,17 @@ internal object EmbeddedLyricsSelection {
     )
     private val backgroundPattern = Regex("""^\s*\[bg\s*:""", RegexOption.IGNORE_CASE)
 
+    /** Desktop's native VORBIS_COMMENT stores the complete background lane as
+     * structured JSON; a second LYRICS entry contains only the portable lead.
+     */
+    private fun isLokalPrivate(text: String): Boolean = try {
+        if (!text.trimStart().startsWith("{")) false
+        else {
+            val json = org.json.JSONObject(text)
+            json.optInt("lokal") == 1 && (json.optJSONArray("lines")?.length() ?: 0) > 0
+        }
+    } catch (_: Exception) { false }
+
     private fun backgroundCount(text: String): Int =
         text.lineSequence().count { backgroundPattern.containsMatchIn(it) }
 
@@ -40,7 +51,8 @@ internal object EmbeddedLyricsSelection {
      * [bg:] rows from the *same file*, never duplicate already present rows.
      */
     fun combineVorbisLyrics(candidates: List<String>): String? {
-        val primary = pick(candidates) ?: return null
+        val primary = candidates.firstOrNull(::isLokalPrivate) ?: pick(candidates) ?: return null
+        if (isLokalPrivate(primary)) return primary
         val seen = primary.lineSequence().map { it.trim() }.toMutableSet()
         val extraBacking = candidates.asSequence()
             .flatMap { it.replace("\r\n", "\n").replace('\r', '\n').lineSequence() }
@@ -78,6 +90,7 @@ internal object EmbeddedLyricsSelection {
             "SYNCEDLYRICS", "SYNCED_LYRICS",
         )
         val found = mutableListOf<String>()
+        var privateLyrics: String? = null
         repeat(commentCount) {
             val size = length() ?: return combineVorbisLyrics(found)
             val bytes = ByteArray(size)
@@ -87,9 +100,10 @@ internal object EmbeddedLyricsSelection {
             if (equal <= 0) return@repeat
             val key = entry.substring(0, equal).uppercase(java.util.Locale.ROOT)
             val value = entry.substring(equal + 1).trim()
-            if (key in wanted && value.isNotBlank()) found.add(value)
+            if (key == "LOKAL_LYRICS" && isLokalPrivate(value)) privateLyrics = value
+            else if (key in wanted && value.isNotBlank()) found.add(value)
         }
-        return combineVorbisLyrics(found)
+        return privateLyrics ?: combineVorbisLyrics(found)
     }
 
     /**
@@ -140,6 +154,7 @@ internal object EmbeddedLyricsSelection {
     /** The original timed tag with independent backing singers is more complete. */
     fun pick(candidates: List<String>): String? {
         val parts = candidates.filter { it.isNotBlank() }
+        parts.firstOrNull(::isLokalPrivate)?.let { return it }
         val synced = parts.filter { lrcStampPattern.containsMatchIn(it) }
         if (synced.isEmpty()) return parts.firstOrNull()
         return synced.reduce { best, candidate ->
