@@ -65,11 +65,13 @@ const _dockGlassLens = LokalLens(
 
 const _dockBlurRadius = 1.2;
 
-// All three footer surfaces share one modest Gaussian backdrop blur.
-// Performance Mode keeps this small clipped blur, without a new shader.
-const _dockBackdropBlurSigma = 9.0;
-const _dockPerformanceDarkTint = .44;
-const _dockPerformanceLightTint = .62;
+// Apple's floating Music controls let the underlying content remain visible:
+// the frost should barely soften detail, not turn the dock into opaque acrylic.
+// Keep one small, clipped Gaussian pass for all three footer surfaces, including
+// Performance Mode, without introducing any extra shader.
+const _dockBackdropBlurSigma = 2.0;
+const _dockPerformanceDarkTint = .28;
+const _dockPerformanceLightTint = .40;
 
 /// Compress the selected icon *toward the screen's left edge* only while
 /// the footer is closing. The icon's left edge stays anchored: its right edge

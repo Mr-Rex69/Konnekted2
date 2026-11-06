@@ -56,6 +56,7 @@ void main() {
         expect(glass.lens?.dispersion, .10);
         expect(glass.liquidBlurRadius, 1.2);
         expect(glass.fallbackBlurSigma, 2);
+        expect(glass.backdropBlurSigma, 2);
         expect(glass.fallbackTintOpacity, closeTo(fallbackOpacity, .001));
         expect(glass.lens?.magnification, closeTo(.023, .001));
         expect(glass.liquidTintOpacity, closeTo(expectedOpacity, .001));
@@ -152,8 +153,8 @@ void main() {
       ).toList();
       expect(glasses, hasLength(keys.length));
       for (final glass in glasses) {
-        expect(glass.backdropBlurSigma, 9);
-        expect(glass.performanceTintOpacity, closeTo(.44, .001));
+        expect(glass.backdropBlurSigma, 2);
+        expect(glass.performanceTintOpacity, closeTo(.28, .001));
         expect(glass.singlePassLens, isTrue);
       }
       for (final key in keys) {
@@ -196,6 +197,44 @@ void main() {
     await container.read(lokalAppearanceProvider.notifier).setPerformanceMode(true);
     await tester.pumpAndSettle();
     expectFrost();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('light-mode dock stays translucent with only a slight frost',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.light)),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: KonnektedDock(
+                selected: KonnektedTab.listen,
+                onSelect: (_) {},
+                miniPlayer: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final glass = tester.widgetList<LokalGlass>(
+      find.byType(LokalGlass),
+    ).toList();
+    expect(glass, hasLength(3));
+    for (final capsule in glass) {
+      expect(capsule.backdropBlurSigma, 2);
+      expect(capsule.performanceTintOpacity, closeTo(.40, .001));
+    }
     expect(tester.takeException(), isNull);
   });
 
