@@ -223,17 +223,20 @@ class _SpotifyPlaylistsScreenState
                             onPressed: () => unawaited(_changeHidden(playlist.id,
                                 !_hidden.contains(playlist.id))),
                           ),
-                          onTap: () => unawaited(openPlaylistAfterFirstTap(
-                            context,
-                            'spotify:${_account}:${playlist.id}',
-                            () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _SpotifyPlaylistDetail(
-                                playlist: playlist, onPlay: widget.onPlay,
-                                accountId: _account,
+                          onTap: () => unawaited(
+                            openPlaylistAfterFirstTap(
+                              context,
+                              'spotify:${_account}:${playlist.id}',
+                              () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => _SpotifyPlaylistDetail(
+                                    playlist: playlist, onPlay: widget.onPlay,
+                                    accountId: _account,
+                                  ),
+                                ),
                               ),
                             ),
-                          ))),
+                          ),
                         );
                       },
                     ),
