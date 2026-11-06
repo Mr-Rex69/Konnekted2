@@ -1479,13 +1479,11 @@ class LyricsService {
   LyricsData _splitTrailingBackingVoices(LyricsData lyrics) {
     if (!lyrics.isSynchronized) return lyrics;
     var changed = false;
-    final lines = <LyricsLine>[
-      for (final line in lyrics.lines) () {
-        final updated = _splitTrailingBackingVoice(line);
-        if (!identical(updated, line)) changed = true;
-        return updated;
-      }(),
-    ];
+    final lines = lyrics.lines.map((line) {
+      final updated = _splitTrailingBackingVoice(line);
+      if (!identical(updated, line)) changed = true;
+      return updated;
+    }).toList();
     if (!changed) return lyrics;
     return LyricsData(
       lines: lines,
@@ -1785,6 +1783,38 @@ class LyricsService {
         return Duration(microseconds: (seconds * 1000000).round());
       }
 
+      // Apple Music/Bini TTML can mark answering singers with ttm:role="x-bg".
+      // Namespaced attributes must be read by local name, not getAttribute(),
+      // which misses the ttm prefix on Android.
+      String? role(XmlElement element) => element.attributes
+          .where((attribute) => attribute.name.local == 'role')
+          .firstOrNull?.value;
+
+      String leadText(XmlNode node) {
+        if (node is XmlText) return node.value;
+        if (node is! XmlElement) return '';
+        if (const {'x-bg', 'x-translation', 'x-roman'}.contains(role(node))) {
+          return '';
+        }
+        return node.children.map(leadText).join();
+      }
+
+      String backingText(XmlElement paragraph) {
+        final parts = <String>[];
+        void walk(XmlNode node) {
+          if (node is! XmlElement) return;
+          if (role(node) == 'x-bg') {
+            final text = node.innerText.trim();
+            if (text.isNotEmpty) parts.add(text);
+            return;
+          }
+          if (const {'x-translation', 'x-roman'}.contains(role(node))) return;
+          for (final child in node.children) walk(child);
+        }
+        walk(paragraph);
+        return parts.join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+      }
+
       final paragraphs = document.descendants.whereType<XmlElement>().where(
         (e) => e.name.local == 'p',
       );
@@ -1792,14 +1822,22 @@ class LyricsService {
       final plain = <LyricsLine>[];
       for (final paragraph in paragraphs) {
         final start = time(paragraph.getAttribute('begin'));
-        final rawText = paragraph.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
-        if (rawText.isEmpty) continue;
+        final rawText = leadText(paragraph)
+            .replaceAll(RegExp(r'\s+'), ' ').trim();
+        final bgText = backingText(paragraph);
+        if (rawText.isEmpty && bgText.isEmpty) continue;
         if (start == null) {
           final (text, _, voice) = _stripVoicePrefix(rawText, null);
-          plain.add(LyricsLine(timestamp: Duration.zero, text: text, voice: voice));
+          if (text.isNotEmpty) {
+            plain.add(LyricsLine(
+              timestamp: Duration.zero, text: text, voice: voice,
+              backgroundText: bgText.isEmpty ? null : bgText,
+            ));
+          }
           continue;
         }
         final words = <LyricsWord>[];
+        final bgWords = <LyricsWord>[];
         for (final span in paragraph.descendants.whereType<XmlElement>().where(
           (e) => e.name.local == 'span',
         )) {
@@ -1808,36 +1846,61 @@ class LyricsService {
           if (begin == null ||
               end == null ||
               end < begin ||
-              span.innerText.trim().isEmpty)
+              span.innerText.trim().isEmpty) {
             continue;
+          }
           if (span.descendants.whereType<XmlElement>().any(
             (child) => child.getAttribute('begin') != null,
-          ))
-            continue;
+          )) continue;
+          // The x-bg role is often on an untimed enclosing span. Walk back
+          // to the paragraph to assign each timed leaf to its own vocal lane.
+          var owner = span as XmlNode?;
+          var backing = false;
+          var skipped = false;
+          while (owner != null && !identical(owner, paragraph)) {
+            if (owner is XmlElement) {
+              final marking = role(owner);
+              if (marking == 'x-bg') backing = true;
+              if (marking == 'x-roman' || marking == 'x-translation') {
+                skipped = true;
+                break;
+              }
+            }
+            owner = owner.parent;
+          }
+          if (skipped) continue;
           final tail = span.nextSibling;
           final separator = tail is XmlText && tail.value.trim().isEmpty
               ? tail.value
               : '';
-          words.add(
-            LyricsWord(
-              start: begin,
-              end: end,
-              text: span.innerText + separator,
-            ),
-          );
+          (backing ? bgWords : words).add(LyricsWord(
+            start: begin,
+            end: end,
+            text: span.innerText + separator,
+          ));
         }
         final (text, cleanedWords, voice) = _stripVoicePrefix(
           rawText,
           words.isEmpty ? null : words,
         );
-        lines.add(
-          LyricsLine(
-            timestamp: start,
-            text: text,
-            words: cleanedWords,
-            voice: voice,
-          ),
-        );
+        // A background-only TTML paragraph must not become a new lead row.
+        if (text.isEmpty && bgText.isNotEmpty) {
+          lines.add(LyricsLine(
+            timestamp: bgWords.isNotEmpty ? bgWords.first.start : start,
+            text: bgText,
+            words: bgWords.isEmpty ? null : bgWords,
+            voice: 'bg',
+          ));
+          continue;
+        }
+        lines.add(LyricsLine(
+          timestamp: start,
+          text: text,
+          words: cleanedWords,
+          voice: voice,
+          backgroundText: bgText.isEmpty ? null : bgText,
+          backgroundWords: bgWords.isEmpty ? null : bgWords,
+        ));
       }
       if (lines.isNotEmpty || plain.isNotEmpty) {
         final timed = lines.isNotEmpty;
