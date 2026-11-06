@@ -85,6 +85,7 @@ jobs:
             lib/services/lyrics_service.dart \
             lib/services/lyrics_flac_vorbis_reader.dart \
             lib/features/player/widgets/player_song_blur_background.dart \
+            lib/features/player/widgets/player_artwork_image.dart \
             lib/features/player/screens/full_player_screen.dart \
             lib/providers/player_provider.dart \
             lib/providers/lokal_remote_provider.dart \
