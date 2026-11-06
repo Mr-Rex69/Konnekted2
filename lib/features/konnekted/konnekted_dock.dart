@@ -65,6 +65,12 @@ const _dockGlassLens = LokalLens(
 
 const _dockBlurRadius = 1.2;
 
+// All three footer surfaces share one modest Gaussian backdrop blur.
+// Performance Mode keeps this small clipped blur, without a new shader.
+const _dockBackdropBlurSigma = 9.0;
+const _dockPerformanceDarkTint = .44;
+const _dockPerformanceLightTint = .62;
+
 /// Compress the selected icon *toward the screen's left edge* only while
 /// the footer is closing. The icon's left edge stays anchored: its right edge
 /// draws inward briefly, then returns to normal width. No translation,
@@ -258,6 +264,10 @@ class _KonnektedDockState extends State<KonnektedDock>
                       singlePassLens: true,
                       fallbackTintOpacity: lerpDouble(.16, .20, t)!,
                       fallbackBlurSigma: 2,
+                      backdropBlurSigma: _dockBackdropBlurSigma,
+                      performanceTintOpacity: context.lokal.isLight
+                          ? _dockPerformanceLightTint
+                          : _dockPerformanceDarkTint,
                       pronouncedRim: true,
                       rimStrength: .82,
                       child: ValueListenableBuilder<bool>(
@@ -480,6 +490,10 @@ class _TabCapsuleState extends State<_TabCapsule>
         singlePassLens: true,
         fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
         fallbackBlurSigma: 2,
+        backdropBlurSigma: _dockBackdropBlurSigma,
+        performanceTintOpacity: context.lokal.isLight
+            ? _dockPerformanceLightTint
+            : _dockPerformanceDarkTint,
         pronouncedRim: true,
         rimStrength: .82,
         child: Stack(
@@ -776,6 +790,10 @@ class _SearchCircle extends StatelessWidget {
           singlePassLens: true,
           fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
           fallbackBlurSigma: 2,
+          backdropBlurSigma: _dockBackdropBlurSigma,
+          performanceTintOpacity: context.lokal.isLight
+              ? _dockPerformanceLightTint
+              : _dockPerformanceDarkTint,
           pronouncedRim: true,
           rimStrength: .82,
           child: Stack(
