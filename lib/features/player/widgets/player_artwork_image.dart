@@ -131,11 +131,19 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
           sources.add(NetworkImage(url));
         }
       } else {
-        if (song.filePath?.isNotEmpty == true) {
-          path = await AlbumArtService.instance.resolveArtworkPath(
-            existingPath: path,
-            audioSourcePath: song.filePath!,
-          );
+        if (song.filePath?.isNotEmpty == true &&
+            song.sourcePackage != 'konnekted.progressive' &&
+            song.sourcePackage != 'konnekted.morneye-live') {
+          try {
+            path = await AlbumArtService.instance.resolveArtworkPath(
+              existingPath: path,
+              audioSourcePath: song.filePath!,
+            );
+          } catch (_) {
+            // A damaged audio-tag read must not block the online metadata
+            // fallback. Streaming handles are never local artwork files.
+            path = null;
+          }
         }
         if (path != null && await File(path).exists()) {
           sources.add(FileImage(File(path)));
