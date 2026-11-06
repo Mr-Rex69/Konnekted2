@@ -1412,15 +1412,100 @@ class LyricsService {
     }
   }
 
+  /// Desktop's post-processing separates a final parenthesized reply from
+  /// the sung lead. BiniLyrics TTML often encodes this as ordinary timed text,
+  /// rather than an explicit x-bg role, so Mobile must split the same units.
+  ///
+  /// Avoid splitting mid-word suffixes such as "wait(ing)", lines containing
+  /// only "(oh)", and any lyric that already has a structural backing lane.
+  LyricsLine _splitTrailingBackingVoice(LyricsLine line) {
+    if (line.voice == 'bg' ||
+        line.backgroundText?.trim().isNotEmpty == true ||
+        !line.text.trimRight().endsWith(')')) return line;
+    final text = line.text.trimRight();
+    var depth = 0;
+    int? opening;
+    for (var i = text.length - 1; i >= 0; i--) {
+      if (text[i] == ')') {
+        depth++;
+      } else if (text[i] == '(') {
+        depth--;
+        if (depth == 0) {
+          opening = i;
+          break;
+        }
+      }
+    }
+    if (opening == null || opening == 0) return line;
+    final lead = text.substring(0, opening).trimRight();
+    final backing = text.substring(opening).trim();
+    if (lead.isEmpty ||
+        !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(backing)) return line;
+
+    final words = line.words;
+    List<LyricsWord>? leadWords;
+    List<LyricsWord>? backingWords;
+    if (words?.isNotEmpty == true) {
+      // Only divide genuinely timed syllables at a whole-unit boundary.
+      // If a bracket starts within a syllable, keep its original lyric and
+      // timings rather than fabricate a second vocalist's timestamps.
+      var prefix = '';
+      var splitAt = -1;
+      for (var i = 0; i < words!.length - 1; i++) {
+        prefix += words[i].text;
+        final normalized = prefix.replaceAll(RegExp(r'\s+'), ' ').trimRight();
+        if (normalized == lead &&
+            words[i + 1].text.trimLeft().startsWith('(')) {
+          splitAt = i + 1;
+          break;
+        }
+      }
+      if (splitAt <= 0) return line;
+      leadWords = words.sublist(0, splitAt);
+      backingWords = words.sublist(splitAt);
+    }
+
+    return LyricsLine(
+      timestamp: line.timestamp,
+      text: lead,
+      words: leadWords,
+      translation: line.translation,
+      voice: line.voice,
+      backgroundText: backing,
+      backgroundWords: backingWords,
+    );
+  }
+
+  LyricsData _splitTrailingBackingVoices(LyricsData lyrics) {
+    if (!lyrics.isSynchronized) return lyrics;
+    var changed = false;
+    final lines = <LyricsLine>[
+      for (final line in lyrics.lines) () {
+        final updated = _splitTrailingBackingVoice(line);
+        if (!identical(updated, line)) changed = true;
+        return updated;
+      }(),
+    ];
+    if (!changed) return lyrics;
+    return LyricsData(
+      lines: lines,
+      isSynchronized: lyrics.isSynchronized,
+      source: lyrics.source,
+      rawContent: lyrics.rawContent,
+      language: lyrics.language,
+      translationLanguage: lyrics.translationLanguage,
+    );
+  }
+
   LyricsData _parseLyrics(String raw, {String? source}) {
     final trimmed = raw.trim();
     if (trimmed.startsWith('{')) {
       final private = _parseLokalPrivateLyrics(trimmed, source: source);
-      if (private != null) return private;
+      if (private != null) return _splitTrailingBackingVoices(private);
     }
     if (trimmed.startsWith('<?xml') || trimmed.startsWith('<')) {
       final xmlData = _parseXmlLyrics(trimmed, source: source);
-      if (xmlData != null) return xmlData;
+      if (xmlData != null) return _splitTrailingBackingVoices(xmlData);
     }
 
     final normalized = raw
@@ -1654,12 +1739,12 @@ class LyricsService {
         i = end;
       }
       bilingualLines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return LyricsData(
+      return _splitTrailingBackingVoices(LyricsData(
         lines: bilingualLines,
         isSynchronized: true,
         source: source,
         rawContent: raw,
-      );
+      ));
     }
 
     return LyricsData(
