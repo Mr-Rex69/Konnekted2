@@ -2,7 +2,7 @@
 
 Artist and album detail pages now use edge-to-edge artwork under the status bar, a gradient into the page background, large titles and prominent playback controls. Artist pages use a saved portrait or an online artist portrait; album covers are not presented as artist photos. Existing local artwork takes precedence. When no portrait is available, the header uses a theme-coloured fallback.
 
-Library entry points start locally unless that page's online mode was previously enabled. Each artist/album has its own remembered online switch. Discovery recommendations and shortcuts from online songs can open a page even when there are no matching library files. No catalogue lookup starts merely by constructing a library page.
+Library album and artist pages start in Online mode by default. Settings > Library has a switch at the top to change this global default. Each artist/album still has its own remembered mode choice, which takes precedence over the default; discovery recommendations and shortcuts from online songs can explicitly open online even when no local library files match. Catalogue requests start when an online page is enabled, not merely when constructing a library page.
 
 Online mode loads artist popular songs and releases, or an album's ordered full track list, through the existing Apple Music/iTunes metadata service. Configured playback-source searches provide a bounded fallback; an unverified album search is labelled as search results rather than a complete album. Portrait fallback uses the existing discovery artwork resolver. Successful page results are cached for 15 minutes, with explicit refresh, and empty/failed pages can be retried.
 

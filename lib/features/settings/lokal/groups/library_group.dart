@@ -1,4 +1,6 @@
 import 'package:flick/l10n/l10n.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flick/features/konnekted/library/lokal_online_page_mode.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -37,6 +39,10 @@ List<LokalSettingsSection> librarySettings(
       ? 1
       : 0;
   return [
+    const LokalSettingsSection(
+      title: 'Album & artist pages',
+      children: [_OnlinePagesDefaultToggle()],
+    ),
     LokalSettingsSection(
       title: lokalText('Folders'),
       children: [
@@ -157,6 +163,53 @@ List<LokalSettingsSection> librarySettings(
       ],
     ),
   ];
+}
+
+/// Whether newly opened album and artist pages start with online mode.
+class _OnlinePagesDefaultToggle extends StatefulWidget implements LokalSearchable {
+  const _OnlinePagesDefaultToggle();
+
+  static const _label = 'Online mode by default';
+  static const _description =
+      'Open album and artist pages online by default. You can still switch '
+      'modes on individual pages; those choices are remembered.';
+
+  @override
+  String get searchText => '$_label $_description';
+
+  @override
+  State<_OnlinePagesDefaultToggle> createState() =>
+      _OnlinePagesDefaultToggleState();
+}
+
+class _OnlinePagesDefaultToggleState extends State<_OnlinePagesDefaultToggle> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(SharedPreferences.getInstance().then((prefs) {
+      if (mounted) {
+        setState(() =>
+            _enabled = prefs.getBool(onlinePagesDefaultPreferenceKey) ?? true);
+      }
+    }));
+  }
+
+  Future<void> _set(bool enabled) async {
+    setState(() => _enabled = enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(onlinePagesDefaultPreferenceKey, enabled);
+  }
+
+  @override
+  Widget build(BuildContext context) => LokalSettingRow.toggle(
+    label: lokalText(_OnlinePagesDefaultToggle._label),
+    description: lokalText(_OnlinePagesDefaultToggle._description),
+    value: _enabled ?? true,
+    enabled: _enabled != null,
+    onChanged: _set,
+  );
 }
 
 /// Apple Music's catalogue fills in untagged albums after a scan.
