@@ -1,12 +1,25 @@
 import 'package:flick/core/theme/lokal_performance_scope.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/features/discovery/discovery_artwork.dart'
+    show DiscoveryArtworkKind, DiscoveryArtworkRequest,
+         discoveryImageUrl, discoveryLocalArtworkProvider,
+         sharedDiscoveryArtworkResolver;
 import 'package:flick/services/album_art_service.dart';
 import 'package:flick/widgets/common/flick_artwork_placeholder.dart';
 import 'player_artwork_quality.dart';
+
+/// Only streaming and pending online tracks use a catalogue lookup when the
+/// full player's original artwork URL is missing or fails to decode.
+@visibleForTesting
+bool shouldRecoverOnlineArtwork(Song song) =>
+    song.isPending ||
+    (song.sourcePackage?.startsWith('konnekted.') ?? false);
 
 /// Holds decoded frames through a cover change. Painting RawImage avoids a
 /// second asynchronous image resolution when a carousel stage changes slots.
@@ -18,12 +31,15 @@ class PlayerArtworkImage extends StatefulWidget {
     this.decodeWidth = 1024,
     this.placeholder,
     this.crossfade = true,
+    this.onArtworkRecovered,
   });
   final Song song;
   final double radius;
   final int decodeWidth;
   final Widget? placeholder;
   final bool crossfade;
+  /// Called only after an alternative catalogue image has decoded successfully.
+  final ValueChanged<String>? onArtworkRecovered;
 
   @override
   State<PlayerArtworkImage> createState() => _PlayerArtworkImageState();
@@ -97,8 +113,6 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
     final cached = _recentFrames.remove(key);
     if (cached != null) {
       _recentFrames[key] = cached;
-      // Paint a valid frame on the first build while the image provider
-      // resolves, without restarting a fade or showing a blank poster.
       _shown?.dispose();
       _previous?.dispose();
       _previous = null;
@@ -113,36 +127,46 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
       var path = song.albumArt;
       if (path?.startsWith('http://') == true ||
           path?.startsWith('https://') == true) {
-        // Canvas can obscure a thumbnail while the video is playing. When it
-        // is disabled, first try that same cover at the provider's original
-        // size, and fall back to the existing URL if the CDN lacks it.
+        // Prefer the provider's original-size sleeve, but always try the
+        // original thumbnail before starting a catalogue fallback.
         for (final url in PlayerArtworkQuality.candidates(path)) {
           sources.add(NetworkImage(url));
         }
       } else {
-        if (song.filePath?.isNotEmpty == true) {
-          path = await AlbumArtService.instance.resolveArtworkPath(
-            existingPath: path,
-            audioSourcePath: song.filePath!,
-          );
+        if (song.filePath?.isNotEmpty == true &&
+            song.sourcePackage != 'konnekted.progressive' &&
+            song.sourcePackage != 'konnekted.morneye-live') {
+          try {
+            path = await AlbumArtService.instance.resolveArtworkPath(
+              existingPath: path,
+              audioSourcePath: song.filePath!,
+            );
+          } catch (_) {
+            // A damaged audio-tag read must not block the online metadata
+            // fallback. Streaming handles are never local artwork files.
+            path = null;
+          }
         }
         if (path != null && await File(path).exists()) {
           sources.add(FileImage(File(path)));
         }
       }
       if (!mounted || generation != _generation) return;
-      if (sources.isEmpty) {
-        _showFrame(null, key);
-        return;
-      }
 
-      void resolveCandidate(int index) {
+      late void Function() tryFallback;
+      late void Function() tryRemoteFallback;
+      void resolveCandidate(
+        List<ImageProvider> candidates,
+        int index, {
+        String? recoveredArtwork,
+        bool remoteAfterFailure = false,
+      }) {
         if (!mounted || generation != _generation) return;
         _unsubscribe();
         final provider = ResizeImage.resizeIfNeeded(
           decodeWidth,
           null,
-          sources[index],
+          candidates[index],
         );
         final stream = provider.resolve(createLocalImageConfiguration(context));
         _stream = stream;
@@ -153,11 +177,31 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
               return;
             }
             _showFrame(info, key);
+            if (recoveredArtwork != null) {
+              // Also update Now Playing, the mini-player, blur backdrop, queue
+              // and notification; a recovered full-player image must not be
+              // restricted to this single widget.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && generation == _generation) {
+                  widget.onArtworkRecovered?.call(recoveredArtwork);
+                }
+              });
+            }
           },
           onError: (_, _) {
             if (!mounted || generation != _generation) return;
-            if (index + 1 < sources.length) {
-              resolveCandidate(index + 1);
+            if (index + 1 < candidates.length) {
+              resolveCandidate(
+                candidates, index + 1,
+                recoveredArtwork: recoveredArtwork,
+                remoteAfterFailure: remoteAfterFailure,
+              );
+            } else if (remoteAfterFailure) {
+              // Match Search: if its local-library art was itself broken,
+              // continue to the independent Deezer/iTunes metadata lookup.
+              tryRemoteFallback();
+            } else if (recoveredArtwork == null) {
+              tryFallback();
             } else {
               _showFrame(null, key);
             }
@@ -167,7 +211,84 @@ class _PlayerArtworkImageState extends State<PlayerArtworkImage>
         stream.addListener(listener);
       }
 
-      resolveCandidate(0);
+      final artworkRequest = DiscoveryArtworkRequest(
+        kind: DiscoveryArtworkKind.track,
+        title: song.title,
+        artist: song.artist,
+        exclude: discoveryImageUrl(song.albumArt),
+      );
+
+      tryRemoteFallback = () {
+        unawaited(() async {
+          try {
+            final found = await sharedDiscoveryArtworkResolver
+                .resolve(artworkRequest)
+                .timeout(const Duration(seconds: 6), onTimeout: () => '');
+            if (!mounted || generation != _generation) return;
+            final cover = discoveryImageUrl(found);
+            if (cover.isEmpty || cover == song.albumArt) {
+              _showFrame(null, key);
+              return;
+            }
+            resolveCandidate(
+              [for (final url in PlayerArtworkQuality.candidates(cover))
+                NetworkImage(url)],
+              0,
+              recoveredArtwork: cover,
+            );
+          } catch (_) {
+            if (mounted && generation == _generation) _showFrame(null, key);
+          }
+        }());
+      };
+
+      tryFallback = () {
+        // Search can show a local-library match or an online catalogue match
+        // when a LastWave image is missing/broken. Reproduce that exact order
+        // rather than leaving the full player at a permanent placeholder.
+        if (!shouldRecoverOnlineArtwork(song) ||
+            song.title.trim().isEmpty ||
+            song.artist.trim().isEmpty ||
+            song.artist == 'Artist not supplied') {
+          _showFrame(null, key);
+          return;
+        }
+
+        String? localCover;
+        try {
+          localCover = ProviderScope.containerOf(context, listen: false)
+              .read(discoveryLocalArtworkProvider)
+              .lookup(artworkRequest);
+        } catch (_) {
+          // An unavailable library index must not prevent online recovery.
+        }
+        if (localCover != null && localCover.isNotEmpty &&
+            localCover != song.albumArt) {
+          final candidates = <ImageProvider>[];
+          if (localCover.startsWith('https://')) {
+            for (final url in PlayerArtworkQuality.candidates(localCover)) {
+              candidates.add(NetworkImage(url));
+            }
+          } else if (File(localCover).existsSync()) {
+            candidates.add(FileImage(File(localCover)));
+          }
+          if (candidates.isNotEmpty) {
+            resolveCandidate(
+              candidates, 0,
+              recoveredArtwork: localCover,
+              remoteAfterFailure: true,
+            );
+            return;
+          }
+        }
+        tryRemoteFallback();
+      };
+
+      if (sources.isEmpty) {
+        tryFallback();
+      } else {
+        resolveCandidate(sources, 0);
+      }
     } catch (_) {
       if (mounted && generation == _generation) _showFrame(null, key);
     }
