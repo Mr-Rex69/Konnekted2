@@ -1437,6 +1437,9 @@ class LyricsService {
       }
     }
     if (opening == null || opening == 0) return line;
+    // A suffix inside a word is not a second vocalist: "wait(ing)".
+    // Real trailing replies have a word boundary before the open bracket.
+    if (!RegExp(r'\s').hasMatch(text[opening - 1])) return line;
     final lead = text.substring(0, opening).trimRight();
     final backing = text.substring(opening).trim();
     if (lead.isEmpty ||
