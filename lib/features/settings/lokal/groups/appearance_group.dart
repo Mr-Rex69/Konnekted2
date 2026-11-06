@@ -188,6 +188,14 @@ List<LokalSettingsSection> appearanceSettings(
       title: lokalText('Interface'),
       children: [
         LokalSettingRow.toggle(
+          label: lokalText('Home greeting and subheader'),
+          description: lokalText(
+            'Show the greeting and listening subtitle on Local, Discovery and Flow. Turn off to free up vertical space.',
+          ),
+          value: appearance.showHomeGreeting,
+          onChanged: look.setShowHomeGreeting,
+        ),
+        LokalSettingRow.toggle(
           label: lokalText('Full resolution tags in lists'),
           description: lokalText(
             'Show known audio resolution details instead of quality tiers in song lists. Keep the existing quality colors.',
