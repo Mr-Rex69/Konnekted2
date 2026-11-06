@@ -166,17 +166,20 @@ class _YoutubeMusicPlaylistsScreenState
                                       : Icons.visibility_off_outlined),
                                   onPressed: () => unawaited(_setHidden(playlist.id, !hidden)),
                                 ),
-                                onTap: () => unawaited(openPlaylistAfterFirstTap(
-                                  context,
-                                  'youtube:${_account}:${playlist.id}',
-                                  () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => _YoutubePlaylistDetail(
-                                      playlist: playlist, onPlay: widget.onPlay,
-                                      accountId: _account,
+                                onTap: () => unawaited(
+                                  openPlaylistAfterFirstTap(
+                                    context,
+                                    'youtube:${_account}:${playlist.id}',
+                                    () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => _YoutubePlaylistDetail(
+                                          playlist: playlist, onPlay: widget.onPlay,
+                                          accountId: _account,
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ))),
+                                ),
                               );
                             },
                           ),
