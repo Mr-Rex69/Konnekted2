@@ -13,7 +13,7 @@ internal object EmbeddedLyricsSelection {
      * structured JSON; a second LYRICS entry contains only the portable lead.
      */
     private val lokalVersion = Regex(""""lokal"\s*:\s*1(?:\s*[,}])""")
-    private val lokalLines = Regex(""""lines"\s*:\s*\\[""")
+    private val lokalLines = Regex(""""lines"\s*:\s*\[""")
     private fun isLokalPrivate(text: String): Boolean =
         text.trimStart().startsWith("{") &&
             lokalVersion.containsMatchIn(text) && lokalLines.containsMatchIn(text)
