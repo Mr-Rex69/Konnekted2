@@ -12,13 +12,11 @@ internal object EmbeddedLyricsSelection {
     /** Desktop's native VORBIS_COMMENT stores the complete background lane as
      * structured JSON; a second LYRICS entry contains only the portable lead.
      */
-    private fun isLokalPrivate(text: String): Boolean = try {
-        if (!text.trimStart().startsWith("{")) false
-        else {
-            val json = org.json.JSONObject(text)
-            json.optInt("lokal") == 1 && (json.optJSONArray("lines")?.length() ?: 0) > 0
-        }
-    } catch (_: Exception) { false }
+    private val lokalVersion = Regex(""""lokal"\\s*:\\s*1(?:\\s*[,}])""")
+    private val lokalLines = Regex(""""lines"\\s*:\\s*\\[""")
+    private fun isLokalPrivate(text: String): Boolean =
+        text.trimStart().startsWith("{") &&
+            lokalVersion.containsMatchIn(text) && lokalLines.containsMatchIn(text)
 
     private fun backgroundCount(text: String): Int =
         text.lineSequence().count { backgroundPattern.containsMatchIn(it) }
