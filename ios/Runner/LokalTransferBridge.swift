@@ -577,6 +577,8 @@ final class LokalTransferDaemonProbe: @unchecked Sendable {
   private let recovering: Bool
   private let downloadID: String
   private let uploadID: String
+  private var stage = "initialization"
+  private var lastEvidence: [String: Any] = [:]
 
   init?(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
     guard let run = environment["LOKAL_IOS_DAEMON_PROBE_RUN"] else { return nil }
@@ -616,7 +618,7 @@ final class LokalTransferDaemonProbe: @unchecked Sendable {
   func start() {
     DispatchQueue.global(qos: .utility).async {
       do { try self.run() }
-      catch { self.record(["error": String(describing: error)]) }
+      catch { self.record(["error": String(describing: error), "stage": self.stage]) }
     }
   }
   func backgrounded() {
@@ -625,23 +627,33 @@ final class LokalTransferDaemonProbe: @unchecked Sendable {
   func handleBackgroundEvents(_ reply: @escaping () -> Void) { host.handleBackgroundEvents(completion: reply) }
   private func record(_ value: [String: Any]) {
     do {
-      let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+      var evidence = value["error"] == nil ? value : lastEvidence.merging(value) { _, new in new }
+      evidence["stage"] = stage
+      lastEvidence = evidence
+      let data = try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
       try data.write(to: root.appendingPathComponent(recovering ? "recovered.json" : "state.json"), options: .atomic)
     } catch { NSLog("Isolated daemon probe evidence failed") }
   }
   private func run() throws {
+    stage = "native host"
     let runtime: LokalTransferRuntime = try Self.wait { reply in
       host.withRuntime({ reply(.success($0)) }, unavailable: { reply(.failure($0)) })
     }
     let ownership = host.importOwnership
     let owner = try ownership.attachClient(engineID: ownership.attachEngine(), clientID: UUID().uuidString.lowercased())
-    let ticket = try ownership.captureSubmission(owner)
+    stage = "journal recovery"
     let _: LokalTransferSummary = try Self.wait { runtime.recover($0) }
+    // Recovery deliberately revokes queued consent. Capture new authorization
+    // only after it has reconciled durable truth, as the product client does.
+    let ticket = try ownership.captureSubmission(owner)
     if !recovering {
+      stage = "generated source"
       let bytes = try Data(contentsOf: URL(string: origin + "/__upload_payload")!)
       guard bytes.count == length else { throw LokalTransferError.checksumMismatch }
       try bytes.write(to: root.appendingPathComponent("Music/source.wav"), options: .atomic)
+      stage = "source context"
       let context: LokalTransferUploadSourceContext = try Self.wait { runtime.uploadSourceContext(submission: ticket, reply: $0) }
+      stage = "source grant"
       let grant: LokalTransferUploadSourceGrant = try Self.wait {
         runtime.authorizeUploadSource(contextID: context.contextID, relativePath: "source.wav", songID: "1", submission: ticket, reply: $0)
       }
@@ -657,32 +669,46 @@ final class LokalTransferDaemonProbe: @unchecked Sendable {
           origin: origin, pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64"),
         metadata: LokalTransferMetadata(title: "storage-upload-daemon", artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
         nowMs: now, expectedBytes: length, expectedSHA256: checksum)
+      stage = "download admission"
       let _: LokalTransferSummary = try Self.wait { runtime.enqueue([download], submission: ticket, reply: $0) }
+      stage = "upload admission"
       let _: LokalTransferSummary = try Self.wait { runtime.enqueueAuthorizedUpload(upload, grantID: grant.grantID, submission: ticket, reply: $0) }
+      stage = "source grant release"
       let _: Bool = try Self.wait { runtime.releaseUploadSource(grant.grantID, reply: $0) }
       let _: Bool = try Self.wait { runtime.releaseUploadSource(context.contextID, reply: $0) }
     }
+    stage = "transfer reconciliation"
     let deadline = Date().addingTimeInterval(240)
     while Date() < deadline {
       let jobs: [LokalTransferJob] = try Self.wait { runtime.page(offset: 0, limit: 10, reply: $0) }
       guard jobs.count == 2 else { throw LokalTransferError.invalidRecord }
-      if let upload = jobs.first(where: { $0.id == uploadID }), [.interrupted, .failed].contains(upload.phase) {
-        let _: LokalTransferJob? = try Self.wait {
-          runtime.matchUploadedOriginal(id: uploadID, revision: upload.revision, submission: ticket, reply: $0)
-        }
-      }
       let download = jobs.first { $0.id == downloadID }!
       let upload = jobs.first { $0.id == uploadID }!
       let source = try Data(contentsOf: root.appendingPathComponent("Music/source.wav"))
       guard source.count == length else { throw LokalTransferError.unsafeFile }
       let summary: LokalTransferSummary = try Self.wait { runtime.summary($0) }
       record(["download": download.phase.rawValue, "upload": upload.phase.rawValue,
+        "downloadFailure": download.lastFailure?.rawValue ?? "", "uploadFailure": upload.lastFailure?.rawValue ?? "",
         "uploadProtocol": upload.uploadProtocolVersion ?? 0,
         "sourceBytes": source.count, "generation": summary.generation,
         "downloadBytes": download.receivedBytes ?? 0,
         "downloadSHA256": download.receivedSHA256 ?? "",
         "originalID": upload.resultOriginalID ?? "", "recovering": recovering])
       if download.phase == .staged && upload.phase == .complete { return }
+      if download.phase == .downloaded {
+        stage = "download verification"
+        let _: LokalTransferJob = try Self.wait {
+          runtime.verify(id: downloadID, revision: download.revision, reply: $0)
+        }
+        stage = "transfer reconciliation"
+      }
+      if [.interrupted, .failed].contains(upload.phase) {
+        stage = "upload receipt reconciliation"
+        let _: LokalTransferJob? = try Self.wait {
+          runtime.matchUploadedOriginal(id: uploadID, revision: upload.revision, submission: ticket, reply: $0)
+        }
+        stage = "transfer reconciliation"
+      }
       guard ![.failed, .cancelled, .interrupted].contains(download.phase), upload.phase != .cancelled else {
         throw LokalTransferError.invalidTransition
       }

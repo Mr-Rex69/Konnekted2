@@ -536,7 +536,9 @@ void main() {
       greaterThanOrEqualTo(2500),
     );
     await binding.takeScreenshot('ios-space-subtitles-over-player');
-    await tester.tap(find.byKey(const ValueKey('space-exit-surface')));
+    // Space's current UI exits with a surface tap; its former test key was
+    // removed by the shared player redesign. Exercise the real gesture.
+    await tester.tapAt(tester.getCenter(find.byType(FullPlayerScreen)));
     await tester.pump(const Duration(milliseconds: 750));
     expect(find.byType(ImmersiveLyricsSubtitle), findsNothing);
     binding.reportData!['post210_space_preserves_artwork_and_song_clock'] =
