@@ -6,6 +6,7 @@ import 'package:flick/features/settings/screens/artwork_repair_screen.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/services/artwork_repair_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -49,14 +50,16 @@ class _Repair implements ArtworkRepairService {
       throw UnimplementedError(invocation.memberName.toString());
 }
 
-Widget _host(_Repair service, {bool largeText = false}) => MaterialApp(
-  theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-  home: MediaQuery(
-    data: MediaQueryData(
-      disableAnimations: true,
-      textScaler: TextScaler.linear(largeText ? 2 : 1),
+Widget _host(_Repair service, {bool largeText = false}) => ProviderScope(
+  child: MaterialApp(
+    theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+    home: MediaQuery(
+      data: MediaQueryData(
+        disableAnimations: true,
+        textScaler: TextScaler.linear(largeText ? 2 : 1),
+      ),
+      child: ArtworkRepairScreen(serviceOverride: service),
     ),
-    child: ArtworkRepairScreen(serviceOverride: service),
   ),
 );
 

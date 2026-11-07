@@ -1,4 +1,8 @@
 import 'package:flick/features/discovery/spotify_discovery.dart';
+import 'package:flick/features/discovery/discovery_artwork.dart';
+import 'package:flick/features/discovery/discovery_http.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flick/features/konnekted/lokal_home_greeting.dart';
 
 import 'package:flick/core/theme/lokal_theme.dart';
@@ -116,32 +120,56 @@ Future<Map<String, dynamic>> _lastfm(
 class _NoDiskSnapshots extends DiscoverySnapshotCache {
   const _NoDiskSnapshots();
   @override
-  Future<DiscoveryCached<LokalDiscovery>?> readLokal(String source, String account) async => null;
+  Future<DiscoveryCached<LokalDiscovery>?> readLokal(
+    String source,
+    String account,
+  ) async => null;
   @override
-  Future<void> writeLokal(String source, String account, LokalDiscovery data) async {}
+  Future<void> writeLokal(
+    String source,
+    String account,
+    LokalDiscovery data,
+  ) async {}
 }
 
-Widget _app(Widget child, {String? account = 'me', double scale = 1}) => ProviderScope(
-  overrides: [
-    konnektedDiscoverySnapshotCacheProvider.overrideWithValue(const _NoDiskSnapshots()),
-    konnektedLibraryProvider.overrideWithValue(AsyncData(_library)),
-    konnektedFavoritesProvider.overrideWithValue(const AsyncData([])),
-    konnektedRecentSongsProvider.overrideWith((ref) => Stream.value([])),
-    konnektedGreetingProvider.overrideWith(
-      (ref) => Stream.value(const LokalHomeMessages('Good morning', 'Hello.')),
-    ),
-    konnektedLastfmAccountProvider.overrideWith((ref) async => account),
-    konnektedLastfmCallProvider.overrideWithValue(_lastfm),
-  ],
-  child: MaterialApp(
-    theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
-      child: child!,
-    ),
-    home: Scaffold(body: child),
-  ),
-);
+// Shelf/layout fixtures own no independent artwork network operations.
+class _QuietArtwork extends DiscoveryArtworkResolver {
+  _QuietArtwork()
+    : super(DiscoveryHttp(MockClient((_) async => http.Response('{}', 200))));
+  @override
+  Future<String> resolve(DiscoveryArtworkRequest request) async => '';
+}
+
+Widget _app(Widget child, {String? account = 'me', double scale = 1}) =>
+    ProviderScope(
+      overrides: [
+        discoveryLocalArtworkProvider.overrideWithValue(
+          DiscoveryLocalArtwork.empty,
+        ),
+        discoveryArtworkResolverProvider.overrideWithValue(_QuietArtwork()),
+        konnektedDiscoverySnapshotCacheProvider.overrideWithValue(
+          const _NoDiskSnapshots(),
+        ),
+        konnektedLibraryProvider.overrideWithValue(AsyncData(_library)),
+        konnektedFavoritesProvider.overrideWithValue(const AsyncData([])),
+        konnektedRecentSongsProvider.overrideWith((ref) => Stream.value([])),
+        konnektedGreetingProvider.overrideWith(
+          (ref) =>
+              Stream.value(const LokalHomeMessages('Good morning', 'Hello.')),
+        ),
+        konnektedLastfmAccountProvider.overrideWith((ref) async => account),
+        konnektedLastfmCallProvider.overrideWithValue(_lastfm),
+      ],
+      child: MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+        home: Scaffold(body: child),
+      ),
+    );
 
 class _ReadyYoutube extends KonnektedDiscoveryNotifier {
   @override
@@ -153,7 +181,9 @@ class _ReadyYoutube extends KonnektedDiscoveryNotifier {
       mixes: [LokalDiscoveryMix(id: 'RDTMAKtest', title: 'Supermix')],
       liked: [LokalDiscoveryTrack(title: 'A liked song', artist: 'Artist')],
       history: [LokalDiscoveryTrack(title: 'History song', artist: 'Artist')],
-      quickPicks: [LokalDiscoveryTrack(title: 'Quick YT pick', artist: 'Artist')],
+      quickPicks: [
+        LokalDiscoveryTrack(title: 'Quick YT pick', artist: 'Artist'),
+      ],
     ),
   );
   @override
@@ -167,8 +197,12 @@ class _HiddenOnlyLastfm extends KonnektedDiscoveryNotifier {
     data: LokalDiscovery(
       account: 'Last.fm',
       page: 0,
-      quickPicks: [LokalDiscoveryTrack(title: 'Top Scrobble', artist: 'Artist')],
-      history: [LokalDiscoveryTrack(title: 'Recent Scrobble', artist: 'Artist')],
+      quickPicks: [
+        LokalDiscoveryTrack(title: 'Top Scrobble', artist: 'Artist'),
+      ],
+      history: [
+        LokalDiscoveryTrack(title: 'Recent Scrobble', artist: 'Artist'),
+      ],
     ),
   );
   @override
@@ -185,7 +219,10 @@ class _ReadySpotifySnapshot extends KonnektedSpotifyDiscoveryNotifier {
           account: 'Spotify',
           quickPicks: [],
           recentlyPlayed: [
-            LokalDiscoveryTrack(title: 'Spotify history track', artist: 'Artist'),
+            LokalDiscoveryTrack(
+              title: 'Spotify history track',
+              artist: 'Artist',
+            ),
           ],
           likedSongs: [LokalDiscoveryTrack(title: 'Like', artist: 'Artist')],
           artists: [],
@@ -221,12 +258,17 @@ void main() {
   });
   test('Morneye playback cache key isolates addon version, settings, tier and song', () {
     String key({
-      String addon = 'qobuz', String digest = 'v1',
-      String track = 'song-1', String settings = 'account-1',
+      String addon = 'qobuz',
+      String digest = 'v1',
+      String track = 'song-1',
+      String settings = 'account-1',
       String tier = 'HI_RES_LOSSLESS',
     }) => morneyePlaybackCacheKey(
-      addonKey: addon, addonDigest: digest, trackId: track,
-      settingsFingerprint: settings, requestedTier: tier,
+      addonKey: addon,
+      addonDigest: digest,
+      trackId: track,
+      settingsFingerprint: settings,
+      requestedTier: tier,
     );
     final original = key();
     expect(key(), original);
@@ -239,11 +281,9 @@ void main() {
 
   test('Morneye percentage advances from actual transfer updates despite stale 5% messages', () {
     final text = MorneyeProgressText('Track', 'Qobuz');
-    expect(text.update(percent: 5, message: 'Loading 5%'),
-        contains('5%'));
+    expect(text.update(percent: 5, message: 'Loading 5%'), contains('5%'));
     expect(text.update(percent: 36), contains('36%'));
-    expect(text.update(percent: 5, message: 'Loading 5%'),
-        contains('36%'));
+    expect(text.update(percent: 5, message: 'Loading 5%'), contains('36%'));
     expect(text.update(percent: 79), contains('79%'));
     expect(text.update(percent: 79), isNull);
   });
@@ -267,7 +307,9 @@ void main() {
         ProviderScope(
           overrides: [
             konnektedDiscoveryProvider.overrideWith(_ReadySpotify.new),
-            konnektedSpotifyDiscoveryProvider.overrideWith(_ReadySpotifySnapshot.new),
+            konnektedSpotifyDiscoveryProvider.overrideWith(
+              _ReadySpotifySnapshot.new,
+            ),
             konnektedSpotifyMixLoaderProvider.overrideWithValue((id) async {
               loaded.add(id);
               return const [
@@ -347,8 +389,9 @@ void main() {
     },
   );
 
-  testWidgets('Last.fm with only hidden scrobbles shows the empty state',
-      (tester) async {
+  testWidgets('Last.fm with only hidden scrobbles shows the empty state', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -586,28 +629,33 @@ void main() {
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      _app(SingleChildScrollView(
-        child: KonnektedDiscoveryView(
-          onNavigate: (_) {},
-          onPlay: (_, _) {},
+      _app(
+        SingleChildScrollView(
+          child: KonnektedDiscoveryView(onNavigate: (_) {}, onPlay: (_, _) {}),
         ),
-      )),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Albums For You'), findsOneWidget);
     final semantics = tester.ensureSemantics();
     try {
       final provider = tester.getSemantics(find.bySemanticsLabel('Last.fm'));
-      expect(provider.getSemanticsData().hasAction(SemanticsAction.longPress), isTrue);
+      expect(
+        provider.getSemanticsData().hasAction(SemanticsAction.longPress),
+        isTrue,
+      );
       tester.binding.pipelineOwner.semanticsOwner!.performAction(
-        provider.id, SemanticsAction.longPress,
+        provider.id,
+        SemanticsAction.longPress,
       );
     } finally {
       semantics.dispose();
     }
     await tester.pumpAndSettle();
-    expect(find.text('Choose sections to show and drag to reorder.'),
-        findsOneWidget);
+    expect(
+      find.text('Choose sections to show and drag to reorder.'),
+      findsOneWidget,
+    );
     expect(find.byType(ReorderableListView), findsOneWidget);
     await tester.tap(find.byType(SwitchListTile).first);
     await tester.tap(find.text('Done'));
@@ -616,8 +664,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-
-  testWidgets('Discovery customization fits every locale at 200% on 320px', (tester) async {
+  testWidgets('Discovery customization fits every locale at 200% on 320px', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -626,20 +675,32 @@ void main() {
     for (final locale in kSupportedLocales) {
       LocaleController.instance.bindLocale(locale);
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpWidget(_app(
-        SingleChildScrollView(child: KonnektedDiscoveryView(
-          onNavigate: (_) {}, onPlay: (_, _) {},
-        )), scale: 2,
-      ));
+      await tester.pumpWidget(
+        _app(
+          SingleChildScrollView(
+            child: KonnektedDiscoveryView(
+              onNavigate: (_) {},
+              onPlay: (_, _) {},
+            ),
+          ),
+          scale: 2,
+        ),
+      );
       await tester.pumpAndSettle();
       final provider = find.bySemanticsLabel('Last.fm');
       await tester.ensureVisible(provider);
       await tester.pumpAndSettle();
       await tester.longPress(provider);
       await tester.pumpAndSettle();
-      final instructions = lokalText('Choose sections to show and drag to reorder.');
+      final instructions = lokalText(
+        'Choose sections to show and drag to reorder.',
+      );
       expect(find.text(instructions), findsOneWidget);
-      if (locale.languageCode != 'en') expect(instructions, isNot('Choose sections to show and drag to reorder.'));
+      if (locale.languageCode != 'en')
+        expect(
+          instructions,
+          isNot('Choose sections to show and drag to reorder.'),
+        );
       final done = find.text(lokalText('Done'));
       expect(done, findsOneWidget);
       expect(tester.takeException(), isNull, reason: '$locale sheet');
@@ -650,5 +711,4 @@ void main() {
     }
     await tester.pumpWidget(const SizedBox.shrink());
   });
-
 }

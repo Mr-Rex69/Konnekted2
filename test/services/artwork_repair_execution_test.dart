@@ -40,16 +40,16 @@ class _Importer implements AlbumArtImportService {
   Future<List<AlbumArtCandidate>> searchOnlineCandidates(Song song) async =>
       lookup == null ? [_candidate] : await lookup!();
   @override
-  Future<AlbumArtUpdateResult> applyImageBytesToSong({
-    required Song song,
+  Future<AlbumArtUpdateResult> applyAutomaticRepair({
+    required List<Song> songs,
     required Uint8List bytes,
   }) async {
-    applied.add(song);
+    applied.addAll(songs);
     return AlbumArtUpdateResult(
-      albumName: song.album!,
-      albumArtist: song.artist,
+      albumName: songs.first.album!,
+      albumArtist: songs.first.artist,
       albumArtPath: 'controlled-result.jpg',
-      filePaths: [song.filePath!],
+      filePaths: songs.map((song) => song.filePath!).toList(),
     );
   }
 

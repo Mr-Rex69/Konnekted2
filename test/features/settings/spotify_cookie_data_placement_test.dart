@@ -11,46 +11,56 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Spotify cookie login is first in Data, together with likes sync',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    late List<LokalSettingsSection> sections;
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: Consumer(
-            builder: (context, ref, _) {
-              sections = dataSettings(context, ref);
-              // Inspect configuration without mounting account controls:
-              // secure Spotify credentials must not be read by this test.
-              return const SizedBox.shrink();
-            },
+  testWidgets(
+    'Spotify cookie login stays with likes sync before YouTube in Data',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      late List<LokalSettingsSection> sections;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Consumer(
+              builder: (context, ref, _) {
+                sections = dataSettings(context, ref);
+                // Inspect configuration without mounting account controls:
+                // secure Spotify credentials must not be read by this test.
+                return const SizedBox.shrink();
+              },
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(sections.first.title, LokalDataSections.accounts);
-    final accounts = sections.first.children;
-    final spotifyEntry = accounts.first as LokalSettingCustom;
-    expect(spotifyEntry.label, 'Spotify');
-    expect(spotifyEntry.child, isA<SpotifyAccountSettingsTile>());
+      expect(sections.first.title, LokalDataSections.accounts);
+      final accounts = sections.first.children;
+      final spotifyEntry = accounts.whereType<LokalSettingCustom>().singleWhere(
+        (entry) => entry.child is SpotifyAccountSettingsTile,
+      );
+      expect(spotifyEntry.label, 'Spotify');
+      expect(spotifyEntry.child, isA<SpotifyAccountSettingsTile>());
 
-    final spotify = spotifyEntry.child as SpotifyAccountSettingsTile;
-    expect(spotify.showCookie, isTrue);
-    expect(spotify.showLikesSync, isTrue);
+      final spotify = spotifyEntry.child as SpotifyAccountSettingsTile;
+      expect(spotify.showCookie, isTrue);
+      expect(spotify.showLikesSync, isTrue);
 
-    final youtubeEntry = accounts[1] as LokalSettingCustom;
-    expect(youtubeEntry.label, 'YouTube');
-    expect(youtubeEntry.child, isA<YoutubeMusicSettingsTile>());
+      final youtubeEntry = accounts.whereType<LokalSettingCustom>().singleWhere(
+        (entry) => entry.child is YoutubeMusicSettingsTile,
+      );
+      expect(
+        accounts.indexOf(spotifyEntry),
+        lessThan(accounts.indexOf(youtubeEntry)),
+      );
+      expect(youtubeEntry.label, 'YouTube');
+      expect(youtubeEntry.child, isA<YoutubeMusicSettingsTile>());
 
-    // Don't reintroduce a second account tile when moving or adding controls.
-    expect(
-      accounts
-          .whereType<LokalSettingCustom>()
-          .where((entry) => entry.child is SpotifyAccountSettingsTile),
-      hasLength(1),
-    );
-    expect(tester.takeException(), isNull);
-  });
+      // Don't reintroduce a second account tile when moving or adding controls.
+      expect(
+        accounts.whereType<LokalSettingCustom>().where(
+          (entry) => entry.child is SpotifyAccountSettingsTile,
+        ),
+        hasLength(1),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

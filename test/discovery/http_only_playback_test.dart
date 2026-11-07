@@ -172,8 +172,11 @@ void main() {
 
   test('manifest failure does not start progressive playback', () async {
     final config = DiscoveryAddonConfig(
-      id: _only.id, label: _only.label, endpoint: _only.endpoint,
-      enabled: true, settings: const {'quality': 'CUSTOM'},
+      id: _only.id,
+      label: _only.label,
+      endpoint: _only.endpoint,
+      enabled: true,
+      settings: const {'quality': 'CUSTOM'},
     );
     final requests = <String>[];
     final client = MockClient((request) async {
@@ -185,8 +188,12 @@ void main() {
     });
     addTearDown(client.close);
     await expectLater(
-      playOnlineTrack('w-only-http', _track(), client: client,
-          store: _MemorySettings(DiscoverySettings(addons: [config]))),
+      playOnlineTrack(
+        'w-only-http',
+        _track(),
+        client: client,
+        store: _MemorySettings(DiscoverySettings(addons: [config])),
+      ),
       throwsA(isA<DiscoveryException>()),
     );
     expect(requests, ['/library/stream/song-1', '/library/manifest.json']);
@@ -194,8 +201,11 @@ void main() {
 
   test('playback cancellation reaches the spatial manifest lookup', () async {
     final config = DiscoveryAddonConfig(
-      id: _only.id, label: _only.label, endpoint: _only.endpoint,
-      enabled: true, settings: const {'quality': 'CUSTOM'},
+      id: _only.id,
+      label: _only.label,
+      endpoint: _only.endpoint,
+      enabled: true,
+      settings: const {'quality': 'CUSTOM'},
     );
     final started = Completer<void>();
     final response = Completer<http.Response>();
@@ -208,80 +218,140 @@ void main() {
       return http.Response('{"url":"https://cdn.example/audio.flac"}', 200);
     });
     addTearDown(client.close);
-    final result = playOnlineTrack('w-only-http', _track(), client: client,
-        cancel: cancelled.future,
-        store: _MemorySettings(DiscoverySettings(addons: [config])));
+    final result = playOnlineTrack(
+      'w-only-http',
+      _track(),
+      client: client,
+      cancel: cancelled.future,
+      store: _MemorySettings(DiscoverySettings(addons: [config])),
+    );
     await started.future;
     cancelled.complete();
-    await expectLater(result, throwsA(isA<DiscoveryException>().having(
-        (error) => error.message, 'message', 'Request cancelled.')));
+    await expectLater(
+      result,
+      throwsA(
+        isA<DiscoveryException>().having(
+          (error) => error.message,
+          'message',
+          'Request cancelled.',
+        ),
+      ),
+    );
     response.complete(http.Response('{}', 200));
   });
 
   for (final spatial in [true, false]) {
-    test(spatial
-        ? 'explicit spatial preparation failure does not try another source'
-        : 'ordinary stream failure still tries another source', () async {
-      SharedPreferences.setMockInitialValues({
-        PlaybackSourcePriority.key: ['w-first', 'w-second'],
-      });
-      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      const channel = MethodChannel('lokal/atmos');
-      messenger.setMockMethodCallHandler(channel, (_) async => {'available': false});
-      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-      final settings = DiscoverySettings(youtubeEnabled: false, addons: [
-        DiscoveryAddonConfig(id: 'first', label: 'First',
-          endpoint: 'https://first.example', enabled: true,
-          settings: spatial ? const {'quality': 'ATMOS'} : const {}),
-        const DiscoveryAddonConfig(id: 'second', label: 'Second',
-          endpoint: 'https://second.example', enabled: true),
-      ]);
-      final requests = <String>[];
-      final client = MockClient((request) async {
-        requests.add('${request.url.host}${request.url.path}');
-        if (request.url.path == '/search') {
-          return http.Response(jsonEncode({'tracks': [{
-            'id': 'song', 'title': 'Night Drive', 'artist': 'Test Artist',
-          }]}), 200);
+    test(
+      spatial
+          ? 'explicit spatial failure never streams another source after metadata prewarm'
+          : 'ordinary stream failure still tries another source',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          PlaybackSourcePriority.key: ['w-first', 'w-second'],
+        });
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        const channel = MethodChannel('lokal/atmos');
+        messenger.setMockMethodCallHandler(
+          channel,
+          (_) async => {'available': false},
+        );
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        final settings = DiscoverySettings(
+          youtubeEnabled: false,
+          addons: [
+            DiscoveryAddonConfig(
+              id: 'first',
+              label: 'First',
+              endpoint: 'https://first.example',
+              enabled: true,
+              settings: spatial ? const {'quality': 'ATMOS'} : const {},
+            ),
+            const DiscoveryAddonConfig(
+              id: 'second',
+              label: 'Second',
+              endpoint: 'https://second.example',
+              enabled: true,
+            ),
+          ],
+        );
+        final requests = <String>[];
+        final client = MockClient((request) async {
+          requests.add('${request.url.host}${request.url.path}');
+          if (request.url.path == '/search') {
+            return http.Response(
+              jsonEncode({
+                'tracks': [
+                  {
+                    'id': 'song',
+                    'title': 'Night Drive',
+                    'artist': 'Test Artist',
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          if (request.url.host == 'first.example' && !spatial) {
+            return http.Response('unavailable', 503);
+          }
+          return http.Response('{"url":"https://cdn.example/audio.flac"}', 200);
+        });
+        addTearDown(client.close);
+        final result = findDiscoverySong(
+          const LokalDiscoveryTrack(
+            title: 'Night Drive',
+            artist: 'Test Artist',
+          ),
+          client: client,
+          store: _MemorySettings(settings),
+        );
+        if (spatial) {
+          await expectLater(
+            result,
+            throwsA(
+              isA<DiscoveryException>().having(
+                (error) => error.message,
+                'message',
+                contains('cannot decode'),
+              ),
+            ),
+          );
+          // Candidate searches are prewarmed in parallel; this must never
+          // fetch a fallback audio stream after the explicit spatial refusal.
+          expect(
+            requests.where(
+              (request) => request.startsWith('second.example/stream/'),
+            ),
+            isEmpty,
+          );
+        } else {
+          final song = await result;
+          expect(song?.sourceDisplayName, 'Second');
+          expect(requests, contains('second.example/stream/song'));
         }
-        if (request.url.host == 'first.example' && !spatial) {
-          return http.Response('unavailable', 503);
-        }
-        return http.Response('{"url":"https://cdn.example/audio.flac"}', 200);
-      });
-      addTearDown(client.close);
-      final result = findDiscoverySong(
-        const LokalDiscoveryTrack(title: 'Night Drive', artist: 'Test Artist'),
-        client: client, store: _MemorySettings(settings),
-      );
-      if (spatial) {
-        await expectLater(result, throwsA(isA<DiscoveryException>().having(
-          (error) => error.message, 'message', contains('cannot decode'),
-        )));
-        expect(requests.where((request) => request.startsWith('second.example')),
-            isEmpty);
-      } else {
-        final song = await result;
-        expect(song?.sourceDisplayName, 'Second');
-        expect(requests, contains('second.example/stream/song'));
-      }
-    });
+      },
+    );
   }
 
-  test('old label-based queued source IDs still resolve after a rename', () async {
-    final requests = <String>[];
-    final client = _client(requests);
-    addTearDown(client.close);
-    final track = _track(label: 'Former name');
-    final played = await playOnlineTrack(
-      'w-Former name', track,
-      store: _MemorySettings(),
-      client: client,
-    );
-    expect(played.sourceDisplayName, 'HTTP source');
-    expect(played.sourcePackage, 'konnekted.progressive');
-    expect(requests, ['GET /library/stream/song-1']);
-  });
+  test(
+    'old label-based queued source IDs still resolve after a rename',
+    () async {
+      final requests = <String>[];
+      final client = _client(requests);
+      addTearDown(client.close);
+      final track = _track(label: 'Former name');
+      final played = await playOnlineTrack(
+        'w-Former name',
+        track,
+        store: _MemorySettings(),
+        client: client,
+      );
+      expect(played.sourceDisplayName, 'HTTP source');
+      expect(played.sourcePackage, 'konnekted.progressive');
+      expect(requests, ['GET /library/stream/song-1']);
+    },
+  );
 
   test('mismatched HTTP source selection never plays another add-on', () async {
     final requests = <String>[];
