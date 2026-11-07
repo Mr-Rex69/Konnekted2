@@ -27,10 +27,7 @@ A new Flutter FFI plugin project.
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
-  # Isolate FFI lookups are invisible to the native linker's reachability pass.
-  s.user_target_xcconfig = {
-    'OTHER_LDFLAGS' => '$(inherited) -Wl,-u,_lokal_soulseek_invoke -Wl,-u,_lokal_soulseek_free -Wl,-u,_lokal_soulseek_suspend -Wl,-u,_lokal_soulseek_resume',
-  }
+
 
   s.script_phase = {
     :name => 'Build Rust library',
@@ -46,6 +43,8 @@ A new Flutter FFI plugin project.
     'DEFINES_MODULE' => 'YES',
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_flick_player.a',
+    # Isolate lookups are invisible to native reachability. Retain exports in
+    # their defining framework, preserving the app's aggregate linker flags.
+    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_flick_player.a -Wl,-u,_lokal_soulseek_invoke -Wl,-u,_lokal_soulseek_free -Wl,-u,_lokal_soulseek_suspend -Wl,-u,_lokal_soulseek_resume',
   }
 end

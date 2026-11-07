@@ -194,6 +194,7 @@ jobs:
           python3 -m unittest discover -s tool -p test_ios_prepare_smb.py
           python3 -m unittest discover -s tool -p test_ios_package_smb.py
           python3 tool/ios_prepare_smb.py
+          python3 tool/ios_smb_link_probe.py
       - name: Check application and integration-test compilation
         run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib integration_test
       - name: Verify playback ownership and transport contracts
@@ -217,7 +218,11 @@ jobs:
           key: ios-cargo-symbols-v2-${{ runner.os }}-${{ runner.arch }}-xcode26.0.1-rust1.98.0-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml', 'rust/cargokit.yaml', 'rust/**/*.rs', 'rust/vendor/**', 'rust_builder/cargokit/build_tool/lib/**', 'rust_builder/cargokit/*.sh') }}
       - name: Build the release iPhone app without signing credentials
         id: device_build
-        run: flutter build ios --release --no-codesign --no-pub --build-number '${{ github.run_number }}' --split-debug-info=build/ios/dart-symbols
+        run: |
+          if ! flutter build ios --release --no-codesign --no-pub --build-number '${{ github.run_number }}' --split-debug-info=build/ios/dart-symbols --verbose > "$RUNNER_TEMP/ios-device-build.log" 2>&1; then
+            python3 tool/ios_build_diagnostics.py "$RUNNER_TEMP/ios-device-build.log"
+            exit 1
+          fi
       - name: Inspect and package the engineering IPA
         id: package
         run: |
@@ -324,12 +329,24 @@ jobs:
           if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
             find "$HOME/Library/Logs/DiagnosticReports" -name 'Runner*.ips' -type f -exec cp '{}' "$RUNNER_TEMP/ios-crash-reports/" \;
           fi
+      - name: Preserve generated native linker configuration
+        if: failure()
+        run: |
+          for target in dart_smb2 rust_lib_flick_player Pods-Runner; do
+            generated="ios/Pods/Target Support Files/$target"
+            if [ -d "$generated" ]; then
+              mkdir -p "$RUNNER_TEMP/ios-link-diagnostics/$target"
+              cp "$generated"/*.xcconfig "$RUNNER_TEMP/ios-link-diagnostics/$target/"
+            fi
+          done
       - name: Preserve build and runtime diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: iPhone-build-diagnostics-${{ github.run_number }}-attempt${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/ios-device-build.log
+            ${{ runner.temp }}/ios-link-diagnostics/
             ${{ runner.temp }}/ios-simulator-build.log
             ${{ runner.temp }}/ios-smoke.log
             ${{ runner.temp }}/ios-smoke-build.log
