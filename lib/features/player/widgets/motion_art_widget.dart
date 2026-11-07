@@ -589,7 +589,17 @@ class _MotionArtViewState extends State<MotionArtView>
       _logFailureOnce('video init', error);
       devLog('[MotionArt] video init failed: $error');
       await _disposeVideo(controller, lease: lease);
-      _scheduleRetry();
+      if (playable?.cachedSource case final String source) {
+        // Corrupted or unsupported local HLS should never trap the player in
+        // repeated attempts against the same file. Retry the original URL.
+        await MotionArtOfflineCache.instance.discard(source);
+        _retryTimer?.cancel();
+        _retryTimer = Timer(const Duration(milliseconds: 400), () {
+          if (mounted) _beginLoad();
+        });
+      } else {
+        _scheduleRetry();
+      }
       return;
     }
 
