@@ -9,7 +9,27 @@ iOS Home Screen widgets are excluded from this release. Standard lock-screen
 and Control Center playback controls remain available; no WidgetKit/App Group
 setup is required for the sideloaded app.
 
-## Current engineering-build transfer behavior
+## Current candidate status (7 November 2026)
+
+Android parity is frozen through mobile PR503 (Android 7.4.7). The current
+continuation is [PR475](https://github.com/lokal-music/mobile/pull/475), with the
+corresponding durable desktop receiver in
+[PR728](https://github.com/lokal-music/desktop/pull/728), updated through desktop
+14.2.0. Source `59e6d6b3` adds foreground iPhone Soulseek, qualified upload
+retry/cancel/requeue and installed mixed/background transfer probes.
+[Build136](https://github.com/lokal-music/mobile/actions/runs/42315712206) is
+qualifying that source. This is not a claim that its IPA or new probes passed.
+The latest release instruction authorizes the necessary Apple runs and audit;
+the earlier temporary request to skip CI no longer applies to this release.
+
+The final release branch publishes an unsigned **pre-device beta** only after
+both installed simulator suites, external daemon/process-recovery tests and
+independent source/IPA audit succeed for that exact commit. It preserves matching
+source, licenses, checksum, qualification evidence and crash symbols. Signing and
+physical-iPhone acceptance remain your step. Do not select an older engineering
+artifact expecting it to contain current changes.
+
+## Historical engineering-build transfer behavior
 
 The existing engineering build uses foreground desktop copying. Keep Lokal open with the iPhone
 unlocked and the desktop awake on Wi-Fi during a copy. After an interruption, check for
@@ -51,9 +71,8 @@ These qualification records are distinct from downloading and reinspecting
 the packages in this workspace, and neither is physical-device acceptance.
 
 Newer source through PR355 and the subsequent Clear/Forget preservation
-continuation is **not contained in those earlier artifacts**. CI waits are
-skipped at the user's request; use a successful matching newer artifact to
-test that source. Native product import/upload remain disabled; ordinary
+continuation is **not contained in those earlier artifacts**. Those older records do not qualify the current candidate; use a successful
+matching newer artifact to test current source. Native product import/upload remain disabled; ordinary
 foreground copies remain active. Signing, installation/upgrade, live services
 and receivers, and physical playback acceptance remain outstanding. Future
 native background-transfer activation also requires OS suspension/relaunch

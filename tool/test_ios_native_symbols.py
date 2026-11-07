@@ -1,6 +1,6 @@
 import struct
 import unittest
-from ios_native_symbols import defined_symbols, inspect_soulseek, SOULSEEK_SYMBOLS
+from ios_native_symbols import defined_symbols, inspect_soulseek, inspect_soulseek_images, SOULSEEK_SYMBOLS
 
 
 def image(names, flags=0xf):
@@ -26,6 +26,21 @@ class NativeSymbolTests(unittest.TestCase):
                 inspect_soulseek(image(sorted(SOULSEEK_SYMBOLS), flags))
         with self.assertRaises(ValueError):
             inspect_soulseek(image(['_lokal_soulseek_invoke']))
+
+    def test_universal_arm64_and_loaded_framework(self):
+        thin = image(sorted(SOULSEEK_SYMBOLS))
+        fat = struct.pack('>7I', 0xcafebabe, 1, 0x100000c, 0, 4096, len(thin), 12)
+        fat += b'\0' * (4096 - len(fat)) + thin
+        self.assertEqual(defined_symbols(fat), SOULSEEK_SYMBOLS)
+        path = 'Frameworks/rust_lib_flick_player.framework/rust_lib_flick_player'
+        dependency = b'@rpath/rust_lib_flick_player.framework/rust_lib_flick_player\0'
+        command = struct.pack('<6I', 0xc, 24 + len(dependency), 24, 0, 0, 0) + dependency
+        runner = struct.pack('<8I', 0xfeedfacf, 0x100000c, 0, 2, 1, len(command), 0, 0) + command
+        images = {'Runner': runner, path: fat}
+        self.assertEqual(inspect_soulseek_images('Runner', images, images.__getitem__)['binary'], path)
+        images['Runner'] = image([])
+        with self.assertRaisesRegex(ValueError, 'not loaded'):
+            inspect_soulseek_images('Runner', images, images.__getitem__)
 
     def test_truncation_and_invalid_table_fail(self):
         binary = image(sorted(SOULSEEK_SYMBOLS))

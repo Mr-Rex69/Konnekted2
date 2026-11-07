@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import tempfile
 
-from ios_native_symbols import inspect_soulseek
+from ios_native_symbols import inspect_soulseek_images
 
 
 def command(*args: str) -> str:
@@ -84,7 +84,13 @@ def inspect_bundle(app: Path) -> dict:
         binaries.append(framework / metadata["CFBundleExecutable"])
     binaries.extend(app.glob("Frameworks/*.dylib"))
     smb = inspect_smb(app, executable, binaries)
-    soulseek = inspect_soulseek(executable.read_bytes())
+    soulseek = inspect_soulseek_images(executable.relative_to(app).as_posix(),
+        [binary.relative_to(app).as_posix() for binary in binaries],
+        lambda relative: (app / relative).read_bytes())
+    soulseek_notice = 'Frameworks/App.framework/flutter_assets/assets/licenses/soulseek-rs-lib.txt'
+    if not (app / soulseek_notice).is_file():
+        raise ValueError('Bundled Soulseek MIT notice is missing')
+    soulseek['license'] = soulseek_notice
     uuids = {}
     for binary in binaries:
         archs = command("xcrun", "lipo", "-archs", str(binary)).split()
