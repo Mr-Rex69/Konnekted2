@@ -35,11 +35,18 @@ class SharedMotionPlayback<T> {
 
   /// Synchronous handoff for a preview: it may paint an already decoded frame
   /// even with TickerMode disabled, without doing a lookup or creating video.
-  MotionPlaybackLease<T>? acquireExisting(String key) {
+  MotionPlaybackLease<T>? acquireExisting(
+    String key, {
+    bool Function(T resource)? allow,
+  }) {
     for (final item in _entries.entries) {
       final entry = item.value;
       final resource = entry.resource;
-      if (!item.key.startsWith('$key\u0000') || resource == null) continue;
+      if (!item.key.startsWith('$key\u0000') ||
+          resource == null ||
+          (allow != null && !allow(resource))) {
+        continue;
+      }
       entry.timer?.cancel();
       final token = Object();
       entry.users[token] = false;
