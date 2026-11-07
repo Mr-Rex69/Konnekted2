@@ -1,0 +1,147 @@
+import 'dart:io';
+
+import 'package:flick/services/motion_art/animated_artwork_service.dart';
+import 'package:flick/services/motion_art/motion_art_offline_cache.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory directory;
+  setUp(() async {
+    directory = await Directory.systemTemp.createTemp('lokal_motion_offline_');
+  });
+  tearDown(() async {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  });
+
+  const mp4 = AnimatedArtwork(
+    name: 'Album',
+    artist: 'Artist',
+    albumId: 'spotify:track',
+    animatedUrl: 'https://video.example.com/canvas.mp4',
+  );
+
+  test('persists the real video, then resolves completely offline after restart',
+      () async {
+    var requests = 0;
+    final downloader = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((request) async {
+        requests++;
+        expect(request.url.toString(), mp4.playbackUrl);
+        return http.Response('video bytes', 200);
+      }),
+    );
+
+    expect(await downloader.find('song|artist|apple'), isNull);
+    await downloader.remember('song|artist|apple', mp4, preferVertical: false);
+    expect(requests, 1);
+
+    final restarted = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((request) async =>
+          throw StateError('Offline playback must not request $request')),
+    );
+    final art = await restarted.find('song|artist|apple');
+    expect(art?.albumId, 'spotify:track');
+    final playable = await restarted.playable(art!, preferVertical: false);
+    expect(playable?.cachedSource, mp4.playbackUrl);
+    final uri = Uri.parse(playable!.url);
+    expect(uri.scheme, 'file');
+    expect(await File.fromUri(uri).readAsString(), 'video bytes');
+  });
+
+  test('stores finite HLS segments and rewrites manifest to local assets',
+      () async {
+    const artwork = AnimatedArtwork(
+      name: 'Album',
+      artist: 'Artist',
+      albumId: 'apple:album',
+      animatedUrl: 'https://cdn.example.com/playlist.m3u8',
+    );
+    final urls = <String>[];
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((request) async {
+        urls.add(request.url.toString());
+        return switch (request.url.path) {
+          '/playlist.m3u8' => http.Response(
+              '#EXTM3U\n'
+              '#EXT-X-VERSION:7\n'
+              '#EXT-X-TARGETDURATION:3\n'
+              '#EXT-X-MAP:URI="init.mp4"\n'
+              '#EXTINF:2.5,\n'
+              'segment1.m4s\n'
+              '#EXTINF:2.5,\n'
+              'segment2.m4s\n'
+              '#EXT-X-ENDLIST\n',
+              200,
+            ),
+          '/init.mp4' => http.Response('init', 200),
+          '/segment1.m4s' => http.Response('segment1', 200),
+          '/segment2.m4s' => http.Response('segment2', 200),
+          _ => http.Response('not found', 404),
+        };
+      }),
+    );
+
+    await cache.remember('hls', artwork, preferVertical: false);
+    final playable = await cache.playable(artwork, preferVertical: false);
+    final playlist = await File.fromUri(Uri.parse(playable!.url)).readAsString();
+    expect(playable.cachedSource, artwork.playbackUrl);
+    expect(playlist, contains('URI="asset_0.mp4"'));
+    expect(playlist, contains('asset_1.m4s'));
+    expect(playlist, contains('asset_2.m4s'));
+    expect(playlist, isNot(contains('https://')));
+    expect(urls.length, 4);
+    expect(await cache.find('hls'), isNotNull);
+  });
+
+  test('never marks incomplete or encrypted HLS as offline playable', () async {
+    const artwork = AnimatedArtwork(
+      name: 'Album',
+      artist: 'Artist',
+      albumId: 'apple:album',
+      animatedUrl: 'https://cdn.example.com/encrypted.m3u8',
+    );
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((_) async => http.Response(
+            '#EXTM3U\n'
+            '#EXT-X-KEY:METHOD=AES-128,URI="key"\n'
+            '#EXTINF:4,\nseg.ts\n#EXT-X-ENDLIST\n',
+            200,
+          )),
+    );
+    await cache.remember('encrypted', artwork, preferVertical: false);
+    expect(await cache.find('encrypted'), isNull);
+    final playable = await cache.playable(artwork, preferVertical: false);
+    expect(playable?.cachedSource, isNull);
+    expect(playable?.url, artwork.playbackUrl);
+  });
+
+  test('falls back to a saved square clip when portrait is unavailable',
+      () async {
+    const artwork = AnimatedArtwork(
+      name: 'Album',
+      artist: 'Artist',
+      albumId: 'apple:album',
+      animatedUrl: 'https://cdn.example.com/square.mp4',
+      animatedVerticalUrl: 'https://cdn.example.com/portrait.mp4',
+    );
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((request) async {
+        expect(request.url.path, '/square.mp4');
+        return http.Response('square clip', 200);
+      }),
+    );
+    await cache.remember('square', artwork, preferVertical: false);
+    final offline = await cache.playable(artwork, preferVertical: true);
+    expect(offline?.cachedSource, artwork.playbackUrl);
+    expect(Uri.parse(offline!.url).scheme, 'file');
+  });
+}
