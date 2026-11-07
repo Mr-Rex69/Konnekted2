@@ -12,7 +12,8 @@ class EcoDataModeToggle extends StatefulWidget implements LokalSearchable {
   static const label = 'Eco Data Mode';
   static const description =
       'On mobile data, try YouTube Music and SoundCloud before lossless sources. '
-      'Uses your normal order on Wi-Fi and for manually selected sources.';
+      'Only previously downloaded moving covers play on mobile data; '
+      'other songs use static artwork. Wi-Fi behavior is unchanged.';
 
   @override
   String get searchText => '$label $description mobile cellular bandwidth';
