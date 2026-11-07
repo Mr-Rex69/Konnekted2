@@ -58,7 +58,11 @@ def launch(device, environment):
     env = dict(os.environ)
     env.update({'SIMCTL_CHILD_LOKAL_IOS_DAEMON_PROBE_' + key: str(value)
                 for key, value in environment.items()})
-    output = command('xcrun', 'simctl', 'launch', device, BUNDLE, env=env)
+    # Pending background tasks can cause an unconfigured OS relaunch before
+    # this explicit test launch. SIMCTL_CHILD variables apply to a new process,
+    # so never reuse that process with stale/missing fixture coordinates.
+    output = command('xcrun', 'simctl', 'launch', '--terminate-running-process',
+                     device, BUNDLE, env=env)
     match = re.search(r'app\.lokal\.mobile:\s*(\d+)', output)
     if not match:
         raise RuntimeError('Cannot identify owned native probe process: ' + output)
@@ -115,6 +119,9 @@ def qualify_case(device, container, output, death_while_pending):
             completed = eventually(lambda: read_json(root / result_name),
                 lambda value: value.get('download') == 'staged' and value.get('upload') == 'complete',
                 'Verified native download staging and upload receipt')
+            assert completed['processID'] == pid, completed
+            assert completed['recovering'] == death_while_pending, completed
+            assert completed['sessionIdentifier'] == 'app.lokal.mobile.integration-daemon.' + run
             assert completed['downloadBytes'] == length and completed['downloadSHA256'] == checksum
             assert completed['originalID'] == 'desktop-storage-upload-daemon'
             assert hashlib.sha256((root / 'Music/source.wav').read_bytes()).hexdigest() == checksum
@@ -129,6 +136,8 @@ def qualify_case(device, container, output, death_while_pending):
             recovered = eventually(lambda: read_json(recovered_path),
                 lambda value: value.get('download') == 'staged' and value.get('upload') == 'complete',
                 'Exact journal recovery after completed process death')
+            assert recovered['processID'] == pid and recovered['recovering'] is True, recovered
+            assert recovered['sessionIdentifier'] == completed['sessionIdentifier'], recovered
             after = state()
             assert after['requests'] == {'storage-download-daemon': 1}, after
             assert after['uploadRequests'] == {'storage-upload-daemon': 1}, after

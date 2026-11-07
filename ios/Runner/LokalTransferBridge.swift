@@ -629,6 +629,8 @@ final class LokalTransferDaemonProbe: @unchecked Sendable {
     do {
       var evidence = value["error"] == nil ? value : lastEvidence.merging(value) { _, new in new }
       evidence["stage"] = stage
+      evidence["processID"] = Int(ProcessInfo.processInfo.processIdentifier)
+      evidence["sessionIdentifier"] = identifier
       lastEvidence = evidence
       let data = try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
       try data.write(to: root.appendingPathComponent(recovering ? "recovered.json" : "state.json"), options: .atomic)

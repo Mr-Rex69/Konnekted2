@@ -436,6 +436,11 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         nowPlaying: state.nowPlaying,
         trackMetadata: state.trackMetadata,
       );
+      if (Platform.isIOS &&
+          s.playing &&
+          s.processingState == ja.ProcessingState.ready) {
+        IosLocalAudioRequests.lifecycle.confirmLocalPlaybackStarted();
+      }
       _syncNotification();
     });
     // Only the selected station's own stream provides ICY metadata;
@@ -468,9 +473,6 @@ class RadioPlayerNotifier extends Notifier<RadioPlayback> {
         nowPlaying: title,
         trackMetadata: stillCurrent ? state.trackMetadata : null,
       );
-      if (Platform.isIOS && state.playing && !state.loading) {
-        IosLocalAudioRequests.lifecycle.confirmLocalPlaybackStarted();
-      }
       _syncNotification();
     });
     return _player = player;
