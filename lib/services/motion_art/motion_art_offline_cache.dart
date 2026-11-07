@@ -121,13 +121,28 @@ class MotionArtOfflineCache {
       final decoded = jsonDecode(await marker.readAsString());
       if (decoded is! Map || decoded['url'] != source) return null;
       final name = decoded['entry'];
-      if (name != 'clip.mp4' && name != 'playlist.m3u8') return null;
+      if (name != 'clip.mp4' &&
+          name != 'clip.webm' &&
+          name != 'clip.mov' &&
+          name != 'playlist.m3u8') return null;
       final file = File('${dir.path}/$name');
       if (!await file.exists() || await file.length() == 0) return null;
       await file.setLastModified(DateTime.now());
       return file;
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Invalidate a video that a native decoder could not open. Future plays
+  /// fall back to the network instead of repeatedly using a broken local file.
+  Future<void> discard(String source) async {
+    if (!_secureUrl(source) || _inUse.containsKey(source)) return;
+    try {
+      final dir = await _clipDir(source);
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (error) {
+      devLog('[MotionArt] offline clip discard failed: $error');
     }
   }
 
@@ -246,9 +261,13 @@ class MotionArtOfflineCache {
         extension.endsWith('.webm'))) {
       return null;
     }
-    // Native player sniffs MP4 containers regardless of the original filename.
-    await File('${temp.path}/clip.mp4').writeAsBytes(bytes, flush: true);
-    return 'clip.mp4';
+    final fileName = extension.endsWith('.webm')
+        ? 'clip.webm'
+        : extension.endsWith('.mov')
+        ? 'clip.mov'
+        : 'clip.mp4';
+    await File('${temp.path}/$fileName').writeAsBytes(bytes, flush: true);
+    return fileName;
   }
 
   Future<String?> _downloadHls(String url, Directory temp) async {
@@ -288,7 +307,11 @@ class MotionArtOfflineCache {
     if (!playlist.contains('#EXT-X-ENDLIST') ||
         playlist.contains('#EXT-X-BYTERANGE') ||
         playlist.contains('#EXT-X-I-FRAMES-ONLY') ||
-        RegExp(r'#EXT-X-KEY:(?!METHOD=NONE)').hasMatch(playlist)) {
+        playlist.contains('#EXT-X-PART:') ||
+        playlist.contains('#EXT-X-PRELOAD-HINT:') ||
+        playlist.contains('#EXT-X-SESSION-KEY:') ||
+        RegExp(r'#EXT-X-KEY:(?!METHOD=NONE)').hasMatch(playlist) ||
+        RegExp(r'#EXT-X-(?!MAP:)[^\\n]*URI=').hasMatch(playlist)) {
       return null;
     }
     final rows = playlist.split(RegExp(r'\r?\n'));
