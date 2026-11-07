@@ -235,6 +235,11 @@ class _SpotifyPlaylistsScreenState
                                   ),
                                 ),
                               ),
+                              prepareArtwork: () => precachePlaylistHeroArtwork(
+                                context,
+                                playlistId: 'spotify:' + _account + ':' + playlist.id,
+                                coverUrl: playlist.imageUrl,
+                              ),
                             ),
                           ),
                         );
