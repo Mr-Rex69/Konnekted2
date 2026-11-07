@@ -8,23 +8,27 @@ import 'package:flick/services/graceful_http_client.dart';
 
 import 'animated_artwork_service.dart';
 import 'moving_cover_matcher.dart';
+import 'motion_art_offline_cache.dart';
 import 'moving_cover_settings.dart';
 import 'spotify_canvas_service.dart';
 
 /// Desktop's source order, with each added provider explicitly selectable.
-/// Stream HLS/MP4 directly; no multi-hundred-MB video download blocks playback.
+/// Stream first frames immediately, then save bounded clips for offline replay.
 class MovingCoverService {
   MovingCoverService({
     http.Client? client,
     AnimatedArtworkService? apple,
     SpotifyCanvasService? spotify,
+    MotionArtOfflineCache? offlineCache,
   }) : _client = client ?? GracefulHttpClient(),
-       _apple = apple ?? AnimatedArtworkService.instance {
+       _apple = apple ?? AnimatedArtworkService.instance,
+       _offlineCache = offlineCache ?? MotionArtOfflineCache.instance {
     _spotify = spotify ?? SpotifyCanvasService(client: _client);
   }
   static final instance = MovingCoverService();
   final http.Client _client;
   final AnimatedArtworkService _apple;
+  final MotionArtOfflineCache _offlineCache;
   late final SpotifyCanvasService _spotify;
   final _cache = <String, (DateTime, MotionArtLookup)>{};
   final _jobs = <String, Future<MotionArtLookup>>{};
@@ -35,6 +39,34 @@ class MovingCoverService {
   DateTime _communityAt = DateTime(2000);
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36';
+
+  /// Disk lookup keys deliberately exclude in-process revision counters, so
+  /// cached clips survive app restarts and Spotify session refreshes. They do
+  /// include the enabled source order so source preference changes are obeyed.
+  String _offlineKey(
+    String title,
+    String artist,
+    String album,
+    MovingCoverSettings settings,
+  ) => 'v1|${motionName(title)}|${motionName(artist)}|'
+      '${motionName(motionAlbum(album))}|${settings.order.join(',')}';
+
+  /// Persist the clip only after a player has successfully initialized it.
+  /// Streaming remains responsive; failed downloads never block playback.
+  Future<void> cachePlayedClip({
+    required String title,
+    required String artist,
+    String? album,
+    required AnimatedArtwork artwork,
+    required bool preferVertical,
+  }) async {
+    final settings = await MovingCoverSettings.load();
+    await _offlineCache.remember(
+      _offlineKey(title, artist, album ?? '', settings),
+      artwork,
+      preferVertical: preferVertical,
+    );
+  }
 
   Future<MotionArtLookup> lookup({
     required String title,
@@ -51,6 +83,17 @@ class MovingCoverService {
     if (cached != null && cached.$1.isAfter(DateTime.now())) return cached.$2;
     final active = _jobs[key];
     if (active != null) return active;
+
+    // The completed local video is authoritative for offline playback. This
+    // check runs before any Apple/Tidal/Spotify/provider HTTP request.
+    final offline = await _offlineCache.find(
+      _offlineKey(title, artist, cleanAlbum, prefs),
+    );
+    if (offline != null) {
+      final result = MotionArtLookup(artwork: offline);
+      _cache[key] = (DateTime.now().add(const Duration(minutes: 30)), result);
+      return result;
+    }
     final job = _resolve(
       title: motionTitle(title),
       artist: artist,
