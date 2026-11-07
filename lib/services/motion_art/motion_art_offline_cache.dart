@@ -311,7 +311,7 @@ class MotionArtOfflineCache {
         playlist.contains('#EXT-X-PRELOAD-HINT:') ||
         playlist.contains('#EXT-X-SESSION-KEY:') ||
         RegExp(r'#EXT-X-KEY:(?!METHOD=NONE)').hasMatch(playlist) ||
-        RegExp(r'#EXT-X-(?!MAP:)[^\\n]*URI=').hasMatch(playlist)) {
+        RegExp(r'#EXT-X-(?!MAP:)[^\r\n]*URI=').hasMatch(playlist)) {
       return null;
     }
     final rows = playlist.split(RegExp(r'\r?\n'));
