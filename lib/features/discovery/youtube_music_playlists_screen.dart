@@ -178,6 +178,11 @@ class _YoutubeMusicPlaylistsScreenState
                                         ),
                                       ),
                                     ),
+                                    prepareArtwork: () => precachePlaylistHeroArtwork(
+                                      context,
+                                      playlistId: 'youtube:' + _account + ':' + playlist.id,
+                                      coverUrl: playlist.artworkUrl,
+                                    ),
                                   ),
                                 ),
                               );
