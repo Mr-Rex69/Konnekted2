@@ -226,7 +226,13 @@ class _MotionArtViewState extends State<MotionArtView>
 
   Future<void> _checkEco() async {
     final version = ++_ecoCheckVersion;
-    final active = await EcoDataMode.activeOnCellular();
+    bool active;
+    try {
+      active = await EcoDataMode.activeOnCellular();
+    } catch (error) {
+      devLog('[MotionArt] Eco policy unavailable: $error');
+      active = false;
+    }
     if (!mounted || version != _ecoCheckVersion) return;
     _ecoActive = active;
     _ecoReady = true;
