@@ -19,13 +19,16 @@ class MovingCoverService {
     http.Client? client,
     AnimatedArtworkService? apple,
     SpotifyCanvasService? spotify,
+    MotionArtOfflineCache? offlineCache,
   }) : _client = client ?? GracefulHttpClient(),
-       _apple = apple ?? AnimatedArtworkService.instance {
+       _apple = apple ?? AnimatedArtworkService.instance,
+       _offlineCache = offlineCache ?? MotionArtOfflineCache.instance {
     _spotify = spotify ?? SpotifyCanvasService(client: _client);
   }
   static final instance = MovingCoverService();
   final http.Client _client;
   final AnimatedArtworkService _apple;
+  final MotionArtOfflineCache _offlineCache;
   late final SpotifyCanvasService _spotify;
   final _cache = <String, (DateTime, MotionArtLookup)>{};
   final _jobs = <String, Future<MotionArtLookup>>{};
@@ -58,7 +61,7 @@ class MovingCoverService {
     required bool preferVertical,
   }) async {
     final settings = await MovingCoverSettings.load();
-    await MotionArtOfflineCache.instance.remember(
+    await _offlineCache.remember(
       _offlineKey(title, artist, album ?? '', settings),
       artwork,
       preferVertical: preferVertical,
@@ -83,7 +86,7 @@ class MovingCoverService {
 
     // The completed local video is authoritative for offline playback. This
     // check runs before any Apple/Tidal/Spotify/provider HTTP request.
-    final offline = await MotionArtOfflineCache.instance.find(
+    final offline = await _offlineCache.find(
       _offlineKey(title, artist, cleanAlbum, prefs),
     );
     if (offline != null) {
