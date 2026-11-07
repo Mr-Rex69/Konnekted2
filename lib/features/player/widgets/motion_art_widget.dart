@@ -7,6 +7,7 @@ import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/core/utils/dev_log.dart';
 import 'package:flick/services/motion_art/animated_artwork_service.dart';
 import 'package:flick/services/motion_art/moving_cover_service.dart';
+import 'package:flick/services/motion_art/motion_art_offline_cache.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 import 'package:flick/services/player_service.dart';
@@ -105,17 +106,22 @@ class _MotionArtViewState extends State<MotionArtView>
 
   static final Set<VideoPlayerController> _liveControllers = {};
   static final _spotifyCanvas = Expando<bool>();
+  static final _cachedSource = Expando<String>();
 
   static final _shared = SharedMotionPlayback<VideoPlayerController>(
     create: (url) async {
       final uri = Uri.parse(url);
-      final controller = VideoPlayerController.networkUrl(
-        uri,
-        formatHint: uri.path.toLowerCase().endsWith('.m3u8')
-            ? VideoFormat.hls
-            : null,
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
+      final options = VideoPlayerOptions(mixWithOthers: true);
+      final controller = uri.scheme == 'file'
+          ? VideoPlayerController.file(File.fromUri(uri),
+              videoPlayerOptions: options)
+          : VideoPlayerController.networkUrl(
+              uri,
+              formatHint: uri.path.toLowerCase().endsWith('.m3u8')
+                  ? VideoFormat.hls
+                  : null,
+              videoPlayerOptions: options,
+            );
       try {
         await controller.initialize().timeout(const Duration(seconds: 15));
         await controller.setLooping(true);
@@ -359,16 +365,23 @@ class _MotionArtViewState extends State<MotionArtView>
     bool immediate = false,
   }) async {
     if (controller == null) return;
+    final cachedSource = _cachedSource[controller];
     if (lease != null) {
-      await lease.release(
-        immediate:
-            immediate ||
-            _suspendedForMemoryPressure ||
-            _suppressed ||
-            _performance ||
-            !widget.enabled ||
-            _lifecycle != AppLifecycleState.resumed,
-      );
+      try {
+        await lease.release(
+          immediate:
+              immediate ||
+              _suspendedForMemoryPressure ||
+              _suppressed ||
+              _performance ||
+              !widget.enabled ||
+              _lifecycle != AppLifecycleState.resumed,
+        );
+      } finally {
+        if (cachedSource != null) {
+          MotionArtOfflineCache.instance.release(cachedSource);
+        }
+      }
       return;
     }
     if (_liveControllers.remove(controller)) {
@@ -378,6 +391,10 @@ class _MotionArtViewState extends State<MotionArtView>
       await controller.dispose().timeout(const Duration(seconds: 4));
     } catch (_) {
       /* The platform may already have released the decoder. */
+    } finally {
+      if (cachedSource != null) {
+        MotionArtOfflineCache.instance.release(cachedSource);
+      }
     }
   }
 
@@ -409,6 +426,10 @@ class _MotionArtViewState extends State<MotionArtView>
         _timer = null;
         _sharedLease = lease;
         _controller = lease.resource;
+        final cachedSource = _cachedSource[lease.resource];
+        if (cachedSource != null) {
+          MotionArtOfflineCache.instance.retain(cachedSource);
+        }
         _hasVideo = true;
         _reusedClip = true;
         unawaited(
@@ -507,9 +528,14 @@ class _MotionArtViewState extends State<MotionArtView>
 
     if (!mounted || generation != _generation || !_canPlay) return;
     final artwork = lookup?.artwork;
-    final url = widget.preferVertical
-        ? artwork?.verticalPlaybackUrl
-        : artwork?.playbackUrl;
+    final playable = artwork == null
+        ? null
+        : await MotionArtOfflineCache.instance.playable(
+            artwork,
+            preferVertical: widget.preferVertical,
+          );
+    if (!mounted || generation != _generation || !_canPlay) return;
+    final url = playable?.url;
     if (url == null) {
       if (lookup?.transient ?? true) {
         // Network hiccup, 429/503, timeout: a later attempt may still find
@@ -532,15 +558,20 @@ class _MotionArtViewState extends State<MotionArtView>
         controller = lease.resource;
       } else {
         final uri = Uri.parse(url);
-        controller = VideoPlayerController.networkUrl(
-          uri,
-          // boidu's `animated` field is an Apple HLS playlist; hinting the format
-          // is more robust than relying on ExoPlayer's URI-extension sniffing.
-          formatHint: uri.path.toLowerCase().endsWith('.m3u8')
-              ? VideoFormat.hls
-              : null,
-          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-        );
+        final options = VideoPlayerOptions(mixWithOthers: true);
+        controller = uri.scheme == 'file'
+            ? VideoPlayerController.file(
+                File.fromUri(uri),
+                videoPlayerOptions: options,
+              )
+            : VideoPlayerController.networkUrl(
+                uri,
+                // Explicit format hint for remote Apple HLS manifests.
+                formatHint: uri.path.toLowerCase().endsWith('.m3u8')
+                    ? VideoFormat.hls
+                    : null,
+                videoPlayerOptions: options,
+              );
         await controller.initialize().timeout(const Duration(seconds: 15));
         await controller.setLooping(true);
         await controller.setVolume(0);
@@ -567,6 +598,22 @@ class _MotionArtViewState extends State<MotionArtView>
       return;
     }
 
+    if (playable?.cachedSource case final String source) {
+      _cachedSource[controller] = source;
+      MotionArtOfflineCache.instance.retain(source);
+    } else if (widget.serviceOverride == null && artwork != null) {
+      // The streamed first frame is already playing. Cache asynchronously so
+      // revisiting this song (including after restart) works without network.
+      unawaited(MovingCoverService.instance.cachePlayedClip(
+        title: widget.albumMode
+            ? widget.representativeSongTitle ?? widget.title
+            : widget.title,
+        artist: widget.artist,
+        album: widget.albumMode ? widget.album ?? widget.title : widget.album,
+        artwork: artwork,
+        preferVertical: widget.preferVertical,
+      ));
+    }
     _spotifyCanvas[controller] = artwork!.albumId.startsWith('spotify:');
     final previous = _controller;
     final previousLease = _sharedLease;
