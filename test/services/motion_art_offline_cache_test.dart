@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flick/services/motion_art/animated_artwork_service.dart';
 import 'package:flick/services/motion_art/motion_art_offline_cache.dart';
+import 'package:flick/services/motion_art/moving_cover_service.dart';
+import 'package:flick/services/motion_art/moving_cover_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -12,6 +15,7 @@ void main() {
   late Directory directory;
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('lokal_motion_offline_');
+    SharedPreferences.setMockInitialValues({});
   });
   tearDown(() async {
     if (await directory.exists()) await directory.delete(recursive: true);
@@ -52,6 +56,44 @@ void main() {
     final uri = Uri.parse(playable!.url);
     expect(uri.scheme, 'file');
     expect(await File.fromUri(uri).readAsString(), 'video bytes');
+  });
+
+  test('moving-cover resolver finds offline video without any provider requests',
+      () async {
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((_) async => http.Response('clip', 200)),
+    );
+    final first = MovingCoverService(
+      offlineCache: cache,
+      client: MockClient((request) async =>
+          throw StateError('Provider must not be queried: $request')),
+    );
+    await first.cachePlayedClip(
+      title: 'Track',
+      artist: 'Artist',
+      album: 'Album',
+      artwork: mp4,
+      preferVertical: false,
+    );
+
+    final restarted = MovingCoverService(
+      offlineCache: MotionArtOfflineCache.create(
+        directory: directory,
+        client: MockClient((request) async =>
+            throw StateError('Offline request: $request')),
+      ),
+      client: MockClient((request) async =>
+          throw StateError('Provider request: $request')),
+    );
+    final result = await restarted.lookup(
+      title: 'Track',
+      artist: 'Artist',
+      album: 'Album',
+      settings: const MovingCoverSettings(),
+    );
+    expect(result.artwork?.playbackUrl, mp4.playbackUrl);
+    expect(result.transient, isFalse);
   });
 
   test('stores finite HLS segments and rewrites manifest to local assets',
