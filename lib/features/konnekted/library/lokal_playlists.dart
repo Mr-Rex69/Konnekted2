@@ -136,6 +136,50 @@ final lokalResolvedPlaylistSongsProvider =
   return lokalPlaylistSongs(playlist, byId);
 });
 
+/// Prepare the local playlist's generated or custom hero image before the
+/// new route begins animating, including authenticated server artwork.
+Future<void> precacheLocalPlaylistHero(
+  BuildContext context,
+  String playlistId,
+) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final playlist = container.read(playlistProvider(playlistId));
+  if (playlist == null) return;
+  final songs = container.read(lokalResolvedPlaylistSongsProvider(playlistId));
+  final coverId = playlist.coverArt?.trim();
+  final serverId = playlist.networkServerId;
+  Uint8List? coverBytes;
+  if (serverId != null && coverId != null && coverId.isNotEmpty) {
+    final key = serverId.toString() + '|' + coverId;
+    coverBytes = _playlistCoverCache[key];
+    if (coverBytes == null) {
+      try {
+        coverBytes = await container
+            .read(_subsonicPlaylistCoverProvider(
+              (serverId: serverId, coverId: coverId),
+            ).future)
+            .timeout(const Duration(milliseconds: 450));
+      } catch (_) {
+        // Offline servers can use the locally cached collage.
+      }
+    }
+  }
+  if (!context.mounted) return;
+  await precachePlaylistHeroArtwork(
+    context,
+    playlistId: 'local:' + playlistId,
+    coverBytes: coverBytes,
+    coverPath: serverId == null ? coverId : null,
+    covers: [
+      for (final song in songs)
+        PlaylistHeroCover(
+          imagePath: song.albumArt ?? '',
+          audioSourcePath: song.filePath,
+        ),
+    ],
+  );
+}
+
 Future<String?> _askName(
   BuildContext context, {
   required String title,
@@ -340,6 +384,8 @@ class LokalPlaylistsPage extends ConsumerWidget {
                       context,
                       LokalPlaylistPage(playlistId: playlist.id),
                     ),
+                    prepareArtwork: () =>
+                        precacheLocalPlaylistHero(context, playlist.id),
                   ),
                 ),
                 child: Padding(

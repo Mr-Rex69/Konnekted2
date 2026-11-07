@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flick/core/theme/lokal_performance_scope.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/services/album_art_service.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 
 /// Album artwork sources for the shared local/Spotify/YouTube playlist hero.
@@ -19,21 +22,33 @@ class PlaylistHeroCover {
 /// selection; force-closing and relaunching changes the artwork arrangement.
 final int _playlistHeroSessionSeed = math.Random().nextInt(0x7fffffff);
 
-// Stage the first playlist opening on tap instead of hiding the artwork
-// during the route animation. Repeated openings in this session are immediate.
-const playlistHeroFirstOpenTapDelay = Duration(milliseconds: 80);
+// A clock-only 80 ms delay did not warm the collage: decoding still happened
+// during the route push. On the first tap, prepare the exact hero image-cache
+// keys before starting the transition. Always bound the wait for offline art.
+// Returning to the same playlist during this app session remains immediate.
+const playlistHeroFirstOpenTapDelay = Duration(milliseconds: 220);
+const playlistHeroWarmupTimeout = Duration(milliseconds: 650);
 final Set<String> _openedPlaylistPages = <String>{};
 final Set<String> _openingPlaylistPages = <String>{};
 
 Future<void> openPlaylistAfterFirstTap(
   BuildContext context,
   String playlistId,
-  Future<void> Function() open,
-) async {
+  Future<void> Function() open, {
+  Future<void> Function()? prepareArtwork,
+}) async {
   if (!_openingPlaylistPages.add(playlistId)) return;
   try {
     if (!_openedPlaylistPages.contains(playlistId)) {
-      await Future<void>.delayed(playlistHeroFirstOpenTapDelay);
+      final minimumWait = Future<void>.delayed(playlistHeroFirstOpenTapDelay);
+      if (prepareArtwork != null) {
+        try {
+          await prepareArtwork().timeout(playlistHeroWarmupTimeout);
+        } catch (_) {
+          // Invalid, missing, or offline artwork must not block navigation.
+        }
+      }
+      await minimumWait;
     }
     if (!context.mounted) return;
     _openedPlaylistPages.add(playlistId);
@@ -68,6 +83,108 @@ List<PlaylistHeroCover> playlistHeroCoversForSession(
       Object.hash(playlistId, _playlistHeroSessionSeed) & 0x7fffffff,
     ));
   return shuffled.take(limit).toList(growable: false);
+}
+
+// Precache the same resized image providers that CachedImageWidget uses for
+// the 320px collage thumbnails, so the subsequent route reuses decoded frames.
+Future<void> _precacheHeroImage(
+  BuildContext context,
+  ImageProvider provider,
+) async {
+  if (!context.mounted) return;
+  try {
+    await precacheImage(
+      provider,
+      context,
+      onError: (error, stackTrace) {},
+    );
+  } catch (_) {
+    // A failed thumbnail is handled by the normal hero fallback.
+  }
+}
+
+Future<void> _precacheHeroTile(
+  BuildContext context,
+  PlaylistHeroCover cover,
+) async {
+  var path = cover.imagePath.trim();
+  if (!path.startsWith('http') &&
+      (path.isEmpty || !(await File(path).exists()))) {
+    final audioPath = cover.audioSourcePath?.trim();
+    if (audioPath == null || audioPath.isEmpty) return;
+    path = AlbumArtService.instance.cachedArtworkPathFor(audioPath) ?? '';
+    if (path.isEmpty || !(await File(path).exists())) {
+      try {
+        path = await AlbumArtService.instance.resolveArtworkPath(
+              existingPath: cover.imagePath,
+              audioSourcePath: audioPath,
+            ) ??
+            '';
+      } catch (_) {
+        return;
+      }
+    }
+  }
+  if (path.isEmpty || !context.mounted) return;
+  if (!path.startsWith('http') && !(await File(path).exists())) return;
+  if (!context.mounted) return;
+  final ImageProvider source =
+      path.startsWith('http') ? NetworkImage(path) : FileImage(File(path));
+  await _precacheHeroImage(
+    context,
+    ResizeImage.resizeIfNeeded(320, 320, source),
+  );
+}
+
+/// Warm artwork on tap, not after the playlist page has begun sliding.
+/// An explicit cover takes priority over the generated collage, just as in
+/// PlaylistHeroHeader. The opening gate applies a deadline separately.
+Future<void> precachePlaylistHeroArtwork(
+  BuildContext context, {
+  required String playlistId,
+  String? coverUrl,
+  String? coverPath,
+  Uint8List? coverBytes,
+  Iterable<PlaylistHeroCover> covers = const <PlaylistHeroCover>[],
+}) async {
+  if (!context.mounted) return;
+  if (coverBytes != null && coverBytes.isNotEmpty) {
+    await _precacheHeroImage(context, MemoryImage(coverBytes));
+    return;
+  }
+  final localCover = coverPath?.trim() ?? '';
+  if (localCover.isNotEmpty &&
+      (localCover.startsWith('http') || await File(localCover).exists())) {
+    if (!context.mounted) return;
+    final physicalWidth =
+        MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context);
+    final requestedWidth = ((physicalWidth / 64).ceil() * 64).clamp(64, 2048);
+    final decodeWidth = LokalPerformanceScope.of(context)
+        ? requestedWidth.clamp(64, 768)
+        : requestedWidth;
+    final ImageProvider source = localCover.startsWith('http')
+        ? NetworkImage(localCover)
+        : FileImage(File(localCover));
+    await _precacheHeroImage(
+      context,
+      ResizeImage.resizeIfNeeded(decodeWidth, null, source),
+    );
+    return;
+  }
+  final remoteCover = coverUrl?.trim() ?? '';
+  if (remoteCover.startsWith('https://')) {
+    await _precacheHeroImage(context, NetworkImage(remoteCover));
+    return;
+  }
+  final sampled = playlistHeroCoversForSession(playlistId, covers);
+  // Limit concurrent decodes/extractions while preparing the first frame.
+  for (var i = 0; i < sampled.length; i += 3) {
+    if (!context.mounted) return;
+    await Future.wait([
+      for (final cover in sampled.skip(i).take(3))
+        _precacheHeroTile(context, cover),
+    ]);
+  }
 }
 
 /// Full-width, gradient-faded playlist art and title. A dedicated playlist

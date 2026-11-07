@@ -158,4 +158,5 @@ Future<void> openLokalPlaylist(BuildContext context, String playlistId) =>
       context,
       'local:$playlistId',
       () => pushLokalPage(context, LokalPlaylistPage(playlistId: playlistId)),
+      prepareArtwork: () => precacheLocalPlaylistHero(context, playlistId),
     );

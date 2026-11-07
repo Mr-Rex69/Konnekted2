@@ -113,7 +113,8 @@ void main() {
     expect(pushes, 0);
     // Ignore a second tap while the opening is pending.
     await tester.tap(find.text('Open playlist'));
-    await tester.pump(const Duration(milliseconds: 79));
+    await tester.pump(playlistHeroFirstOpenTapDelay -
+        const Duration(milliseconds: 1));
     expect(pushes, 0);
 
     await tester.pump(const Duration(milliseconds: 1));
@@ -131,6 +132,71 @@ void main() {
     expect(pushes, 2);
     expect(find.byType(CachedImageWidget), findsNWidgets(16));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('first opening waits for artwork readiness before pushing',
+      (tester) async {
+    final artworkReady = Completer<void>();
+    var pushes = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(builder: (context) {
+          return TextButton(
+            onPressed: () => unawaited(openPlaylistAfterFirstTap(
+              context,
+              'test:playlist-warmup',
+              () async { pushes++; },
+              prepareArtwork: () => artworkReady.future,
+            )),
+            child: const Text('Open prepared playlist'),
+          );
+        }),
+      ),
+    ));
+
+    await tester.tap(find.text('Open prepared playlist'));
+    await tester.pump();
+    await tester.tap(find.text('Open prepared playlist'));
+    await tester.pump(playlistHeroFirstOpenTapDelay);
+    expect(pushes, 0, reason: 'the image decode has not completed');
+
+    artworkReady.complete();
+    await tester.pump();
+    expect(pushes, 1, reason: 'the route starts after the warmup');
+
+    await tester.tap(find.text('Open prepared playlist'));
+    await tester.pump();
+    expect(pushes, 2, reason: 'return visits do not wait for artwork again');
+  });
+
+  testWidgets('offline artwork cannot block playlist navigation indefinitely',
+      (tester) async {
+    final stalledArtwork = Completer<void>();
+    var pushes = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(builder: (context) {
+          return TextButton(
+            onPressed: () => unawaited(openPlaylistAfterFirstTap(
+              context,
+              'test:playlist-warmup-timeout',
+              () async { pushes++; },
+              prepareArtwork: () => stalledArtwork.future,
+            )),
+            child: const Text('Open offline playlist'),
+          );
+        }),
+      ),
+    ));
+
+    await tester.tap(find.text('Open offline playlist'));
+    await tester.pump();
+    await tester.pump(playlistHeroWarmupTimeout -
+        const Duration(milliseconds: 1));
+    expect(pushes, 0);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
+    expect(pushes, 1, reason: 'the timeout allows navigation');
   });
 
   testWidgets('hero bottom is opaque and matches the following page surface',
