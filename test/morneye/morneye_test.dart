@@ -487,6 +487,36 @@ void main() {
       expect(morneyeValidateManifest(manifestFor('qobuz'))['name'], 'qobuz');
     });
 
+    test('Qobuz 1.2.27 accepts Morneye 5.3 deferred preview feature', () {
+      expect(morneyeCompatVersion, '5.3.0');
+      expect(morneyeFeatures['deferredPreview'], 1);
+      final official = manifestFor('qobuz-web', version: '1.2.27', extra: {
+        'minAppVersion': '5.3.0',
+        'requiredRuntimeFeatures': [
+          'signedSession@3',
+          'sessionGrant@1',
+          'preparedContext@1',
+          'deferredPreview@1',
+        ],
+      });
+      expect(morneyeValidateManifest(official)['name'], 'qobuz-web');
+      expect(
+        () => morneyeValidateManifest({
+          ...official,
+          'requiredRuntimeFeatures': ['deferredPreview@2'],
+        }),
+        throwsA(isA<MorneyePackageError>()),
+      );
+      expect(
+        morneyeDeferredPreviewReference('mornye-preview:qobuz-web/101'),
+        (addonName: 'qobuz-web', trackId: '101'),
+      );
+      expect(
+        () => morneyeDeferredPreviewReference('mornye-preview:qobuz-web/'),
+        throwsA(isA<MorneyePackageError>()),
+      );
+    });
+
     test('rejects what desktop rejects', () {
       Matcher fails(String text) => throwsA(
         isA<MorneyePackageError>().having(
@@ -706,6 +736,51 @@ void main() {
         );
       },
     );
+
+    test('resolves Qobuz preview only on request and rejects unsafe URLs',
+        () async {
+      var previewCalls = 0;
+      engine.scripts['qobuz-preview'] = {
+        ...downloader(),
+        'resolvePreview': (args, call) async {
+          previewCalls++;
+          final id = (args.single as Map)['id'];
+          return {
+            'preview_url': id == '101'
+                ? 'https://stream.example.com/sample.mp3'
+                : 'file:///unsafe.flac',
+          };
+        },
+      };
+      final addon = await packages.install(
+        bytes: packageBytes(
+          manifestFor('qobuz-web', version: '1.2.27', extra: {
+            'minAppVersion': '5.3.0',
+            'requiredRuntimeFeatures': [
+              'signedSession@3',
+              'sessionGrant@1',
+              'preparedContext@1',
+              'deferredPreview@1',
+            ],
+          }),
+          'qobuz-preview',
+        ),
+      );
+      expect(addon.name, 'qobuz-web');
+      expect(previewCalls, 0);
+      expect(
+        await packages.resolveDeferredPreview(
+          'mornye-preview:qobuz-web/101',
+        ),
+        'https://stream.example.com/sample.mp3',
+      );
+      expect(previewCalls, 1);
+      await expectLater(
+        packages.resolveDeferredPreview('mornye-preview:qobuz-web/102'),
+        throwsA(isA<MorneyePackageError>()),
+      );
+      expect(previewCalls, 2);
+    });
 
     test('refuses packages without the methods they promise', () async {
       engine.scripts['empty'] = {'initialize': (args, call) async => true};

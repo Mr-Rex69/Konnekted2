@@ -29,7 +29,7 @@ import 'morneye_playback_quality.dart';
 
 const morneyeRegistry =
     'https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/refs/heads/main/registry.json';
-const morneyeCompatVersion = '5.1.0';
+const morneyeCompatVersion = '5.3.0';
 /// Mornye's documented .spotiflac-ext format and its legacy/newer archives.
 bool morneyeIsPackageFileName(String filename) => RegExp(
   r'\.(?:sflx|morneye-ext|spotiflac-ext)$',
@@ -48,6 +48,7 @@ const morneyeFeatures = {
   'accountForms': 1,
   'accountDownloadMode': 1,
   'directMedia': 1,
+  'deferredPreview': 1,
 };
 
 String _sha256(List<int> value) => sha256.convert(value).toString();
@@ -112,6 +113,25 @@ class MorneyeSourceVerificationError extends MorneyePackageError {
   const MorneyeSourceVerificationError(String codec)
       : super('The requested $codec source could not be verified. '
             'No stereo substitute was used.');
+}
+
+/// Parse an on-demand sample link from a Morneye 5.3 extension. A
+/// "mornye-preview:" reference is not a playable audio URL.
+({String addonName, String trackId})? morneyeDeferredPreviewReference(
+  String link,
+) {
+  final uri = Uri.tryParse(link);
+  if (uri == null || uri.scheme != 'mornye-preview') return null;
+  final segments = uri.pathSegments;
+  if (uri.hasAuthority ||
+      uri.hasQuery ||
+      uri.hasFragment ||
+      segments.length != 2 ||
+      segments.any((part) => part.isEmpty || part.length > 500) ||
+      !RegExp(r'^[a-z0-9][a-z0-9_-]{0,99}$').hasMatch(segments.first)) {
+    throw const MorneyePackageError('Invalid deferred preview link');
+  }
+  return (addonName: segments.first, trackId: segments.last);
 }
 
 Map<String, Object?> morneyeValidateManifest(Object? json) {
@@ -1430,6 +1450,37 @@ class MorneyePackages {
     }
     await runtime.initialized;
     return runtime;
+  }
+
+  /// Resolve a deferred sample only when requested, without a preview
+  /// network request for every search result or replacing full playback.
+  Future<String> resolveDeferredPreview(String link) async {
+    final reference = morneyeDeferredPreviewReference(link);
+    if (reference == null) return link;
+    final key = morneyeKeyOf(reference.addonName);
+    final addon = _addons[key];
+    if (addon == null ||
+        addon.name != reference.addonName ||
+        !addon.enabled) {
+      throw const MorneyePackageError('Preview addon is not installed');
+    }
+    final guest = await runtime(key);
+    if (!guest.methods.contains('resolvePreview')) {
+      throw const MorneyePackageError('Addon does not support deferred previews');
+    }
+    final result = await guest.invoke(
+      'resolvePreview',
+      [{'id': reference.trackId}],
+    );
+    final url = result is Map ? result['preview_url']?.toString().trim() : null;
+    final uri = Uri.tryParse(url ?? '');
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      throw const MorneyePackageError('The addon returned no secure preview');
+    }
+    return url!;
   }
 
   void _retire(String key) {
