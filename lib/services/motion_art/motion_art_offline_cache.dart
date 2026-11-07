@@ -165,13 +165,15 @@ class MotionArtOfflineCache {
     String lookupKey,
     AnimatedArtwork artwork, {
     required bool preferVertical,
+    Future<bool> Function()? canDownload,
   }) async {
+    if (canDownload != null && !await canDownload()) return;
     final url = preferVertical
         ? artwork.verticalPlaybackUrl
         : artwork.playbackUrl;
     if (url == null || !_secureUrl(url)) return;
     try {
-      final clip = await _ensureClip(url);
+      final clip = await _ensureClip(url, canDownload: canDownload);
       if (clip == null) return;
       final file = await _lookupFile(lookupKey);
       final temp = File('${file.path}.tmp');
@@ -186,12 +188,16 @@ class MotionArtOfflineCache {
     }
   }
 
-  Future<File?> _ensureClip(String url) async {
+  Future<File?> _ensureClip(
+    String url, {
+    Future<bool> Function()? canDownload,
+  }) async {
     final cached = await localFile(url);
     if (cached != null) return cached;
     final existing = _downloads[url];
     if (existing != null) return existing;
-    final job = _download(url);
+    if (canDownload != null && !await canDownload()) return null;
+    final job = _download(url, canDownload: canDownload);
     _downloads[url] = job;
     try {
       return await job;
@@ -200,16 +206,21 @@ class MotionArtOfflineCache {
     }
   }
 
-  Future<File?> _download(String url) async {
+  Future<File?> _download(
+    String url, {
+    Future<bool> Function()? canDownload,
+  }) async {
     final target = await _clipDir(url);
     final temp = Directory('${target.path}.partial');
     try {
       if (await temp.exists()) await temp.delete(recursive: true);
       await temp.create(recursive: true);
       final entry = Uri.parse(url).path.toLowerCase().endsWith('.m3u8')
-          ? await _downloadHls(url, temp)
-          : await _downloadProgressive(url, temp);
-      if (entry == null) return null;
+          ? await _downloadHls(url, temp, canDownload: canDownload)
+          : await _downloadProgressive(url, temp, canDownload: canDownload);
+      if (entry == null || (canDownload != null && !await canDownload())) {
+        return null;
+      }
       await File('${temp.path}/complete.json').writeAsString(
         jsonEncode({'url': url, 'entry': entry}),
         flush: true,
@@ -233,8 +244,16 @@ class MotionArtOfflineCache {
     }
   }
 
-  Future<List<int>?> _getBytes(String url, int remaining) async {
-    if (!_secureUrl(url) || remaining <= 0) return null;
+  Future<List<int>?> _getBytes(
+    String url,
+    int remaining, {
+    Future<bool> Function()? canDownload,
+  }) async {
+    if (!_secureUrl(url) ||
+        remaining <= 0 ||
+        (canDownload != null && !await canDownload())) {
+      return null;
+    }
     final request = http.Request('GET', Uri.parse(url));
     final response = await _client.send(request).timeout(_timeout);
     if (response.statusCode != 200 ||
@@ -244,14 +263,23 @@ class MotionArtOfflineCache {
     }
     final bytes = <int>[];
     await for (final chunk in response.stream.timeout(_timeout)) {
+      if (canDownload != null && !await canDownload()) return null;
       if (bytes.length + chunk.length > remaining) return null;
       bytes.addAll(chunk);
     }
     return bytes;
   }
 
-  Future<String?> _downloadProgressive(String url, Directory temp) async {
-    final bytes = await _getBytes(url, maxClipBytes);
+  Future<String?> _downloadProgressive(
+    String url,
+    Directory temp, {
+    Future<bool> Function()? canDownload,
+  }) async {
+    final bytes = await _getBytes(
+      url,
+      maxClipBytes,
+      canDownload: canDownload,
+    );
     if (bytes == null || bytes.isEmpty) return null;
     // Preserve the source extension so native video_player selects a decoder.
     final extension = Uri.parse(url).path.toLowerCase();
@@ -270,9 +298,17 @@ class MotionArtOfflineCache {
     return fileName;
   }
 
-  Future<String?> _downloadHls(String url, Directory temp) async {
+  Future<String?> _downloadHls(
+    String url,
+    Directory temp, {
+    Future<bool> Function()? canDownload,
+  }) async {
     var playlistUrl = url;
-    var body = await _getBytes(playlistUrl, 256 * 1024);
+    var body = await _getBytes(
+      playlistUrl,
+      256 * 1024,
+      canDownload: canDownload,
+    );
     if (body == null) return null;
     var playlist = utf8.decode(body, allowMalformed: true);
     if (!playlist.trimLeft().startsWith('#EXTM3U')) return null;
@@ -298,7 +334,11 @@ class MotionArtOfflineCache {
           v.$1 <= 960 * 960).lastOrNull ?? variants.firstOrNull;
       if (selected == null || !_secureUrl(selected.$2)) return null;
       playlistUrl = selected.$2;
-      body = await _getBytes(playlistUrl, 256 * 1024);
+      body = await _getBytes(
+        playlistUrl,
+        256 * 1024,
+        canDownload: canDownload,
+      );
       if (body == null) return null;
       playlist = utf8.decode(body, allowMalformed: true);
     }
@@ -337,7 +377,11 @@ class MotionArtOfflineCache {
           ? '.aac'
           : '.bin';
       final local = 'asset_${assets++}$suffix';
-      final bytes = await _getBytes(remote, maxClipBytes - totalBytes);
+      final bytes = await _getBytes(
+        remote,
+        maxClipBytes - totalBytes,
+        canDownload: canDownload,
+      );
       if (bytes == null || bytes.isEmpty) return null;
       totalBytes += bytes.length;
       await File('${temp.path}/$local').writeAsBytes(bytes, flush: true);

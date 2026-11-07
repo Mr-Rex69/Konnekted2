@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -8,11 +11,28 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 abstract final class EcoDataMode {
   static const key = 'lokal.playback.eco_data_mode';
 
+  /// Notify motion-art views when the preference or network changes.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+  static StreamSubscription<List<ConnectivityResult>>? _connectivityWatcher;
+
+  static void observeConnectionChanges() {
+    if (_connectivityWatcher != null) return;
+    try {
+      _connectivityWatcher = Connectivity().onConnectivityChanged.listen(
+        (_) => revision.value++,
+        onError: (Object _) {},
+      );
+    } catch (_) {
+      // Not every test/platform exposes a connectivity event stream.
+    }
+  }
+
   static Future<bool> enabled() async =>
       (await SharedPreferences.getInstance()).getBool(key) ?? false;
 
   static Future<void> setEnabled(bool value) async {
     await (await SharedPreferences.getInstance()).setBool(key, value);
+    revision.value++;
   }
 
   static bool isCellularOnly(List<ConnectivityResult> transports) =>

@@ -11,6 +11,7 @@ import 'package:flick/services/motion_art/motion_art_offline_cache.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/playback_source_priority.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -153,10 +154,14 @@ class _MotionArtViewState extends State<MotionArtView>
   bool _routeIsCurrent = true;
   bool _tickerEnabled = true;
   bool _loading = false;
+  bool _ecoReady = false;
+  bool _ecoActive = false;
+  int _ecoCheckVersion = 0;
   bool get _suspendedForMemoryPressure =>
       MotionArtMemoryPressure.instance.isSuspended;
   AppLifecycleState _lifecycle = AppLifecycleState.resumed;
   bool get _canPlay =>
+      _ecoReady &&
       widget.enabled &&
       widget.playbackActive &&
       !_suppressed &&
@@ -196,6 +201,9 @@ class _MotionArtViewState extends State<MotionArtView>
     MotionArtMemoryPressure.instance.suspended.addListener(
       _onMemoryPressureChanged,
     );
+    EcoDataMode.observeConnectionChanges();
+    EcoDataMode.revision.addListener(_onEcoRevisionChanged);
+    unawaited(_checkEco());
     movingCoverRevision.addListener(_onRevisionChanged);
     SecureSpotifyTokenStore.sessionRevision.addListener(_onRevisionChanged);
     if (widget.enabled) {
@@ -203,6 +211,33 @@ class _MotionArtViewState extends State<MotionArtView>
     }
     AnimatedArtworkService.instance.revision.addListener(_onRevisionChanged);
     _restart();
+  }
+
+  /// Recheck both when Eco is toggled and when Wi-Fi/cellular changes.
+  /// Tear down the existing video before any asynchronous connectivity check
+  /// so a previously streamed clip cannot keep using cellular bandwidth.
+  void _onEcoRevisionChanged() {
+    if (!mounted) return;
+    _ecoReady = false;
+    _teardown(immediate: true);
+    setState(() {});
+    unawaited(_checkEco());
+  }
+
+  Future<void> _checkEco() async {
+    final version = ++_ecoCheckVersion;
+    bool active;
+    try {
+      active = await EcoDataMode.activeOnCellular();
+    } catch (error) {
+      devLog('[MotionArt] Eco policy unavailable: $error');
+      active = false;
+    }
+    if (!mounted || version != _ecoCheckVersion) return;
+    _ecoActive = active;
+    _ecoReady = true;
+    _restart();
+    setState(() {});
   }
 
   void _onRevisionChanged() {
@@ -253,7 +288,11 @@ class _MotionArtViewState extends State<MotionArtView>
       }
       return;
     }
-    _syncPlayback();
+    if (state == AppLifecycleState.resumed) {
+      _onEcoRevisionChanged();
+    } else {
+      _syncPlayback();
+    }
   }
 
   void _onMemoryPressureChanged() {
@@ -334,6 +373,7 @@ class _MotionArtViewState extends State<MotionArtView>
     MotionArtMemoryPressure.instance.suspended.removeListener(
       _onMemoryPressureChanged,
     );
+    EcoDataMode.revision.removeListener(_onEcoRevisionChanged);
     movingCoverRevision.removeListener(_onRevisionChanged);
     SecureSpotifyTokenStore.sessionRevision.removeListener(_onRevisionChanged);
     AnimatedArtworkService.instance.revision.removeListener(_onRevisionChanged);
@@ -409,7 +449,7 @@ class _MotionArtViewState extends State<MotionArtView>
       : '${widget.sharedPlaybackKey}|${movingCoverRevision.value}|${SecureSpotifyTokenStore.sessionRevision.value}|${AnimatedArtworkService.instance.revision.value}';
 
   void _beginLoad() {
-    if (!_dependenciesReady) return;
+    if (!_dependenciesReady || !_ecoReady) return;
     final key = _sharedKey;
     if (key != null &&
         _controller == null &&
@@ -420,7 +460,13 @@ class _MotionArtViewState extends State<MotionArtView>
         !_reduceMotion &&
         _routeIsCurrent &&
         _lifecycle == AppLifecycleState.resumed) {
-      final lease = _playbackPool.acquireExisting(key);
+      // A previous *network* decoder must never be reused when Eco becomes
+      // active. Reuse an already-decoded local file where possible.
+      final lease = _playbackPool.acquireExisting(
+        key,
+        allow: (controller) =>
+            !_ecoActive || _cachedSource[controller] != null,
+      );
       if (lease != null) {
         _timer?.cancel();
         _timer = null;
@@ -536,6 +582,12 @@ class _MotionArtViewState extends State<MotionArtView>
           );
     if (!mounted || generation != _generation || !_canPlay) return;
     final url = playable?.url;
+    if (_ecoActive && playable?.cachedSource == null) {
+      // A provider may have resolved online immediately before Eco switched.
+      // Only a fully downloaded file may be opened in this mode.
+      _settle();
+      return;
+    }
     if (url == null) {
       if (lookup?.transient ?? true) {
         // Network hiccup, 429/503, timeout: a later attempt may still find
@@ -593,10 +645,15 @@ class _MotionArtViewState extends State<MotionArtView>
         // Corrupted or unsupported local HLS should never trap the player in
         // repeated attempts against the same file. Retry the original URL.
         await MotionArtOfflineCache.instance.discard(source);
-        _retryTimer?.cancel();
-        _retryTimer = Timer(const Duration(milliseconds: 400), () {
-          if (mounted) _beginLoad();
-        });
+        if (_ecoActive) {
+          // No network retry for an unusable cached clip on cellular Eco.
+          _settle();
+        } else {
+          _retryTimer?.cancel();
+          _retryTimer = Timer(const Duration(milliseconds: 400), () {
+            if (mounted) _beginLoad();
+          });
+        }
       } else {
         _scheduleRetry();
       }
@@ -652,6 +709,7 @@ class _MotionArtViewState extends State<MotionArtView>
       return present(widget.fallback);
     final controller = _controller;
     if (!_hasVideo || controller == null || !controller.value.isInitialized) {
+      if (_ecoActive) return present(widget.fallback);
       final loading = widget.loadingFallback;
       if (_settledWithoutMotion || loading == null)
         return present(widget.fallback);

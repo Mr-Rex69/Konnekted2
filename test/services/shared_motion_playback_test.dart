@@ -34,6 +34,21 @@ void main() {
     await mini.release(immediate: true);
   });
 
+  test('Eco handoff rejects a network decoder but reuses a cached one', () async {
+    final pool = SharedMotionPlayback<Clip>(
+      create: (_) async => Clip(),
+      activate: (clip, active) async => clip.playing = active,
+      dispose: (clip) async => clip.disposed = true,
+    );
+    final network = await pool.acquire('song', 'https://video.test/a.mp4');
+    expect(pool.acquireExisting('song', allow: (_) => false), isNull);
+    final cached = pool.acquireExisting('song', allow: (clip) =>
+        identical(clip, network.resource));
+    expect(cached?.resource, same(network.resource));
+    await cached!.release(immediate: true);
+    await network.release(immediate: true);
+  });
+
   test('full player and thumbnail share one decoder and the same frame across handoff', () async {
     var created = 0, disposed = 0;
     final pool = SharedMotionPlayback<Clip>(

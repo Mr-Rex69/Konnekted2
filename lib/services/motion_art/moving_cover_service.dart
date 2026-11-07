@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 import 'package:flick/services/graceful_http_client.dart';
+import 'package:flick/services/playback_source_priority.dart';
 
 import 'animated_artwork_service.dart';
 import 'moving_cover_matcher.dart';
@@ -20,15 +21,18 @@ class MovingCoverService {
     AnimatedArtworkService? apple,
     SpotifyCanvasService? spotify,
     MotionArtOfflineCache? offlineCache,
+    Future<bool> Function()? ecoActive,
   }) : _client = client ?? GracefulHttpClient(),
        _apple = apple ?? AnimatedArtworkService.instance,
-       _offlineCache = offlineCache ?? MotionArtOfflineCache.instance {
+       _offlineCache = offlineCache ?? MotionArtOfflineCache.instance,
+       _ecoActive = ecoActive ?? EcoDataMode.activeOnCellular {
     _spotify = spotify ?? SpotifyCanvasService(client: _client);
   }
   static final instance = MovingCoverService();
   final http.Client _client;
   final AnimatedArtworkService _apple;
   final MotionArtOfflineCache _offlineCache;
+  final Future<bool> Function() _ecoActive;
   late final SpotifyCanvasService _spotify;
   final _cache = <String, (DateTime, MotionArtLookup)>{};
   final _jobs = <String, Future<MotionArtLookup>>{};
@@ -60,11 +64,13 @@ class MovingCoverService {
     required AnimatedArtwork artwork,
     required bool preferVertical,
   }) async {
+    if (await _ecoActive()) return;
     final settings = await MovingCoverSettings.load();
     await _offlineCache.remember(
       _offlineKey(title, artist, album ?? '', settings),
       artwork,
       preferVertical: preferVertical,
+      canDownload: () async => !await _ecoActive(),
     );
   }
 
@@ -79,6 +85,15 @@ class MovingCoverService {
     final cleanAlbum = motionAlbum(album);
     final key =
         '${motionName(title)}|${motionName(artist)}|${motionName(cleanAlbum)}|${prefs.order.join(',')}|${_apple.revision.value}|${SecureSpotifyTokenStore.sessionRevision.value}';
+    // Eco is specifically a *cache-only* motion art policy on cellular.
+    // Check before in-memory positive lookups: a URL isn't a downloaded clip.
+    // Also bypass any in-flight online provider lookups started before Eco.
+    if (await _ecoActive()) {
+      final offline = await _offlineCache.find(
+        _offlineKey(title, artist, cleanAlbum, prefs),
+      );
+      return MotionArtLookup(artwork: offline);
+    }
     final cached = _cache[key];
     if (cached != null && cached.$1.isAfter(DateTime.now())) return cached.$2;
     final active = _jobs[key];
