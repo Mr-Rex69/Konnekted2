@@ -16,9 +16,11 @@ const visibleSearchCategories = [
 bool supportsOnlineCategory(SearchCategory? category) =>
     category != null && visibleSearchCategories.contains(category);
 
-/// Expand only after the bundled iPhone native client and its lifecycle pass
-/// qualification. Shared UI alone does not establish a working P2P backend.
-bool get soulseekScopeAvailable => defaultTargetPlatform == TargetPlatform.android;
+/// iPhone uses the bundled client while foreground; UIKit cancels its peer
+/// session in the background. Android retains its foreground service.
+bool get soulseekScopeAvailable =>
+    defaultTargetPlatform == TargetPlatform.android ||
+    defaultTargetPlatform == TargetPlatform.iOS;
 
 SearchScope _availableScope(SearchScope scope) =>
     scope == SearchScope.soulseek && !soulseekScopeAvailable ? SearchScope.all : scope;

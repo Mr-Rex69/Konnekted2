@@ -17,11 +17,10 @@ import '../../services/ios_transfer_import_coordinator.dart';
 import '../../services/ios_transfer_mutation_barrier.dart';
 import '../../services/ios_transfer_transport.dart';
 
-/// App lifetime, rather than a tab/screen, owns import observation. Native
-/// libraryImport=false keeps product imports disabled while cleanup/upload
-/// gates remain unfinished. An explicit pairing mutation may temporarily
-/// attach a native owner to revoke URLSession authority before Keychain changes.
-/// Android retains its existing behavior; iPhone foreground writers are drained.
+/// App lifetime, rather than a tab/screen, owns import observation and source
+/// admission. Pairing/library mutations retire native authority before changing
+/// credentials or Isar records. Android keeps its existing behavior; iPhone
+/// foreground writers share the same mutation drainage.
 class IosTransferRoot extends ConsumerStatefulWidget {
   const IosTransferRoot({super.key, required this.child});
   final Widget child;
@@ -39,8 +38,8 @@ class IosTransferRoot extends ConsumerStatefulWidget {
   }
 
   /// Guard a destructive library or pairing operation at its UI entry point.
-  /// Ordinary Android operations remain unchanged. Native iOS transfers are
-  /// still release-disabled; this fence does not replace OS-task cancellation.
+  /// Ordinary Android operations keep their existing behavior. Native iPhone
+  /// coordination cancels and drains the relevant OS and file work.
   static Future<T> withMutationBarrier<T>(
     BuildContext context,
     Future<T> Function() mutation,
@@ -54,7 +53,7 @@ class IosTransferRoot extends ConsumerStatefulWidget {
   }
 
   /// The stronger Forget boundary always checks native journal truth, even
-  /// while product background import is disabled. Generic library mutations
+  /// when no import is currently active. Generic library mutations
   /// do not imply that credentials may be revoked.
   static Future<T> withPairingRetirement<T>(
     BuildContext context, {

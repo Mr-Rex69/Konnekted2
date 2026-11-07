@@ -205,17 +205,35 @@ void main() {
     await tester.tap(find.byTooltip('Search'));
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(SearchScreen), findsOneWidget);
-    for (final scope in SearchScope.values) {
+    final availableScopes = [
+      SearchScope.all, SearchScope.library, SearchScope.online,
+      if (soulseekScopeAvailable) SearchScope.soulseek,
+    ];
+    expect(
+      tester.widget<SegmentedButton<SearchScope>>(
+        find.byType(SegmentedButton<SearchScope>),
+      ).segments.map((segment) => segment.value),
+      orderedEquals(availableScopes),
+    );
+    for (final scope in availableScopes) {
       final scopeControl = find.byType(SegmentedButton<SearchScope>);
-      await tester.tap(
-        find.descendant(
-          of: scopeControl,
-          matching: find.text(
-            lokalText(scope == SearchScope.library ? 'Library' : 'Online'),
-          ),
-        ),
-      );
+      final segment = tester.widget<SegmentedButton<SearchScope>>(scopeControl)
+          .segments.singleWhere((segment) => segment.value == scope);
+      // Select the real segment, independent of translations or the former
+      // two-scope layout. Selecting a different value must still fail below.
+      expect(segment.label, isNotNull);
+      final label = find.byWidget(segment.label!);
+      await tester.ensureVisible(label);
+      await tester.tap(label);
       await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        tester.widget<SearchFilterChips>(find.byType(SearchFilterChips)).scope,
+        scope,
+      );
+      if (scope == SearchScope.soulseek) {
+        expect(find.byType(ChoiceChip), findsNothing);
+        continue;
+      }
       for (final category in visibleSearchCategories) {
         final chip = find.widgetWithText(ChoiceChip, category.label);
         await tester.ensureVisible(chip);

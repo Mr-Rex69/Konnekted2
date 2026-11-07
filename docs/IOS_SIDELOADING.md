@@ -1,33 +1,44 @@
-# Install the iPhone build from Windows
+# Install the iPhone beta from Windows
 
-The iPhone port is experimental. An unsigned IPA must be signed for the target
-iPhone before installation. The build pipeline uses hosted macOS/Xcode; you can
-develop, download and install from Windows without owning a Mac. A real iPhone
-is required to perform these installation and acceptance steps.
+The iPhone app targets iOS 16 or later. An unsigned IPA must be signed for your
+iPhone before installation. Hosted macOS/Xcode builds the app; you can download,
+sign and install it from Windows without owning a Mac.
 
-iOS Home Screen widgets are excluded from this release. Standard lock-screen
-and Control Center playback controls remain available; no WidgetKit/App Group
-setup is required for the sideloaded app.
+## Choose the matching beta
 
-## Current candidate status (7 November 2026)
+Use an iPhone beta from [GitHub Releases](https://github.com/lokal-music/mobile/releases).
+A published sideload beta includes the exact IPA, SHA-256 checksum, matching
+source archive, license notices, crash symbols and `qualification.json`. Its
+release notes identify the source commit and successful qualification run.
+Engineering artifacts from a different build do not qualify the current source.
 
-Android parity is frozen through mobile PR503 (Android 7.4.7). The current
-continuation is [PR475](https://github.com/lokal-music/mobile/pull/475), with the
-corresponding durable desktop receiver in
-[PR728](https://github.com/lokal-music/desktop/pull/728), updated through desktop
-14.2.0. Source `59e6d6b3` adds foreground iPhone Soulseek, qualified upload
-retry/cancel/requeue and installed mixed/background transfer probes.
-[Build136](https://github.com/lokal-music/mobile/actions/runs/42315712206) is
-qualifying that source. This is not a claim that its IPA or new probes passed.
-The latest release instruction authorizes the necessary Apple runs and audit;
-the earlier temporary request to skip CI no longer applies to this release.
+Publication requires the Apple build, installed iOS 18.6 and 26 tests, mixed and
+background transfer/process-recovery checks, and independent IPA/source audit.
+Signing, physical installation/upgrade, live accounts and receivers, and real
+playback routes remain your acceptance step. This is a pre-device beta.
 
-The final release branch publishes an unsigned **pre-device beta** only after
-both installed simulator suites, external daemon/process-recovery tests and
-independent source/IPA audit succeed for that exact commit. It preserves matching
-source, licenses, checksum, qualification evidence and crash symbols. Signing and
-physical-iPhone acceptance remain your step. Do not select an older engineering
-artifact expecting it to contain current changes.
+## Transfer and feature behavior
+
+Native desktop copies continue through the iOS background transfer service after
+all files have been admitted. Keep Lokal open while the copy plan says it is
+preparing files. Imported downloads are reconciled into the library when Lokal
+is active. iOS decides scheduling; reopening Lokal reconciles interrupted work.
+Do not use new copy plans to bypass an uncertain upload: use the queue's receipt,
+retry and cancellation actions.
+
+Older desktop peers without the durable upload protocol use the foreground copy
+flow for the complete plan. Keep Lokal open and the desktop awake on Wi-Fi for
+that flow. Source folders requiring foreground access retain that path too.
+
+Soulseek search, downloads and optional sharing require Lokal in the foreground.
+iPhone stops its peer session when the app backgrounds; reconnecting recovers
+unfinished downloads. Background music playback, lock-screen controls, ordinary
+imports, lyrics, library/playlists, add-ons, network libraries and supported
+casting remain part of the iPhone app. Android parity is frozen through PR503
+(Android 7.4.7) for this beta.
+
+Home Screen widgets and Android direct USB/bit-perfect output are excluded. No
+WidgetKit/App Group setup is required for sideloading.
 
 ## Historical engineering-build transfer behavior
 

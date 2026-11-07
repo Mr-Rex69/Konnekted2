@@ -88,8 +88,8 @@ final iosTransferSessionFactoryProvider =
     Provider<IosTransferSession? Function()>((ref) => _createSession);
 
 /// Intentionally not autoDispose: lifecycle and future clear/unpair actions
-/// share one owner until the app's ProviderContainer is retired. Constructing
-/// the session does not enable the gated native import/upload capabilities.
+/// share one owner until the app's ProviderContainer is retired. Startup and
+/// capability checks still precede any native import/upload admission.
 final iosTransferSessionProvider = Provider<IosTransferSession?>((ref) {
   final session = ref.read(iosTransferSessionFactoryProvider)();
   if (session != null) {

@@ -178,9 +178,11 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
       native: native,
       store: () async => IosTransferImportStore(db, musicRoot: music),
       readMedia: const IosTransferMediaProbe().inspect,
-      allowUnreleasedAdapterForIntegration: true,
     );
-    final owner = IosTransferSession(native: native, coordinator: coordinator);
+    final owner = IosTransferSession(
+      native: native, coordinator: coordinator,
+      uploadAdmission: () async => IosTransferUploadAdmission(isar: db, port: native),
+    );
     session = owner;
     await owner.start().timeout(const Duration(seconds: 20));
     expect(coordinator.enabled, true, reason: coordinator.issues.toString());
@@ -221,8 +223,7 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
         .timeout(const Duration(seconds: 10));
     await downloadSeen.future.timeout(const Duration(seconds: 10));
     IosTransferIntent? uploadIntent;
-    await IosTransferUploadAdmission(isar: db, port: native)
-        .enqueueSong(
+    await owner.enqueueUploadSong(
           songId: uploadSongId,
           expectedPairing: (await native.currentPairing())!,
           serverId: 3,
@@ -326,8 +327,8 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
     expect(unchanged.generation, original.generation);
     expect((await product.currentPairing())?.scope.toJson(), originalPairing);
     final capability = await product.capability();
-    expect(capability.libraryImport, false);
-    expect(capability.upload, false);
+    expect(capability.libraryImport, true);
+    expect(capability.upload, true);
     return {
       'scope': 'Installed real native transport/coordinator/Isar/publication/bundled reader; synthetic localhost authorization; ephemeral session, no OS suspension claim',
       'complete': true,
@@ -341,7 +342,7 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
       'original_upload_source_preserved': true,
       'foreground_reconciliation_idempotent': true,
       'production_storage_and_keychain_untouched': true,
-      'product_background_import_enabled': false,
+      'product_background_import_enabled': true,
     };
   } finally {
     if (!releaseDownload.isCompleted) releaseDownload.complete();

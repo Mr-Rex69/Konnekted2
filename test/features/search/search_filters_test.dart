@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('iPhone restores a supported search scope until its native Soulseek client is qualified', () async {
+  test('iPhone restores the foreground Soulseek scope', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     SharedPreferences.setMockInitialValues({'search_selected_scope_v1': 'soulseek'});
@@ -18,10 +18,10 @@ void main() {
     addTearDown(container.dispose);
     container.read(searchScopeProvider);
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(soulseekScopeAvailable, isFalse);
-    expect(container.read(searchScopeProvider), SearchScope.all);
+    expect(soulseekScopeAvailable, isTrue);
+    expect(container.read(searchScopeProvider), SearchScope.soulseek);
     container.read(searchScopeProvider.notifier).select(SearchScope.soulseek);
-    expect(container.read(searchScopeProvider), SearchScope.all);
+    expect(container.read(searchScopeProvider), SearchScope.soulseek);
   });
 
   setUp(() => SharedPreferences.setMockInitialValues({}));

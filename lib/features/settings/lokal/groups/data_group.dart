@@ -99,10 +99,13 @@ List<LokalSettingsSection> dataSettings(
   LokalSettingsSection(
     title: LokalDataSections.accounts,
     children: [
-      if (defaultTargetPlatform == TargetPlatform.android) LokalSettingCustom(
+      if (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS) LokalSettingCustom(
         label: lokalText('Soulseek'),
         description: lokalText(
-          'Search, download and optionally share your main music folder.',
+          defaultTargetPlatform == TargetPlatform.iOS
+              ? 'Search, download and optionally share your main music folder while Lokal is open.'
+              : 'Search, download and optionally share your main music folder.',
         ),
         child: const SoulseekAccountSettingsTile(),
       ),

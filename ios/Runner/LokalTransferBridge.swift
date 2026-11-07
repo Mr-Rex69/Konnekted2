@@ -8,8 +8,8 @@ private struct LokalTransferCapability: Encodable, Sendable {
   let download = true
   // The product adapter must require acknowledged library import before it
   // replaces existing copy flows. These flags describe actual implemented APIs.
-  let libraryImport = false
-  let upload = false
+  let libraryImport = true
+  let upload = true
   let maximumIntents = LokalTransferProtocol.maximumBatch
   let maximumIntentBytes = LokalTransferProtocol.maximumPayloadBytes
 }
