@@ -307,6 +307,8 @@ jobs:
             exit 1
           fi
       - name: Qualify mixed background delivery and process recovery on iOS 18.6
+        id: background
+        if: ${{ !cancelled() && steps.control.outcome == 'success' && steps.smoke.outcome != 'skipped' }}
         timeout-minutes: 8
         env:
           LOKAL_IOS_RUNTIME_EVIDENCE_DIR: ${{ runner.temp }}/ios-runtime-18.6
@@ -375,6 +377,7 @@ jobs:
           CONTROL_RESULT: ${{ steps.control.outcome }}
           LAUNCH_RESULT: ${{ steps.launch.outcome }}
           SMOKE_RESULT: ${{ steps.smoke.outcome }}
+          BACKGROUND_RESULT: ${{ steps.background.outcome }}
         run: |
           {
             printf '## iPhone engineering build\n\n'
@@ -383,6 +386,7 @@ jobs:
             printf '| Device binary/package inspection | %s |\n' "$PACKAGE_RESULT"
             printf '| Native first launch | %s |\n' "$LAUNCH_RESULT"
             printf '| Real startup, scanner, QuickJS and playback on iOS 18.6 | %s |\n' "$SMOKE_RESULT"
+            printf '| Mixed background delivery and process recovery | %s |\n' "$BACKGROUND_RESULT"
             printf '\nThe same compiled app is tested on iOS 26.0 in the separate fresh-runner job. Its result is required independently.\n'
             printf '\nAn engineering IPA is not a qualified release. Physical iPhone and Windows installation acceptance remain separate.\n'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -474,6 +478,8 @@ jobs:
             exit 1
           fi
       - name: Qualify mixed background delivery and process recovery on iOS 26.0
+        id: background
+        if: ${{ !cancelled() && steps.control.outcome == 'success' && steps.smoke.outcome != 'skipped' }}
         timeout-minutes: 8
         run: python3 tool/ios_background_transfer_probe.py
       - name: Preserve dependency locks
@@ -501,6 +507,7 @@ jobs:
           BOOT_RESULT: ${{ steps.boot.outcome }}
           CONTROL_RESULT: ${{ steps.control.outcome }}
           SMOKE_RESULT: ${{ steps.smoke.outcome }}
+          BACKGROUND_RESULT: ${{ steps.background.outcome }}
         run: |
           {
             printf '## Native iOS 26.0 acceptance on a fresh host\n\n'
@@ -508,6 +515,7 @@ jobs:
             printf '| Simulator boot | %s |\n' "$BOOT_RESULT"
             printf '| Minimal Flutter control | %s |\n' "$CONTROL_RESULT"
             printf '| Real startup, scanner, QuickJS and playback | %s |\n' "$SMOKE_RESULT"
+            printf '| Mixed background delivery and process recovery | %s |\n' "$BACKGROUND_RESULT"
             printf '\nUses the compiled integration app from the build job at source %s. Physical iPhone and Windows installation acceptance remain separate.\n' "$GITHUB_SHA"
           } >> "$GITHUB_STEP_SUMMARY"
 

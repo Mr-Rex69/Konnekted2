@@ -90,6 +90,9 @@ Future<void> probeIosQueueReorder(
   // Exercise a large logical context against the actual AVFoundation-backed
   // just_audio player. Reusing the generated audio tests queue ownership and
   // source preparation, not a 2,654-file scanner or physical performance.
+  final originalGapless = player.gaplessPlaybackEnabledNotifier.value;
+  addTearDown(() => player.setGaplessPlaybackEnabled(originalGapless));
+  await player.setGaplessPlaybackEnabled(false);
   final large = List<Song>.generate(
     2654,
     (index) => source.copyWith(id: 'ios-large-library-$index'),
@@ -101,8 +104,9 @@ Future<void> probeIosQueueReorder(
   for (var i = 0; i < 24; i++) {
     await tester.pump(const Duration(milliseconds: 250));
     if (player.positionNotifier.value - baseline >
-        const Duration(milliseconds: 300))
+        const Duration(milliseconds: 300)) {
       break;
+    }
   }
   expect(player.isPlayingNotifier.value, true);
   expect(
@@ -118,6 +122,34 @@ Future<void> probeIosQueueReorder(
     'native_sources': player.debugNativeSequenceLength,
     'progress_ms': (player.positionNotifier.value - baseline).inMilliseconds,
   };
+  // The shared bounded gapless implementation intentionally retains the
+  // current decoder plus one successor. Qualify both settings rather than
+  // treating the enabled look-ahead as full-playlist materialization.
+  await player.pause();
+  final pausedBeforeGapless = player.positionNotifier.value;
+  await player.setGaplessPlaybackEnabled(true);
+  for (var i = 0; i < 24 && player.debugNativeSequenceLength != 2; i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+  expect(player.debugNativeSequenceLength, 2);
+  expect(player.currentIndex, 1730);
+  expect(player.currentSongNotifier.value?.id, large[1730].id);
+  expect(player.isPlayingNotifier.value, false);
+  expect(
+    (player.positionNotifier.value - pausedBeforeGapless).abs(),
+    lessThan(const Duration(milliseconds: 250)),
+  );
+  await player.setGaplessPlaybackEnabled(false);
+  expect(player.debugNativeSequenceLength, 1);
+  expect(player.currentIndex, 1730);
+  expect(player.isPlayingNotifier.value, false);
+  binding.reportData!['large_library_gapless_native'] = {
+    'scope': 'Actual AVFoundation native sequence; no acoustic gap measurement',
+    'enabled_native_sources': 2,
+    'disabled_native_sources': 1,
+    'paused_track_and_position_preserved': true,
+  };
+  await player.resume();
   try {
     await player.setPlaybackSpeed(1.01).timeout(const Duration(seconds: 10));
     expect(player.playbackSpeedNotifier.value, 1.01);
@@ -125,8 +157,9 @@ Future<void> probeIosQueueReorder(
     for (var i = 0; i < 24; i++) {
       await tester.pump(const Duration(milliseconds: 250));
       if (player.positionNotifier.value - beforeSpeedProgress >
-          const Duration(milliseconds: 300))
+          const Duration(milliseconds: 300)) {
         break;
+      }
     }
     final advanced = player.positionNotifier.value - beforeSpeedProgress;
     expect(advanced, greaterThan(const Duration(milliseconds: 300)));
@@ -180,6 +213,7 @@ Future<void> probeIosQueueReorder(
     'paused_shuffle_preserves_recording_position': true,
     'manual_queue_and_tail_capture_native_scope': true,
   };
+  await player.setGaplessPlaybackEnabled(originalGapless);
   await player.play(source, playlist: [source]);
   await player.pause();
 }

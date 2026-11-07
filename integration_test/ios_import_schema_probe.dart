@@ -3,8 +3,9 @@ import 'package:flick/data/entities/ios_transfer_receipt_entity.dart';
 import 'package:flick/data/entities/ios_song_identity_entity.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Query the actual product database, not an isolated substitute. The native
-/// importer remains disabled; opening its private schema must not create songs.
+/// Query the actual product database, not an isolated substitute.
+/// This schema-only check must not create songs. The complete installed
+/// import pipeline is qualified by its separate probe.
 Future<Map<String, Object>> probeIosImportSchema() async {
   expect(Database.isInitialized, true);
   final receipts = await Database.instance.iosTransferReceiptEntitys.count();
@@ -18,6 +19,6 @@ Future<Map<String, Object>> probeIosImportSchema() async {
     'private_receipts': receipts,
     'recording_identity_floor': counter!.lastAllocated,
     'durability_requested': 'full',
-    'product_import_enabled': false,
+    'complete_pipeline_tested_here': false,
   };
 }

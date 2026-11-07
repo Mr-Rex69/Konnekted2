@@ -83,11 +83,11 @@ the packages in this workspace, and neither is physical-device acceptance.
 
 Newer source through PR355 and the subsequent Clear/Forget preservation
 continuation is **not contained in those earlier artifacts**. Those older records do not qualify the current candidate; use a successful
-matching newer artifact to test current source. Native product import/upload remain disabled; ordinary
-foreground copies remain active. Signing, installation/upgrade, live services
-and receivers, and physical playback acceptance remain outstanding. Future
-native background-transfer activation also requires OS suspension/relaunch
-and the remaining [transfer gates](IOS_TRANSFERS.md).
+matching newer artifact to test current source. Those historical builds keep
+native import/upload disabled and use foreground copies. The enabled release
+candidate described above must pass the installed and background/relaunch
+[transfer gates](IOS_TRANSFERS.md) before publication. Signing, installation/upgrade,
+live services and receivers, and physical playback acceptance remain outstanding.
 
 Build86 remains a separately preserved older fallback:
 [run40951126722](https://github.com/lokal-music/lokal-mobile/actions/runs/40951126722),
@@ -168,5 +168,4 @@ Record the exact source commit/build and results for:
 - Online source sign-in, playback/downloads and add-ons using opted-in accounts.
 
 Keep tokens, cookies, pairing secrets and personal file paths out of shared logs.
-Until these checks pass, the artifact is an engineering build, not a qualified
-public release.
+Published sideload betas remain pre-device builds until these checks pass.

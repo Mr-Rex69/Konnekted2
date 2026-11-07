@@ -123,14 +123,14 @@ Future<Map<String, Object>> probeIosImportMedia(File generatedWav) async {
       ),
     );
     return {
-      'scope': 'Actual bundled iOS FFprobe over generated local fixtures; ownership callback is a fixture, product import disabled',
+      'scope': 'Actual bundled iOS FFprobe over generated local fixtures; ownership callback is a fixture; complete pipeline qualified separately',
       'pcm16_unicode_download_suffix': true,
       'flac16': true,
       'aac_no_invented_bit_depth': true,
       'positive_duration_rate_channels': true,
       'corrupt_and_header_only_refused': true,
       'retired_before_execution_refused': true,
-      'product_import_enabled': false,
+      'complete_pipeline_tested_here': false,
     };
   } finally {
     await root.delete(recursive: true);
