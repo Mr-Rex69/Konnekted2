@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/services/soulseek_service.dart';
@@ -11,10 +13,12 @@ class SoulseekAccountSettingsTile extends StatefulWidget {
   @visibleForTesting
   final SoulseekService? service;
   @override
-  State<SoulseekAccountSettingsTile> createState() => _SoulseekAccountSettingsTileState();
+  State<SoulseekAccountSettingsTile> createState() =>
+      _SoulseekAccountSettingsTileState();
 }
 
-class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTile> {
+class _SoulseekAccountSettingsTileState
+    extends State<SoulseekAccountSettingsTile> {
   late final SoulseekService _service;
   final _user = TextEditingController();
   final _password = TextEditingController();
@@ -40,15 +44,21 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
         if (mounted) setState(() {});
       }
     } catch (e) {
-      if (mounted) setState(() => _problem = e is StateError ? e.message : '$e');
+      if (mounted)
+        setState(() => _problem = e is StateError ? e.message : '$e');
     }
   }
 
-  void _refresh() { if (mounted) setState(() {}); }
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _login() async {
     if (_working) return;
-    setState(() { _working = true; _problem = ''; });
+    setState(() {
+      _working = true;
+      _problem = '';
+    });
     try {
       await _service.signIn(_user.text, _password.text, share: _share);
       _password.clear();
@@ -61,7 +71,10 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
 
   Future<void> _logout() async {
     if (_working) return;
-    setState(() { _working = true; _problem = ''; });
+    setState(() {
+      _working = true;
+      _problem = '';
+    });
     try {
       await _service.signOut();
       _password.clear();
@@ -79,8 +92,8 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
       await _service.setSharing(enabled);
       if (mounted) setState(() => _share = enabled);
     } catch (e) {
-      if (mounted) setState(() =>
-          _problem = e is StateError ? e.message : '$e');
+      if (mounted)
+        setState(() => _problem = e is StateError ? e.message : '$e');
     }
   }
 
@@ -103,107 +116,170 @@ class _SoulseekAccountSettingsTileState extends State<SoulseekAccountSettingsTil
     final shareDescription = _service.sharingBusy
         ? '${_service.sharingStatus} Large libraries may take a while.'
         : signed && _service.shareEnabled
-            ? 'Sharing ${_service.sharedFiles} files on Soulseek.'
-            : 'Optional. Other users can download every file in your music folder, including artwork, lyrics and documents.';
+        ? 'Sharing ${_service.sharedFiles} files on Soulseek.'
+        : 'Optional. Other users can download every file in your music folder, including artwork, lyrics and documents.';
     final supportingStyle = TextStyle(
-      fontFamily: LokalTheme.sans, color: t.muted, fontSize: 12.5,
+      fontFamily: LokalTheme.sans,
+      color: t.muted,
+      fontSize: 12.5,
       height: 1.35,
     );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(Icons.hub_outlined, size: 20, color: t.accent),
-          const SizedBox(width: 10),
-          Expanded(child: Text('Soulseek',
-              style: TextStyle(
-                fontFamily: LokalTheme.sans, fontSize: 15,
-                fontWeight: FontWeight.w600, color: t.text,
-              ))),
-          if (signed) TextButton(onPressed: working ? null : _logout,
-              child: const Text('Sign out')),
-        ]),
-        const SizedBox(height: 5),
-        Text(description, style: supportingStyle),
-        if (!signed) ...[
-          const SizedBox(height: 12),
-          TextField(
-            controller: _user, enabled: !working, autocorrect: false,
-            onChanged: (_) => setState(() {}),
-            textCapitalization: TextCapitalization.none,
-            decoration: const InputDecoration(
-                labelText: 'Username', isDense: true, border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _password, enabled: !working, obscureText: true,
-            onSubmitted: (_) => unawaited(_login()),
-            decoration: const InputDecoration(
-                labelText: 'Password', isDense: true, border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 8),
-          Text('Use a separate account if Soulseek is already open on desktop.',
-              style: supportingStyle),
-        ],
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          title: Text('Share main music folder',
-              style: TextStyle(
-                fontFamily: LokalTheme.sans, fontSize: 14,
-                fontWeight: FontWeight.w600, color: t.text,
-              )),
-          subtitle: Text(shareDescription, style: supportingStyle),
-          value: signed && !_service.sharingBusy
-              ? _service.shareEnabled : _share,
-          onChanged: working || _service.sharingBusy ? null : (value) {
-            if (signed) {
-              unawaited(_changeShare(value));
-            } else {
-              setState(() => _share = value);
-            }
-          },
-        ),
-        if (_service.sharingBusy)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, bottom: 8),
-            child: Row(children: [
-              SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: t.accent)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hub_outlined, size: 20, color: t.accent),
               const SizedBox(width: 10),
-              Expanded(child: Text(_service.sharingStatus,
-                  style: supportingStyle)),
-            ]),
+              Expanded(
+                child: Text(
+                  'Soulseek',
+                  style: TextStyle(
+                    fontFamily: LokalTheme.sans,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: t.text,
+                  ),
+                ),
+              ),
+              if (signed)
+                TextButton(
+                  onPressed: working ? null : _logout,
+                  child: const Text('Sign out'),
+                ),
+            ],
           ),
-        if (!signed) ...[
           const SizedBox(height: 5),
-          FilledButton.tonalIcon(
-            onPressed: working || _user.text.trim().isEmpty ? null : _login,
-            icon: working ? const SizedBox(width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)) :
-                const Icon(Icons.login, size: 17),
-            label: Text(working ? 'Connecting…' : 'Sign in'),
+          Text(description, style: supportingStyle),
+          if (!signed) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _user,
+              enabled: !working,
+              autocorrect: false,
+              onChanged: (_) => setState(() {}),
+              textCapitalization: TextCapitalization.none,
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _password,
+              enabled: !working,
+              obscureText: true,
+              onSubmitted: (_) => unawaited(_login()),
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Use a separate account if Soulseek is already open on desktop.',
+              style: supportingStyle,
+            ),
+          ],
+          const SizedBox(height: 10),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(
+              'Share main music folder',
+              style: TextStyle(
+                fontFamily: LokalTheme.sans,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: t.text,
+              ),
+            ),
+            subtitle: Text(shareDescription, style: supportingStyle),
+            value: signed && !_service.sharingBusy
+                ? _service.shareEnabled
+                : _share,
+            onChanged: working || _service.sharingBusy
+                ? null
+                : (value) {
+                    if (signed) {
+                      unawaited(_changeShare(value));
+                    } else {
+                      setState(() => _share = value);
+                    }
+                  },
           ),
+          if (_service.sharingBusy)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: t.accent,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(_service.sharingStatus, style: supportingStyle),
+                  ),
+                ],
+              ),
+            ),
+          if (!signed) ...[
+            const SizedBox(height: 5),
+            FilledButton.tonalIcon(
+              onPressed: working || _user.text.trim().isEmpty ? null : _login,
+              icon: working
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.login, size: 17),
+              label: Text(working ? 'Connecting…' : 'Sign in'),
+            ),
+          ],
+          if (signed && _service.uploads.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Uploads: ' +
+                    _service.uploads
+                        .where(
+                          (row) => (row['status'] as String? ?? '').startsWith(
+                            'InProgress',
+                          ),
+                        )
+                        .length
+                        .toString() +
+                    ' active',
+                style: TextStyle(color: t.muted, fontSize: 11),
+              ),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? 'Keep Lokal open for Soulseek searches, downloads and sharing. iPhone stops the peer session in the background; unfinished downloads resume when you reconnect.'
+                : 'Background sharing may be limited by Android. The Soulseek engine updates with Lokal.',
+            style: supportingStyle,
+          ),
+          if (_problem.isNotEmpty || _service.error.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _problem.isNotEmpty ? _problem : _service.error,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              ),
+            ),
         ],
-        if (signed && _service.uploads.isNotEmpty) Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text('Uploads: ' +
-              _service.uploads.where((row) =>
-                  (row['status'] as String? ?? '').startsWith('InProgress'))
-                  .length.toString() + ' active',
-              style: TextStyle(color: t.muted, fontSize: 11)),
-        ),
-        const SizedBox(height: 8),
-        Text('Background sharing may be limited by Android. The Soulseek engine updates with Lokal.',
-            style: supportingStyle),
-        if (_problem.isNotEmpty || _service.error.isNotEmpty) Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(_problem.isNotEmpty ? _problem : _service.error,
-              style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-        ),
-      ]),
+      ),
     );
   }
 }

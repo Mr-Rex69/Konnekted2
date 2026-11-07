@@ -88,6 +88,9 @@ class LokalDesktopSource extends NetworkSourceService {
   Future<T> withLibraryTransfersDrained<T>(Future<T> Function() mutation) =>
       _libraryTransfers.withMutation(mutation);
 
+  void Function() registerLibraryMutationParticipant(Future<void> Function() retire) =>
+      _libraryTransfers.registerMutationParticipant(retire);
+
   /// Include peer sync's final database writes in the same iPhone drain.
   Future<T> runLibraryTransfer<T>(Future<T> Function() operation) =>
       _trackLibraryTransfer(operation);

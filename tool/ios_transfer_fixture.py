@@ -26,7 +26,7 @@ def audio_bytes():
 
 
 @contextlib.contextmanager
-def serve_fixture():
+def serve_fixture(*, hold_timeout=10):
     payload = audio_bytes()
     digest = hashlib.sha256(payload).hexdigest()
     lock = threading.Lock()
@@ -35,7 +35,7 @@ def serve_fixture():
     storage_reply = threading.Event()
     capability_reply = threading.Event()
     pending_upload_reply = threading.Event()
-    state = {'requests': {}, 'redirectHits': 0, 'cookiesSeen': False,
+    state = {'storageResponses': [], 'requests': {}, 'redirectHits': 0, 'cookiesSeen': False,
              'uploadRequests': {}, 'uploadHashes': {}, 'uploadMetadataValid': True, 'uploadLeakHits': 0,
              'matchRequests': 0, 'matchMode': 'positive', 'matchQueryValid': True, 'matchLeakHits': 0}
 
@@ -165,9 +165,11 @@ def serve_fixture():
             self.end_headers()
             try:
                 if source.startswith('storage-download-'):
-                    storage_reply.wait(timeout=10)
+                    storage_reply.wait(timeout=hold_timeout)
                     self.wfile.write(payload)
                     self.wfile.flush()
+                    with lock:
+                        state['storageResponses'].append(source)
                 elif source == 'truncated':
                     self.wfile.write(payload[:len(payload) // 2])
                     self.wfile.flush()
@@ -337,7 +339,7 @@ def serve_fixture():
                     if mode == 'upload-slow':
                         slow_upload_reply.wait(timeout=10)
                     if mode.startswith('storage-upload-'):
-                        storage_reply.wait(timeout=10)
+                        storage_reply.wait(timeout=hold_timeout)
                     receipt = {'ok': True, 'trackId': 'desktop-' + mode}
                     if mode == 'upload-present':
                         receipt['alreadyPresent'] = True
@@ -347,6 +349,9 @@ def serve_fixture():
                         receipt.update(operation_receipt)
                     self.respond(200, json.dumps(receipt).encode(), Content_Type='application/json',
                                  Set_Cookie='upload_fixture_cookie=unexpected; Path=/')
+                    if mode.startswith('storage-upload-'):
+                        with lock:
+                            state['storageResponses'].append(mode)
             except (BrokenPipeError, ConnectionResetError):
                 pass
 

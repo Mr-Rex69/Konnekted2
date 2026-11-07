@@ -18,6 +18,8 @@ import tarfile
 import tempfile
 import zipfile
 
+from ios_native_symbols import inspect_soulseek
+
 
 class ReleaseAuditError(ValueError):
     pass
@@ -175,6 +177,13 @@ def verify(artifact: Path, repo: Path, *, min_sources: int = 500) -> dict:
                      smb.get('upstream_archive_sha256') ==
                      'c9b05f037865affe0ebdac71a0013e1b53e72ad007b5f3a00331eeeb56ba43f1',
                      'Missing native SMB load-graph inspection')
+        if 'rust/src/soulseek_ffi.rs' in tracked:
+            try:
+                actual_soulseek = inspect_soulseek(archive.read('Payload/Runner.app/' + info['CFBundleExecutable']))
+            except ValueError as error:
+                raise ReleaseAuditError(str(error)) from error
+            _require(metadata.get('native_soulseek') == actual_soulseek,
+                     'Soulseek FFI inspection differs from packaged binary')
         for relative, uuids in binaries.items():
             _require(f"Payload/Runner.app/{relative}" in names,
                      f"Missing device binary: {relative}")

@@ -10,6 +10,7 @@ import 'ios_import_scan_probe.dart';
 import 'ios_import_media_probe.dart';
 import 'ios_import_pipeline_probe.dart';
 import 'ios_smb_probe.dart';
+import 'ios_soulseek_probe.dart';
 
 import 'package:flick/app/app.dart';
 import 'package:flick/features/konnekted/konnekted_shell.dart';
@@ -363,6 +364,7 @@ void main() {
         await probeIosDiscoveryCache();
     await probeIosCloudCoverPixels(tester, binding);
     binding.reportData!['native_smb_ffi'] = await probeIosNativeSmb();
+    binding.reportData!['native_soulseek_client'] = await probeIosSoulseekClient();
     binding.reportData!['native_import_private_schema'] = await probeIosImportSchema();
     binding.reportData!['native_import_scanner_writer'] = await probeIosImportScanGuard();
     binding.reportData!['native_import_media_reader'] =

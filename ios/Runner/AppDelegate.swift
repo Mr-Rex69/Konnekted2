@@ -1,6 +1,9 @@
 import Flutter
 import UIKit
 
+@_silgen_name("lokal_soulseek_suspend") private func suspendSoulseek()
+@_silgen_name("lokal_soulseek_resume") private func resumeSoulseek()
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var lokalPlatform: LokalPlatform?
@@ -8,7 +11,9 @@ import UIKit
   private var transferBridge: LokalTransferBridge?
   #if DEBUG
   private var transferIntegrationHarness: LokalTransferIntegrationHarness?
+  private var daemonProbe: LokalTransferDaemonProbe?
   #endif
+  private var lifecycleObservers: [NSObjectProtocol] = []
   private var protectedDataObserver: NSObjectProtocol?
   private var pendingDocuments: [URL] = []
 
@@ -21,6 +26,21 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     transferHost.start()
+    #if DEBUG
+    do { daemonProbe = try LokalTransferDaemonProbe(); daemonProbe?.start() }
+    catch { NSLog("Isolated daemon probe configuration refused") }
+    #endif
+    lifecycleObservers = [
+      NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+        object: nil, queue: .main) { [weak self] _ in
+          suspendSoulseek()
+          #if DEBUG
+          DispatchQueue.main.async { self?.daemonProbe?.backgrounded() }
+          #endif
+        },
+      NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification,
+        object: nil, queue: .main) { _ in resumeSoulseek() },
+    ]
     protectedDataObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.protectedDataDidBecomeAvailableNotification,
       object: nil, queue: .main) { [host = transferHost] _ in host.start() }
@@ -32,6 +52,12 @@ import UIKit
     handleEventsForBackgroundURLSession identifier: String,
     completionHandler: @escaping () -> Void
   ) {
+    #if DEBUG
+    if let probe = daemonProbe, probe.identifier == identifier {
+      probe.handleBackgroundEvents(completionHandler)
+      return
+    }
+    #endif
     guard identifier == LokalTransferRuntime.sessionIdentifier else {
       super.application(application, handleEventsForBackgroundURLSession: identifier,
         completionHandler: completionHandler)

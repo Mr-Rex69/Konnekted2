@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import tempfile
 
+from ios_native_symbols import inspect_soulseek
+
 
 def command(*args: str) -> str:
     return subprocess.check_output(args, text=True).strip()
@@ -82,6 +84,7 @@ def inspect_bundle(app: Path) -> dict:
         binaries.append(framework / metadata["CFBundleExecutable"])
     binaries.extend(app.glob("Frameworks/*.dylib"))
     smb = inspect_smb(app, executable, binaries)
+    soulseek = inspect_soulseek(executable.read_bytes())
     uuids = {}
     for binary in binaries:
         archs = command("xcrun", "lipo", "-archs", str(binary)).split()
@@ -107,6 +110,7 @@ def inspect_bundle(app: Path) -> dict:
         "cast_resources_verified": list(cast_resources),
         "binary_uuids": uuids,
         "native_smb": smb,
+        "native_soulseek": soulseek,
         "signing": "Unsigned build; must be signed locally before installation",
         "validation": "Binary/package inspection only; device acceptance is separate",
         "runtime_tests": "Consult the associated workflow run; these execute after packaging",

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,6 +13,8 @@ import 'package:flick/services/ios_transfer_import_coordinator.dart';
 import 'package:flick/services/ios_transfer_import_store.dart';
 import 'package:flick/services/ios_transfer_media_probe.dart';
 import 'package:flick/services/ios_transfer_session.dart';
+import 'package:flick/services/ios_transfer_upload_admission.dart';
+import 'package:flick/services/ios_transfer_upload_binding.dart';
 import 'package:flick/services/ios_transfer_transport.dart';
 import 'package:flick/services/link/link_protocol.dart' show linkUuid;
 import 'package:flutter/services.dart';
@@ -29,25 +32,97 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
   final bytes = await generatedWav.readAsBytes();
   final digest = sha256.convert(bytes).toString();
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-  var requests = 0;
+  var requests = 0, uploadRequests = 0;
+  final downloadSeen = Completer<void>();
+  final releaseDownload = Completer<void>();
+  final outcomes = <String, Map<String, Object>>{};
   String? serverFailure;
   server.listen((request) async {
     try {
-      if (request.method != 'GET' ||
-          request.uri.path != '/api/remote/files/generated-original' ||
-          request.headers.value('x-remote-token') !=
-              'lokal-integration-fixture') {
+      if (request.headers.value('x-remote-token') !=
+          'lokal-integration-fixture') {
         request.response.statusCode = HttpStatus.unauthorized;
-      } else {
+      } else if (request.method == 'GET' &&
+          request.uri.path == '/api/remote/files/generated-original') {
         requests++;
+        if (!downloadSeen.isCompleted) downloadSeen.complete();
+        await releaseDownload.future.timeout(const Duration(seconds: 30));
         request.response.headers.contentType = ContentType('audio', 'wav');
         request.response.headers.set('x-content-sha256', digest);
         request.response.contentLength = bytes.length;
         request.response.add(bytes);
+      } else if (request.method == 'GET' &&
+          request.uri.path == '/api/remote/files/operations') {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({'protocolVersion': 1, 'uploadOperations': 1}),
+        );
+      } else if (request.method == 'GET' &&
+          request.uri.path.startsWith('/api/remote/files/operations/')) {
+        final id = request.uri.pathSegments.last;
+        final outcome = outcomes[id];
+        request.response.statusCode = outcome == null ? 404 : 200;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode(
+            outcome ??
+                {'protocolVersion': 1, 'operationID': id, 'state': 'absent'},
+          ),
+        );
+      } else if (request.method == 'POST' &&
+          request.uri.path == '/api/remote/files') {
+        expect(request.headers.value('x-link-upload-version'), '1');
+        final operation = request.headers.value('x-link-upload-id')!;
+        final metadata = jsonDecode(
+          utf8.decode(
+            base64Url.decode(
+              base64Url.normalize(request.headers.value('x-link-metadata')!),
+            ),
+          ),
+        ) as Map;
+        final received = await request.fold<List<int>>(
+          [],
+          (buffer, chunk) => buffer..addAll(chunk),
+        );
+        expect(received, orderedEquals(bytes));
+        expect(metadata['sha256'], digest);
+        uploadRequests++;
+        final fields =
+            ['title', 'artist', 'album', 'extension', 'originalFilename'].map((
+              key,
+            ) {
+              final value = metadata[key] as String? ?? '';
+              return '${utf8.encode(value).length}:$value';
+            }).join();
+        outcomes[operation] = {
+          'protocolVersion': 1,
+          'operationID': operation,
+          'state': 'committed',
+          'bytes': bytes.length,
+          'sha256': digest,
+          'fingerprint': sha256
+              .convert(
+                utf8.encode(
+                  'lokal.upload.v1\n${bytes.length}\n$digest\n$fields',
+                ),
+              )
+              .toString(),
+          'available': true,
+          'trackId': 'uploaded-integration-original',
+          'file_hash': digest,
+        };
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode(outcomes[operation]));
+        if (!releaseDownload.isCompleted) releaseDownload.complete();
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
       }
       await request.response.close();
     } catch (error) {
-      serverFailure = error.runtimeType.toString();
+      serverFailure = '$error';
+      request.response.statusCode = HttpStatus.internalServerError;
+      await request.response.close();
+      if (!releaseDownload.isCompleted) releaseDownload.complete();
     }
   });
   Isar? database;
@@ -109,6 +184,19 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
     session = owner;
     await owner.start().timeout(const Duration(seconds: 20));
     expect(coordinator.enabled, true, reason: coordinator.issues.toString());
+    final uploadSource = File('$music/Reviewed original.wav');
+    await uploadSource.writeAsBytes(bytes, flush: true);
+    final uploadSong = SongEntity()
+      ..filePath = uploadSource.path
+      ..title = 'Reviewed iPhone original'
+      ..artist = 'Lokal test'
+      ..fileType = 'WAV'
+      ..fileSize = bytes.length
+      ..dateAdded = DateTime.now();
+    final uploadSongId = await db.writeTxn(
+      () => db.songEntitys.put(uploadSong),
+    );
+
     await native
         .enqueue([
           IosTransferIntent.fromJson({
@@ -131,25 +219,69 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
           }),
         ])
         .timeout(const Duration(seconds: 10));
+    await downloadSeen.future.timeout(const Duration(seconds: 10));
+    IosTransferIntent? uploadIntent;
+    await IosTransferUploadAdmission(isar: db, port: native)
+        .enqueueSong(
+          songId: uploadSongId,
+          expectedPairing: (await native.currentPairing())!,
+          serverId: 3,
+          prepared: (intent) => uploadIntent = intent,
+        )
+        .timeout(const Duration(seconds: 30));
+    expect(uploadIntent, isNotNull);
     final deadline = DateTime.now().add(const Duration(seconds: 45));
-    IosTransferJob? completed;
+    IosTransferJob? completed, uploaded;
     while (DateTime.now().isBefore(deadline)) {
       expect(coordinator.issues, isEmpty);
       final jobs = await native.page().timeout(const Duration(seconds: 10));
-      expect(jobs, hasLength(1));
-      final job = jobs.single;
-      if (job.phase == IosTransferPhase.complete) {
-        completed = job;
-        break;
+      expect(jobs, hasLength(2));
+      for (final job in jobs) {
+        expect(
+          {
+            IosTransferPhase.failed,
+            IosTransferPhase.cancelled,
+            IosTransferPhase.interrupted,
+          },
+          isNot(contains(job.phase)),
+          reason: serverFailure,
+        );
+        if (job.phase == IosTransferPhase.complete) {
+          if (job.direction == 'upload') {
+            uploaded = job;
+          } else {
+            completed = job;
+          }
+        }
       }
-      expect({
-        IosTransferPhase.failed,
-        IosTransferPhase.cancelled,
-        IosTransferPhase.interrupted,
-      }, isNot(contains(job.phase)));
+      if (completed != null && uploaded != null) break;
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
-    expect(completed, isNotNull, reason: 'Actual import did not complete');
+    expect(
+      completed,
+      isNotNull,
+      reason: 'Actual import did not complete: $serverFailure',
+    );
+    expect(
+      uploaded,
+      isNotNull,
+      reason: 'Actual upload did not complete: $serverFailure',
+    );
+    expect(uploaded!.resultOriginalId, 'uploaded-integration-original');
+    final binder = IosTransferUploadBinding(isar: db, port: native);
+    expect(
+      await binder.reconcile(uploaded, isCurrent: () => owner.active),
+      true,
+    );
+    expect(
+      await binder.reconcile(uploaded, isCurrent: () => owner.active),
+      true,
+    );
+    final linked = (await db.songEntitys.get(uploadSongId))!;
+    expect(linked.remoteServerId, 3);
+    expect(linked.remoteId, 'uploaded-integration-original');
+    expect(await uploadSource.readAsBytes(), orderedEquals(bytes));
+    expect(uploadRequests, 1);
     await owner.foreground().timeout(const Duration(seconds: 20));
     expect(coordinator.issues, isEmpty);
     final receipts = await db.iosTransferReceiptEntitys.where().findAll();
@@ -160,7 +292,7 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
     expect(receipt.bytes, bytes.length);
     expect(receipt.sha256, digest);
     final song = (await db.songEntitys.get(receipt.localSongId))!;
-    expect(await db.songEntitys.count(), 1);
+    expect(await db.songEntitys.count(), 2);
     expect(song.sourceType, isNull);
     expect(song.metadataComplete, true);
     expect(song.sampleRate, 44100);
@@ -184,7 +316,7 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
     );
     expect(saved!.validatedMedia!.recognized, true);
     await owner.foreground().timeout(const Duration(seconds: 20));
-    expect(await db.songEntitys.count(), 1);
+    expect(await db.songEntitys.count(), 2);
     expect(requests, 1);
     expect(serverFailure, isNull);
     final unchanged = await product.summary().timeout(
@@ -203,11 +335,16 @@ Future<Map<String, Object>> probeIosImportPipeline(File generatedWav) async {
       'verified_public_bytes': true,
       'real_native_lease_guards': true,
       'actual_bundled_media_reader': true,
+      'mixed_upload_while_download_held': true,
+      'native_qualified_upload_one_post': true,
+      'actual_isar_receipt_binding_idempotent': true,
+      'original_upload_source_preserved': true,
       'foreground_reconciliation_idempotent': true,
       'production_storage_and_keychain_untouched': true,
       'product_background_import_enabled': false,
     };
   } finally {
+    if (!releaseDownload.isCompleted) releaseDownload.complete();
     try {
       await session?.dispose().timeout(const Duration(seconds: 20));
     } finally {

@@ -5,6 +5,61 @@ import 'package:flick/services/ios_transfer_mutation_barrier.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'durable participants follow drained writers and precede the mutation',
+    () async {
+      final gate = IosForegroundTransferBarrier();
+      final release = Completer<void>();
+      final events = <String>[];
+      final pending = gate.run(() async {
+        await release.future;
+        events.add('old writer');
+      });
+      final remove = gate.registerMutationParticipant(() async {
+        events.add('retire durable queue');
+      });
+      final mutation = gate.withMutation(() async {
+        events.add('delete');
+      });
+      await pumpEventQueue();
+      expect(events, isEmpty);
+      release.complete();
+      await pending;
+      await mutation;
+      expect(events, ['old writer', 'retire durable queue', 'delete']);
+      remove();
+      events.clear();
+      await gate.withMutation(() async {
+        events.add('next');
+      });
+      expect(events, ['next']);
+    },
+  );
+
+  test(
+    'failed durable retirement refuses deletion and releases the pause',
+    () async {
+      final gate = IosForegroundTransferBarrier();
+      final remove = gate.registerMutationParticipant(
+        () async => throw StateError('queue not saved'),
+      );
+      var deleted = false;
+      await expectLater(
+        gate.withMutation(() async {
+          deleted = true;
+        }),
+        throwsStateError,
+      );
+      expect(deleted, false);
+      expect(gate.paused, false);
+      remove();
+      await gate.withMutation(() async {
+        deleted = true;
+      });
+      expect(deleted, true);
+    },
+  );
+
   test('closes tracked request and drains its last writer before metadata mutation', () async {
     final gate = IosForegroundTransferBarrier();
     final entered = Completer<void>(), cancelled = Completer<void>();

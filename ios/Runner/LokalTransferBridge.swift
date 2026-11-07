@@ -547,3 +547,148 @@ final class LokalTransferIntegrationHarness {
   }
 }
 #endif
+#if DEBUG
+/// Test-only owner for real background URLSession daemon qualification. Its
+/// journal, Music and session identifier are isolated from the shipping owner.
+/// The controller supplies only synthetic loopback fixture coordinates.
+final class LokalTransferDaemonProbe: @unchecked Sendable {
+  private final class Reply<T: Sendable>: @unchecked Sendable {
+    let ready = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var value: Result<T, Error>?
+    func finish(_ result: Result<T, Error>) {
+      lock.lock(); value = result; lock.unlock(); ready.signal()
+    }
+    func get() throws -> T {
+      guard ready.wait(timeout: .now() + 30) == .success else { throw LokalTransferError.invalidTransition }
+      lock.lock(); defer { lock.unlock() }
+      return try value!.get()
+    }
+  }
+  private static func wait<T: Sendable>(_ work: (@escaping LokalTransferCompletion<T>) -> Void) throws -> T {
+    let reply = Reply<T>(); work { reply.finish($0) }; return try reply.get()
+  }
+  let identifier: String
+  private let root: URL
+  private let host: LokalTransferHost
+  private let origin: String
+  private let checksum: String
+  private let length: Int64
+  private let recovering: Bool
+  private let downloadID: String
+  private let uploadID: String
+
+  init?(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    guard let run = environment["LOKAL_IOS_DAEMON_PROBE_RUN"] else { return nil }
+    guard UUID(uuidString: run)?.uuidString.lowercased() == run,
+          let port = Int(environment["LOKAL_IOS_DAEMON_PROBE_PORT"] ?? ""), (1...65535).contains(port),
+          let length = Int64(environment["LOKAL_IOS_DAEMON_PROBE_BYTES"] ?? ""), length > 0,
+          let checksum = environment["LOKAL_IOS_DAEMON_PROBE_SHA256"],
+          checksum.count == 64, checksum.allSatisfy({ "0123456789abcdef".contains($0) }),
+          let downloadID = environment["LOKAL_IOS_DAEMON_PROBE_DOWNLOAD"],
+          UUID(uuidString: downloadID)?.uuidString.lowercased() == downloadID,
+          let uploadID = environment["LOKAL_IOS_DAEMON_PROBE_UPLOAD"],
+          UUID(uuidString: uploadID)?.uuidString.lowercased() == uploadID else {
+      throw LokalTransferError.invalidRecord
+    }
+    self.length = length; self.checksum = checksum
+    self.downloadID = downloadID; self.uploadID = uploadID
+    recovering = environment["LOKAL_IOS_DAEMON_PROBE_RECOVER"] == "true"
+    identifier = "app.lokal.mobile.integration-daemon." + run
+    origin = "http://127.0.0.1:\(port)"
+    let root = try LokalTransferHost.applicationContainer().appendingPathComponent("IOSDaemonProbe-" + run)
+    self.root = root
+    for name in ["", "Music", "Native"] {
+      try FileManager.default.createDirectory(at: name.isEmpty ? root : root.appendingPathComponent(name),
+        withIntermediateDirectories: true)
+    }
+    let authorization = try LokalTransferAuthorization(desktopID: "fixture-pc", origin: origin,
+      token: "transfer-fixture-token", pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64")
+    let identifier = self.identifier
+    host = LokalTransferHost(container: { root.appendingPathComponent("Native") }, configuration: {
+      let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+      configuration.isDiscretionary = false; configuration.sessionSendsLaunchEvents = true
+      return configuration
+    }, library: { try LokalTransferLibrary(root: root.appendingPathComponent("Music")) },
+      credentials: { authorization })
+  }
+
+  func start() {
+    DispatchQueue.global(qos: .utility).async {
+      do { try self.run() }
+      catch { self.record(["error": String(describing: error)]) }
+    }
+  }
+  func backgrounded() {
+    try? Data("backgrounded".utf8).write(to: root.appendingPathComponent("background.txt"), options: .atomic)
+  }
+  func handleBackgroundEvents(_ reply: @escaping () -> Void) { host.handleBackgroundEvents(completion: reply) }
+  private func record(_ value: [String: Any]) {
+    do {
+      let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+      try data.write(to: root.appendingPathComponent(recovering ? "recovered.json" : "state.json"), options: .atomic)
+    } catch { NSLog("Isolated daemon probe evidence failed") }
+  }
+  private func run() throws {
+    let runtime: LokalTransferRuntime = try Self.wait { reply in
+      host.withRuntime({ reply(.success($0)) }, unavailable: { reply(.failure($0)) })
+    }
+    let ownership = host.importOwnership
+    let owner = try ownership.attachClient(engineID: ownership.attachEngine(), clientID: UUID().uuidString.lowercased())
+    let ticket = try ownership.captureSubmission(owner)
+    let _: LokalTransferSummary = try Self.wait { runtime.recover($0) }
+    if !recovering {
+      let bytes = try Data(contentsOf: URL(string: origin + "/__upload_payload")!)
+      guard bytes.count == length else { throw LokalTransferError.checksumMismatch }
+      try bytes.write(to: root.appendingPathComponent("Music/source.wav"), options: .atomic)
+      let context: LokalTransferUploadSourceContext = try Self.wait { runtime.uploadSourceContext(submission: ticket, reply: $0) }
+      let grant: LokalTransferUploadSourceGrant = try Self.wait {
+        runtime.authorizeUploadSource(contextID: context.contextID, relativePath: "source.wav", songID: "1", submission: ticket, reply: $0)
+      }
+      guard grant.bytes == length, grant.sha256 == checksum else { throw LokalTransferError.checksumMismatch }
+      let now = Int64(Date().timeIntervalSince1970 * 1000)
+      let download = try LokalTransferJob(id: downloadID, direction: .download,
+        identity: LokalTransferIdentity(desktopID: "fixture-pc", sourceID: "storage-download-daemon", localSongID: nil,
+          origin: origin, pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64"),
+        metadata: LokalTransferMetadata(title: "Daemon download", artist: "Fixture", album: nil, fileExtension: "wav"),
+        nowMs: now, expectedBytes: length, expectedSHA256: checksum)
+      let upload = try LokalTransferJob(id: uploadID, direction: .upload,
+        identity: LokalTransferIdentity(desktopID: "fixture-pc", sourceID: "daemon-source", localSongID: "1",
+          origin: origin, pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64"),
+        metadata: LokalTransferMetadata(title: "storage-upload-daemon", artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
+        nowMs: now, expectedBytes: length, expectedSHA256: checksum)
+      let _: LokalTransferSummary = try Self.wait { runtime.enqueue([download], submission: ticket, reply: $0) }
+      let _: LokalTransferSummary = try Self.wait { runtime.enqueueAuthorizedUpload(upload, grantID: grant.grantID, submission: ticket, reply: $0) }
+      let _: Bool = try Self.wait { runtime.releaseUploadSource(grant.grantID, reply: $0) }
+      let _: Bool = try Self.wait { runtime.releaseUploadSource(context.contextID, reply: $0) }
+    }
+    let deadline = Date().addingTimeInterval(240)
+    while Date() < deadline {
+      let jobs: [LokalTransferJob] = try Self.wait { runtime.page(offset: 0, limit: 10, reply: $0) }
+      guard jobs.count == 2 else { throw LokalTransferError.invalidRecord }
+      if let upload = jobs.first(where: { $0.id == uploadID }), [.interrupted, .failed].contains(upload.phase) {
+        let _: LokalTransferJob? = try Self.wait {
+          runtime.matchUploadedOriginal(id: uploadID, revision: upload.revision, submission: ticket, reply: $0)
+        }
+      }
+      let download = jobs.first { $0.id == downloadID }!
+      let upload = jobs.first { $0.id == uploadID }!
+      let source = try Data(contentsOf: root.appendingPathComponent("Music/source.wav"))
+      guard source.count == length else { throw LokalTransferError.unsafeFile }
+      let summary: LokalTransferSummary = try Self.wait { runtime.summary($0) }
+      record(["download": download.phase.rawValue, "upload": upload.phase.rawValue,
+        "uploadProtocol": upload.uploadProtocolVersion ?? 0,
+        "sourceBytes": source.count, "generation": summary.generation,
+        "downloadBytes": download.receivedBytes ?? 0,
+        "downloadSHA256": download.receivedSHA256 ?? "",
+        "originalID": upload.resultOriginalID ?? "", "recovering": recovering])
+      if download.phase == .staged && upload.phase == .complete { return }
+      guard ![.failed, .cancelled, .interrupted].contains(download.phase), upload.phase != .cancelled else {
+        throw LokalTransferError.invalidTransition
+      }
+      Thread.sleep(forTimeInterval: 0.2)
+    }
+    throw LokalTransferError.invalidTransition
+  }
+}
+#endif

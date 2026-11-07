@@ -7,6 +7,13 @@ class IosForegroundTransferBarrier {
   final _zoneKey = Object();
   final _pending = <Object, Future<void>>{};
   final _abort = <Object, List<void Function()>>{};
+  final _participants = <Object, Future<void> Function()>{};
+  void Function() registerMutationParticipant(Future<void> Function() retire) {
+    final id = Object();
+    _participants[id] = retire;
+    return () => _participants.remove(id);
+  }
+
   int _holds = 0, _epoch = 0;
   bool get paused => _holds > 0;
   int get epoch => _epoch;
@@ -59,6 +66,11 @@ class IosForegroundTransferBarrier {
       }
       while (_pending.isNotEmpty) {
         await Future.wait(_pending.values.toList());
+      }
+      // Retire durable external queues after their current writers drain, so
+      // an older preference write cannot restore a removed pending import.
+      for (final retire in _participants.values.toList()) {
+        await retire();
       }
       return await mutation();
     } finally {

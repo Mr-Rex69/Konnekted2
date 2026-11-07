@@ -1,4 +1,4 @@
-//! Embedded Soulseek client for Android. The protocol engine is an unmodified,
+//! Embedded Soulseek client for Android and foreground iPhone sessions. The protocol engine is an unmodified,
 //! MIT-licensed soulseek-rs-lib pinned in Cargo.toml. This tiny C ABI avoids
 //! regenerating Flutter Rust Bridge bindings for each protocol-library update.
 //! Passwords never enter logs, arguments, preferences or returned JSON.
@@ -8,13 +8,39 @@ use soulseek_rs::{Client, ClientSettings, DownloadStatus};
 use std::{
     ffi::{c_char, CStr, CString},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, AtomicU64, Ordering}},
     time::Duration,
 };
 
 static SESSION: OnceLock<Mutex<Option<Arc<Client>>>> = OnceLock::new();
 fn session() -> &'static Mutex<Option<Arc<Client>>> {
     SESSION.get_or_init(|| Mutex::new(None))
+}
+static SUSPENDED: AtomicBool = AtomicBool::new(false);
+static SESSION_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+// Called synchronously by UIKit before suspension, independently of Flutter's
+// event loop. Cancellation is immediate; socket/thread teardown stays off UI.
+#[no_mangle]
+pub extern "C" fn lokal_soulseek_suspend() {
+    SUSPENDED.store(true, Ordering::SeqCst);
+    retire_session();
+}
+#[no_mangle]
+pub extern "C" fn lokal_soulseek_resume() {
+    SUSPENDED.store(false, Ordering::SeqCst);
+}
+fn retire_session() -> u64 {
+    let (old, epoch) = {
+        let mut slot = session().lock().unwrap_or_else(|e| e.into_inner());
+        let epoch = SESSION_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+        (slot.take(), epoch)
+    };
+    if let Some(client) = old {
+        client.cancel_handle().cancel();
+        std::thread::spawn(move || drop(client));
+    }
+    epoch
 }
 fn current() -> Result<Arc<Client>, String> {
     session().lock().map_err(|_| "Soulseek session is unavailable".to_string())?
@@ -100,8 +126,10 @@ fn execute(input: Value) -> Result<Value, String> {
             }
             // Close our previous session before logging in (one network session
             // per username). Other operations hold an Arc until they finish.
-            let old = session().lock().map_err(|_| "Session lock failed")?.take();
-            drop(old);
+            let epoch = retire_session();
+            if SUSPENDED.load(Ordering::SeqCst) {
+                return Err("Keep Lokal open to use Soulseek on iPhone".into());
+            }
             let shared = input.get("share").and_then(Value::as_str).unwrap_or("").trim();
             let shared_directories = if shared.is_empty() { Vec::new() } else {
                 let dir = Path::new(shared);
@@ -121,13 +149,17 @@ fn execute(input: Value) -> Result<Value, String> {
                 return Err("Soulseek rejected this username/password. The username may already be taken.".into());
             }
             let (folders, files) = client.shared_counts();
-            *session().lock().map_err(|_| "Session lock failed")? = Some(Arc::new(client));
+            let mut slot = session().lock().map_err(|_| "Session lock failed")?;
+            if SUSPENDED.load(Ordering::SeqCst) || SESSION_EPOCH.load(Ordering::SeqCst) != epoch {
+                client.cancel_handle().cancel();
+                return Err("Soulseek connection was retired".into());
+            }
+            *slot = Some(Arc::new(client));
             Ok(json!({"loggedIn": true, "username": username, "sharedFolders": folders,
                 "sharedFiles": files, "engineVersion": "20.0.0"}))
         }
         "logout" => {
-            let old = session().lock().map_err(|_| "Session lock failed")?.take();
-            drop(old);
+            retire_session();
             Ok(json!({"loggedIn": false}))
         }
         "status" => {
@@ -283,6 +315,24 @@ pub unsafe extern "C" fn lokal_soulseek_free(value: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::{safe_basename, is_audio, shareable_directory, session_status};
+    #[test]
+    fn suspension_cancels_held_native_client_and_retires_late_login_authority() {
+        use super::*;
+        lokal_soulseek_resume();
+        let client = Arc::new(Client::with_settings(ClientSettings::new("fixture", "not-a-real-password")));
+        let held = client.clone();
+        *session().lock().unwrap() = Some(client);
+        let before = SESSION_EPOCH.load(Ordering::SeqCst);
+        lokal_soulseek_suspend();
+        assert!(held.cancel_handle().is_cancelled());
+        assert!(session().lock().unwrap().is_none());
+        assert!(SESSION_EPOCH.load(Ordering::SeqCst) > before);
+        assert!(execute(json!({"action":"login","username":"fixture","password":"unused"}))
+            .unwrap_err().contains("Keep Lokal open"));
+        lokal_soulseek_resume();
+        assert_eq!(execute(json!({"action":"status"})).unwrap()["loggedIn"], false);
+    }
+
     #[test]
     fn remote_paths_cannot_traverse_download_directories() {
         assert_eq!(safe_basename(r"C:\album\track.flac").unwrap(), "track.flac");
