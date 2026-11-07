@@ -96,6 +96,101 @@ void main() {
     expect(result.transient, isFalse);
   });
 
+  test('Eco on cellular plays a previously cached cover without provider access',
+      () async {
+    var requests = 0;
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((_) async {
+        requests++;
+        return http.Response('saved video', 200);
+      }),
+    );
+    var eco = false;
+    final service = MovingCoverService(
+      offlineCache: cache,
+      ecoActive: () async => eco,
+      client: MockClient((request) async =>
+          throw StateError('Provider request forbidden: $request')),
+    );
+    await service.cachePlayedClip(
+      title: 'Track',
+      artist: 'Artist',
+      album: 'Album',
+      artwork: mp4,
+      preferVertical: false,
+    );
+    expect(requests, 1);
+    eco = true;
+
+    final result = await service.lookup(
+      title: 'Track',
+      artist: 'Artist',
+      album: 'Album',
+      settings: const MovingCoverSettings(),
+    );
+    expect(result.artwork?.animatedUrl, mp4.animatedUrl);
+    final playable = await cache.playable(result.artwork!, preferVertical: false);
+    expect(Uri.parse(playable!.url).scheme, 'file');
+    expect(requests, 1);
+  });
+
+  test('Eco on cellular refuses uncached motion art and never downloads it',
+      () async {
+    var requests = 0;
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((request) async {
+        requests++;
+        return http.Response('unexpected', 200);
+      }),
+    );
+    final service = MovingCoverService(
+      offlineCache: cache,
+      ecoActive: () async => true,
+      client: MockClient((request) async {
+        requests++;
+        throw StateError('Provider must not be contacted: $request');
+      }),
+    );
+    await service.cachePlayedClip(
+      title: 'Track',
+      artist: 'Artist',
+      album: 'Album',
+      artwork: mp4,
+      preferVertical: false,
+    );
+    final result = await service.lookup(
+      title: 'Track',
+      artist: 'Artist',
+      album: 'Album',
+      settings: const MovingCoverSettings(),
+    );
+    expect(result.artwork, isNull);
+    expect(result.transient, isFalse);
+    expect(requests, 0);
+  });
+
+  test('Eco activated during download prevents committing a partial clip',
+      () async {
+    var downloadAllowed = true;
+    final cache = MotionArtOfflineCache.create(
+      directory: directory,
+      client: MockClient((_) async {
+        downloadAllowed = false;
+        return http.Response('partial video', 200);
+      }),
+    );
+    await cache.remember(
+      'track',
+      mp4,
+      preferVertical: false,
+      canDownload: () async => downloadAllowed,
+    );
+    expect(await cache.find('track'), isNull);
+    expect(await cache.localFile(mp4.playbackUrl!), isNull);
+  });
+
   test('stores finite HLS segments and rewrites manifest to local assets',
       () async {
     const artwork = AnimatedArtwork(
