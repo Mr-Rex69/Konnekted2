@@ -1398,9 +1398,9 @@ class MorneyeHost {
         case 'isRequestCancelled':
           return _aborted;
         case 'appVersion':
-          return '5.1.0';
+          return '5.3.0';
         case 'appUserAgent':
-          return 'Lokal/$appVersion Morneye-compatible/5.1.0';
+          return 'Lokal/$appVersion Morneye-compatible/5.3.0';
         case 'randomUserAgent':
           return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36';
         case 'setDownloadStatus':
