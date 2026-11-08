@@ -49,7 +49,7 @@ void main() {
       },
       'tracks': {
         'playlistA': {
-          'updated': timestamp, 'retryAfter': 0,
+          'updated': timestamp, 'retryAfter': 0, 'complete': true,
           'items': [
             {'id': 'songA', 'title': 'Song', 'artist': 'Singer', 'album': 'Album', 'durationMs': 30000},
           ],
@@ -62,6 +62,12 @@ void main() {
     );
     expect((await cache.playlists())!.single.name, 'Playlist');
     expect((await cache.tracks('playlistA'))!.single.title, 'Song');
+    // Old snapshots had no completeness marker and must be re-fetched.
+    final legacy = jsonDecode(prefs.values[SpotifyPlaylistCache.cacheKey]!) as Map;
+    (legacy['tracks'] as Map)['playlistA'].remove('complete');
+    await prefs.write(SpotifyPlaylistCache.cacheKey, jsonEncode(legacy));
+    final legacyCache = SpotifyPlaylistCache(settings: settings);
+    expect(await legacyCache.tracks('playlistA'), isNull);
     expect(await cache.shouldAutoUpdateList(), false); // default off
 
     await settings.savePlaylistAutoUpdate(true);
