@@ -80,7 +80,7 @@ void main() {
     final names = await directory.list().map((entity) => entity.path.split('/').last).toList();
     expect(names.where(AutomaticBackupService.isAutomaticBackupFile).length, 10);
     expect(names.contains('manual-export.json'), true);
-    expect(await service.lastSuccess(), now);
+    expect((await service.lastSuccess())?.isAtSameMomentAs(now), true);
   });
 
   test('an invalid or incomplete import is rejected before any library mutation', () {
