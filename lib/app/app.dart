@@ -22,6 +22,8 @@ import 'package:flick/widgets/common/ios_transfer_root.dart';
 import 'package:flick/services/lokal_launcher_icon.dart';
 import 'package:flick/features/konnekted/konnekted_shell.dart';
 import 'package:flick/l10n/l10n.dart';
+import 'package:flick/services/automatic_backup_service.dart';
+import 'dart:async';
 
 /// Main application widget for Flick Player.
 class FlickPlayerApp extends StatelessWidget {
@@ -193,6 +195,14 @@ class _RootRouterState extends ConsumerState<_RootRouter>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // A missed daily/weekly export runs when the user returns to Lokal.
+      unawaited(AutomaticBackupService.instance.runIfDue().catchError((_) => null));
+    }
   }
 
   @override

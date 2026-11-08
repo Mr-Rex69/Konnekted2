@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flick/features/settings/widgets/battery_optimization_setting.dart';
 import 'package:flick/features/settings/widgets/eco_data_mode_toggle.dart';
+import 'package:flick/features/settings/widgets/automatic_backup_settings_tile.dart';
 import 'package:flick/features/settings/library_scan/library_scan_flow.dart';
 import 'package:flick/providers/library_scan_preferences_provider.dart';
 import 'package:flick/services/scan_session_controller.dart';
@@ -271,6 +272,16 @@ List<LokalSettingsSection> dataSettings(
         ),
       ),
       const _CacheLimit(),
+    ],
+  ),
+  LokalSettingsSection(
+    title: lokalText('Backup'),
+    children: const [
+      LokalSettingCustom(
+        label: 'Automatic backup',
+        description: 'Daily or weekly settings, playlists and listening-history backups. Music files are not included.',
+        child: AutomaticBackupSettingsTile(),
+      ),
     ],
   ),
   LokalSettingsSection(
