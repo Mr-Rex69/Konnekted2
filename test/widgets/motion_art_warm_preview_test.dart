@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 import 'package:flick/services/motion_art/animated_artwork_service.dart';
@@ -28,6 +29,7 @@ class _WarmController extends VideoPlayerController {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(MotionArtMemoryPressure.instance.resetForTesting);
   testWidgets('ticker-disabled pull preview shows the warm Canvas immediately', (
     tester,
@@ -79,6 +81,7 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
     expect(find.byKey(const ValueKey('decoded-frame')), findsOneWidget);
     expect(created, 1);
     expect(controller.value.position, const Duration(seconds: 3));
@@ -87,11 +90,16 @@ void main() {
     // A backgrounded app releases its motion-art view lease instead of
     // retaining an invisible Android video surface. On resume, a still-live
     // mini-player lease can supply its already decoded frame.
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    // Drive the view observer while the test binding keeps producing frames;
+    // an actually paused binding cannot render the teardown frame we inspect.
+    (tester.state(find.byType(MotionArtView)) as WidgetsBindingObserver)
+        .didChangeAppLifecycleState(AppLifecycleState.paused);
     await tester.pump();
     expect(find.byType(VideoPlayer), findsNothing);
     expect(find.text('static cover'), findsOneWidget);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    (tester.state(find.byType(MotionArtView)) as WidgetsBindingObserver)
+        .didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await tester.pump();
     await tester.pump();
     expect(find.byKey(const ValueKey('decoded-frame')), findsOneWidget);
     expect(created, 1);
@@ -135,6 +143,7 @@ void main() {
     // Keep the fresh view mounted with its ticker active throughout cooldown.
     // A retained mini-player lease may supply the already decoded resource.
     await tester.pump(const Duration(minutes: 2));
+    await tester.pump();
     await tester.pump();
     expect(find.byKey(const ValueKey('decoded-frame')), findsOneWidget);
     expect(created, 1);
@@ -212,6 +221,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump();
     expect(MotionArtMemoryPressure.instance.isSuspended, isFalse);
+    await tester.pump();
     expect(find.byKey(const ValueKey('decoded-frame')), findsOneWidget);
     expect(created, 1);
     expect(activations.last, isTrue);

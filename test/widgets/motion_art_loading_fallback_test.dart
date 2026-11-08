@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -94,6 +96,7 @@ void main() {
   late Directory cacheDir;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     cacheDir = await Directory.systemTemp.createTemp('motion_art_widget_test_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
