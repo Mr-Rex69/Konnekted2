@@ -110,7 +110,3 @@ notify = "8.2"
 
 [dev-dependencies]
 hound = "3.5"
-
-# Pinned upstream snapshot with the documented Android rlim_t-width fix.
-[patch."https://github.com/michel/soulseek-rs"]
-soulseek-rs-lib = { path = "vendor/soulseek-rs-lib" }

@@ -9,9 +9,9 @@ This integration combines that source history with Android main through PR #507
 caching, cellular Eco behavior, playlist hero precaching and Morneye 5.3.
 It preserves the current Android native tree, USB/mixer implementation and both
 Android flavors. Android retains its Cargo default features; iOS explicitly
-selects native_audio without the Android USB stack. Shared Rust/Dart bindings are regenerated from the combined API. A documented
-one-line compatibility fix in the pinned Soulseek snapshot widens the file-limit
-comparison for Android libc; the upstream protocol revision is unchanged.
+selects native_audio without the Android USB stack. Shared Rust/Dart bindings are regenerated from the combined API. Android build
+checks select the shipped full flavor and ARM64 target; the existing audited
+Soulseek dependency revision remains unchanged.
 
 ```mermaid
 flowchart LR

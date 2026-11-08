@@ -84,8 +84,6 @@ version 20.0.0, commit `3c5f1d12f25f98730ad8f1ca57621250d7c3bd41`,
 by Michel de Graaf and contributors under the MIT License. The library is
 compiled into Lokal's existing native Rust library. Source and its MIT license:
 https://github.com/michel/soulseek-rs/blob/3c5f1d12f25f98730ad8f1ca57621250d7c3bd41/LICENSE .
-A pinned snapshot in `rust/vendor/soulseek-rs-lib` includes the documented
-Android file-limit-width compatibility fix in `LOKAL_PATCHES.md`.
 The complete MIT notice is bundled in `assets/licenses/soulseek-rs-lib.txt`
 and the installed application's **About → Licences** page.
 Lokal's adapter does not include Seeker's .NET sources. Sharing is expressly

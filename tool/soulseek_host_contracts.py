@@ -46,13 +46,6 @@ def main():
         'serde_json = "=' + version('serde_json') + '"',
         'sha2 = "=' + version('sha2') + '"', '',
     ]))
-    # Use the same audited source override as the application build.
-    patch = native.get('patch', {}).get(engine['git'], {}).get('soulseek-rs-lib')
-    if patch is not None:
-        vendor = (root / 'rust' / patch['path']).resolve()
-        with manifest.open('a') as output:
-            output.write('\n[patch.' + json.dumps(engine['git']) + ']\n'
-                         'soulseek-rs-lib = { path = ' + json.dumps(str(vendor)) + ' }\n')
     # Cargo removes the unrelated audio packages while retaining the app's
     # locked versions for the protocol module and its transitive dependencies.
     shutil.copyfile(root / 'rust/Cargo.lock', work / 'Cargo.lock')

@@ -27,4 +27,4 @@ jobs:
           test/widgets/lokal/queue_reordering_test.dart
           test/widgets/lokal/queue_sheet_test.dart
       - name: Compile Android debug APK
-        run: flutter build apk --debug --no-pub
+        run: flutter build apk --debug --flavor full --target-platform android-arm64 --no-pub

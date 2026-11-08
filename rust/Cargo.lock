@@ -2387,6 +2387,7 @@ dependencies = [
 [[package]]
 name = "soulseek-rs-lib"
 version = "20.0.0"
+source = "git+https://github.com/michel/soulseek-rs?rev=3c5f1d12f25f98730ad8f1ca57621250d7c3bd41#3c5f1d12f25f98730ad8f1ca57621250d7c3bd41"
 dependencies = [
  "libc",
 ]
