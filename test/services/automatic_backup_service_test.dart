@@ -83,6 +83,39 @@ void main() {
     expect((await service.lastSuccess())?.isAtSameMomentAs(now), true);
   });
 
+  test('manual backup still writes after an overlapping due check', () async {
+    SharedPreferences.setMockInitialValues({});
+    final folder = await Directory.systemTemp.createTemp('lokal-backup-overlap-');
+    addTearDown(() => folder.delete(recursive: true));
+    final service = AutomaticBackupService(
+      directory: () async => folder,
+      snapshot: (prefs) async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return snapshot(prefs);
+      },
+    );
+    final due = service.runIfDue(); // Off, may resolve without creating a file.
+    final manual = service.backupNow();
+    await due;
+    final file = await manual;
+    expect(file, isNotNull);
+    expect(await file!.exists(), true);
+  });
+
+  test('bounded gzip decode refuses expansion before accumulating excess bytes', () {
+    final compressed = Uint8List.fromList(gzip.encode(List<int>.filled(200000, 65)));
+    expect(
+      () => AutomaticBackupService.decompressLimited(
+        compressed, maxOutputBytes: 1024,
+      ),
+      throwsFormatException,
+    );
+    final decoded = AutomaticBackupService.decompressLimited(
+      compressed, maxOutputBytes: 200000,
+    );
+    expect(decoded.length, 200000);
+  });
+
   test('an invalid or incomplete import is rejected before any library mutation', () {
     expect(
       () => AutomaticBackupService.decodeBackup(Uint8List.fromList(gzip.encode(utf8.encode(jsonEncode({
