@@ -3,20 +3,21 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flick/providers/app_build_info_provider.dart';
 
-const lokalUpdateReleasesUrl =
-    'https://github.com/lokal-music/Mobile/releases';
+const lokalUpdateReleasesUrl = 'https://github.com/lokal-music/Mobile/releases';
 
 class LokalUpdateRelease {
   const LokalUpdateRelease({
     required this.version,
     required this.build,
-    required this.apkUrl,
+    required this.downloadUrl,
     required this.sha256,
     required this.pageUrl,
     required this.notes,
+    this.isIos = false,
   });
-  final String version, apkUrl, sha256, pageUrl, notes;
+  final String version, downloadUrl, sha256, pageUrl, notes;
   final int build;
+  final bool isIos;
   String get identity => '$version+$build:$sha256';
 }
 
@@ -67,8 +68,9 @@ class GithubUpdateService {
     final response = await client
         .get(Uri.parse(url), headers: _headers)
         .timeout(const Duration(seconds: 12));
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw StateError('Update server returned ${response.statusCode}');
+    }
     return jsonDecode(response.body);
   }
 
@@ -76,8 +78,10 @@ class GithubUpdateService {
     AppBuildInfo installed,
     String flavor,
   ) async {
-    if (flavor != 'full' && flavor != 'play')
+    if (flavor == 'ios') return _checkIos(installed);
+    if (flavor != 'full' && flavor != 'play') {
       throw StateError('Unknown APK variant');
+    }
     final current = int.tryParse(installed.build);
     if (current == null) throw StateError('Installed build number unavailable');
     final nightly = installed.version.contains('-nightly.');
@@ -139,19 +143,19 @@ class GithubUpdateService {
       if (code == null ||
           code <= current ||
           version == null ||
-          !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(hash))
+          !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(hash)) {
         continue;
+      }
       final prefix = 'Lokal-$version${flavor == 'play' ? '-Play' : ''}';
       // New releases contain ARM64 only. Keep finding older universal
       // releases so an installed signed beta can still update in place.
-      final apk = asset('$prefix-arm64.apk') ??
-          asset('$prefix-universal.apk');
+      final apk = asset('$prefix-arm64.apk') ?? asset('$prefix-universal.apk');
       if (apk == null) continue;
       if (newest == null || code > newest.build) {
         newest = LokalUpdateRelease(
           version: version,
           build: code,
-          apkUrl: apk,
+          downloadUrl: apk,
           sha256: hash.toLowerCase(),
           pageUrl:
               '$lokalUpdateReleasesUrl/tag/${Uri.encodeComponent(release['tag_name'] as String)}',
@@ -160,5 +164,63 @@ class GithubUpdateService {
       }
     }
     return newest;
+  }
+
+  Future<LokalUpdateRelease?> _checkIos(AppBuildInfo installed) async {
+    final current = int.tryParse(installed.build);
+    if (current == null) throw StateError('Installed build number unavailable');
+    // The iPhone channel is independent of GitHub's latest stable Android
+    // release and intentionally includes the iOS prerelease.
+    final release = await _json(
+      'https://api.github.com/repos/$_repo/releases/tags/ios',
+    );
+    if (release is! Map<String, dynamic> ||
+        release['draft'] == true ||
+        release['tag_name'] != 'ios') {
+      return null;
+    }
+    final assets = (release['assets'] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    String? asset(String filename) {
+      for (final item in assets) {
+        final url = item['browser_download_url'];
+        if (item['name'] == filename &&
+            url is String &&
+            _trustedReleaseAssetUrl(url, tag: 'ios', filename: filename)) {
+          return url;
+        }
+      }
+      return null;
+    }
+
+    final filename = asset('Lokal.ipa') != null
+        ? 'Lokal.ipa'
+        : 'Lokal-unsigned.ipa';
+    final ipa = asset(filename);
+    final manifest = asset('$filename.json');
+    if (ipa == null || manifest == null) return null;
+    final data = await _json(manifest);
+    if (data is! Map || data['bundle_id'] != 'app.lokal.mobile') return null;
+    final build = int.tryParse('${data['build']}');
+    final version = data['version'];
+    final hash = data['sha256'];
+    if (build == null ||
+        build <= current ||
+        version is! String ||
+        !RegExp(r'^\d+\.\d+\.\d+$').hasMatch(version) ||
+        hash is! String ||
+        !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(hash)) {
+      return null;
+    }
+    return LokalUpdateRelease(
+      version: version,
+      build: build,
+      downloadUrl: ipa,
+      sha256: hash.toLowerCase(),
+      pageUrl: '$lokalUpdateReleasesUrl/tag/ios',
+      notes: release['body'] is String ? release['body'] as String : '',
+      isIos: true,
+    );
   }
 }

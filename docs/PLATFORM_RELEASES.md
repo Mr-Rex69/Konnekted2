@@ -3,7 +3,7 @@
 The public download pages have permanent tags:
 
 - [Android](https://github.com/lokal-music/mobile/releases/tag/android): latest signed stable APK, package metadata and checksums.
-- [iOS](https://github.com/lokal-music/mobile/releases/tag/ios): latest audited unsigned IPA, matching source, crash symbols, licenses and qualification report. This remains a prerelease.
+- [iOS](https://github.com/lokal-music/mobile/releases/tag/ios): latest audited IPA, AltStore/SideStore source, matching source code, crash symbols, licenses and qualification report. This remains a prerelease.
 
 Successful publications update the existing release, move only that platform's tag to the package's source commit, and remove superseded assets after upload verification. Version and build numbers remain inside the packages and manifests. Android's updater reads those manifests, so a new version tag is unnecessary. Android version calculation reads the published manifest before incrementing the version and versionCode.
 
@@ -20,3 +20,5 @@ python3 tool/platform_releases.py consolidate --cleanup --dry-run
 ```
 
 In-app release notes fetch the platform tag and verify the platform/version marker before displaying them. Older minor versions use their bundled fallback notes.
+
+iOS update checks read the dedicated `ios` release, including its prerelease. Update prompts open AltStore Classic or SideStore; installation happens in that store. See [store setup and updates](IOS_STORE_UPDATES.md).

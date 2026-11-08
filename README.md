@@ -23,9 +23,9 @@ No Lokal account is needed to play local files. Your library and listening histo
   <a href="https://github.com/lokal-music/Desktop">Lokal for desktop</a>
 </p>
 
-**Two permanent download pages:** `android` holds the current signed Android release; `ios` holds the current unsigned iPhone beta. Successful release builds update these entries, so users do not need to find a new tag each time. Version and build numbers remain in the release title and package metadata. Nightly APKs are available as workflow artifacts and do not replace the public Android download. Merging a pull request does not publish a release. See the [release workflow guide](docs/PLATFORM_RELEASES.md).
+**Two permanent download pages:** `android` holds the current Android release; `ios` holds the current iPhone release. Successful release builds update these entries, so users do not need to find a new tag each time. Version and build numbers remain in the release title and package metadata. Nightly APKs are available as workflow artifacts and do not replace the public Android download. Merging a pull request does not publish a release. See the [release workflow guide](docs/PLATFORM_RELEASES.md).
 
-The iPhone unsigned beta is available for signing and physical-device acceptance. See the [Windows IPA signing guide](docs/IOS_SIDELOADING.md), [port architecture](docs/IOS_PORT.md), and [main integration notes](docs/IOS_MAIN_INTEGRATION.md).
+For iPhone, [set up AltStore Classic or SideStore](docs/IOS_STORE_UPDATES.md) and add the Lokal source once to receive future builds through your store. Lokal's iOS update prompts open the store to complete installation. See also the [Windows IPA installation guide](docs/IOS_SIDELOADING.md), [port architecture](docs/IOS_PORT.md), and [main integration notes](docs/IOS_MAIN_INTEGRATION.md).
 
 ---
 

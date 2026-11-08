@@ -16,6 +16,8 @@ import tempfile
 import time
 from urllib.parse import quote
 
+from ios_store_distribution import ipa_name, validate_source
+
 REPO = 'lokal-music/mobile'
 LEGACY_ANDROID = re.compile(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\Z')
 LEGACY_IOS = re.compile(r'ios-sideload-beta-\d+-attempt\d+\Z')
@@ -62,7 +64,8 @@ class GitHub:
 
     def upload(self, tag, files):
         # APK/IPA and symbols first; discovery metadata and checksums last.
-        files = sorted(files, key=lambda f: (f.suffix == '.json' or f.name.startswith('SHA256'), f.name))
+        files = sorted(files, key=lambda f: (2 if f.name == 'altstore-source.json' else
+                       int(f.suffix == '.json' or f.name.startswith('SHA256')), f.name))
         for file in files:
             subprocess.run(['gh', 'release', 'upload', tag, str(file), '--clobber',
                             '--repo', REPO], check=True)
@@ -77,7 +80,7 @@ class GitHub:
 
 def platform_of(release):
     names = {asset['name'] for asset in release.get('assets', [])}
-    if 'Lokal-unsigned.ipa' in names and 'Lokal-unsigned.ipa.json' in names:
+    if ipa_name(names) in names and ipa_name(names) + '.json' in names:
         return 'ios'
     if any(name.endswith('.apk') for name in names) and any(
             name in names for name in ('full-metadata.json', 'play-metadata.json')):
@@ -87,7 +90,7 @@ def platform_of(release):
 
 def release_metadata(github, release, platform):
     names = {asset['name']: asset for asset in release['assets']}
-    metadata_name = 'Lokal-unsigned.ipa.json' if platform == 'ios' else (
+    metadata_name = ipa_name(names) + '.json' if platform == 'ios' else (
         'full-metadata.json' if 'full-metadata.json' in names else 'play-metadata.json')
     metadata = github.asset_json(names[metadata_name])
     version = str(metadata['version'])
@@ -99,7 +102,7 @@ def release_metadata(github, release, platform):
         raise ValueError('Published package has no valid checksum')
     if platform == 'ios':
         required = {'Lokal-source.tar.gz', 'Lokal-crash-symbols.tar.gz', 'qualification.json',
-                    'LICENSE', 'THIRD_PARTY_NOTICES.md', 'Lokal-unsigned.ipa.sha256'}
+                    'LICENSE', 'THIRD_PARTY_NOTICES.md', ipa_name(names) + '.sha256'}
         if not required <= names.keys():
             raise ValueError('Published IPA is missing source, symbols or qualification assets')
     else:
@@ -116,7 +119,7 @@ def marker(platform, metadata):
 
 
 def title(platform, metadata):
-    return f'Android — {metadata["version"]}' if platform == 'android' else f'iOS — Build {metadata["build"]} (unsigned)'
+    return f'Android — {metadata["version"]}' if platform == 'android' else f'iOS — {metadata["version"]} (Build {metadata["build"]})'
 
 
 def move_tag(github, tag, sha):
@@ -159,17 +162,20 @@ def validated_files(directory, platform, sha):
                 raise ValueError('Android variants must come from the same version/build/source')
             selected = value
         return files, selected
-    required = {'Lokal-unsigned.ipa', 'Lokal-unsigned.ipa.json', 'Lokal-unsigned.ipa.sha256',
+    name = ipa_name(by_name)
+    required = {name, name + '.json', name + '.sha256',
                 'Lokal-source.tar.gz', 'Lokal-crash-symbols.tar.gz', 'qualification.json',
                 'LICENSE', 'THIRD_PARTY_NOTICES.md'}
     if not required <= by_name.keys():
         raise ValueError('Missing audited iPhone release assets')
-    data = json.loads(by_name['Lokal-unsigned.ipa.json'].read_text())
+    data = json.loads(by_name[name + '.json'].read_text())
     qualification = json.loads(by_name['qualification.json'].read_text())
     if data['source_commit'] != sha or qualification['source_commit'] != sha:
         raise ValueError('IPA/qualification source mismatch')
-    if hashlib.sha256(by_name['Lokal-unsigned.ipa'].read_bytes()).hexdigest() != data['sha256']:
+    if hashlib.sha256(by_name[name].read_bytes()).hexdigest() != data['sha256']:
         raise ValueError('IPA SHA-256 does not match audited manifest')
+    if name == 'Lokal.ipa':
+        validate_source(directory)
     return files, {'version': data['version'], 'build': int(data['build']), 'sha': sha}
 
 

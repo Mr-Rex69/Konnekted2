@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/update_check_provider.dart';
 
 import 'github_update_service.dart';
+import 'ios_store_update_actions.dart';
 
 Future<void> showLokalUpdates(BuildContext context, {bool check = false}) =>
     showModalBottomSheet<void>(
@@ -35,6 +37,7 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
   Map<String, dynamic> _download = {};
   String? _error, _hint;
   bool _busy = false, _polling = false, _foreground = true;
+  bool get _forIos => defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void initState() {
@@ -42,11 +45,12 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
     WidgetsBinding.instance.addObserver(this);
     Future.microtask(() {
       if (!mounted) return;
-      if (widget.check)
+      if (widget.check) {
         unawaited(
           ref.read(updateCheckProvider.notifier).refreshIfOnline(force: true),
         );
-      unawaited(_status());
+      }
+      if (!_forIos) unawaited(_status());
     });
   }
 
@@ -73,7 +77,7 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
-    if (_foreground) {
+    if (_foreground && !_forIos) {
       unawaited(_status());
     } else {
       _poll?.cancel();
@@ -93,7 +97,7 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
     try {
       if (flavor != 'full') {
         if (!await launchUrl(
-          Uri.parse(release.apkUrl),
+          Uri.parse(release.downloadUrl),
           mode: LaunchMode.externalApplication,
         )) {
           throw StateError('Couldn’t open the download.');
@@ -107,21 +111,23 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
         }
       } else {
         await _channel.invokeMethod<void>('download', {
-          'url': release.apkUrl,
+          'url': release.downloadUrl,
           'sha256': release.sha256,
           'build': release.build,
         });
         await _status();
       }
     } on PlatformException catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = error.message ?? 'Couldn’t update Lokal.');
+      }
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _error =
               'Couldn’t update Lokal. Use the release page or try again.',
         );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -168,14 +174,15 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
                 style: TextStyle(color: context.lokal.text),
               ),
               const SizedBox(height: 12),
-              Text(
-                lokalText(
-                  'Your library and settings stay in place. Android will ask you to confirm installation.',
+              if (!_forIos)
+                Text(
+                  lokalText(
+                    'Your library and settings stay in place. Android will ask you to confirm installation.',
+                  ),
+                  style: TextStyle(color: context.lokal.muted),
                 ),
-                style: TextStyle(color: context.lokal.muted),
-              ),
               const SizedBox(height: 16),
-              if (downloading) ...[
+              if (!_forIos && downloading) ...[
                 LinearProgressIndicator(
                   value: total > 0 ? (bytes / total).clamp(0, 1) : null,
                 ),
@@ -190,12 +197,12 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
                   'You can close this sheet. Android keeps downloading.',
                 ),
               ],
-              if (ready && !_busy)
+              if (!_forIos && ready && !_busy)
                 TextButton(
                   onPressed: () => _act(release, state.flavor, false),
                   child: Text(lokalText('Download again')),
                 ),
-              if (!downloading)
+              if (!_forIos && !downloading)
                 FilledButton(
                   onPressed: _busy
                       ? null
@@ -226,13 +233,19 @@ class _LokalUpdateSheetState extends ConsumerState<LokalUpdateSheet>
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(message),
               ),
+            if (_forIos) const IosStoreUpdateActions(),
             const SizedBox(height: 12),
             Wrap(
               spacing: 12,
               children: [
                 TextButton(
                   onPressed: () => launchUrl(
-                    Uri.parse(release?.pageUrl ?? lokalUpdateReleasesUrl),
+                    Uri.parse(
+                      release?.pageUrl ??
+                          (_forIos
+                              ? '$lokalUpdateReleasesUrl/tag/ios'
+                              : lokalUpdateReleasesUrl),
+                    ),
                     mode: LaunchMode.externalApplication,
                   ),
                   child: Text(lokalText('Release notes')),

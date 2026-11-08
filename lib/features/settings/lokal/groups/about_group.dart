@@ -71,11 +71,14 @@ List<LokalSettingsSection> aboutSettings(BuildContext context, WidgetRef ref) {
             style: LokalTheme.label(t, size: 12, color: t.text),
           ),
         ),
-        if (defaultTargetPlatform == TargetPlatform.android)
+        if (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)
           LokalSettingRow.toggle(
             label: lokalText('Automatic update checks'),
             description: lokalText(
-              'Check for new APK releases when online. Manual checks remain available.',
+              defaultTargetPlatform == TargetPlatform.iOS
+                  ? 'Check for new iPhone builds when online. Install updates through AltStore or SideStore.'
+                  : 'Check for new APK releases when online. Manual checks remain available.',
             ),
             value: ref.watch(automaticUpdatePreferenceProvider).value ?? true,
             onChanged: (enabled) => unawaited(
@@ -84,11 +87,14 @@ List<LokalSettingsSection> aboutSettings(BuildContext context, WidgetRef ref) {
                   .select(enabled),
             ),
           ),
-        if (defaultTargetPlatform == TargetPlatform.android)
+        if (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)
           LokalSettingLink(
             label: lokalText('Updates'),
             description: lokalText(
-              'Check for updates, download and install a newer APK.',
+              defaultTargetPlatform == TargetPlatform.iOS
+                  ? 'Check for updates and open AltStore or SideStore.'
+                  : 'Check for updates, download and install a newer APK.',
             ),
             onTap: () => unawaited(showLokalUpdates(context, check: true)),
           ),
