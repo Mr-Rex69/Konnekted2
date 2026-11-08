@@ -13,6 +13,7 @@ import 'package:flick/src/rust/frb_generated.dart';
 import 'package:flick/app/app.dart';
 import 'package:flick/data/database.dart';
 import 'package:flick/services/app_preferences_service.dart';
+import 'package:flick/services/automatic_backup_service.dart';
 import 'package:flick/services/display_mode_service.dart';
 import 'package:flick/services/external_playback_service.dart';
 import 'package:flick/services/permission_service.dart';
@@ -189,6 +190,12 @@ void _subscribeRustLogs() {
 }
 
 Future<void> _bootstrapAppAfterFirstFrame() async {
+  // Never hold the first frame for a scheduled user-data backup.
+  unawaited(
+    AutomaticBackupService.instance.runIfDue().catchError(
+      (Object e) => devLog('Automatic backup failed: $e'),
+    ),
+  );
   unawaited(DisplayModeService().initialize());
   unawaited(
     _requestNotificationPermission().catchError(
