@@ -18,7 +18,7 @@ import tempfile
 import urllib.parse
 import zipfile
 
-from ios_prepare_ffmpeg import download_verified
+from ios_prepare_ffmpeg import archive_path, download_verified
 
 URL = 'https://github.com/ales-drnz/dart_smb2/releases/download/libsmb2-r8/libsmb2_ios.xcframework.zip'
 SHA256 = 'c9b05f037865affe0ebdac71a0013e1b53e72ad007b5f3a00331eeeb56ba43f1'
@@ -120,7 +120,7 @@ def main() -> None:
     client = (plugin / 'lib/src/smb2_client.dart').read_text()
     symbols = set(re.findall(r'_native\.(smb2_\w+)', client))
     symbols.update({'smb2_init_context', 'smb2_destroy_context'})
-    archive = Path(os.environ.get('RUNNER_TEMP', tempfile.gettempdir())) / 'libsmb2-ios-r8.zip'
+    archive = archive_path('libsmb2-ios-r8.zip')
     download_verified(URL, archive, SHA256)
     stage(archive, plugin / 'ios/dart_smb2/Frameworks', symbols)
     print(f'Verified libsmb2 r8 device/simulator slices and {len(symbols)} FFI exports: {SHA256}')

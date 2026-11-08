@@ -11,6 +11,8 @@ To publish Android, run **Release Lokal Mobile** on `main`. The default bumps th
 
 To publish iOS, run **iPhone build and sideload package** on `main` with **publish** enabled. Both installed simulator suites, external background tests and the independent package audit must pass before publication. Explicit `release/ios-sideload-*` pushes also publish after those checks. Pull requests and manual runs with publication disabled produce artifacts only.
 
+The IPA uploads as soon as device compilation finishes; validation continues in parallel. See the [iOS build schedule, caching and retry guide](IOS_BUILD_PERFORMANCE.md).
+
 **Keep platform releases tidy** reconciles completed publications and can also be run manually. Its cleanup first validates both platforms' retained manifests and required asset sets, then preserves the current release assets while consolidating older entries. It removes only superseded mobile releases and unreferenced legacy `vX.Y.Z...` / `ios-sideload-beta-N-attemptN` tags. Draft releases, unrelated tag names, branches and the two platform tags are preserved. The workflow always executes `main` code and does not consume artifacts from its triggering run.
 
 For a read-only preview with authenticated `gh`:

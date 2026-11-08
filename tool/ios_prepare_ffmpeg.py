@@ -8,12 +8,20 @@ from pathlib import Path
 import re
 import shutil
 import time
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 
 URL = 'https://github.com/sk3llo/ffmpeg_kit_flutter/releases/download/8.1.2-audio/ffmpeg-kit-ios-audio-8.1.2.zip'
 SHA256 = '63da3becdd2c7cefd77292054683e4f9b712efd09a4d8a8b2319d92f9fbcdd30'
+
+
+def archive_path(name):
+    root = Path(os.environ.get('LOKAL_IOS_NATIVE_ARCHIVE_CACHE') or
+                os.environ.get('RUNNER_TEMP') or tempfile.gettempdir())
+    root.mkdir(parents=True, exist_ok=True)
+    return root / name
 
 
 def digest(path):
@@ -67,7 +75,7 @@ def main():
     version = re.search(r'^version:\s*(\S+)', (plugin / 'pubspec.yaml').read_text(), re.M)
     if version is None or version.group(1) != '2.5.7':
         raise SystemExit('Review and repin FFmpeg native provenance for the new plugin version')
-    archive = Path(os.environ['RUNNER_TEMP']) / 'ffmpeg-kit-ios-audio-8.1.2.zip'
+    archive = archive_path('ffmpeg-kit-ios-audio-8.1.2.zip')
     download_verified(URL, archive, SHA256)
 
     # Pub caches may contain generated frameworks from an earlier job. Regenerate
