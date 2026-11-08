@@ -277,7 +277,7 @@ void main() {
       }),
     );
     addTearDown(api.close);
-    final songs = await api.getPlaylistTracks('a' * 22);
+    final songs = await api.getPlaylistTracks('aaaaaaaaaaaaaaaaaaaaaa');
     expect(songs.length, 1234);
     expect(songs.first.title, 'Song 0');
     expect(songs.last.title, 'Song 1233');
@@ -317,7 +317,7 @@ void main() {
     );
     addTearDown(api.close);
     await expectLater(
-      api.getPlaylistTracks('a' * 22),
+      api.getPlaylistTracks('aaaaaaaaaaaaaaaaaaaaaa'),
       throwsA(predicate((e) => e.toString().contains('before loading all'))),
     );
   });
