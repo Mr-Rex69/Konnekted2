@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flick/features/discovery/discovery_http.dart';
@@ -5,6 +6,7 @@ import 'package:flick/features/discovery/discovery_models.dart';
 import 'package:flick/features/discovery/discovery_sources.dart';
 import 'package:flick/features/discovery/youtube_audio.dart';
 import 'package:flick/features/discovery/youtube_music_account.dart';
+import 'package:flick/core/utils/app_log.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -187,6 +189,7 @@ void main() {
         );
       }
       expect(name, 'ANDROID');
+      expect(body['context']['client'], isNot(contains('androidSdkVersion')));
       return http.Response(
         jsonEncode(_player([_format(140, 'audio/mp4; codecs="mp4a.40.2"', 130000)])),
         200,
@@ -247,7 +250,7 @@ void main() {
     expect(audio.url.host, allowedHost);
   });
 
-  test('uses the native InnerTubeX fallback when public clients are refused', () async {
+  test('prefers native InnerTubeX without redundant public client requests', () async {
     final asked = <String>[];
     final http.Client fake = MockClient((request) async {
       if (request.method == 'GET' && request.url.host == 'music.youtube.com') {
@@ -286,17 +289,152 @@ void main() {
       },
     ).resolve('dQw4w9WgXcQ');
 
-    expect(asked, [
-      'VISIONOS',
-      'ANDROID_VR',
-      'ANDROID',
-      'IOS',
-      'WEB_EMBEDDED_PLAYER',
-      'WEB_REMIX',
-    ]);
+    expect(asked, isEmpty);
     expect(fallbackCalls, 1);
     expect(audio.url.host, 'rr1---sn-abc.googlevideo.com');
     expect(audio.headers['User-Agent'], 'InnerTubeX client');
+  });
+
+  test('recovers from native resolver failure without repeating it', () async {
+    var nativeCalls = 0;
+    final asked = <String>[];
+    final fake = MockClient((request) async {
+      if (request.method == 'GET') {
+        return http.Response.bytes(
+          [0, 0, 0, 24, 102, 116, 121, 112],
+          206,
+          headers: {'content-type': 'audio/mp4'},
+        );
+      }
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      asked.add(body['context']['client']['clientName'] as String);
+      return http.Response(
+        jsonEncode(
+          _player([_format(140, 'audio/mp4; codecs="mp4a.40.2"', 130000)]),
+        ),
+        200,
+      );
+    });
+    addTearDown(fake.close);
+    final audio = await YoutubeAudio(
+      DiscoveryHttp(fake),
+      nativeFallback: (_, _) async {
+        nativeCalls++;
+        throw const DiscoveryException(
+          'YouTube could not resolve playable audio.',
+        );
+      },
+    ).resolve('dQw4w9WgXcQ');
+    expect(nativeCalls, 1);
+    expect(asked, ['VISIONOS']);
+    expect(audio.url.queryParameters['itag'], '140');
+    expect(
+      AppLog.instance.entries.last.message,
+      contains('client=native reason=resolve_failed'),
+    );
+  });
+
+  test('native cancellation never starts a fallback', () async {
+    final fake = MockClient(
+      (_) async => throw StateError('unexpected fallback'),
+    );
+    addTearDown(fake.close);
+    await expectLater(
+      YoutubeAudio(
+        DiscoveryHttp(fake),
+        nativeFallback: (_, _) async {
+          throw const DiscoveryException('Request cancelled.');
+        },
+      ).resolve('dQw4w9WgXcQ'),
+      throwsA(
+        isA<DiscoveryException>().having(
+          (e) => e.message,
+          'message',
+          'Request cancelled.',
+        ),
+      ),
+    );
+  });
+
+  test(
+    'already cancelled resolution never starts the native resolver',
+    () async {
+      final fake = MockClient(
+        (_) async => throw StateError('unexpected request'),
+      );
+      addTearDown(fake.close);
+      await expectLater(
+        YoutubeAudio(
+          DiscoveryHttp(fake),
+          nativeFallback: (_, _) async {
+            throw StateError('unexpected native request');
+          },
+        ).resolve('dQw4w9WgXcQ', cancel: Future<void>.value()),
+        throwsA(
+          isA<DiscoveryException>().having(
+            (e) => e.message,
+            'message',
+            'Request cancelled.',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'media probe cannot return an aborted connection to the keep-alive pool',
+    () async {
+      final fake = MockClient.streaming((request, body) async {
+        await body.drain<void>();
+        if (request.method == 'GET') {
+          expect(request.persistentConnection, isFalse);
+          return http.StreamedResponse(
+            Stream.value([0, 0, 0, 24, 102, 116, 121, 112]),
+            206,
+            headers: {'content-type': 'audio/mp4'},
+          );
+        }
+        return http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              jsonEncode(
+                _player([
+                  _format(140, 'audio/mp4; codecs="mp4a.40.2"', 130000),
+                ]),
+              ),
+            ),
+          ),
+          200,
+        );
+      });
+      addTearDown(fake.close);
+      await YoutubeAudio(DiscoveryHttp(fake)).resolve('dQw4w9WgXcQ');
+    },
+  );
+
+  test('diagnostics classify failures without logging provider secrets', () {
+    expect(
+      youtubeFailureKind(
+        const DiscoveryException(
+          'YouTube refused the media URL (HTTP 403). https://private/?token=secret',
+        ),
+      ),
+      'http_403',
+    );
+    expect(
+      youtubeFailureKind(
+        const DiscoveryException('YouTube player signature decoding failed.'),
+      ),
+      'player_cipher',
+    );
+    expect(
+      youtubeFailureKind(
+        const DiscoveryException(
+          'YouTube requires additional verification before this recording can play.',
+        ),
+      ),
+      'verification_required',
+    );
   });
 
   test('asks as visionOS first, then the Quest app', () async {

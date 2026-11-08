@@ -1,5 +1,15 @@
 # Third-party notices
 
+## YouTube EJS solver
+
+`assets/youtube/yt.solver.*.min.js` are unmodified yt-dlp EJS 0.8.0 release
+assets from https://github.com/yt-dlp/ejs/releases/tag/0.8.0. EJS uses the
+Unlicense (`assets/youtube/LICENSE`); the library bundle retains the full ISC
+notice for Meriyah 6.1.4 and MIT notice for Astring 1.9.0. Pinned SHA-256:
+
+- lib: `c55987fe697e5b9ee18830163f7af85327e9bb5c3e674b969d38c8d205eaa577`
+- core: `18da6ce0758b416e7ae645084f4f8801f9f9d59d6c477c05eaa0ff94ebd8cc00`
+
 ## Flick
 
 The Flutter player, Android platform integration, Rust engine, generated bridge, tests and bundled assets are derived from [Lokal-Konnekt/Flick](https://github.com/Lokal-Konnekt/Flick), upstream [moss-apps/Flick](https://github.com/moss-apps/Flick), commit `a309b9fd222735774f7d3e1643da2ed7114cf7c0`.

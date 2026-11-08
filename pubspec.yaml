@@ -131,6 +131,7 @@ flutter:
     - shaders/cover_cloud_dissolve.frag
 
   assets:
+    - assets/youtube/
     - assets/licenses/libsmb2.txt
     - assets/licenses/soulseek-rs-lib.txt
     - assets/spotify/session_hook.js
