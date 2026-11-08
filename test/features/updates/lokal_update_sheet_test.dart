@@ -13,7 +13,7 @@ class _AvailableUpdate extends UpdateCheckNotifier {
     release: LokalUpdateRelease(
       version: '1.0.0',
       build: 200,
-      apkUrl: 'https://github.com/Lokal-Konnekt/lokal-mobile/releases/download/v1.0.0/Lokal-1.0.0-universal.apk',
+      downloadUrl: 'https://github.com/Lokal-Konnekt/lokal-mobile/releases/download/v1.0.0/Lokal-1.0.0-universal.apk',
       sha256: 'hash',
       pageUrl: lokalUpdateReleasesUrl,
       notes: '',

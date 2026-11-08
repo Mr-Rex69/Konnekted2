@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flick/features/updates/github_update_service.dart';
 import 'package:flick/services/build_info_service.dart';
@@ -31,7 +32,9 @@ final githubUpdateServiceProvider = Provider<GithubUpdateService>((ref) {
   return GithubUpdateService(client);
 });
 final updateBuildFlavorProvider = FutureProvider<String?>(
-  (ref) => BuildInfoService().getBuildFlavor(),
+  (ref) => defaultTargetPlatform == TargetPlatform.iOS
+      ? Future.value('ios')
+      : BuildInfoService().getBuildFlavor(),
 );
 
 class UpdateCheckNotifier extends Notifier<UpdateCheckState> {
@@ -47,13 +50,15 @@ class UpdateCheckNotifier extends Notifier<UpdateCheckState> {
 
   Future<void> refreshIfOnline({bool force = false}) async {
     if (state.isChecking) return;
-    if (!force &&
-        !await ref.read(automaticUpdatePreferenceProvider.future)) return;
+    if (!force && !await ref.read(automaticUpdatePreferenceProvider.future)) {
+      return;
+    }
     if (!force &&
         state.lastCheckedAt != null &&
         DateTime.now().difference(state.lastCheckedAt!) <
-            const Duration(minutes: 30))
+            const Duration(minutes: 30)) {
       return;
+    }
     if (ref.read(connectivityProvider) != ConnectivityStatus.online) {
       if (!force) return;
       if (!await ref.read(connectivityProvider.notifier).refresh()) {

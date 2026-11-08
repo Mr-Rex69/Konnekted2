@@ -62,7 +62,7 @@ void main() {
         client,
       ).check(const AppBuildInfo(version: '7.5.2', build: '216500000'), 'full');
       expect(update?.version, '7.5.3');
-      expect(update?.apkUrl, '$root/android/Lokal-7.5.3-arm64.apk');
+      expect(update?.downloadUrl, '$root/android/Lokal-7.5.3-arm64.apk');
       expect(
         update?.pageUrl,
         'https://github.com/lokal-music/Mobile/releases/tag/android',
@@ -102,7 +102,7 @@ void main() {
     expect(available?.version, '2.0.0');
     expect(available?.build, 215113903);
     expect(
-      available?.apkUrl,
+      available?.downloadUrl,
       '$root/v2.0.0/Lokal-2.0.0-arm64.apk',
     );
     expect(
@@ -137,7 +137,7 @@ void main() {
     final available = await GithubUpdateService(client).check(
       const AppBuildInfo(version: '2.0.0', build: '215113903'), 'full',
     );
-    expect(available?.apkUrl, '$formerRoot/v2.1.0/Lokal-2.1.0-arm64.apk');
+    expect(available?.downloadUrl, '$formerRoot/v2.1.0/Lokal-2.1.0-arm64.apk');
     expect(available?.pageUrl, 'https://github.com/lokal-music/Mobile/releases/tag/v2.1.0');
   });
 
@@ -279,7 +279,7 @@ void main() {
       final service = GithubUpdateService(client);
       final installed = const AppBuildInfo(version: '1.0.0', build: '200');
       expect(
-        (await service.check(installed, 'play'))?.apkUrl,
+        (await service.check(installed, 'play'))?.downloadUrl,
         endsWith('-Play-arm64.apk'),
       );
       valid = false;
@@ -319,7 +319,7 @@ void main() {
       const AppBuildInfo(version: '1.0.0', build: '199'),
       'full',
     );
-    expect(asset?.apkUrl, endsWith('-universal.apk'));
+    expect(asset?.downloadUrl, endsWith('-universal.apk'));
     client.close();
   });
 

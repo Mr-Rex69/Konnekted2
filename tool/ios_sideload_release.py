@@ -15,6 +15,7 @@ import subprocess
 import tarfile
 
 from ios_verify_engineering_release import verify
+from ios_store_distribution import PUBLIC_IPA, release_notes, write_source
 
 
 def validate_context(repo, environment):
@@ -47,7 +48,8 @@ def prepare(artifact, repo, destination, environment):
     destination.mkdir(parents=True, exist_ok=False)
     for name in ('Lokal-unsigned.ipa', 'Lokal-unsigned.ipa.sha256',
                  'Lokal-unsigned.ipa.json', 'Lokal-source.tar.gz'):
-        shutil.copyfile(package / name, destination / name)
+        shutil.copyfile(package / name, destination / name.replace('Lokal-unsigned.ipa', PUBLIC_IPA))
+    (destination / (PUBLIC_IPA + '.sha256')).write_text(f'{manifest["sha256"]}  {PUBLIC_IPA}\n')
     with tarfile.open(destination / 'Lokal-crash-symbols.tar.gz', 'w:gz') as symbols:
         symbols.add(package / 'Symbols', arcname='Symbols')
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
@@ -63,22 +65,9 @@ def prepare(artifact, repo, destination, environment):
     }
     (destination / 'qualification.json').write_text(json.dumps(report, indent=2) + '\n')
     tag = 'ios'
-    repository = environment['GITHUB_REPOSITORY']
-    notes = (
-        '# Unsigned iPhone beta — ready for device testing\n\n'
-        'iOS 16+. Install from Windows using your own signing tool and Apple ID. '
-        'This IPA is unsigned; physical signing, installation/upgrade and device acceptance remain your next step.\n\n'
-        'The Apple build, installed iOS 18.6 and 26 suites, mixed/background transfer and '
-        'process-recovery checks, and independent release/AOT package audit passed for this exact source. '
-        'Live P2P accounts, private add-ons, casting receivers and physical audio routes still need your acceptance.\n\n'
-        'Soulseek requires Lokal in the foreground. Desktop peers without the durable upload protocol '
-        'use the existing foreground copy flow. The durable receiver continuation is '
-        'https://github.com/lokal-music/desktop/pull/728. Home Screen widgets and Android direct USB audio are excluded.\n\n'
-        f'- Source: `{commit}`\n- IPA SHA-256: `{manifest["sha256"]}`\n'
-        f'- Qualification: https://github.com/{repository}/actions/runs/{environment["GITHUB_RUN_ID"]}\n'
-        f'- Windows installation: https://github.com/{repository}/blob/{commit}/docs/IOS_SIDELOADING.md\n\n'
-        'Matching source, license notices, package manifest, qualification report and crash symbols are attached.\n'
-    )
+    changes = environment.get('LOKAL_IOS_CHANGES', '* Updated Lokal for iPhone.')
+    write_source(destination, description=changes)
+    notes = release_notes(manifest, changes)
     (destination / 'RELEASE-NOTES.md').write_text(notes)
     return tag
 
