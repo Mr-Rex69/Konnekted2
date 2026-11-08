@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:isolate';
+
 import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
@@ -14,6 +15,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flick/features/search/library_download.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/music_folder_service.dart';
+import 'package:flick/services/ios_library_scan_epoch.dart';
+import 'package:flick/services/link/lokal_desktop_source.dart';
 
 typedef _NativeRequest = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 typedef _NativeFree = void Function(ffi.Pointer<Utf8>);
@@ -21,20 +24,28 @@ typedef _NativeFree = void Function(ffi.Pointer<Utf8>);
 /// Synchronous native calls are made on worker isolates, never Flutter's UI
 /// isolate. The Rust library retains a process-wide P2P session.
 Map<String, dynamic> _soulseekNative(String input) {
-  if (!Platform.isAndroid) throw StateError('Soulseek needs Android');
-  final lib = ffi.DynamicLibrary.open('librust_lib_flick_player.so');
-  final invoke = lib.lookupFunction<
-    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>), _NativeRequest
-  >('lokal_soulseek_invoke');
-  final release = lib.lookupFunction<
-    ffi.Void Function(ffi.Pointer<Utf8>), _NativeFree
-  >('lokal_soulseek_free');
+  final lib = Platform.isIOS
+      ? ffi.DynamicLibrary.process()
+      : Platform.isAndroid
+      ? ffi.DynamicLibrary.open('librust_lib_flick_player.so')
+      : throw StateError('Soulseek requires Android or iPhone');
+  final invoke = lib
+      .lookupFunction<
+        ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>),
+        _NativeRequest
+      >('lokal_soulseek_invoke');
+  final release = lib
+      .lookupFunction<ffi.Void Function(ffi.Pointer<Utf8>), _NativeFree>(
+        'lokal_soulseek_free',
+      );
   final request = input.toNativeUtf8();
   try {
     final output = invoke(request);
     if (output == ffi.nullptr) throw StateError('No Soulseek response');
     try {
-      final json = Map<String, dynamic>.from(jsonDecode(output.toDartString()) as Map);
+      final json = Map<String, dynamic>.from(
+        jsonDecode(output.toDartString()) as Map,
+      );
       if (json['error'] is String && (json['error'] as String).isNotEmpty) {
         throw StateError(json['error'] as String);
       }
@@ -50,9 +61,17 @@ Map<String, dynamic> _soulseekNative(String input) {
 @immutable
 class SoulseekFile {
   const SoulseekFile({
-    required this.username, required this.filename, required this.size,
-    this.extension = '', this.speed = 0, this.freeSlot = false,
-    this.bitrate, this.duration, this.sampleRate, this.bitDepth, this.score = 0,
+    required this.username,
+    required this.filename,
+    required this.size,
+    this.extension = '',
+    this.speed = 0,
+    this.freeSlot = false,
+    this.bitrate,
+    this.duration,
+    this.sampleRate,
+    this.bitDepth,
+    this.score = 0,
   });
   factory SoulseekFile.fromMap(Map<String, dynamic> x) => SoulseekFile(
     username: x['username'] as String? ?? '',
@@ -73,6 +92,7 @@ class SoulseekFile {
   final int? bitrate, duration, sampleRate, bitDepth;
   String get key => username + '\u0000' + filename;
   String get name => filename.replaceAll('\\', '/').split('/').last;
+
   /// Full parent path, not just its displayed album name: a peer may share
   /// different artists' albums that happen to have the same folder name.
   String get directory {
@@ -80,34 +100,63 @@ class SoulseekFile {
     final slash = normalized.lastIndexOf('/');
     return slash < 0 ? '' : normalized.substring(0, slash);
   }
+
   String get albumGroupKey => username + String.fromCharCode(0) + directory;
   String get folder {
     final split = filename.replaceAll('\\', '/').split('/');
     return split.length > 1 ? split[split.length - 2] : 'Shared files';
   }
+
   bool get lossless => const {
-    'FLAC', 'WAV', 'AIF', 'AIFF', 'ALAC', 'APE', 'WV', 'DSF', 'DFF'
+    'FLAC',
+    'WAV',
+    'AIF',
+    'AIFF',
+    'ALAC',
+    'APE',
+    'WV',
+    'DSF',
+    'DFF',
   }.contains(extension.toUpperCase());
   String get quality {
     if (bitDepth != null && sampleRate != null) {
-      return extension + ' ' + bitDepth.toString() + '-bit/' +
-          (sampleRate! / 1000).toStringAsFixed(1) + 'kHz';
+      return extension +
+          ' ' +
+          bitDepth.toString() +
+          '-bit/' +
+          (sampleRate! / 1000).toStringAsFixed(1) +
+          'kHz';
     }
-    return bitrate == null ? extension : extension + ' ' + bitrate.toString() + ' kbps';
+    return bitrate == null
+        ? extension
+        : extension + ' ' + bitrate.toString() + ' kbps';
   }
+
   Map<String, dynamic> toMap() => {
-    'username': username, 'filename': filename, 'size': size,
-    'extension': extension, 'speed': speed, 'freeSlot': freeSlot,
-    'bitrate': bitrate, 'duration': duration, 'sampleRate': sampleRate,
-    'bitDepth': bitDepth, 'score': score,
+    'username': username,
+    'filename': filename,
+    'size': size,
+    'extension': extension,
+    'speed': speed,
+    'freeSlot': freeSlot,
+    'bitrate': bitrate,
+    'duration': duration,
+    'sampleRate': sampleRate,
+    'bitDepth': bitDepth,
+    'score': score,
   };
 }
 
 @immutable
 class SoulseekTransfer {
   const SoulseekTransfer({
-    required this.file, required this.status, required this.bytes,
-    required this.speed, required this.path, this.error, this.queuePosition,
+    required this.file,
+    required this.status,
+    required this.bytes,
+    required this.speed,
+    required this.path,
+    this.error,
+    this.queuePosition,
   });
   final SoulseekFile file;
   final String status, path;
@@ -115,7 +164,8 @@ class SoulseekTransfer {
   final double speed;
   final String? error;
   final int? queuePosition;
-  double get progress => file.size == 0 ? 0.0 : (bytes / file.size).clamp(0.0, 1.0);
+  double get progress =>
+      file.size == 0 ? 0.0 : (bytes / file.size).clamp(0.0, 1.0);
   bool get active => const {'queued', 'downloading', 'paused'}.contains(status);
 }
 
@@ -125,8 +175,14 @@ bool soulseekIsUnsafeShareRoot(String? root) {
   if (root == null || root.isEmpty) return true;
   final normalized = p.normalize(root);
   const roots = {
-    '/', '/sdcard', '/storage', '/storage/emulated',
-    '/storage/self', '/storage/self/primary', '/mnt', '/data',
+    '/',
+    '/sdcard',
+    '/storage',
+    '/storage/emulated',
+    '/storage/self',
+    '/storage/self/primary',
+    '/mnt',
+    '/data',
   };
   if (roots.contains(normalized)) return true;
   // Android primary/emulated volumes, removable SD cards, and the
@@ -136,10 +192,29 @@ bool soulseekIsUnsafeShareRoot(String? root) {
   ).hasMatch(normalized);
 }
 
-class SoulseekService extends ChangeNotifier {
-  SoulseekService._();
+class SoulseekService extends ChangeNotifier with WidgetsBindingObserver {
+  SoulseekService._({
+    bool? ios,
+    Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)?
+    nativeCall,
+  }) : _ios = ios ?? Platform.isIOS,
+       _nativeCall = nativeCall {
+    if (_ios) {
+      WidgetsBinding.instance.addObserver(this);
+      _removeMutationParticipant = LokalDesktopSource.instance
+          .registerLibraryMutationParticipant(_retireForLibraryMutation);
+    }
+  }
   @visibleForTesting
-  SoulseekService.testing() : this._();
+  SoulseekService.testing({
+    bool? ios,
+    Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)?
+    nativeCall,
+  }) : this._(ios: ios, nativeCall: nativeCall);
+  void Function()? _removeMutationParticipant;
+  final bool _ios;
+  final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)?
+  _nativeCall;
   static final instance = SoulseekService._();
   static const _userKey = 'lokal.soulseek.user.v1';
   static const _passwordKey = 'lokal.soulseek.password.v1';
@@ -155,10 +230,69 @@ class SoulseekService extends ChangeNotifier {
   DateTime _foregroundRenewed = DateTime.fromMillisecondsSinceEpoch(0);
   static const _backgroundChannel = MethodChannel('lokal/soulseek_background');
 
+  bool _suspended = false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_ios) return;
+    if (state == AppLifecycleState.resumed) {
+      _suspended = false;
+      // Reconnect only when the user next uses Soulseek. Saved downloads stay
+      // durable, and this does not silently resume sharing after backgrounding.
+      return;
+    }
+    if (state != AppLifecycleState.paused &&
+        state != AppLifecycleState.hidden &&
+        state != AppLifecycleState.detached)
+      return;
+    _suspended = true;
+    ++_sessionEpoch;
+    _ticker?.cancel();
+    connected = false;
+    shareEnabled = false;
+    sharedFiles = 0;
+    uploads = const [];
+    _searchCache.clear();
+    _searchRequests.clear();
+    // UIKit independently cancels the native client synchronously. This owner
+    // only retires Dart replies; no asynchronous logout can kill a newer login.
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    if (_ios) WidgetsBinding.instance.removeObserver(this);
+    _ticker?.cancel();
+    _removeMutationParticipant?.call();
+    super.dispose();
+  }
+
+  Future<void> _retireForLibraryMutation() async {
+    ++_sessionEpoch;
+    _ticker?.cancel();
+    connected = false;
+    shareEnabled = false;
+    sharedFiles = 0;
+    uploads = const [];
+    _searchCache.clear();
+    _searchRequests.clear();
+    try {
+      await _loadPending();
+      _pending.clear();
+      _importRetryAfter.clear();
+      await _savePending();
+    } finally {
+      await _call('logout');
+      notifyListeners();
+    }
+  }
+
   Future<void> _background() async {
     if (!Platform.isAndroid) return;
-    final want = connected && (shareEnabled || transfers.any((row) => row.active));
-    final renewal = DateTime.now().difference(_foregroundRenewed) >
+    final want =
+        connected && (shareEnabled || transfers.any((row) => row.active));
+    final renewal =
+        DateTime.now().difference(_foregroundRenewed) >
         const Duration(minutes: 4);
     if (want == _foregroundActive && (!want || !renewal)) return;
     try {
@@ -176,6 +310,7 @@ class SoulseekService extends ChangeNotifier {
       }
     }
   }
+
   bool _checking = false, _loaded = false;
   bool connected = false, busy = false, shareEnabled = false;
   bool sharePreference = false, sharingBusy = false, losslessOnly = false;
@@ -188,16 +323,23 @@ class SoulseekService extends ChangeNotifier {
   List<SoulseekTransfer> transfers = const [];
   List<Map<String, dynamic>> uploads = const [];
 
-  Future<Map<String, dynamic>> _call(String method,
-      [Map<String, dynamic> args = const {}]) {
+  Future<Map<String, dynamic>> _call(
+    String method, [
+    Map<String, dynamic> args = const {},
+  ]) {
+    if (_nativeCall case final invoke?) return invoke(method, args);
     final request = jsonEncode({'action': method, ...args});
     return Isolate.run(() => _soulseekNative(request));
   }
 
+  @visibleForTesting
+  Future<Map<String, dynamic>> probeNativeStatus() => _call('status');
+
   /// Saved opt-in is not proof that files are shared on the network yet.
   Future<void> loadAccount() async {
     username = await _secure.read(key: _userKey) ?? '';
-    sharePreference = (await SharedPreferences.getInstance()).getBool(_shareKey) ?? false;
+    sharePreference =
+        (await SharedPreferences.getInstance()).getBool(_shareKey) ?? false;
     notifyListeners();
   }
 
@@ -227,34 +369,50 @@ class SoulseekService extends ChangeNotifier {
 
   Future<String> _mainFolder() async {
     final folders = await MusicFolderService().getSavedFolders();
-    if (folders.isEmpty) throw StateError('Select a main music folder in Library settings.');
+    if (folders.isEmpty)
+      throw StateError('Select a main music folder in Library settings.');
     // Only the first library root is shared; no silent disclosure of other
     // folders, connected disks or the entire device.
-    final volume = await MusicFolderService().resolveStorageInfo(folders.first.uri);
+    final volume = await MusicFolderService().resolveStorageInfo(
+      folders.first.uri,
+    );
     final root = volume.fsPath;
     if (soulseekIsUnsafeShareRoot(root)) {
-      throw StateError('Select a dedicated music folder, not an entire storage volume. '
-          'Soulseek exposes every file in the selected folder.');
+      throw StateError(
+        'Select a dedicated music folder, not an entire storage volume. '
+        'Soulseek exposes every file in the selected folder.',
+      );
     }
     if (root == null || !await Directory(root).exists()) {
-      throw StateError('The main music folder has no readable filesystem path. '
-        'Disable sharing or grant filesystem access in Library settings.');
+      throw StateError(
+        'The main music folder has no readable filesystem path. '
+        'Disable sharing or grant filesystem access in Library settings.',
+      );
     }
     return root;
   }
 
   Future<bool> ensureConnected() async {
+    if (_ios && LokalDesktopSource.instance.libraryTransfersPaused) {
+      throw StateError('The library is changing. Retry afterward.');
+    }
+    if (_suspended) throw StateError('Keep Lokal open to use Soulseek.');
     if (connected) return true;
     if (_connecting case final Future<bool> task) return task;
     final task = _restoreAccount();
     _connecting = task;
-    try { return await task; } finally { _connecting = null; }
+    try {
+      return await task;
+    } finally {
+      _connecting = null;
+    }
   }
 
   Future<bool> _restoreAccount() async {
     final user = await _secure.read(key: _userKey);
     final password = await _secure.read(key: _passwordKey);
-    if (user == null || user.isEmpty || password == null || password.isEmpty) return false;
+    if (user == null || user.isEmpty || password == null || password.isEmpty)
+      return false;
     try {
       await _login(user, password);
       sharePreference =
@@ -268,8 +426,13 @@ class SoulseekService extends ChangeNotifier {
     }
   }
 
-  Future<void> signIn(String user, String password, {required bool share}) async {
-    if (user.trim().isEmpty || password.isEmpty) throw StateError('Enter username and password.');
+  Future<void> signIn(
+    String user,
+    String password, {
+    required bool share,
+  }) async {
+    if (user.trim().isEmpty || password.isEmpty)
+      throw StateError('Enter username and password.');
     // Authenticate before any potentially expensive folder indexing.
     await _login(user.trim(), password);
     try {
@@ -289,7 +452,8 @@ class SoulseekService extends ChangeNotifier {
 
   Future<void> _login(String user, String password) async {
     if (busy) throw StateError('Soulseek is already connecting.');
-    ++_sessionEpoch;
+    final epoch = ++_sessionEpoch;
+    if (_suspended) throw StateError('Keep Lokal open to use Soulseek.');
     busy = true;
     error = '';
     var loginAttempted = false;
@@ -297,10 +461,15 @@ class SoulseekService extends ChangeNotifier {
     try {
       loginAttempted = true;
       final data = await _call('login', {
-        'username': user, 'password': password,
+        'username': user,
+        'password': password,
         'share': '',
       });
-      if (data['loggedIn'] != true) throw StateError('Soulseek login was rejected.');
+      if (_suspended || epoch != _sessionEpoch) {
+        throw StateError('Soulseek connection was retired.');
+      }
+      if (data['loggedIn'] != true)
+        throw StateError('Soulseek login was rejected.');
       connected = true;
       shareEnabled = false;
       if (username != user) {
@@ -310,8 +479,10 @@ class SoulseekService extends ChangeNotifier {
       username = user;
       sharedFiles = (data['sharedFiles'] as num?)?.toInt() ?? 0;
       _ticker?.cancel();
-      _ticker = Timer.periodic(const Duration(seconds: 2),
-          (_) => unawaited(refresh()));
+      _ticker = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => unawaited(refresh()),
+      );
       await _resumePending();
       // The Android service can have been stopped by task dismissal or a
       // system timeout while the Flutter process remained alive. Re-establish
@@ -323,7 +494,9 @@ class SoulseekService extends ChangeNotifier {
       _ticker?.cancel();
       connected = false;
       if (loginAttempted) {
-        try { await _call('logout'); } catch (_) {}
+        try {
+          await _call('logout');
+        } catch (_) {}
       }
       await _background();
       error = '$e';
@@ -337,7 +510,9 @@ class SoulseekService extends ChangeNotifier {
   Future<void> signOut() async {
     ++_sessionEpoch;
     _ticker?.cancel();
-    try { await _call('logout'); } finally {
+    try {
+      await _call('logout');
+    } finally {
       connected = false;
       shareEnabled = false;
       sharePreference = false;
@@ -406,37 +581,61 @@ class SoulseekService extends ChangeNotifier {
     try {
       return await request;
     } finally {
-      if (identical(_searchRequests[query], request)) _searchRequests.remove(query);
+      if (identical(_searchRequests[query], request))
+        _searchRequests.remove(query);
     }
   }
 
   Future<List<SoulseekFile>> _searchNetwork(String query) async {
     if (!await ensureConnected()) {
-      throw StateError(error.isEmpty ? 'Sign in under Data → Accounts → Soulseek.' : error);
+      throw StateError(
+        error.isEmpty ? 'Sign in under Data → Accounts → Soulseek.' : error,
+      );
     }
     final epoch = _sessionEpoch;
     final result = await _call('search', {'query': query});
-    final files = (result['results'] as List? ?? []).whereType<Map>()
-        .map((x) => SoulseekFile.fromMap(Map<String, dynamic>.from(x))).toList();
+    final files = (result['results'] as List? ?? [])
+        .whereType<Map>()
+        .map((x) => SoulseekFile.fromMap(Map<String, dynamic>.from(x)))
+        .toList();
     if (epoch == _sessionEpoch) rememberSearch(query, files);
     return files;
   }
 
   Future<String> _staging() async {
-    final directory = Directory(p.join(
-        (await getApplicationSupportDirectory()).path, 'soulseek', 'staging'));
+    final directory = Directory(
+      p.join(
+        (await getApplicationSupportDirectory()).path,
+        'soulseek',
+        'staging',
+      ),
+    );
     await directory.create(recursive: true);
     return directory.path;
   }
 
-  Future<void> queue(SoulseekFile file) async {
-    if (!await ensureConnected()) throw StateError('Soulseek is not connected.');
+  Future<void> queue(SoulseekFile file) => _ios
+      ? LokalDesktopSource.instance.runLibraryTransfer(() => _queue(file))
+      : _queue(file);
+
+  Future<void> _queue(SoulseekFile file) async {
+    if (!await ensureConnected())
+      throw StateError('Soulseek is not connected.');
+    final epoch = _sessionEpoch;
     await _loadPending();
     if (_pending.containsKey(file.key)) return;
     final info = await _call('download', {
-      'username': file.username, 'filename': file.filename,
-      'size': file.size, 'staging': await _staging(),
+      'username': file.username,
+      'filename': file.filename,
+      'size': file.size,
+      'staging': await _staging(),
     });
+    if (_ios &&
+        (_suspended ||
+            epoch != _sessionEpoch ||
+            LokalDesktopSource.instance.libraryTransfersPaused)) {
+      throw StateError('The download request was retired. Review it again.');
+    }
     _pending[file.key] = {...file.toMap(), 'path': info['path']};
     await _savePending();
     await refresh();
@@ -450,7 +649,13 @@ class SoulseekService extends ChangeNotifier {
     }
   }
 
-  Future<void> control(SoulseekFile file, String action) async {
+  Future<void> control(SoulseekFile file, String action) => _ios
+      ? LokalDesktopSource.instance.runLibraryTransfer(
+          () => _control(file, action),
+        )
+      : _control(file, action);
+
+  Future<void> _control(SoulseekFile file, String action) async {
     if (action == 'retry') {
       await _loadPending();
       _pending.remove(file.key);
@@ -467,16 +672,22 @@ class SoulseekService extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> _loadPending() async {
+  Future<void>? _loadingPending;
+  Future<void> _loadPending() => _loadingPending ??= _readPending();
+  Future<void> _readPending() async {
     if (_loaded) return;
+    final rows =
+        (await SharedPreferences.getInstance()).getStringList(_pendingKey) ??
+        [];
     _loaded = true;
-    final rows = (await SharedPreferences.getInstance()).getStringList(_pendingKey) ?? [];
     for (final row in rows) {
       try {
         final json = Map<String, dynamic>.from(jsonDecode(row) as Map);
         final file = SoulseekFile.fromMap(json);
-        if (file.size > 0 && file.username.isNotEmpty &&
-            file.filename.isNotEmpty && json['path'] is String) {
+        if (file.size > 0 &&
+            file.username.isNotEmpty &&
+            file.filename.isNotEmpty &&
+            json['path'] is String) {
           _pending[file.key] = json;
         }
       } catch (_) {}
@@ -484,14 +695,23 @@ class SoulseekService extends ChangeNotifier {
   }
 
   Future<void> _savePending() async {
-    await (await SharedPreferences.getInstance()).setStringList(
-        _pendingKey, _pending.values.map(jsonEncode).toList());
+    final saved = await (await SharedPreferences.getInstance()).setStringList(
+      _pendingKey,
+      _pending.values.map(jsonEncode).toList(),
+    );
+    if (!saved) throw StateError('Could not save the Soulseek download queue.');
     notifyListeners();
   }
 
   Future<void> _resumePending() async {
+    final epoch = _sessionEpoch;
     await _loadPending();
     for (final record in _pending.values.toList()) {
+      if (_ios &&
+          (_suspended ||
+              epoch != _sessionEpoch ||
+              LokalDesktopSource.instance.libraryTransfersPaused))
+        return;
       final file = SoulseekFile.fromMap(record);
       final saved = File(record['path'] as String);
       if (await saved.exists() && await saved.length() == file.size) {
@@ -500,8 +720,10 @@ class SoulseekService extends ChangeNotifier {
       }
       try {
         await _call('download', {
-          'username': file.username, 'filename': file.filename,
-          'size': file.size, 'staging': await _staging(),
+          'username': file.username,
+          'filename': file.filename,
+          'size': file.size,
+          'staging': await _staging(),
         });
       } catch (e) {
         error = 'Could not resume ' + file.name + ': $e';
@@ -513,7 +735,9 @@ class SoulseekService extends ChangeNotifier {
     if (!connected || _checking) return;
     _checking = true;
     try {
+      final epoch = _sessionEpoch;
       final status = await _call('status');
+      if (_suspended || epoch != _sessionEpoch) return;
       if (status['loggedIn'] != true) {
         connected = false;
         error = status['sessionLoss'] as String? ?? 'Soulseek disconnected.';
@@ -523,17 +747,22 @@ class SoulseekService extends ChangeNotifier {
         return;
       }
       final data = await _call('transfers');
+      if (_suspended || epoch != _sessionEpoch) return;
       await _loadPending();
+      if (_suspended || epoch != _sessionEpoch) return;
       final rows = <SoulseekTransfer>[];
       for (final row in data['transfers'] as List? ?? []) {
         if (row is! Map) continue;
         final item = Map<String, dynamic>.from(row);
-        final key = (item['username'] as String? ?? '') + '\u0000' +
+        final key =
+            (item['username'] as String? ?? '') +
+            '\u0000' +
             (item['filename'] as String? ?? '');
         final stored = _pending[key];
         final file = SoulseekFile.fromMap(stored ?? item);
         final entry = SoulseekTransfer(
-          file: file, status: item['status'] as String? ?? 'queued',
+          file: file,
+          status: item['status'] as String? ?? 'queued',
           bytes: (item['bytes'] as num?)?.toInt() ?? 0,
           speed: (item['speed'] as num?)?.toDouble() ?? 0,
           path: item['path'] as String? ?? '',
@@ -542,7 +771,8 @@ class SoulseekService extends ChangeNotifier {
         );
         rows.add(entry);
         final retryAt = _importRetryAfter[file.key];
-        if (entry.status == 'completed' && stored != null &&
+        if (entry.status == 'completed' &&
+            stored != null &&
             (retryAt == null || !DateTime.now().isBefore(retryAt))) {
           unawaited(_import(file, entry.path));
         }
@@ -550,6 +780,7 @@ class SoulseekService extends ChangeNotifier {
       transfers = rows;
       if (shareEnabled) {
         final uploadInfo = await _call('uploads');
+        if (_suspended || epoch != _sessionEpoch) return;
         uploads = (uploadInfo['uploads'] as List? ?? [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
@@ -562,10 +793,24 @@ class SoulseekService extends ChangeNotifier {
     } catch (e) {
       error = 'Transfer monitoring failed: $e';
       notifyListeners();
-    } finally { _checking = false; }
+    } finally {
+      _checking = false;
+    }
   }
 
-  Future<void> _import(SoulseekFile file, String source) async {
+  Future<void> _import(SoulseekFile file, String source) {
+    if (!_ios) return _importTracked(file, source);
+    return LokalDesktopSource.instance
+        .runLibraryTransfer(
+          () => IosLibraryScanEpoch.run(() => _importTracked(file, source)),
+        )
+        .catchError((Object problem) {
+          error = 'Import paused while the library changes: $problem';
+          notifyListeners();
+        });
+  }
+
+  Future<void> _importTracked(SoulseekFile file, String source) async {
     if (!_importing.add(file.key)) return;
     try {
       final audio = File(source);
@@ -574,37 +819,58 @@ class SoulseekService extends ChangeNotifier {
       }
       AudioFileInfo? metadata;
       try {
-        metadata = (await MusicFolderService().fetchMetadata([source])).firstOrNull;
+        metadata = (await MusicFolderService().fetchMetadata([source]))
+            .firstOrNull;
       } catch (_) {
         // Some Android extractors cannot read a peer's audio format. Import
         // the original bytes regardless, using path-derived fallback labels.
       }
       final parts = file.filename.replaceAll('\\', '/').split('/');
-      final artist = parts.length >= 3 ? parts[parts.length - 3] : 'Unknown Artist';
-      final album = parts.length >= 2 ? parts[parts.length - 2] : 'Unknown Album';
-      final title = p.basenameWithoutExtension(file.name)
+      final artist = parts.length >= 3
+          ? parts[parts.length - 3]
+          : 'Unknown Artist';
+      final album = parts.length >= 2
+          ? parts[parts.length - 2]
+          : 'Unknown Album';
+      final title = p
+          .basenameWithoutExtension(file.name)
           .replaceFirst(RegExp(r'^\d{1,3}[\s._-]+'), '');
-      await LibraryDownloader().save(Song(
-        id: 'soulseek:' + sha256.convert(utf8.encode(file.key)).toString(),
-        title: metadata?.title?.trim().isNotEmpty == true ? metadata!.title! : title,
-        artist: metadata?.artist?.trim().isNotEmpty == true ? metadata!.artist! : artist,
-        album: metadata?.album?.trim().isNotEmpty == true ? metadata!.album : album,
-        albumArtist: metadata?.albumArtist,
-        duration: Duration(milliseconds:
-            metadata?.duration ?? ((file.duration ?? 0) * 1000)),
-        fileType: file.extension,
-        filePath: source,
-        sourceDisplayName: 'Soulseek',
-      ));
+      await LibraryDownloader().save(
+        Song(
+          id: 'soulseek:' + sha256.convert(utf8.encode(file.key)).toString(),
+          title: metadata?.title?.trim().isNotEmpty == true
+              ? metadata!.title!
+              : title,
+          artist: metadata?.artist?.trim().isNotEmpty == true
+              ? metadata!.artist!
+              : artist,
+          album: metadata?.album?.trim().isNotEmpty == true
+              ? metadata!.album
+              : album,
+          albumArtist: metadata?.albumArtist,
+          duration: Duration(
+            milliseconds: metadata?.duration ?? ((file.duration ?? 0) * 1000),
+          ),
+          fileType: file.extension,
+          filePath: source,
+          sourceDisplayName: 'Soulseek',
+        ),
+      );
       _pending.remove(file.key);
       _importRetryAfter.remove(file.key);
       await _savePending();
-      try { await audio.delete(); } catch (_) {}
+      try {
+        await audio.delete();
+      } catch (_) {}
     } catch (e) {
-      _importRetryAfter[file.key] = DateTime.now().add(const Duration(minutes: 2));
+      _importRetryAfter[file.key] = DateTime.now().add(
+        const Duration(minutes: 2),
+      );
       error = 'Could not add ' + file.name + ' to the library: $e';
       notifyListeners();
-    } finally { _importing.remove(file.key); }
+    } finally {
+      _importing.remove(file.key);
+    }
   }
 
   SoulseekTransfer? transferFor(SoulseekFile file) {
@@ -613,6 +879,7 @@ class SoulseekService extends ChangeNotifier {
     }
     return null;
   }
+
   bool queued(SoulseekFile file) => _pending.containsKey(file.key);
   int get pendingCount => _pending.length;
 }

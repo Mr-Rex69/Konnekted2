@@ -593,6 +593,7 @@ class _Uac2PreferencesSectionsState
 
   Widget _modeStatusRow(AudioOutputDiagnostics? diagnostics) {
     final modeDescription = switch (diagnostics?.pathManagement) {
+      AudioPathManagement.iosSystemManaged => 'iPhone system audio output manages the connected route.',
       AudioPathManagement.directUsbExperimental =>
         l10n.exclusiveUsbIsActiveAndBypassing,
       AudioPathManagement.androidMixerBitPerfect =>

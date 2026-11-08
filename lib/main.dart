@@ -1,4 +1,6 @@
+import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
 import 'package:flick/services/apple_music/apple_artist_logo_cache.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -19,7 +21,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/services/playback_cache_maintenance.dart';
 import 'package:flick/services/process_exit_diagnostics_service.dart';
-import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
 import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/core/utils/app_log.dart';
@@ -29,17 +30,76 @@ import 'package:flick/core/utils/frame_timings_monitor.dart';
 import 'package:flick/src/rust/api/logging.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/theme/app_theme.dart';
 import 'package:flick/services/notification_service.dart';
+import 'package:flick/services/ios_library_storage.dart';
 
 Future<void> main() async {
-  await runZonedGuarded(_bootstrapApp, (error, stack) {
-    AppLog.instance.add('$error\n$stack', source: LogSource.zone);
-  });
+  final started = Completer<void>();
+  runZonedGuarded(
+    () async {
+      try {
+        await _bootstrapApp();
+      } catch (error, stack) {
+        AppLog.instance.add('$error\n$stack', source: LogSource.crash);
+        runApp(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Lokal couldn’t start'),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Restart Lokal and try again. You can copy diagnostic details to help investigate.',
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => Clipboard.setData(
+                            ClipboardData(text: '$error\n$stack'),
+                          ),
+                          child: const Text('Copy diagnostic details'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      } finally {
+        if (!started.isCompleted) started.complete();
+      }
+    },
+    (error, stack) {
+      AppLog.instance.add('$error\n$stack', source: LogSource.zone);
+    },
+  );
+  await started.future;
 }
 
-Future<void> _bootstrapApp() async {
+/// IntegrationTest owns its binding zone and error handlers. Exercise the same
+/// real bootstrap without moving runApp into a different zone or swallowing
+/// failures that the test framework must report.
+@visibleForTesting
+Future<void> bootstrapForIntegrationTest({
+  Future<void> Function()? afterNativeInitialization,
+}) => _bootstrapApp(
+  installErrorHandlers: false,
+  afterNativeInitialization: afterNativeInitialization,
+);
+
+Future<void> _bootstrapApp({
+  bool installErrorHandlers = true,
+  Future<void> Function()? afterNativeInitialization,
+}) async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Observe memory pressure even when no Now Playing artwork is mounted.
   MotionArtMemoryPressure.instance.start();
 
   // Snapshot install freshness before anything can write to the preference
@@ -69,23 +129,29 @@ Future<void> _bootstrapApp() async {
     LocaleController.instance.effectiveLocale,
   );
 
-  FlutterError.onError = (details) {
-    AppLog.instance.add(
-      '${details.exception}\n${details.stack}',
-      source: LogSource.crash,
-    );
-    FlutterError.presentError(details);
-  };
-  PlatformDispatcher.instance.onError = (error, stack) {
-    AppLog.instance.add('$error\n$stack', source: LogSource.platform);
-    return true;
-  };
+  if (installErrorHandlers) {
+    FlutterError.onError = (details) {
+      AppLog.instance.add(
+        '${details.exception}\n${details.stack}',
+        source: LogSource.crash,
+      );
+      FlutterError.presentError(details);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      AppLog.instance.add('$error\n$stack', source: LogSource.platform);
+      return true;
+    };
+  }
 
   await RustLib.init();
+  // A native-only acceptance phase can run before any Dart playback owner is
+  // constructed. Production startup never supplies this callback.
+  if (afterNativeInitialization != null) await afterNativeInitialization();
   _subscribeRustLogs();
   unawaited(ProcessExitDiagnosticsService().reportPreviousExits());
 
   await Database.init();
+  await IosLibraryStorage.initialize();
   // Hydrate saved logos before artist pages can paint their first frame.
   await AppleArtistLogoCache.instance.restore();
 

@@ -22,6 +22,7 @@ import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/app_build_info_provider.dart';
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flick/core/utils/app_log.dart';
 import 'package:flick/core/utils/dev_log.dart';
@@ -61,11 +62,9 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     with WidgetsBindingObserver {
   late final PlayerService _player;
   final _jobNotification = LibraryJobNotification();
-  late final WidgetIntentHandler _widgetIntents;
-  late final ProviderSubscription<PlayerState> _widgetSync;
-  late final _jobProgress = LokalStatusSnack(
-    () => mounted ? context : null,
-  );
+  WidgetIntentHandler? _widgetIntents;
+  ProviderSubscription<PlayerState>? _widgetSync;
+  late final _jobProgress = LokalStatusSnack(() => mounted ? context : null);
   late final _playbackProgress = LokalStatusSnack(
     () => mounted ? context : null,
   );
@@ -75,7 +74,8 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     final message = QueuePreResolver.shared.status.value;
     String? status = message;
     if (status == null && _player.isNetworkLoadingNotifier.value) {
-      final title = _player.onlinePreparationTitleNotifier.value ??
+      final title =
+          _player.onlinePreparationTitleNotifier.value ??
           _player.currentSongNotifier.value?.title;
       final current = _player.currentSongNotifier.value;
       final bufferedMs = _player.bufferedPositionNotifier.value.inMilliseconds;
@@ -84,13 +84,15 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
       // Use Media3's actual buffered *playback duration*, clearly labelled,
       // rather than a misleading static provider '5%' completion estimate.
       if (current?.sourcePackage == 'konnekted.progressive' &&
-          title == current?.title && bufferedMs > 0 &&
+          title == current?.title &&
+          bufferedMs > 0 &&
           durationMs > 0) {
         final buffered = (bufferedMs * 100 / durationMs).clamp(0, 100).floor();
         status = 'Buffering $title… $buffered% of track buffered';
       } else {
         status = title == null || title.isEmpty
-            ? 'Preparing audio…' : 'Preparing $title…';
+            ? 'Preparing audio…'
+            : 'Preparing $title…';
       }
     }
     if (status == null) {
@@ -116,15 +118,17 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
         _showingUpdate ||
         release == null ||
         release.identity == _offeredUpdate ||
-        !ref.read(onboardingCompletedProvider))
+        !ref.read(onboardingCompletedProvider)) {
       return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           _backgrounded ||
           _showingWhatsNew ||
           _showingUpdate ||
-          ModalRoute.of(context)?.isCurrent == false)
+          ModalRoute.of(context)?.isCurrent == false) {
         return;
+      }
       _offeredUpdate = release.identity;
       _showingUpdate = true;
       _run('Update prompt', () async {
@@ -157,10 +161,11 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     ref.listenManual(libraryJobsProvider, (previous, next) {
       _jobNotification.update(next);
       _updateIconBusy();
-      if (next.running)
+      if (next.running) {
         _jobProgress.update(next.message);
-      else if (previous?.running == true)
+      } else if (previous?.running == true) {
         _jobProgress.fail(next.message);
+      }
     });
     ref.listenManual(konnektedLibraryProvider, (_, next) {
       final songs = next.value;
@@ -188,24 +193,27 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     ref.listenManual(updateCheckProvider, (_, next) {
       if (next.updateAvailable) _maybeShowUpdate();
     });
-    ref.listenManual<ConnectivityStatus>(
-      connectivityProvider,
-      (previous, next) {
-        if (previous != ConnectivityStatus.online &&
-            next == ConnectivityStatus.online) {
-          unawaited(_retryDesktopLyricsAfterReconnect());
-        }
-      },
-    );
+    ref.listenManual<ConnectivityStatus>(connectivityProvider, (
+      previous,
+      next,
+    ) {
+      if (previous != ConnectivityStatus.online &&
+          next == ConnectivityStatus.online) {
+        unawaited(_retryDesktopLyricsAfterReconnect());
+      }
+    });
     ref.read(updateCheckProvider.notifier);
     _widgetSync = installWidgetSync(ref);
-    _widgetIntents = WidgetIntentHandler(
-      ref,
-      onOpenQueue: () {
-        if (mounted) widget.onOpenQueue();
-      },
-    );
-    _run('Widget intent attachment', _widgetIntents.attach);
+    if (Platform.isAndroid) {
+      final intents = WidgetIntentHandler(
+        ref,
+        onOpenQueue: () {
+          if (mounted) widget.onOpenQueue();
+        },
+      );
+      _widgetIntents = intents;
+      _run('Widget intent attachment', intents.attach);
+    }
     _player.playbackDesyncedNotifier.addListener(_onPlaybackDesync);
     _player.onlinePlaybackError.addListener(_onOnlinePlaybackError);
     QueuePreResolver.shared.status.addListener(_onPreparationStatus);
@@ -326,9 +334,13 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     String key, {
     bool retryAfterFailure = false,
   }) async {
-    var success = await LokalDesktopSource.instance.syncPlayingDesktopLyrics(song);
+    var success = await LokalDesktopSource.instance.syncPlayingDesktopLyrics(
+      song,
+    );
     if (!success && retryAfterFailure) {
-      success = await LokalDesktopSource.instance.syncPlayingDesktopLyrics(song);
+      success = await LokalDesktopSource.instance.syncPlayingDesktopLyrics(
+        song,
+      );
     }
     if (!mounted) return;
     if (success) {
@@ -360,8 +372,7 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     if (state == AppLifecycleState.detached) {
       _run('Persist playback', _player.persistLastPlayed);
       _run('Widget shutdown sync', WidgetSyncService.instance.pushKilled);
-      // Match MainShell: this also deactivates the Android floating overlay.
-      _run('Detached player cleanup', _player.onAppResumed);
+      _run('Detached player cleanup', _player.onAppDetached);
       _run('Flush app log', AppLog.instance.flushToDisk);
       return;
     }
@@ -372,7 +383,9 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
       SpotifyLikesSyncService.instance.pause();
       ref.read(autoLibrarySyncServiceProvider).notifyPaused();
       _run('Persist playback', _player.persistLastPlayed);
-      _run('Widget background sync', WidgetSyncService.instance.pushPaused);
+      if (Platform.isAndroid) {
+        _run('Widget background sync', WidgetSyncService.instance.pushPaused);
+      }
       _run('Pause app lifecycle', _player.onAppPaused);
       _run('Flush app log', AppLog.instance.flushToDisk);
       _finishPausedScrobble();
@@ -443,8 +456,9 @@ class _KonnektedRuntimeState extends ConsumerState<KonnektedRuntime>
     _player.durationNotifier.removeListener(_onPreparationStatus);
     _jobProgress.dispose();
     _jobNotification.dispose();
-    _widgetSync.close();
-    _run('Widget intent detach', _widgetIntents.detach);
+    _widgetSync?.close();
+    final intents = _widgetIntents;
+    if (intents != null) _run('Widget intent detach', intents.detach);
     _run('Discord presence shutdown', DiscordPresenceService.instance.stop);
     super.dispose();
   }

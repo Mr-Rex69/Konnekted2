@@ -31,34 +31,50 @@ Future<ValidatedArtwork?> validateArtworkBytes(
   if (bytes.isEmpty || bytes.length > artworkMaxBytes) return null;
   return Isolate.run(() {
     try {
-      final jpeg = bytes.length >= 3 &&
-          bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff;
-      final png = bytes.length >= 8 &&
-          bytes[0] == 0x89 && bytes[1] == 0x50 &&
-          bytes[2] == 0x4e && bytes[3] == 0x47;
-      final webp = bytes.length >= 12 &&
+      final jpeg =
+          bytes.length >= 3 &&
+          bytes[0] == 0xff &&
+          bytes[1] == 0xd8 &&
+          bytes[2] == 0xff;
+      final png =
+          bytes.length >= 8 &&
+          bytes[0] == 0x89 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x4e &&
+          bytes[3] == 0x47;
+      final webp =
+          bytes.length >= 12 &&
           String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
           String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP';
       if (!jpeg && !png && !webp) return null;
 
       // The older image decoder tolerates truncated JPEG scans. Even when
       // decoding appears successful, do not embed bytes without JPEG EOI.
-      if (jpeg && (bytes[bytes.length - 2] != 0xff ||
-          bytes[bytes.length - 1] != 0xd9)) return null;
+      if (jpeg &&
+          (bytes[bytes.length - 2] != 0xff ||
+              bytes[bytes.length - 1] != 0xd9)) {
+        return null;
+      }
 
       final decoder = image.findDecoderForData(bytes);
       final info = decoder?.startDecode(bytes);
       final width = info?.width ?? 0;
       final height = info?.height ?? 0;
-      if (width <= 0 || height <= 0 ||
+      if (width <= 0 ||
+          height <= 0 ||
           width > artworkMaxPixels ~/ height ||
-          math.min(width, height) < 32) return null;
+          math.min(width, height) < 32) {
+        return null;
+      }
 
       // Header-only checks are insufficient: verify complete decodability.
       // Decode exactly one frame, even if a provider returns animated WebP.
       final decoded = image.decodeImage(bytes, frame: 0);
-      if (decoded == null || decoded.width != width ||
-          decoded.height != height) return null;
+      if (decoded == null ||
+          decoded.width != width ||
+          decoded.height != height) {
+        return null;
+      }
       final result = ensureJpeg && !jpeg
           ? Uint8List.fromList(image.encodeJpg(decoded, quality: 92))
           : bytes;

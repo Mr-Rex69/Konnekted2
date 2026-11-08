@@ -28,6 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _TestArtistMetadata extends ArtistMetadata {
+  void publish(Map<String, String> portraits) => state = portraits;
   _TestArtistMetadata(this.portraits);
   final Map<String, String> portraits;
 
@@ -63,6 +64,7 @@ class _PendingPlayPlayer extends _Player {
   Future<void> play(
     Song song, {
     List<Song>? playlist,
+    int? playlistIndex,
     PlaybackContext? context,
   }) {
     calls++;
@@ -240,135 +242,142 @@ void main() {
     expect(await metadata([_song, _duplicate]), '1999  ·  1 song  ·  3 min');
   });
 
-  testWidgets(
-    'top song tap does not flash or disable the header Play button',
-    (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      _PendingPlayPlayer.pending = Completer<void>();
-      _PendingPlayPlayer.calls = 0;
-      addTearDown(() {
-        if (_PendingPlayPlayer.pending?.isCompleted == false) {
-          _PendingPlayPlayer.pending!.complete();
-        }
-        _PendingPlayPlayer.pending = null;
-      });
-      final songs = [
-        const Song(
-          id: 'top-1',
-          title: 'Top Song 1',
-          artist: 'Artist',
-          album: 'Album',
-          duration: Duration(minutes: 3),
-          fileType: 'FLAC',
-        ),
-        const Song(
-          id: 'top-2',
-          title: 'Top Song 2',
-          artist: 'Artist',
-          album: 'Album',
-          duration: Duration(minutes: 4),
-          fileType: 'FLAC',
-        ),
-      ];
-      await tester.pumpWidget(
-        _app(
-          LokalMusicDetailPage.artist(name: 'Artist', localSongs: songs),
-          library: songs,
-          playerFactory: _PendingPlayPlayer.new,
-        ),
-      );
-      await tester.pump();
-      await tester.ensureVisible(find.text('Top Song 1').first);
-      await tester.pump();
-      await tester.tap(find.text('Top Song 1').first);
-      await tester.pump();
-
-      expect(_PendingPlayPlayer.calls, 1);
-      final play = find.byType(FilledButton).first;
-      expect(tester.widget<FilledButton>(play).onPressed, isNotNull);
-      expect(find.descendant(
-        of: play,
-        matching: find.byIcon(Icons.play_arrow_rounded),
-      ), findsOneWidget);
-      expect(find.descendant(
-        of: play,
-        matching: find.byType(CircularProgressIndicator),
-      ), findsNothing);
-
-      // Repeated taps during an outstanding playback request are ignored
-      // without toggling the header button into a disabled/loading state.
-      await tester.tap(find.text('Top Song 1').first);
-      await tester.pump();
-      expect(_PendingPlayPlayer.calls, 1);
-      expect(tester.widget<FilledButton>(play).onPressed, isNotNull);
-      _PendingPlayPlayer.pending!.complete();
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'artist hero never briefly shows a featured album cover',
-    (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      const song = Song(
-        id: 'artist-local-song',
-        title: 'Top Song',
+  testWidgets('top song tap does not flash or disable the header Play button', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    _PendingPlayPlayer.pending = Completer<void>();
+    _PendingPlayPlayer.calls = 0;
+    addTearDown(() {
+      if (_PendingPlayPlayer.pending?.isCompleted == false) {
+        _PendingPlayPlayer.pending!.complete();
+      }
+      _PendingPlayPlayer.pending = null;
+    });
+    final songs = [
+      const Song(
+        id: 'top-1',
+        title: 'Top Song 1',
         artist: 'Artist',
-        album: 'Featured album',
-        albumArt: '/tmp/featured_album_cover_not_a_portrait.jpg',
+        album: 'Album',
         duration: Duration(minutes: 3),
         fileType: 'FLAC',
-      );
-      final artistPage = LokalMusicDetailPage.artist(
-        name: 'Artist',
-        localSongs: const [song],
-      );
+      ),
+      const Song(
+        id: 'top-2',
+        title: 'Top Song 2',
+        artist: 'Artist',
+        album: 'Album',
+        duration: Duration(minutes: 4),
+        fileType: 'FLAC',
+      ),
+    ];
+    await tester.pumpWidget(
+      _app(
+        LokalMusicDetailPage.artist(name: 'Artist', localSongs: songs),
+        library: songs,
+        playerFactory: _PendingPlayPlayer.new,
+      ),
+    );
+    await tester.pump();
+    await tester.ensureVisible(find.text('Top Song 1').first);
+    await tester.pump();
+    await tester.tap(find.text('Top Song 1').first);
+    await tester.pump();
 
-      // Before metadata is available, the hero must be neutral. Even when
-      // the artist has a known album cover, it may never fill the hero.
-      await tester.pumpWidget(_app(artistPage, library: const [song]));
-      await tester.pump();
-      final hero = find.byType(LokalArtworkReveal);
-      expect(hero, findsOneWidget);
-      final initialImages = tester.widgetList<CachedImageWidget>(
-        find.descendant(of: hero, matching: find.byType(CachedImageWidget)),
-      );
-      expect(initialImages, isEmpty);
-      expect(
-        tester.widget<LokalArtworkReveal>(hero).identity,
-        'artist:artist:',
-      );
-      expect(tester.takeException(), isNull);
+    expect(_PendingPlayPlayer.calls, 1);
+    final play = find.byType(FilledButton).first;
+    expect(tester.widget<FilledButton>(play).onPressed, isNotNull);
+    expect(
+      find.descendant(
+        of: play,
+        matching: find.byIcon(Icons.play_arrow_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: play,
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
 
-      // Once an actual artist portrait is provided, it is the only source
-      // allowed in the hero and the featured album remains excluded.
-      const portrait = '/tmp/verified_artist_portrait.png';
-      await tester.pumpWidget(_app(
-        artistPage,
-        library: const [song],
-        artistPortraits: const {'artist': portrait},
-      ));
-      await tester.pump();
-      final updatedHero = find.byType(LokalArtworkReveal);
-      final images = tester.widgetList<CachedImageWidget>(
-        find.descendant(of: updatedHero, matching: find.byType(CachedImageWidget)),
-      ).toList();
-      expect(images, hasLength(1));
-      expect(images.single.imagePath, portrait);
-      expect(images.single.audioSourcePath, isNull);
-      expect(
-        tester.widget<LokalArtworkReveal>(updatedHero).identity,
-        'artist:artist:$portrait',
-      );
-      expect(tester.takeException(), isNull);
-    },
-  );
+    // Repeated taps during an outstanding playback request are ignored
+    // without toggling the header button into a disabled/loading state.
+    await tester.tap(find.text('Top Song 1').first);
+    await tester.pump();
+    expect(_PendingPlayPlayer.calls, 1);
+    expect(tester.widget<FilledButton>(play).onPressed, isNotNull);
+    _PendingPlayPlayer.pending!.complete();
+    await tester.pump();
+    for (var i = 0; i < 3; i++) { await tester.pump(const Duration(seconds: 30)); }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('artist hero never briefly shows a featured album cover', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    const song = Song(
+      id: 'artist-local-song',
+      title: 'Top Song',
+      artist: 'Artist',
+      album: 'Featured album',
+      albumArt: '/tmp/featured_album_cover_not_a_portrait.jpg',
+      duration: Duration(minutes: 3),
+      fileType: 'FLAC',
+    );
+    final artistPage = LokalMusicDetailPage.artist(
+      name: 'Artist',
+      localSongs: const [song],
+    );
+
+    // Before metadata is available, the hero must be neutral. Even when
+    // the artist has a known album cover, it may never fill the hero.
+    await tester.pumpWidget(_app(artistPage, library: const [song]));
+    await tester.pump();
+    final hero = find.byType(LokalArtworkReveal);
+    expect(hero, findsOneWidget);
+    final initialImages = tester.widgetList<CachedImageWidget>(
+      find.descendant(of: hero, matching: find.byType(CachedImageWidget)),
+    );
+    expect(initialImages, isEmpty);
+    expect(tester.widget<LokalArtworkReveal>(hero).identity, 'artist:artist:');
+    expect(tester.takeException(), isNull);
+
+    // Once an actual artist portrait is provided, it is the only source
+    // allowed in the hero and the featured album remains excluded.
+    const portrait = '/tmp/verified_artist_portrait.png';
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(LokalMusicDetailPage)),
+    );
+    (container.read(artistMetadataProvider.notifier) as _TestArtistMetadata)
+        .publish({'artist': portrait});
+    await tester.pump();
+    final updatedHero = find.byType(LokalArtworkReveal);
+    final images = tester
+        .widgetList<CachedImageWidget>(
+          find.descendant(
+            of: updatedHero,
+            matching: find.byType(CachedImageWidget),
+          ),
+        )
+        .toList();
+    expect(images, hasLength(1));
+    expect(images.single.imagePath, portrait);
+    expect(images.single.audioSourcePath, isNull);
+    expect(
+      tester.widget<LokalArtworkReveal>(updatedHero).identity,
+      'artist:artist:$portrait',
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('album hero retains album-cover fallback', (tester) async {
     const song = Song(
@@ -380,26 +389,31 @@ void main() {
       duration: Duration(minutes: 4),
       fileType: 'FLAC',
     );
-    await tester.pumpWidget(_app(
-      LokalMusicDetailPage.album(
-        title: 'Album',
-        artist: 'Artist',
-        localSongs: const [song],
+    await tester.pumpWidget(
+      _app(
+        LokalMusicDetailPage.album(
+          title: 'Album',
+          artist: 'Artist',
+          localSongs: const [song],
+        ),
+        library: const [song],
       ),
-      library: const [song],
-    ));
+    );
     await tester.pump();
     final hero = find.byType(LokalArtworkReveal);
     final images = tester.widgetList<CachedImageWidget>(
       find.descendant(of: hero, matching: find.byType(CachedImageWidget)),
     );
-    expect(images.map((image) => image.imagePath),
-        contains('/tmp/local_album_cover.jpg'));
+    expect(
+      images.map((image) => image.imagePath),
+      contains('/tmp/local_album_cover.jpg'),
+    );
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('artist content keeps the theme background when scrolled',
-      (tester) async {
+  testWidgets('artist content keeps the theme background when scrolled', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -414,13 +428,15 @@ void main() {
         fileType: 'FLAC',
       ),
     );
-    await tester.pumpWidget(_app(LokalMusicDetailPage.artist(
-      name: 'Artist',
-      localSongs: songs,
-    )));
+    await tester.pumpWidget(
+      _app(LokalMusicDetailPage.artist(name: 'Artist', localSongs: songs)),
+    );
     await tester.pump();
-    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -400));
-    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -400),
+    );
+    for (var i = 0; i < 3; i++) { await tester.pump(const Duration(seconds: 30)); }
 
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
     expect(scaffold.backgroundColor, LokalTokens.resolve(LokalThemeId.dark).bg);
@@ -432,19 +448,18 @@ void main() {
     expect(find.byType(LokalDetailProgressiveTopBlur), findsOneWidget);
     expect(find.byType(LokalDetailFloatingControls), findsOneWidget);
     expect(
-      tester.widget<LokalDetailHeader>(find.byType(LokalDetailHeader))
+      tester
+          .widget<LokalDetailHeader>(find.byType(LokalDetailHeader))
           .controlsInOverlay,
       isTrue,
     );
-    expect(
-      find.byType(DecoratedSliver),
-      findsOneWidget,
-    );
+    expect(find.byType(DecoratedSliver), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('main glass shell retains animated root tab navigation',
-      (tester) async {
+  testWidgets('main glass shell retains animated root tab navigation', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -457,10 +472,16 @@ void main() {
       find.byType(LokalNavigationSwitcher),
     );
     expect(switcher.retainVisitedTabs, isTrue);
-    expect(switcher.instantNavigation, isFalse,
-        reason: 'Glass footer optimizations must not remove the page slide');
-    expect(switcher.efficientMotion, isFalse,
-        reason: 'Root tabs use the original full-width adjacent-page push');
+    expect(
+      switcher.instantNavigation,
+      isFalse,
+      reason: 'Glass footer optimizations must not remove the page slide',
+    );
+    expect(
+      switcher.efficientMotion,
+      isFalse,
+      reason: 'Root tabs use the original full-width adjacent-page push',
+    );
   });
 
   testWidgets(
@@ -487,26 +508,25 @@ void main() {
       final library = find.byKey(const ValueKey(KonnektedTab.library));
       final search = find.byKey(const ValueKey(KonnektedTab.explore));
 
-      await tester.tap(find.descendant(
-        of: dock,
-        matching: find.bySemanticsLabel('Library'),
-      ));
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(tester.widget<KonnektedDock>(dock).selected,
-          KonnektedTab.library);
+      await tester.tap(
+        find.descendant(of: dock, matching: find.bySemanticsLabel('Library')),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(tester.widget<KonnektedDock>(dock).selected, KonnektedTab.library);
       final origin = tester.getCenter(library).dx;
       final width = tester.getSize(switcherFinder).width;
 
-      await tester.tap(find.descendant(
-        of: dock,
-        matching: find.bySemanticsLabel('Search'),
-      ));
+      await tester.tap(
+        find.descendant(of: dock, matching: find.bySemanticsLabel('Search')),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 55));
-      expect(tester.widget<KonnektedDock>(dock).selected,
-          KonnektedTab.explore);
-      expect(tester.widget<LokalNavigationSwitcher>(switcherFinder).direction,
-          1);
+      expect(tester.widget<KonnektedDock>(dock).selected, KonnektedTab.explore);
+      expect(
+        tester.widget<LokalNavigationSwitcher>(switcherFinder).direction,
+        1,
+      );
       final outgoingLibrary = tester.getCenter(library).dx;
       final incomingSearch = tester.getCenter(search).dx;
       expect(outgoingLibrary, lessThan(origin));
@@ -514,16 +534,16 @@ void main() {
       expect(incomingSearch - outgoingLibrary, closeTo(width, .1));
 
       await tester.pump(const Duration(milliseconds: 500));
-      await tester.tap(find.descendant(
-        of: dock,
-        matching: find.bySemanticsLabel('Library'),
-      ));
+      await tester.tap(
+        find.descendant(of: dock, matching: find.bySemanticsLabel('Library')),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 55));
-      expect(tester.widget<KonnektedDock>(dock).selected,
-          KonnektedTab.library);
-      expect(tester.widget<LokalNavigationSwitcher>(switcherFinder).direction,
-          -1);
+      expect(tester.widget<KonnektedDock>(dock).selected, KonnektedTab.library);
+      expect(
+        tester.widget<LokalNavigationSwitcher>(switcherFinder).direction,
+        -1,
+      );
       final outgoingSearch = tester.getCenter(search).dx;
       final incomingLibrary = tester.getCenter(library).dx;
       expect(outgoingSearch, greaterThan(origin));

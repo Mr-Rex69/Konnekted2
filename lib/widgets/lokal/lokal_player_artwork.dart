@@ -52,7 +52,8 @@ abstract final class LokalArtworkFlight {
     final control2 = Offset(full.dx + dx * .83, dock.dy + dip * 2.70);
     final close = 1.0 - t;
     final open = t;
-    final centre = full * (open * open * open) +
+    final centre =
+        full * (open * open * open) +
         control1 * (3 * open * open * close) +
         control2 * (3 * open * close * close) +
         dock * (close * close * close);
@@ -71,9 +72,7 @@ abstract final class LokalArtworkFlight {
 /// artwork portal active through those frames instead of silently reverting
 /// to a straight sheet slide.
 class LokalArtworkSource {
-  LokalArtworkSource(Rect? Function() read)
-      : _read = read,
-        _last = read();
+  LokalArtworkSource(Rect? Function() read) : _read = read, _last = read();
 
   final Rect? Function() _read;
   Rect? _last;
@@ -253,6 +252,12 @@ class _ArtworkPortal extends SingleChildRenderObjectWidget {
 class _RenderArtworkPortal extends RenderProxyBox {
   _RenderArtworkPortal(this._progress, this._sheetOffset, this._sourceArtwork);
 
+  // Chrome is repainted through an OpacityLayer even when its child has no
+  // repaint boundary. Its enclosing transforms must therefore be layers too;
+  // a canvas-only transform cannot position a subsequently composited layer.
+  @override
+  bool get alwaysNeedsCompositing => true;
+
   double _progress;
   double _sheetOffset;
   Rect? Function() _sourceArtwork;
@@ -343,9 +348,7 @@ class _RenderArtworkPortal extends RenderProxyBox {
     // Use the route's actual sheet travel. The fallback Hero tween derives
     // it from mini bounds, while the shared portal tracks drag/settle motion.
     final remaining = 1 - _progress;
-    final travel = remaining > 1e-4
-        ? (_sheetOffset / remaining).abs()
-        : null;
+    final travel = remaining > 1e-4 ? (_sheetOffset / remaining).abs() : null;
     final rect = LokalArtworkFlight.rect(
       from,
       to,

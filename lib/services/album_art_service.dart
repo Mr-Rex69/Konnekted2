@@ -40,6 +40,19 @@ class AlbumArtService {
   final MusicFolderService _musicFolderService = MusicFolderService();
   final Map<String, Future<String?>> _inFlightResolutions = {};
   final Map<String, String> _resolvedPaths = {};
+  final _materializedArtwork = ValueNotifier<({String source, String path})?>(
+    null,
+  );
+
+  /// Observe only completed owned cache writes; listening never extracts art.
+  ValueListenable<({String source, String path})?> get materializedArtwork =>
+      _materializedArtwork;
+
+  void _rememberResolvedPath(String source, String path) {
+    _resolvedPaths[source] = path;
+    _materializedArtwork.value = (source: source, path: path);
+  }
+
   // Once per server/protocol until a successful fetch: network failures must
   // be visible in exported diagnostics without flooding logs for every tile.
   final Set<String> _reportedNetworkCoverErrors = {};
@@ -107,8 +120,10 @@ class AlbumArtService {
 
   Future<File> _networkIndexFile(String key) async {
     final art = await _ensureArtworkDir();
-    return File('${art.path}/network-index/'
-        '${sha256.convert(utf8.encode(key))}.ref');
+    return File(
+      '${art.path}/network-index/'
+      '${sha256.convert(utf8.encode(key))}.ref',
+    );
   }
 
   Future<String?> _cachedNetworkArtwork(String key) async {
@@ -221,7 +236,7 @@ class AlbumArtService {
 
     try {
       final path = await future;
-      if (path != null) _resolvedPaths[audioSourcePath] = path;
+      if (path != null) _rememberResolvedPath(audioSourcePath, path);
       return path;
     } finally {
       // Multiple tiles may await the same album cover. Only remove the exact

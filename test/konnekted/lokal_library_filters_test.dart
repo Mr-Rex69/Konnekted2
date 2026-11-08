@@ -109,7 +109,7 @@ void main() {
       await tester.tap(find.text('All formats and qualities'));
       await tester.pumpAndSettle();
       await tester.tap(
-        find.widgetWithText(CheckedPopupMenuItem<String>, '24-bit / 96 kHz'),
+        find.text('24-bit / 96 kHz'),
       );
       await tester.pumpAndSettle();
       expect(find.text('local'), findsOneWidget);
@@ -117,7 +117,7 @@ void main() {
       await tester.tap(find.text('All songs'));
       await tester.pumpAndSettle();
       await tester.tap(
-        find.widgetWithText(CheckedPopupMenuItem<LokalSongLocation>, 'PC'),
+        find.text('PC'),
       );
       await tester.pumpAndSettle();
       expect(find.text('local'), findsNothing);

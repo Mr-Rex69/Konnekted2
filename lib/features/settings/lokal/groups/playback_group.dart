@@ -2,8 +2,10 @@ import 'package:flick/features/settings/widgets/lyrics_sources_panel.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flick/features/settings/screens/bluetooth_settings_screen.dart';
@@ -144,15 +146,16 @@ List<LokalSettingsSection> playbackSettings(
           enabled: !locked,
           onChanged: (value) => crossfade(enabled: value),
         ),
-        LokalSettingRow.toggle(
-          label: lokalText('Prepared stem mixes (experimental)'),
-          description: lokalText(
-            'Play verified offline Demucs transition clips for matching local songs. No model runs during playback; unsupported tracks use normal crossfade.',
+        if (Platform.isAndroid)
+          LokalSettingRow.toggle(
+            label: lokalText('Prepared stem mixes (experimental)'),
+            description: lokalText(
+              'Play verified offline Demucs transition clips for matching local songs. No model runs during playback; unsupported tracks use normal crossfade.',
+            ),
+            value: !locked && prefs.automixStemClipsEnabled,
+            enabled: !locked && prefs.crossfadeEnabled,
+            onChanged: notifier.setAutomixStemClipsEnabled,
           ),
-          value: !locked && prefs.automixStemClipsEnabled,
-          enabled: !locked && prefs.crossfadeEnabled,
-          onChanged: notifier.setAutomixStemClipsEnabled,
-        ),
         LokalSettingSlider(
           label: lokalText('Crossfade length'),
           description: lokalText('How long the two songs overlap.'),
@@ -288,71 +291,113 @@ List<LokalSettingsSection> outputSettings(BuildContext context, WidgetRef ref) {
   final notifier = ref.read(appPreferencesProvider.notifier);
   final player = ref.watch(playerServiceProvider);
   final locked = player.bitPerfectProcessingLockedNotifier.value;
-  final precision = ref.watch(outputPrecisionProvider).asData?.value ??
+  final precision =
+      ref.watch(outputPrecisionProvider).asData?.value ??
       OutputPrecisionPreference.auto;
   final engine = ref.watch(audioEnginePreferenceProvider).asData?.value;
   return [
-    LokalSettingsSection(
-      title: lokalText('Output precision'),
-      children: [
-        LokalSettingChoice<OutputPrecisionPreference>(
-          label: lokalText('Output precision'),
-          description: lokalText(
-            engine == AudioEnginePreference.rustOboe
-                ? 'PCM format used by Rust/Oboe. Auto follows device negotiation. '
-                  'Changes apply on the next track. Bit-perfect/DSD paths keep their native format.'
-                : 'Sets the PCM format when Rust/Oboe is selected. '
-                  'Android system playback, direct USB, DSD and Atmos use separate output negotiation.',
+    if (!Platform.isIOS)
+      LokalSettingsSection(
+        title: lokalText('Output precision'),
+        children: [
+          LokalSettingChoice<OutputPrecisionPreference>(
+            label: lokalText('Output precision'),
+            description: lokalText(
+              engine == AudioEnginePreference.rustOboe
+                  ? 'PCM format used by Rust/Oboe. Auto follows device negotiation. '
+                        'Changes apply on the next track. Bit-perfect/DSD paths keep their native format.'
+                  : 'Sets the PCM format when Rust/Oboe is selected. '
+                        'Android system playback, direct USB, DSD and Atmos use separate output negotiation.',
+            ),
+            options: [
+              LokalSegment(OutputPrecisionPreference.auto, lokalText('Auto')),
+              LokalSegment(
+                OutputPrecisionPreference.pcm16,
+                lokalText('16-bit PCM'),
+              ),
+              LokalSegment(
+                OutputPrecisionPreference.float32,
+                lokalText('32-bit float'),
+              ),
+            ],
+            value: precision,
+            onChanged: (value) async {
+              await ref
+                  .read(uac2PreferencesServiceProvider)
+                  .setOutputPrecision(value);
+              ref.invalidate(outputPrecisionProvider);
+            },
           ),
-          options: [
-            LokalSegment(OutputPrecisionPreference.auto, lokalText('Auto')),
-            LokalSegment(OutputPrecisionPreference.pcm16, lokalText('16-bit PCM')),
-            LokalSegment(OutputPrecisionPreference.float32, lokalText('32-bit float')),
-          ],
-          value: precision,
-          onChanged: (value) async {
-            await ref.read(uac2PreferencesServiceProvider).setOutputPrecision(value);
-            ref.invalidate(outputPrecisionProvider);
-          },
-        ),
-      ],
-    ),
-    LokalSettingsSection(
-      title: lokalText('USB DAC'),
-      children: [
-        LokalSettingLink(
-          label: lokalText('USB DAC'),
-          description: lokalText(
-            "Devices, playback engine, bit-perfect output, format, DSD and 432 Hz tuning.",
+        ],
+      ),
+    if (!Platform.isIOS)
+      LokalSettingsSection(
+        title: lokalText('USB DAC'),
+        children: [
+          LokalSettingLink(
+            label: lokalText('USB DAC'),
+            description: lokalText(
+              "Devices, playback engine, bit-perfect output, format, DSD and 432 Hz tuning.",
+            ),
+            onTap: () => _push(context, const Uac2SettingsScreen()),
           ),
-          onTap: () => _push(context, const Uac2SettingsScreen()),
-        ),
-      ],
-    ),
-    LokalSettingsSection(
-      title: lokalText('Bluetooth'),
-      children: [
-        LokalSettingLink(
-          label: lokalText('Bluetooth'),
-          description: lokalText(
-            'Codec, and what happens when headphones connect or drop.',
+        ],
+      ),
+    if (Platform.isIOS)
+      LokalSettingsSection(
+        title: 'Audio output',
+        children: [
+          LokalSettingLink(
+            label: 'AirPlay and headphones',
+            description: 'Choose an output using the iPhone audio controls.',
+            onTap: () => unawaited(
+              const MethodChannel('lokal/ios')
+                  .invokeMethod<void>('showRoutePicker'),
+            ),
           ),
-          onTap: () => _push(context, const BluetoothSettingsScreen()),
-        ),
-      ],
-    ),
+        ],
+      ),
+    if (!Platform.isIOS)
+      LokalSettingsSection(
+        title: lokalText('USB DAC'),
+        children: [
+          LokalSettingLink(
+            label: lokalText('USB DAC'),
+            description: lokalText(
+              "Devices, playback engine, bit-perfect output, format, DSD and 432 Hz tuning.",
+            ),
+            onTap: () => _push(context, const Uac2SettingsScreen()),
+          ),
+        ],
+      ),
+    if (!Platform.isIOS)
+      LokalSettingsSection(
+        title: lokalText('Bluetooth'),
+        children: [
+          LokalSettingLink(
+            label: lokalText('Bluetooth'),
+            description: lokalText(
+              'Codec, and what happens when headphones connect or drop.',
+            ),
+            onTap: () => _push(context, const BluetoothSettingsScreen()),
+          ),
+        ],
+      ),
     LokalSettingsSection(
       title: lokalText('Volume'),
       children: [
-        LokalSettingRow.toggle(
-          label: lokalText('Extended volume'),
-          description: lokalText('Let the volume go past 100 %, up to 200 %.'),
-          value: prefs.extendedVolumeEnabled,
-          onChanged: (value) async {
-            await notifier.setExtendedVolumeEnabled(value);
-            await player.setExtendedVolumeEnabled(value);
-          },
-        ),
+        if (!Platform.isIOS)
+          LokalSettingRow.toggle(
+            label: lokalText('Extended volume'),
+            description: lokalText(
+              'Let the volume go past 100 %, up to 200 %.',
+            ),
+            value: prefs.extendedVolumeEnabled,
+            onChanged: (value) async {
+              await notifier.setExtendedVolumeEnabled(value);
+              await player.setExtendedVolumeEnabled(value);
+            },
+          ),
         LokalSettingChoice<int>(
           label: lokalText('Crossfeed'),
           description: locked
@@ -370,32 +415,33 @@ List<LokalSettingsSection> outputSettings(BuildContext context, WidgetRef ref) {
         ),
       ],
     ),
-    LokalSettingsSection(
-      title: lokalText('Background'),
-      children: [
-        LokalSettingRow.toggle(
-          label: lokalText('Background playback anchor'),
-          description: lokalText(
-            'Optional compatibility mode for background bit-perfect audio. Keeps an extra silent audio stream running and may increase battery use.',
+    if (!Platform.isIOS)
+      LokalSettingsSection(
+        title: lokalText('Background'),
+        children: [
+          LokalSettingRow.toggle(
+            label: lokalText('Background playback anchor'),
+            description: lokalText(
+              'Help keep bit-perfect audio alive in the background. Some phones and routes may still stop it.',
+            ),
+            value: prefs.priorityAnchorEnabled,
+            onChanged: (value) {
+              player.setPriorityAnchorEnabled(value);
+              notifier.setPriorityAnchorEnabled(value);
+            },
           ),
-          value: prefs.priorityAnchorEnabled,
-          onChanged: (value) {
-            player.setPriorityAnchorEnabled(value);
-            notifier.setPriorityAnchorEnabled(value);
-          },
-        ),
-        LokalSettingRow.toggle(
-          label: lokalText('Moving covers in bit-perfect'),
-          description: lokalText(
-            'Play moving covers during bit-perfect output. Off: a still cover instead.',
+          LokalSettingRow.toggle(
+            label: lokalText('Moving covers in bit-perfect'),
+            description: lokalText(
+              'Play moving covers during bit-perfect output. Off: a still cover instead.',
+            ),
+            value: prefs.motionArtDuringBitPerfect,
+            onChanged: (value) {
+              player.setMotionArtDuringBitPerfect(value);
+              notifier.setMotionArtDuringBitPerfect(value);
+            },
           ),
-          value: prefs.motionArtDuringBitPerfect,
-          onChanged: (value) {
-            player.setMotionArtDuringBitPerfect(value);
-            notifier.setMotionArtDuringBitPerfect(value);
-          },
-        ),
-      ],
-    ),
+        ],
+      ),
   ];
 }

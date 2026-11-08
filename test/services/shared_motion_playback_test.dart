@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flick/services/motion_art/shared_motion_playback.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -8,6 +10,48 @@ class Clip {
 }
 
 void main() {
+  test(
+    'handoff waits for native pause while a new view reuses the decoder',
+    () async {
+      final pauseStarted = Completer<void>();
+      final quiet = Completer<void>();
+      var created = 0;
+      final pool = SharedMotionPlayback<Clip>(
+        create: (_) async {
+          created++;
+          return Clip();
+        },
+        activate: (clip, active) async {
+          if (!active) {
+            if (!pauseStarted.isCompleted) pauseStarted.complete();
+            await quiet.future;
+          }
+          clip.playing = active;
+        },
+        dispose: (clip) async => clip.disposed = true,
+      );
+      final old = await pool.acquire('song', 'https://video.test/loop.mp4');
+      await old.setActive(true);
+      var released = false;
+      final release = old.release().then((_) => released = true);
+      await pauseStarted.future;
+      expect(released, isFalse);
+      final replacement = await pool.acquire(
+        'song',
+        'https://video.test/loop.mp4',
+      );
+      final play = replacement.setActive(true);
+      expect(replacement.resource, same(old.resource));
+      quiet.complete();
+      await Future.wait([release, play]);
+      expect(released, isTrue);
+      expect(replacement.resource.playing, isTrue);
+      expect(created, 1);
+      expect(replacement.resource.disposed, isFalse);
+      await replacement.release(immediate: true);
+      expect(replacement.resource.disposed, isTrue);
+    },
+  );
   test('expansion can take an existing frame synchronously without a second decode', () async {
     var created = 0;
     final pool = SharedMotionPlayback<Clip>(
@@ -34,20 +78,25 @@ void main() {
     await mini.release(immediate: true);
   });
 
-  test('Eco handoff rejects a network decoder but reuses a cached one', () async {
-    final pool = SharedMotionPlayback<Clip>(
-      create: (_) async => Clip(),
-      activate: (clip, active) async => clip.playing = active,
-      dispose: (clip) async => clip.disposed = true,
-    );
-    final network = await pool.acquire('song', 'https://video.test/a.mp4');
-    expect(pool.acquireExisting('song', allow: (_) => false), isNull);
-    final cached = pool.acquireExisting('song', allow: (clip) =>
-        identical(clip, network.resource));
-    expect(cached?.resource, same(network.resource));
-    await cached!.release(immediate: true);
-    await network.release(immediate: true);
-  });
+  test(
+    'Eco handoff rejects a network decoder but reuses a cached one',
+    () async {
+      final pool = SharedMotionPlayback<Clip>(
+        create: (_) async => Clip(),
+        activate: (clip, active) async => clip.playing = active,
+        dispose: (clip) async => clip.disposed = true,
+      );
+      final network = await pool.acquire('song', 'https://video.test/a.mp4');
+      expect(pool.acquireExisting('song', allow: (_) => false), isNull);
+      final cached = pool.acquireExisting(
+        'song',
+        allow: (clip) => identical(clip, network.resource),
+      );
+      expect(cached?.resource, same(network.resource));
+      await cached!.release(immediate: true);
+      await network.release(immediate: true);
+    },
+  );
 
   test('full player and thumbnail share one decoder and the same frame across handoff', () async {
     var created = 0, disposed = 0;
@@ -93,39 +142,41 @@ void main() {
     await full.release(immediate: true);
     expect(full.resource.disposed, isTrue);
   });
-  test('last lease pauses during handoff and resumes without decoding again', () async {
-    var created = 0;
-    var disposed = 0;
-    final transitions = <bool>[];
-    final pool = SharedMotionPlayback<Clip>(
-      create: (_) async {
-        created++;
-        return Clip();
-      },
-      activate: (clip, active) async {
-        clip.playing = active;
-        transitions.add(active);
-      },
-      dispose: (clip) async {
-        clip.disposed = true;
-        disposed++;
-      },
-    );
+  test(
+    'last lease pauses during handoff and resumes without decoding again',
+    () async {
+      var created = 0;
+      var disposed = 0;
+      final transitions = <bool>[];
+      final pool = SharedMotionPlayback<Clip>(
+        create: (_) async {
+          created++;
+          return Clip();
+        },
+        activate: (clip, active) async {
+          clip.playing = active;
+          transitions.add(active);
+        },
+        dispose: (clip) async {
+          clip.disposed = true;
+          disposed++;
+        },
+      );
 
-    final first = await pool.acquire('song', 'https://video.test/loop.mp4');
-    await first.setActive(true);
-    await first.release();
-    expect(first.resource.playing, isFalse);
-    expect(disposed, 0, reason: 'retain the decoder for a short handoff');
+      final first = await pool.acquire('song', 'https://video.test/loop.mp4');
+      await first.setActive(true);
+      await first.release();
+      expect(first.resource.playing, isFalse);
+      expect(disposed, 0, reason: 'retain the decoder for a short handoff');
 
-    final next = await pool.acquire('song', 'https://video.test/loop.mp4');
-    expect(next.resource, same(first.resource));
-    await next.setActive(true);
-    expect(next.resource.playing, isTrue);
-    expect(created, 1);
-    await next.release(immediate: true);
-    expect(disposed, 1);
-    expect(transitions, [true, false, true, false]);
-  });
-
+      final next = await pool.acquire('song', 'https://video.test/loop.mp4');
+      expect(next.resource, same(first.resource));
+      await next.setActive(true);
+      expect(next.resource.playing, isTrue);
+      expect(created, 1);
+      await next.release(immediate: true);
+      expect(disposed, 1);
+      expect(transitions, [true, false, true, false]);
+    },
+  );
 }

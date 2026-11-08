@@ -1,7 +1,10 @@
-import 'package:flick/core/theme/lokal_performance_scope.dart';
 import 'desktop_remote_full_player.dart';
+
 import 'package:flick/providers/lokal_remote_provider.dart';
+
 import 'dart:io';
+
+import 'package:flick/core/theme/lokal_performance_scope.dart';
 import 'package:flick/features/music_videos/media3_music_video_surface.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/internet_radio/radio_now_playing_page.dart';
@@ -13,6 +16,7 @@ import 'package:flick/features/player/widgets/full_bleed_artwork_frame.dart';
 import 'package:flick/features/player/widgets/full_player_identity_layout.dart';
 
 import '../widgets/artist_credit_links.dart';
+
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 
 import 'package:flick/core/theme/lokal_appearance.dart';
@@ -33,10 +37,13 @@ import '../widgets/player_song_blur_background.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
 import '../widgets/lyrics_focus_timing.dart';
+
 import 'package:flick/core/utils/app_log.dart';
+
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
 import '../widgets/immersive_lyrics_stage.dart';
+import '../widgets/video_space_layout.dart';
 import '../widgets/space_cover_bloom_reveal.dart';
 import '../widgets/material_player_thumb.dart';
 
@@ -71,7 +78,7 @@ import '../widgets/lyrics_subline_buttons.dart';
 import 'package:flick/features/player/widgets/shuffle_mode_sheet.dart';
 import 'package:flick/features/player/widgets/sleep_timer_bottom_sheet.dart';
 import 'package:flick/features/player/widgets/pitch_bottom_sheet.dart';
-import 'package:flick/features/player/widgets/full_player_usb_restart_menu.dart';
+import 'package:flick/features/player/widgets/full_player_song_menu.dart';
 import 'package:flick/features/konnekted/library/lokal_navigation.dart';
 import 'package:flick/features/player/widgets/song_metadata_sheet.dart';
 import 'package:flick/features/player/widgets/speed_bottom_sheet.dart';
@@ -87,6 +94,7 @@ import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/lyrics_sources.dart';
 import 'package:flick/services/lyrics_playback_prefetch.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/external_playback_owner.dart';
 import 'package:flick/services/player_volume_control.dart';
 
 import '../widgets/android_output_chooser.dart';
@@ -98,6 +106,7 @@ const String _font = 'GoogleSansFlex';
 /// entry points working with this player.
 class FullPlayerScreen extends ConsumerStatefulWidget {
   final Object heroTag;
+
   /// When supplied, this same full player presents a video instead of song
   /// audio. The local audio queue is not replaced by a different recording.
   final Song? videoSong;
@@ -119,6 +128,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   final LyricsService _lyricsService = LyricsService();
 
   bool _videoFullscreen = false;
+  bool _exitingVideo = false;
+  bool _videoRouteReleased = false;
   bool _immersiveLyrics = false;
   // Keep the subtitle layer alive until the exit reveal finishes.
   bool _spaceLayerMounted = false;
@@ -126,8 +137,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   bool _spaceCanvasMode = false;
   bool _spaceFullCover = false;
   bool _spaceWaitingForQueue = false;
-  final GlobalKey _spacePanelKey =
-      GlobalKey(debugLabel: 'space-player-panel');
+  final GlobalKey _spacePanelKey = GlobalKey(debugLabel: 'space-player-panel');
   bool _spacePanelCompact = false;
 
   /// Resolve the current artwork bounds without reparenting media surfaces.
@@ -137,10 +147,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       return null;
     }
     if (fullCover) {
-      final bannerHeight = (_posterBottom ??
-          player.size.width + MediaQuery.paddingOf(context).top + 56)
-          .clamp(1.0, player.size.height)
-          .toDouble();
+      final bannerHeight =
+          (_posterBottom ??
+                  player.size.width + MediaQuery.paddingOf(context).top + 56)
+              .clamp(1.0, player.size.height)
+              .toDouble();
       return Rect.fromLTWH(0, 0, player.size.width, bannerHeight);
     }
     // The panel delegate and the mask use the very same size/offset
@@ -164,8 +175,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   double _spaceArtworkCornerRadius() {
     if (_spaceFullCover || _spaceCanvasMode) return 0;
     final lyrics = _lyricsProgress.value;
-    final compact = (_queueProgress.value * (1 - lyrics) + lyrics)
-        .clamp(0.0, 1.0);
+    final compact = (_queueProgress.value * (1 - lyrics) + lyrics).clamp(
+      0.0,
+      1.0,
+    );
     return lerpDouble(20, 12, compact)!;
   }
 
@@ -181,27 +194,44 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _queueProgress,
   ]);
 
-  late final AnimationController _spaceProgress = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 620),
-    reverseDuration: const Duration(milliseconds: 500),
-  )..addStatusListener((status) {
-      if (status == AnimationStatus.dismissed &&
-          !_immersiveLyrics && _spaceLayerMounted && mounted) {
-        setState(() => _spaceLayerMounted = false);
-      }
-    });
+  late final AnimationController _spaceProgress =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 620),
+        reverseDuration: const Duration(milliseconds: 500),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.dismissed &&
+            !_immersiveLyrics &&
+            _spaceLayerMounted &&
+            mounted) {
+          setState(() => _spaceLayerMounted = false);
+        }
+      });
 
-  late final Animation<double> _spaceChromeOpacity =
-      ReverseAnimation(CurvedAnimation(
-        parent: _spaceProgress,
-        curve: const Interval(0, .68, curve: Curves.easeOutCubic),
-      ));
-  final Media3MusicVideoController _videoController = Media3MusicVideoController();
-  final GlobalKey _videoSurfaceKey = GlobalKey(debugLabel: 'persistent-media3-video');
+  late final Animation<double> _spaceChromeOpacity = ReverseAnimation(
+    CurvedAnimation(
+      parent: _spaceProgress,
+      curve: const Interval(0, .68, curve: Curves.easeOutCubic),
+    ),
+  );
+  final Media3MusicVideoController _videoController =
+      Media3MusicVideoController();
+  final GlobalKey _videoSurfaceKey = GlobalKey(
+    debugLabel: 'persistent-media3-video',
+  );
 
-  String? get _activeVideoId => _videoOverrideId ?? widget.videoId;
+  bool _videoYielded = false;
+  ExternalPlaybackLease? _videoOutputLease;
+  String? get _activeVideoId =>
+      _videoYielded ? null : (_videoOverrideId ?? widget.videoId);
   bool get _videoActive => _activeVideoId != null;
+  bool get _usesEmbeddedVideo =>
+      _videoActive &&
+      (!Platform.isAndroid || !_videoController.nativeNotifier.value);
+  Song? get _displayedSong => _videoActive
+      ? (_videoOverrideSong ?? widget.videoSong)
+      : _player.currentSongNotifier.value;
+  bool get _displayedFavorite => _favForSongId == _displayedSong?.id && _isFav;
   String? _videoOverrideId;
   Song? _videoOverrideSong;
   bool _resumeAudioAfterVideo = false;
@@ -251,7 +281,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         return;
       }
       // End the poster dissolve below the actual artist/quality row.
-      final bottom = math.max(
+      final bottom =
+          math.max(
             slot.localToGlobal(Offset(0, slot.size.height), ancestor: frame).dy,
             info.localToGlobal(Offset(0, info.size.height), ancestor: frame).dy,
           ) +
@@ -325,6 +356,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   @override
   void initState() {
     super.initState();
+    _videoController.nativeNotifier.addListener(_onVideoBackendChanged);
+    if (widget.videoId != null) unawaited(_prepareInitialVideo());
     LokalPerformanceAdvisor.noteNavigation(surface: 'full-player');
     LokalPerformanceAdvisor.enterPlayerSurface('modern-full-player');
     _volumeControl = PlayerVolumeControl(_player);
@@ -344,13 +377,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _initialRouteAnimation = route;
     route?.addStatusListener(_onInitialRouteStatus);
     if (route == null || route.status == AnimationStatus.completed) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _finishInitialEntry());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _finishInitialEntry(),
+      );
     }
   }
 
   void _onInitialRouteStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _finishInitialEntry());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _finishInitialEntry(),
+      );
     }
   }
 
@@ -368,16 +405,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (song == null || !ref.read(musicVideosEnabledProvider)) return;
     // On-demand lookup (remembered by the same index as Library > Videos).
     // Only a positively identified official video earns the footer button.
-    unawaited(ref.read(musicVideoIndexProvider.notifier).find(song).catchError(
-      (Object _) => null,
-    ));
+    unawaited(
+      ref
+          .read(musicVideoIndexProvider.notifier)
+          .find(song)
+          .catchError((Object _) => null),
+    );
   }
 
   @override
   void dispose() {
     if (_videoFullscreen) {
       // Restore Lokal's default portrait orientation on every exit path.
-      unawaited(SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]));
+      unawaited(
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+      );
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
     _initialRouteAnimation?.removeStatusListener(_onInitialRouteStatus);
@@ -389,10 +431,32 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _lyricsProgress.dispose();
     _spaceProgress.dispose();
     _canvasChrome.dispose();
+    final videoLease = _videoOutputLease;
+    if (videoLease != null)
+      unawaited(videoLease.release().catchError((Object _) {}));
+    _videoController.nativeNotifier.removeListener(_onVideoBackendChanged);
     _videoController.dispose();
     _player.currentSongNotifier.removeListener(_onSongChanged);
     _player.favoriteNotificationToggleNotifier.removeListener(_refreshFavorite);
     super.dispose();
+  }
+
+  void _onVideoBackendChanged() {
+    void refresh() {
+      if (!mounted) return;
+      if (_usesEmbeddedVideo && _videoFullscreen) {
+        _toggleVideoFullscreen();
+      } else {
+        setState(() {});
+      }
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
+    } else {
+      refresh();
+    }
   }
 
   void _onSongChanged() {
@@ -408,12 +472,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   Future<void> _refreshFavorite() async {
-    final song = _player.currentSongNotifier.value;
+    final song = _displayedSong;
     if (song == null) return;
     // Notification toggles write through PlayerService's separate service.
     // Use a fresh reader to avoid a stale per-instance favorites cache.
     final fav = await FavoritesService().isFavorite(song.id);
-    if (!mounted || _player.currentSongNotifier.value?.id != song.id) return;
+    if (!mounted || _displayedSong?.id != song.id) return;
     setState(() {
       _isFav = fav;
       _favForSongId = song.id;
@@ -421,12 +485,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   Future<void> _toggleFavorite() async {
-    final song = _player.currentSongNotifier.value;
+    final song = _displayedSong;
     if (song == null) return;
     AppHaptics.selection();
     // Update the shared favorites provider: the Liked library folder watches
     // this provider, while a direct FavoritesService call left it stale.
-    final nowFav = await ref.read(favoritesProvider.notifier).toggleFavorite(song.id, song: song);
+    final nowFav = await ref
+        .read(favoritesProvider.notifier)
+        .toggleFavorite(song.id, song: song);
     if (!mounted) return;
     setState(() {
       _isFav = nowFav;
@@ -438,7 +504,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     bool force = false,
     bool refreshOnline = false,
   }) async {
-    final song = _videoOverrideSong ?? widget.videoSong ??
+    final song =
+        (_videoActive ? (_videoOverrideSong ?? widget.videoSong) : null) ??
         _player.currentSongNotifier.value;
     if (song == null) return;
     if (!force && _lyricsForSongId == song.id && _lyrics != null) return;
@@ -462,38 +529,54 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       final local = warm
           ? await LyricsPlaybackPrefetch.instance.local(song)
           : await _lyricsService.loadLyricsForSong(
-              song, forceRefresh: force, fetchOnline: false,
+              song,
+              forceRefresh: force,
+              fetchOnline: false,
               source: _lyricsSource,
             );
-      if (!mounted || request != _lyricsRequest ||
-          (_videoOverrideSong ?? widget.videoSong ??
-           _player.currentSongNotifier.value)?.id != song.id) return;
+      if (!mounted ||
+          request != _lyricsRequest ||
+          ((_videoActive ? (_videoOverrideSong ?? widget.videoSong) : null) ??
+                      _player.currentSongNotifier.value)
+                  ?.id !=
+              song.id)
+        return;
       setState(() {
-        _lyrics = LyricsService.mergeSupportingVocals(
-          local, [_embeddedBackgroundLyrics],
-        );
+        _lyrics = LyricsService.mergeSupportingVocals(local, [
+          _embeddedBackgroundLyrics,
+        ]);
         _lyricsLoading = local == null;
       });
       final best = warm
           ? await LyricsPlaybackPrefetch.instance.enhanced(song)
           : await _lyricsService.loadLyricsForSong(
-              song, forceRefresh: force, refreshOnline: refreshOnline,
+              song,
+              forceRefresh: force,
+              refreshOnline: refreshOnline,
               source: _lyricsSource,
               stillCurrent: () => mounted && request == _lyricsRequest,
-              fetchOnline: refreshOnline ||
+              fetchOnline:
+                  refreshOnline ||
                   ref.read(appPreferencesProvider).lyricsAutoFetch,
             );
-      if (!mounted || request != _lyricsRequest ||
-          (_videoOverrideSong ?? widget.videoSong ??
-           _player.currentSongNotifier.value)?.id != song.id) return;
+      if (!mounted ||
+          request != _lyricsRequest ||
+          ((_videoActive ? (_videoOverrideSong ?? widget.videoSong) : null) ??
+                      _player.currentSongNotifier.value)
+                  ?.id !=
+              song.id)
+        return;
       setState(() {
         final selected = lyricQualityRank(best) > lyricQualityRank(_lyrics)
-            ? best : _lyrics ?? best;
+            ? best
+            : _lyrics ?? best;
         // An online lead-timing upgrade must not remove independently timed
         // backing vocals that came from the audio file.
-        _lyrics = LyricsService.mergeSupportingVocals(
-          selected, [_lyrics, best, _embeddedBackgroundLyrics],
-        );
+        _lyrics = LyricsService.mergeSupportingVocals(selected, [
+          _lyrics,
+          best,
+          _embeddedBackgroundLyrics,
+        ]);
         _lyricsLoading = false;
       });
     } catch (_) {
@@ -526,11 +609,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         '[LyricsBG] fullscreenLookupError=${error.runtimeType}',
       );
     }
-    if (!mounted || request != _lyricsRequest ||
-        _lyricsForSongId != song.id) return;
-    final selected = LyricsService.mergeSupportingVocals(
-      _lyrics, [background],
-    );
+    if (!mounted || request != _lyricsRequest || _lyricsForSongId != song.id)
+      return;
+    final selected = LyricsService.mergeSupportingVocals(_lyrics, [background]);
     AppLog.instance.add(
       '[LyricsBG] fullscreenVisible embedded=${LyricsService.supportingVocalCount(background)} '
       'selected=${LyricsService.supportingVocalCount(selected)}',
@@ -574,14 +655,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     // queue without animation caused the artwork to pop into Space.
     _queue.setOpen(false, animate: _animate);
     HapticFeedback.selectionClick();
-    final active = _videoOverrideSong ??
-        widget.videoSong ?? _player.currentSongNotifier.value;
+    final active =
+        _videoOverrideSong ??
+        widget.videoSong ??
+        _player.currentSongNotifier.value;
     final fullCover = ref.read(lokalAppearanceProvider).fullscreenCover;
     _spaceFullCover = fullCover;
     // Canvas fills the art plane, so the wave leaves its centre clear.
-    _spaceCanvasMode = _videoFullscreen ||
-        (fullCover && active != null &&
-         _canvasReadyForSong == active.id);
+    _spaceCanvasMode =
+        _videoFullscreen ||
+        (fullCover && active != null && _canvasReadyForSong == active.id);
     _spaceCoverRect = _spaceArtworkBounds(fullCover);
     setState(() {
       _immersiveLyrics = true;
@@ -600,10 +683,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     LyricsData lyrics, {
     bool includeDisplayedSubline = false,
   }) async {
-    if (_savingLyricsFile ||
+    if (!mounted ||
+        _savingLyricsFile ||
         _lyricsForSongId != song.id ||
-        (_videoOverrideSong ?? widget.videoSong ??
-                _player.currentSongNotifier.value)?.id != song.id) {
+        _displayedSong?.id != song.id) {
       return;
     }
     setState(() => _savingLyricsFile = true);
@@ -616,15 +699,18 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       if (saved && mounted) {
         LokalToast.fromSnackBar(
           context,
-          SnackBar(content: Text(l10n.saved), behavior: SnackBarBehavior.floating),
+          SnackBar(
+            content: Text(l10n.saved),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } catch (_) {
       if (mounted) {
         LokalToast.fromSnackBar(
           context,
-          const SnackBar(
-            content: Text('Could not save lyrics to file.'),
+          SnackBar(
+            content: Text(lokalText('Could not save lyrics to file.')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -637,9 +723,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   VoidCallback? _saveTranslatedLyricsAction(Song song) {
     final selected = _sublineLyrics;
     if (selected == null ||
-        !selected.lines.any((line) =>
-            line.translation?.trim().isNotEmpty == true &&
-            line.translation!.trim() != line.text.trim())) {
+        !selected.lines.any(
+          (line) =>
+              line.translation?.trim().isNotEmpty == true &&
+              line.translation!.trim() != line.text.trim(),
+        )) {
       return null;
     }
     return () => unawaited(
@@ -649,12 +737,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   void _showSpaceOptions() {
     if (!_immersiveLyrics) return;
-    final shownSong = _videoOverrideSong ?? widget.videoSong ??
-        _player.currentSongNotifier.value;
+    final shownSong = _displayedSong;
     final source = _lyrics;
     void saveFromSheet({required bool includeTranslation}) {
-      final currentSong = _videoOverrideSong ?? widget.videoSong ??
-          _player.currentSongNotifier.value;
+      final currentSong = _displayedSong;
       if (shownSong == null ||
           currentSong?.id != shownSong.id ||
           _lyricsForSongId != shownSong.id) {
@@ -662,25 +748,29 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       }
       final selected = includeTranslation ? _sublineLyrics : _lyrics;
       if (selected == null || !hasUsableLyrics(selected)) return;
-      unawaited(_saveLyricsFile(
-        shownSong,
-        selected,
-        includeDisplayedSubline: includeTranslation,
-      ));
+      unawaited(
+        _saveLyricsFile(
+          shownSong,
+          selected,
+          includeDisplayedSubline: includeTranslation,
+        ),
+      );
     }
 
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, refreshSheet) => SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: ListView(
+              shrinkWrap: true,
               children: [
                 ListTile(
                   leading: const Icon(Icons.library_music_outlined),
-                  title: const Text('Lyrics source'),
+                  title: Text(lokalText('Lyrics source')),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     unawaited(_chooseImmersiveLyricsSource());
@@ -689,7 +779,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 if (source != null && hasUsableLyrics(source))
                   ListTile(
                     leading: const Icon(LucideIcons.download),
-                    title: const Text('Save original lyrics'),
+                    title: Text(lokalText('Save original lyrics')),
                     enabled: !_savingLyricsFile,
                     onTap: () {
                       Navigator.pop(sheetContext);
@@ -699,14 +789,20 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 if (source != null && hasUsableLyrics(source))
                   ListTile(
                     leading: const Icon(Icons.translate_rounded),
-                    title: const Text('Save with selected translation'),
-                    subtitle: const Text(
-                      'Includes the active translation or romanization.',
+                    title: Text(lokalText('Save with selected translation')),
+                    subtitle: Text(
+                      lokalText(
+                        'Includes the active translation or romanization.',
+                      ),
                     ),
-                    enabled: !_savingLyricsFile &&
-                        _sublineLyrics?.lines.any((line) =>
-                            line.translation?.trim().isNotEmpty == true &&
-                            line.translation!.trim() != line.text.trim()) == true,
+                    enabled:
+                        !_savingLyricsFile &&
+                        _sublineLyrics?.lines.any(
+                              (line) =>
+                                  line.translation?.trim().isNotEmpty == true &&
+                                  line.translation!.trim() != line.text.trim(),
+                            ) ==
+                            true,
                     onTap: () {
                       Navigator.pop(sheetContext);
                       saveFromSheet(includeTranslation: true);
@@ -756,7 +852,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ListTile(
                 title: Text(entry.value),
                 trailing: _lyricsSource == entry.key
-                    ? const Icon(Icons.check_rounded) : null,
+                    ? const Icon(Icons.check_rounded)
+                    : null,
                 onTap: () => Navigator.pop(sheetContext, entry.key),
               ),
           ],
@@ -807,7 +904,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     }
   }
 
-  void _close() {
+  Future<void> _close() async {
     if (_immersiveLyrics) {
       _toggleImmersiveLyrics();
     } else if (_videoFullscreen) {
@@ -815,69 +912,190 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     } else if (_videoOverrideId != null) {
       _exitVideoMode();
     } else {
-      Navigator.of(context).pop();
+      if (_videoActive) {
+        final released = await _releaseVideoAudio();
+        if (!released || !mounted) return;
+        setState(() => _videoRouteReleased = true);
+      }
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _yieldVideoOutput() async {
+    await _videoController.releaseAudio();
+    if (!mounted) return;
+    final wasFullscreen = _videoFullscreen;
+    setState(() {
+      _videoYielded = true;
+      _videoOverrideId = null;
+      _videoOverrideSong = null;
+      _resumeAudioAfterVideo = false;
+      _videoFullscreen = false;
+      _immersiveLyrics = false;
+    });
+    _videoController.reset();
+    _refreshFavorite();
+    if (wasFullscreen) {
+      unawaited(
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+      );
+      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    }
+    unawaited(_loadLyrics());
+  }
+
+  Future<void> _retireVideoForMediaReset() async {
+    _resumeAudioAfterVideo = false;
+    await _videoController.retireForMediaReset();
+  }
+
+  Future<void> _prepareInitialVideo() async {
+    try {
+      final lease = await _player.acquireExternalPlayback(
+        _yieldVideoOutput,
+        onMediaReset: _retireVideoForMediaReset,
+      );
+      _videoOutputLease = lease;
+      if (!mounted) {
+        await lease.release();
+      } else {
+        setState(() {});
+      }
+    } catch (_) {
+      if (mounted) setState(() => _videoYielded = true);
     }
   }
 
   Future<void> _enterVideoMode(Song song, String videoId) async {
     if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(videoId) ||
-        _enteringVideo || _videoOverrideId != null) return;
+        _enteringVideo ||
+        _exitingVideo ||
+        _videoOverrideId != null)
+      return;
     _enteringVideo = true;
     final wasPlaying = _player.isPlayingNotifier.value;
-    var entered = false;
+    final originalSong = _player.currentSongNotifier.value;
     try {
-      // One active audio owner: pause album audio before native video audio.
-      if (wasPlaying) await _player.pause();
-      if (!mounted || _player.currentSongNotifier.value?.id != song.id) return;
+      final lease = await _player.acquireExternalPlayback(
+        _yieldVideoOutput,
+        onMediaReset: _retireVideoForMediaReset,
+      );
+      _videoOutputLease = lease;
+      if (!mounted ||
+          lease.isReleased ||
+          !identical(_player.currentSongNotifier.value, originalSong)) {
+        await lease.release();
+        return;
+      }
       HapticFeedback.selectionClick();
       setState(() {
+        _videoYielded = false;
         _resumeAudioAfterVideo = wasPlaying;
         _videoOverrideSong = song;
         _videoOverrideId = videoId;
       });
       _videoController.reset();
+      _refreshFavorite();
       unawaited(_loadLyrics());
-      entered = true;
     } catch (_) {
-      // Resolver/player errors must not strand the original song paused.
+      if (mounted) {
+        LokalToast.fromSnackBar(
+          context,
+          const SnackBar(
+            content: Text(
+              'Playback changed or the previous output could not pause. Try video again.',
+            ),
+          ),
+        );
+      }
     } finally {
       _enteringVideo = false;
-      if (!entered && wasPlaying && mounted &&
-          _player.currentSongNotifier.value?.id == song.id &&
-          !_player.isPlayingNotifier.value) {
-        unawaited(_player.resume());
+    }
+  }
+
+  Future<bool> _releaseVideoAudio() async {
+    try {
+      final lease = _videoOutputLease;
+      if (lease != null) {
+        await lease.release();
+      } else {
+        await _videoController.releaseAudio();
+      }
+      return true;
+    } catch (_) {
+      if (mounted) {
+        LokalToast.fromSnackBar(
+          context,
+          const SnackBar(
+            content: Text(
+              'Video could not be paused. Try again before returning to audio.',
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _videoCommand(Future<void> Function() command) async {
+    try {
+      await command();
+    } catch (_) {
+      if (mounted) {
+        LokalToast.fromSnackBar(
+          context,
+          const SnackBar(
+            content: Text(
+              'Video controls are not ready. Try again or use the video controls.',
+            ),
+          ),
+        );
       }
     }
   }
 
-  void _exitVideoMode({bool resumeAudio = true}) {
+  Future<bool> _exitVideoMode({bool resumeAudio = true}) async {
+    if (_exitingVideo || _videoOverrideId == null) return false;
+    _exitingVideo = true;
+    final lease = _videoOutputLease;
+    final originalSong = _player.currentSongNotifier.value;
     final resume = resumeAudio && _resumeAudioAfterVideo;
-    setState(() {
-      _videoOverrideId = null;
-      _videoOverrideSong = null;
-      _resumeAudioAfterVideo = false;
-    });
-    _videoController.reset();
-    unawaited(_loadLyrics());
-    // Resuming song playback is explicit after returning to the player.
-    // The album version's clock cannot be equated with the music-video clock.
-    if (resume) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _videoOverrideId == null) unawaited(_player.resume());
-      });
+    final intent = _player.playbackIntentRevision;
+    try {
+      if (!await _releaseVideoAudio() || !mounted) return false;
+      if (resume && lease != null) {
+        await _player.resumeAfterExternalPlayback(
+          lease,
+          originalSong,
+          intentRevision: intent,
+        );
+      }
+      return true;
+    } finally {
+      _exitingVideo = false;
     }
   }
 
   void _toggleVideoFullscreen() {
+    if (!_videoFullscreen && _usesEmbeddedVideo) return;
     setState(() => _videoFullscreen = !_videoFullscreen);
-    unawaited(SystemChrome.setPreferredOrientations(
-      _videoFullscreen
-          ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
-          : [DeviceOrientation.portraitUp],
-    ));
-    unawaited(SystemChrome.setEnabledSystemUIMode(
-      _videoFullscreen ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
-    ));
+    unawaited(
+      SystemChrome.setPreferredOrientations(
+        _videoFullscreen
+            ? [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : [DeviceOrientation.portraitUp],
+      ),
+    );
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(
+        _videoFullscreen
+            ? SystemUiMode.immersiveSticky
+            : SystemUiMode.edgeToEdge,
+      ),
+    );
   }
 
   /// The native video is the only audio owner while open; the separate
@@ -891,171 +1109,184 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         onTap: _immersiveLyrics ? _toggleImmersiveLyrics : null,
         onLongPress: _immersiveLyrics ? _showSpaceOptions : null,
         child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Center(
-            child: LayoutBuilder(
-              builder: (context, box) {
-                final width = _videoFullscreen
-                    ? box.maxWidth
-                    : math.min(box.maxWidth, box.maxHeight * 16 / 9);
-                final height = _videoFullscreen
-                    ? box.maxHeight
-                    : width * 9 / 16;
-                return SizedBox(
-                  width: width,
-                  height: height,
-                  child: Media3MusicVideoSurface(
-                     key: _videoSurfaceKey,
-                     videoId: videoId,
-                     controller: _videoController,
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final width = _videoFullscreen
+                      ? box.maxWidth
+                      : math.min(box.maxWidth, box.maxHeight * 16 / 9);
+                  final height = _videoFullscreen
+                      ? box.maxHeight
+                      : width * 9 / 16;
+                  return SizedBox(
+                    width: width,
+                    height: height,
+                    child: Media3MusicVideoSurface(
+                      key: _videoSurfaceKey,
+                      videoId: videoId,
+                      controller: _videoController,
                       maxVideoHeight: ref.watch(videoQualityProvider),
-                     showControls: !_immersiveLyrics,
-                   ),
-                );
-              },
+                      showControls: !_immersiveLyrics,
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
-          if (!_immersiveLyrics && !_videoFullscreen)
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            if (!_immersiveLyrics && !_videoFullscreen)
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Close video',
+                          onPressed: _close,
+                          icon: const Icon(
+                            LucideIcons.chevronLeft,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'MUSIC VIDEO',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontFamily: _font,
+                              fontSize: 12,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Full-screen video',
+                          onPressed: _toggleVideoFullscreen,
+                          icon: const Icon(
+                            LucideIcons.maximize,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else if (!_immersiveLyrics)
+              SafeArea(
                 child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Close video',
-                        onPressed: _close,
-                        icon: const Icon(LucideIcons.chevronLeft, color: Colors.white),
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'MUSIC VIDEO',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white70,
+                  alignment: Alignment.topRight,
+                  child: IconButton(
+                    tooltip: 'Exit full-screen video',
+                    onPressed: _toggleVideoFullscreen,
+                    icon: const Icon(LucideIcons.minimize, color: Colors.white),
+                  ),
+                ),
+              ),
+            if (!_videoFullscreen)
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(25, 0, 25, 26),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
                             fontFamily: _font,
-                            fontSize: 12,
-                            letterSpacing: 1.2,
                             fontWeight: FontWeight.w700,
+                            fontSize: 24,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          song.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: _font,
+                            fontSize: 15,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Video playback via YouTube',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (_spaceLayerMounted)
+              Positioned.fill(
+                child: SpaceCoverBloomReveal(
+                  coverRect: _spaceCoverRect,
+                  coverRectResolver: () => _spaceArtworkBounds(_spaceFullCover),
+                  coverMotion: _spaceCoverMotion,
+                  coverCornerRadiusResolver: _spaceArtworkCornerRadius,
+                  canvasMode: _spaceCanvasMode,
+                  coverCornerRadius: _spaceFullCover ? 0 : 20,
+                  surfaceColor: const Color(0xFF171820),
+                  progress: _spaceProgress,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Positioned(
+                        left: 12,
+                        right: 12,
+                        bottom: math.max(
+                          MediaQuery.paddingOf(context).bottom + 52,
+                          MediaQuery.sizeOf(context).height * .28,
+                        ),
+                        child: IgnorePointer(
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable: _videoController.nativeNotifier,
+                            builder: (_, native, __) => native
+                                ? _spaceSubtitle(song)
+                                : const Text(
+                                    'Timed subtitles unavailable in video fallback',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Full-screen video',
-                        onPressed: _toggleVideoFullscreen,
-                        icon: const Icon(LucideIcons.maximize, color: Colors.white),
-                      ),
                     ],
                   ),
                 ),
               ),
-            )
-          else if (!_immersiveLyrics)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: IconButton(
-                  tooltip: 'Exit full-screen video',
-                  onPressed: _toggleVideoFullscreen,
-                  icon: const Icon(LucideIcons.minimize, color: Colors.white),
-                ),
-              ),
-            ),
-          if (!_videoFullscreen)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(25, 0, 25, 26),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: _font, fontWeight: FontWeight.w700,
-                          fontSize: 24, color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        song.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: _font, fontSize: 15, color: Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Video playback via YouTube',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                    ],
+            if (_spaceLayerMounted)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_immersiveLyrics,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _toggleImmersiveLyrics,
+                    onLongPress: _showSpaceOptions,
+                    child: const SizedBox.expand(),
                   ),
                 ),
               ),
-            ),
-          if (_spaceLayerMounted)
-            Positioned.fill(
-              child: SpaceCoverBloomReveal(
-                coverRect: _spaceCoverRect,
-                 coverRectResolver: () => _spaceArtworkBounds(_spaceFullCover),
-                 coverMotion: _spaceCoverMotion,
-                  coverCornerRadiusResolver: _spaceArtworkCornerRadius,
-                canvasMode: _spaceCanvasMode,
-                coverCornerRadius: _spaceFullCover ? 0 : 20,
-                surfaceColor: const Color(0xFF171820),
-                progress: _spaceProgress,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned(
-                      left: 12,
-                      right: 12,
-                      bottom: math.max(
-                        MediaQuery.paddingOf(context).bottom + 52,
-                        MediaQuery.sizeOf(context).height * .28,
-                      ),
-                      child: IgnorePointer(
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: _videoController.nativeNotifier,
-                          builder: (_, native, __) => native
-                              ? _spaceSubtitle(song)
-                              : const Text(
-                                  'Timed subtitles unavailable in video fallback',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (_spaceLayerMounted)
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: !_immersiveLyrics,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _toggleImmersiveLyrics,
-                  onLongPress: _showSpaceOptions,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1070,7 +1301,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       _burst++;
       _burstVisible = true;
     });
-    if (!_isFav) _toggleFavorite();
+    if (!_displayedFavorite) _toggleFavorite();
   }
 
   Future<void> _openEqualizer() => Navigator.of(context)
@@ -1080,13 +1311,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     MaterialPageRoute<void>(builder: (_) => const CastingSettingsScreen()),
   );
 
-  /// The menu follows the current recording, and the USB recovery option
-  /// appears only when UsbManager sees a physically attached DAC.
-  Future<void> _openMore(Song song) => showFullPlayerSongMenu(
-    context,
-    song: song,
-    player: _player,
-  );
+  /// Keep track-specific menu actions aligned with the live recording.
+  Future<void> _openMore(Song song) =>
+      showFullPlayerSongMenu(context, song: song, player: _player);
 
   // ───────────────────────────── build ─────────────────────────────
 
@@ -1096,7 +1323,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     // owns the transport. Render a remote-aware player instead of that stale
     // phone state; both branches remain in the same fullscreen route.
     if (widget.videoSong == null &&
-        ref.watch(lokalRemoteControllerProvider.select((s) => s.controlsDesktop))) {
+        ref.watch(
+          lokalRemoteControllerProvider.select((s) => s.controlsDesktop),
+        )) {
       return DesktopRemoteFullPlayer(onClose: _close);
     }
     // Stations share this exact spring-driven player route with local music
@@ -1122,7 +1351,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
     return PopScope(
       // Back puts the queue or the lyrics away first, then closes the player.
-      canPop: !_immersiveLyrics && _videoOverrideId == null && !_videoFullscreen && !_showLyrics && !_queue.isOpen,
+      canPop:
+          !_immersiveLyrics &&
+          _videoOverrideId == null &&
+          (!_videoActive || _videoRouteReleased) &&
+          !_videoFullscreen &&
+          !_showLyrics &&
+          !_queue.isOpen,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_immersiveLyrics) {
@@ -1135,20 +1370,34 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           _toggleLyrics();
         } else if (_queue.isOpen) {
           _setQueueOpen(false);
+        } else if (_videoActive) {
+          unawaited(_close());
         }
       },
       child: LokalPullToDismiss(
         onDismiss: _close,
         // Pulling up drags the queue in, following the finger.
-        onPullUpUpdate: _immersiveLyrics || _showLyrics ||
+        onPullUpUpdate:
+            _immersiveLyrics ||
+                _showLyrics ||
                 _videoOverrideId != null ||
-                widget.videoSong != null ? null : _queue.dragBy,
-        onPullUpEnd: _immersiveLyrics || _showLyrics ||
+                widget.videoSong != null
+            ? null
+            : _queue.dragBy,
+        onPullUpEnd:
+            _immersiveLyrics ||
+                _showLyrics ||
                 _videoOverrideId != null ||
-                widget.videoSong != null ? null : _releaseQueue,
+                widget.videoSong != null
+            ? null
+            : _releaseQueue,
         // While the queue is out, its header owns vertical drags.
-        isBlocked: () => _immersiveLyrics || _videoOverrideId != null || widget.videoSong != null ||
-            _carouselDragging || _queue.engaged,
+        isBlocked: () =>
+            _immersiveLyrics ||
+            _videoOverrideId != null ||
+            widget.videoSong != null ||
+            _carouselDragging ||
+            _queue.engaged,
         child: _scaffold(colors, isCasting, diagnostics),
       ),
     );
@@ -1161,6 +1410,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   ) {
     final videoSong = _videoOverrideSong ?? widget.videoSong;
     final videoId = _activeVideoId;
+    if (_videoActive && _videoOutputLease?.isReleased != false) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (_videoFullscreen && videoSong != null && videoId != null) {
       return _videoScaffold(videoSong, videoId);
     }
@@ -1169,247 +1424,290 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
     return Scaffold(
       backgroundColor: Colors.black,
-      body: ValueListenableBuilder<Song?>(
-        valueListenable: _player.currentSongNotifier,
-        builder: (context, playingSong, _) {
-          final song = videoSong ?? playingSong;
-          if (song == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final clearViewAvailable =
-              fullCover &&
-              _motionEnabled(song) &&
-              _canvasReadyForSong == song.id &&
-              !_showLyrics &&
-              !_immersiveLyrics &&
-              !_queue.engaged;
-          final hidden = clearViewAvailable && _canvasHidden;
-          return GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _immersiveLyrics
-                ? _toggleImmersiveLyrics
-                : (clearViewAvailable ? _toggleCanvasControls : null),
-            onLongPress: _immersiveLyrics ? _showSpaceOptions : null,
-            child: Stack(
-              key: _playerBoundsKey,
-              fit: StackFit.expand,
-              children: [
-                // One crossfade owns both the mesh blur and its fallback
-                // palette. Independent transitions could expose a sudden
-                // palette swap before the next cover finished decoding.
-                PlayerSongBlurBackground(
-                  song: song,
-                  colors: colors,
-                  fullCover: fullCover,
-                ),
-                if (fullCover)
-                  FadeTransition(
-                    opacity: _canvasChrome,
-                    child: const IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0x33000000),
-                               Color(0x08000000),
-                               Color(0x10000000),
-                               Color(0x40000000),
-                            ],
-                            stops: [0, .28, .66, 1],
-                          ),
-                        ),
+      body:
+          _immersiveLyrics &&
+              _usesEmbeddedVideo &&
+              videoSong != null &&
+              videoId != null
+          ? _embeddedVideoSpace(videoSong, videoId)
+          : ValueListenableBuilder<Song?>(
+              valueListenable: _player.currentSongNotifier,
+              builder: (context, playingSong, _) {
+                final song = videoSong ?? playingSong;
+                if (song == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final clearViewAvailable =
+                    fullCover &&
+                    _motionEnabled(song) &&
+                    _canvasReadyForSong == song.id &&
+                    !_showLyrics &&
+                    !_immersiveLyrics &&
+                    !_queue.engaged;
+                final hidden = clearViewAvailable && _canvasHidden;
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _immersiveLyrics
+                      ? _toggleImmersiveLyrics
+                      : (clearViewAvailable ? _toggleCanvasControls : null),
+                  onLongPress: _immersiveLyrics ? _showSpaceOptions : null,
+                  child: Stack(
+                    key: _playerBoundsKey,
+                    fit: StackFit.expand,
+                    children: [
+                      PlayerSongBlurBackground(
+                        song: song,
+                        colors: colors,
+                        fullCover: fullCover,
                       ),
-                    ),
-                  )
-                else
-                  Container(color: Colors.black.withValues(alpha: 0.10)),
-                if (fullCover) _fullscreenArtwork(song),
-                // Keep the controls, title and quality metadata above the
-                // fullscreen Canvas while its artwork travels out of the
-                // mini-player. The same chrome continues its sheet motion;
-                // the Canvas clear-view toggle still fades this entire tree.
-                LokalPlayerChrome(
-                  enabled: fullCover,
-                  child: IgnorePointer(
-                    ignoring: hidden,
-                  child: FadeTransition(
-                    opacity: _canvasChrome,
-                    child: TickerMode(
-                      enabled: !hidden,
-                      child: SafeArea(
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            23,
-                            0,
-                            23,
-                            14, // keeps the chip row clear of the system nav bar
+                      if (fullCover)
+                        FadeTransition(
+                          opacity: _canvasChrome,
+                          child: const IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x33000000),
+                                    Color(0x08000000),
+                                    Color(0x10000000),
+                                    Color(0x40000000),
+                                  ],
+                                  stops: [0, .28, .66, 1],
+                                ),
+                              ),
+                            ),
                           ),
-                          child: LayoutBuilder(
-                            builder: (context, c) {
-                              final compact = c.maxHeight < 640;
-                              return AnimatedBuilder(
-                                animation: _lyricsProgress,
-                                builder: (context, _) {
-                                  final l = _lyricsProgress.value;
-                                  return Column(
-                                    children: [
-                                      ClipRect(
-                                        child: Align(
-                                          heightFactor: 1 - l,
-                                          alignment: Alignment.topCenter,
-                                          child: IgnorePointer(
-                                            ignoring: _showLyrics,
-                                            child: Opacity(
-                                              opacity: 1 - l,
-                                              child: _spaceHidden(_topBar(
-                                                song,
-                                                isCasting,
-                                                diagnostics,
-                                              )),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: SizedBox.expand(
-                                          key: _spacePanelKey,
-                                          child: _panelStage(
-                                            song,
-                                            compact,
-                                            fullCover: fullCover,
-                                          ),
-                                        ),
-                                      ),
-                                      // Keep the timeline anchor painted in Space mode.
-                                      CompositedTransformTarget(
-                                        link: _seekbarSubtitleLink,
-                                        child: _spaceHidden(_seekRow()),
-                                      ),
-                                      // The timeline sits above the transport pads,
-                                      // rather than being visually glued to them.
-                                      SizedBox(height: compact ? 12 : 24),
-                                      SizedBox(
-                                        height: lerpDouble(
-                                          compact ? 6 : 10,
-                                          6,
-                                          l,
-                                        ),
-                                      ),
-                                      _spaceHidden(_transport(compact, l)),
-                                      ClipRect(
-                                        child: Align(
-                                          heightFactor: 1 - l,
-                                          alignment: Alignment.topCenter,
-                                          child: IgnorePointer(
-                                            ignoring: _showLyrics,
-                                            child: Opacity(
-                                              opacity: 1 - l,
-                                              child: Padding(
-                                                padding: EdgeInsets.only(
-                                                  top: compact ? 13 : 17,
+                        )
+                      else
+                        Container(color: Colors.black.withValues(alpha: 0.10)),
+                      if (fullCover) _fullscreenArtwork(song),
+                      // Keep the controls, title and quality metadata above the
+                      // fullscreen Canvas while its artwork travels out of the
+                      // mini-player. The same chrome continues its sheet motion;
+                      // the Canvas clear-view toggle still fades this entire tree.
+                      LokalPlayerChrome(
+                        enabled: fullCover,
+                        child: IgnorePointer(
+                          ignoring: hidden,
+                          child: FadeTransition(
+                            opacity: _canvasChrome,
+                            child: TickerMode(
+                              enabled: !hidden,
+                              child: SafeArea(
+                                child: Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    23,
+                                    0,
+                                    23,
+                                    14, // keeps the chip row clear of the system nav bar
+                                  ),
+                                  child: LayoutBuilder(
+                                    builder: (context, c) {
+                                      final compact = c.maxHeight < 640;
+                                      return AnimatedBuilder(
+                                        animation: _lyricsProgress,
+                                        builder: (context, _) {
+                                          final l = _lyricsProgress.value;
+                                          return Column(
+                                            children: [
+                                              ClipRect(
+                                                child: Align(
+                                                  heightFactor: 1 - l,
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: IgnorePointer(
+                                                    ignoring: _showLyrics,
+                                                    child: Opacity(
+                                                      opacity: 1 - l,
+                                                      child: _spaceHidden(
+                                                        _topBar(
+                                                          song,
+                                                          isCasting,
+                                                          diagnostics,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
                                                 ),
-                                                child: _spaceHidden(_optionsStrip()),
                                               ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(height: compact ? 13 : 17),
-                                      _spaceHidden(_chipRow()),
-                                    ],
-                                  );
-                                },
-                              );
-                            },
+                                              Expanded(
+                                                child: SizedBox.expand(
+                                                  key: _spacePanelKey,
+                                                  child: _panelStage(
+                                                    song,
+                                                    compact,
+                                                    fullCover: fullCover,
+                                                  ),
+                                                ),
+                                              ),
+                                              // Keep the timeline anchor painted in Space mode.
+                                              CompositedTransformTarget(
+                                                link: _seekbarSubtitleLink,
+                                                child: _spaceHidden(_seekRow()),
+                                              ),
+                                              // The timeline sits above the transport pads,
+                                              // rather than being visually glued to them.
+                                              SizedBox(
+                                                height: compact ? 12 : 24,
+                                              ),
+                                              SizedBox(
+                                                height: lerpDouble(
+                                                  compact ? 6 : 10,
+                                                  6,
+                                                  l,
+                                                ),
+                                              ),
+                                              _spaceHidden(
+                                                _transport(compact, l),
+                                              ),
+                                              ClipRect(
+                                                child: Align(
+                                                  heightFactor: 1 - l,
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: IgnorePointer(
+                                                    ignoring: _showLyrics,
+                                                    child: Opacity(
+                                                      opacity: 1 - l,
+                                                      child: Padding(
+                                                        padding:
+                                                            EdgeInsets.only(
+                                                              top: compact
+                                                                  ? 13
+                                                                  : 17,
+                                                            ),
+                                                        child: _spaceHidden(
+                                                          _optionsStrip(),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                height: compact ? 13 : 17,
+                                              ),
+                                              _spaceHidden(_chipRow()),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-                ),
-                if (_spaceLayerMounted)
-                  Positioned.fill(
-                    child: SpaceCoverBloomReveal(
-                      coverRect: _spaceCoverRect,
-                 coverRectResolver: () => _spaceArtworkBounds(_spaceFullCover),
-                 coverMotion: _spaceCoverMotion,
-                  coverCornerRadiusResolver: _spaceArtworkCornerRadius,
-                      canvasMode: _spaceCanvasMode,
-                      coverCornerRadius: _spaceFullCover ? 0 : 20,
-                      surfaceColor: colors.last,
-                      progress: _spaceProgress,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          SeekbarAlignedSpaceSubtitle(
-                            seekbarLink: _seekbarSubtitleLink,
-                            subtitle: _videoActive
-                                ? ValueListenableBuilder<bool>(
-                                    valueListenable: _videoController.nativeNotifier,
-                                    builder: (context, native, _) => native
-                                        ? _spaceSubtitle(song)
-                                        : const Text(
-                                            'Timed subtitles unavailable in embedded video fallback',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                  )
-                                : _spaceSubtitle(song),
+                      if (_spaceLayerMounted)
+                        Positioned.fill(
+                          child: SpaceCoverBloomReveal(
+                            coverRect: _spaceCoverRect,
+                            coverRectResolver: () =>
+                                _spaceArtworkBounds(_spaceFullCover),
+                            coverMotion: _spaceCoverMotion,
+                            coverCornerRadiusResolver:
+                                _spaceArtworkCornerRadius,
+                            canvasMode: _spaceCanvasMode,
+                            coverCornerRadius: _spaceFullCover ? 0 : 20,
+                            surfaceColor: colors.last,
+                            progress: _spaceProgress,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                SeekbarAlignedSpaceSubtitle(
+                                  seekbarLink: _seekbarSubtitleLink,
+                                  subtitle: _videoActive
+                                      ? ValueListenableBuilder<bool>(
+                                          valueListenable: _videoController
+                                              .timingAvailableNotifier,
+                                          builder: (context, native, _) =>
+                                              native
+                                              ? _spaceSubtitle(song)
+                                              : const Text(
+                                                  'Waiting for video timing',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                        )
+                                      : _spaceSubtitle(song),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      if (_spaceLayerMounted)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            ignoring: !_immersiveLyrics,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _toggleImmersiveLyrics,
+                              onLongPress: _showSpaceOptions,
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                if (_spaceLayerMounted)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      ignoring: !_immersiveLyrics,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _toggleImmersiveLyrics,
-                        onLongPress: _showSpaceOptions,
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                  ),
-              ],
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 
+  Widget _embeddedVideoSpace(Song song, String videoId) => VideoSpaceLayout(
+    player: Media3MusicVideoSurface(
+      key: _videoSurfaceKey,
+      videoId: videoId,
+      controller: _videoController,
+      maxVideoHeight: ref.watch(videoQualityProvider),
+      showControls: false,
+    ),
+    subtitles: ValueListenableBuilder<bool>(
+      valueListenable: _videoController.timingAvailableNotifier,
+      builder: (_, available, __) => available
+          ? _spaceSubtitle(song)
+          : Text(
+              lokalText('Waiting for video timing'),
+              style: const TextStyle(color: FullPlayerVisuals.secondaryText),
+            ),
+    ),
+    onExit: _toggleImmersiveLyrics,
+    onOptions: _showSpaceOptions,
+  );
+
   Widget _spaceSubtitle(Song song) => ImmersiveLyricsSubtitle(
     key: ValueKey('space-subtitles:${song.id}'),
-    lyrics: _lyricsForSongId == song.id
-        ? (_sublineLyrics ?? _lyrics) : null,
+    lyrics: _lyricsForSongId == song.id ? (_sublineLyrics ?? _lyrics) : null,
     position: _videoActive
-        ? _videoController.positionNotifier : _player.positionNotifier,
+        ? _videoController.positionNotifier
+        : _player.positionNotifier,
     playing: _videoActive
-        ? _videoController.playingNotifier : _player.isPlayingNotifier,
+        ? _videoController.advancingNotifier
+        : _player.isPlayingNotifier,
     playbackSpeed: _videoActive ? null : _player.playbackSpeedNotifier,
     loading: _lyricsLoading || _lyricsForSongId != song.id,
   );
 
   Widget _spaceHidden(Widget child) => IgnorePointer(
     ignoring: _immersiveLyrics,
-    child: FadeTransition(
-      opacity: _spaceChromeOpacity,
-      child: child,
-    ),
+    child: FadeTransition(opacity: _spaceChromeOpacity, child: child),
   );
 
   // ───────────────────────────── top bar ─────────────────────────────
 
   Widget _topBar(
-    Song song, bool isCasting, AudioOutputDiagnostics? diagnostics,
+    Song song,
+    bool isCasting,
+    AudioOutputDiagnostics? diagnostics,
   ) {
     final label = diagnostics?.outputDeviceLabel.trim().isNotEmpty == true
         ? diagnostics!.outputDeviceLabel.trim()
@@ -1433,30 +1731,32 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final outputIcon = isCasting
         ? LucideIcons.cast
         : route == 'internal' || route == 'speaker'
-            ? LucideIcons.speaker
-            : route == 'bluetooth'
-                ? isSpeaker
-                    ? LucideIcons.speaker
-                    : isHeadset
-                        ? LucideIcons.headphones
-                        : LucideIcons.bluetooth
-                : route == 'usb' || route == 'dock'
-                    ? LucideIcons.usb
-                    : LucideIcons.headphones;
+        ? LucideIcons.speaker
+        : route == 'bluetooth'
+        ? isSpeaker
+              ? LucideIcons.speaker
+              : isHeadset
+              ? LucideIcons.headphones
+              : LucideIcons.bluetooth
+        : route == 'usb' || route == 'dock'
+        ? LucideIcons.usb
+        : LucideIcons.headphones;
     final displayLabel = isCasting
         ? label
         : route == 'internal' || route == 'speaker'
-            ? lokalText('Speaker')
-            : label == 'Device DAC'
-                ? lokalText('Speaker')
-                : label;
+        ? lokalText('Speaker')
+        : label == 'Device DAC'
+        ? lokalText('Speaker')
+        : label;
     return SizedBox(
       height: 58,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Align(alignment: Alignment.centerLeft,
-            child: _roundIcon(LucideIcons.chevronLeft, _close)),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _roundIcon(LucideIcons.chevronLeft, _close),
+          ),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 215),
@@ -1465,23 +1765,39 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(outputIcon, size: 17,
-                        color: FullPlayerVisuals.primaryText),
+                    Icon(
+                      outputIcon,
+                      size: 17,
+                      color: FullPlayerVisuals.primaryText,
+                    ),
                     const SizedBox(width: 8),
-                    Flexible(child: Text(displayLabel,
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontFamily: _font, fontSize: 13,
-                          color: FullPlayerVisuals.primaryText))),
+                    Flexible(
+                      child: Text(
+                        displayLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: _font,
+                          fontSize: 13,
+                          color: FullPlayerVisuals.primaryText,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
           ),
-          Align(alignment: Alignment.centerRight,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              _roundIcon(LucideIcons.cast, _openCasting, active: isCasting),
-              _roundIcon(Icons.more_vert, () => unawaited(_openMore(song))),
-            ])),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _roundIcon(LucideIcons.cast, _openCasting, active: isCasting),
+                _roundIcon(Icons.more_vert, () => unawaited(_openMore(song))),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1513,15 +1829,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       color: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: FullPlayerVisuals.border,
-        ),
+        side: BorderSide(color: FullPlayerVisuals.border),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 12, vertical: 9),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 6 : 12,
+            vertical: 9,
+          ),
           child: child,
         ),
       ),
@@ -1559,7 +1876,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                     animateButtonDissolve:
                         ref.watch(appPreferencesProvider).animationsEnabled &&
                         !LokalPerformanceScope.of(context),
-                    enabled: progress == 0 && !_showLyrics && !_queue.isOpen && !_immersiveLyrics,
+                    enabled:
+                        progress == 0 &&
+                        !_showLyrics &&
+                        !_queue.isOpen &&
+                        !_immersiveLyrics &&
+                        !_usesEmbeddedVideo,
                     onDragStateChanged: (value) {
                       _carouselDragging = value;
                       if (value) _restoreCanvasControls();
@@ -1574,10 +1896,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         crossfade: false,
                         onArtworkRecovered: current
                             ? (cover) => _player.recoverCurrentOnlineArtwork(
-                                  songId: track.id,
-                                  originalArtwork: track.albumArt,
-                                  recoveredArtwork: cover,
-                                )
+                                songId: track.id,
+                                originalArtwork: track.albumArt,
+                                recoveredArtwork: cover,
+                              )
                             : null,
                       );
                       Widget frame(Widget artwork, bool canvas) {
@@ -1600,8 +1922,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       // Reuse the fullscreen-cover slot for video. Do not
                       // create another page or discard the original artwork
                       // preferences when entering/exiting Video.
-                      final content = current && _videoActive &&
-                              track.id == (_videoOverrideSong ?? widget.videoSong)?.id
+                      final content =
+                          current &&
+                              _videoActive &&
+                              track.id ==
+                                  (_videoOverrideSong ?? widget.videoSong)?.id
                           ? frame(
                               ColoredBox(
                                 color: Colors.black,
@@ -1609,9 +1934,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   key: _videoSurfaceKey,
                                   videoId: _activeVideoId!,
                                   controller: _videoController,
-                      maxVideoHeight: ref.watch(videoQualityProvider),
-                showControls: false,
-                onFullscreen: _immersiveLyrics ? null : _toggleVideoFullscreen,
+                                  maxVideoHeight: ref.watch(
+                                    videoQualityProvider,
+                                  ),
+                                  showControls: false,
+                                  onFullscreen: _immersiveLyrics
+                                      ? null
+                                      : _toggleVideoFullscreen,
                                 ),
                               ),
                               false,
@@ -1638,7 +1967,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                           : frame(still, false);
                       final shownBurst = _burst;
                       return GestureDetector(
-                        onDoubleTap: current ? _likeFromArtwork : null,
+                        onDoubleTap: current && !_usesEmbeddedVideo
+                            ? _likeFromArtwork
+                            : null,
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
@@ -1647,7 +1978,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                               child: Hero(
                                 tag: widget.heroTag,
                                 createRectTween: (begin, end) =>
-                                    LokalArtworkRectTween(begin: begin, end: end),
+                                    LokalArtworkRectTween(
+                                      begin: begin,
+                                      end: end,
+                                    ),
                                 flightShuttleBuilder: (
                                   _,
                                   __,
@@ -1658,7 +1992,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                 child: content,
                               ),
                             ),
-                            if (current && _burstVisible)
+                            if (current && _burstVisible && !_usesEmbeddedVideo)
                               Center(
                                 child: LokalLikeBurst(
                                   key: ValueKey(_burst),
@@ -1685,9 +2019,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   String _fullPlayerAudioLabel(Song song, LokalQualityTier tier) {
-    final preferResolution = ref.watch(lokalAppearanceProvider.select(
-      (appearance) => appearance.resolutionTagsInFullPlayer,
-    ));
+    final preferResolution = ref.watch(
+      lokalAppearanceProvider.select(
+        (appearance) => appearance.resolutionTagsInFullPlayer,
+      ),
+    );
     if (preferResolution) {
       final resolution = lokalSongResolutionLabel(song);
       if (resolution != null) return resolution;
@@ -1699,14 +2035,15 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       LokalQualityTier.low => 'LOW',
       LokalQualityTier.unknown =>
         (song.sourcePackage == 'konnekted.progressive' ||
-         song.sourcePackage == 'konnekted.morneye-live')
-          ? (catalogueStreamTierLabel(
-              quality: song.resolution,
-              codec: song.fileType,
-              bitDepth: song.bitDepth,
-              sampleRate: song.sampleRate,
-            ) ?? 'UNKNOWN')
-          : 'UNKNOWN',
+                song.sourcePackage == 'konnekted.morneye-live')
+            ? (catalogueStreamTierLabel(
+                    quality: song.resolution,
+                    codec: song.fileType,
+                    bitDepth: song.bitDepth,
+                    sampleRate: song.sampleRate,
+                  ) ??
+                  'UNKNOWN')
+            : 'UNKNOWN',
     };
   }
 
@@ -1739,12 +2076,18 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   enabled: false,
                   child: Opacity(
                     opacity: p,
-                    child: _artwork(song, size, current: !_videoActive, progress: p),
+                    child: _artwork(
+                      song,
+                      size,
+                      current: !_videoActive,
+                      progress: p,
+                    ),
                   ),
                 ),
               );
             }
-            final atRest = p == 0 && !_queue.isOpen && !_showLyrics && !_immersiveLyrics;
+            final atRest =
+                p == 0 && !_queue.isOpen && !_showLyrics && !_immersiveLyrics;
             return ValueListenableBuilder<List<Song>>(
               valueListenable: _player.upNextNotifier,
               builder: (context, _, __) => ValueListenableBuilder<int>(
@@ -1779,121 +2122,137 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ),
             );
           },
-          info: (context, p) => _spaceHidden(SizedBox(
-            key: _infoAnchorKey,
-            width: double.infinity,
-            child: AnimatedSwitcher(
-            duration: _animate
-                ? const Duration(milliseconds: 420)
-                : Duration.zero,
-            // Keep both tracks anchored to the same origin. AnimatedSwitcher\'s
-            // default ScaleTransition subtly moves title, credits and quality
-            // pill as their intrinsic widths differ between providers.
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: child,
-            ),
-            layoutBuilder: (current, previous) => Stack(
-              alignment: Alignment.topLeft,
-              children: [...previous, if (current != null) current],
-            ),
-            child: FullPlayerIdentityLayout(
-              key: ValueKey(song.id),
-              titleFontSize: lerpDouble(titleSize, 18, p)!,
-              titleToArtistGap: lerpDouble(3, 1, p)!,
-              title: Semantics(
-                button: true,
-                label: 'Open album for ${song.title}',
-                child: InkWell(
-                  onTap: () => openLokalAlbumForSong(context, song),
-                  borderRadius: BorderRadius.circular(8),
-                  child: OverflowMarqueeTitle(
-                    key: ValueKey('full-title:${song.id}'),
-                    title: song.title,
-                    style: TextStyle(
-                      fontFamily: _font,
-                      fontSize: lerpDouble(titleSize, 18, p),
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -.55,
-                      color: FullPlayerVisuals.primaryText,
-                    ),
-                  ),
+          info: (context, p) => _spaceHidden(
+            SizedBox(
+              key: _infoAnchorKey,
+              width: double.infinity,
+              child: AnimatedSwitcher(
+                duration: _animate
+                    ? const Duration(milliseconds: 420)
+                    : Duration.zero,
+                // Keep both tracks anchored to the same origin. AnimatedSwitcher\'s
+                // default ScaleTransition subtly moves title, credits and quality
+                // pill as their intrinsic widths differ between providers.
+                transitionBuilder: (child, animation) =>
+                    FadeTransition(opacity: animation, child: child),
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.topLeft,
+                  children: [...previous, if (current != null) current],
                 ),
-              ),
-              artist: ArtistCreditLinks(
-                credit: song.artist,
-                onArtistTap: (name) =>
-                    openLokalArtist(context, name: name, song: song),
-                style: TextStyle(
-                  fontFamily: _font,
-                  fontSize: lerpDouble(13, 12, p),
-                  fontWeight: FontWeight.w500,
-                  color: FullPlayerVisuals.secondaryText,
-                ),
-              ),
-              trailing: [
-                if (song.year != null && song.year! > 0) ...[
-                  const _MetadataDot(),
-                  Text(
-                    '${song.year}',
-                    style: TextStyle(
-                      fontFamily: _font,
-                      fontSize: lerpDouble(11, 10, p),
-                      color: FullPlayerVisuals.tertiaryText,
-                    ),
-                  ),
-                ],
-                if (song.atmosEncoded) ...[
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () => SongMetadataSheet.show(context, song),
-                    child: LokalAtmosStreamPill(codec: song.fileType),
-                  ),
-                ],
-                if (LokalQualityTier.of(song) case final tier?
-                    when !song.atmosEncoded) ...[
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap: () => SongMetadataSheet.show(context, song),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: FullPlayerVisuals.secondaryText,
+                child: FullPlayerIdentityLayout(
+                  key: ValueKey(song.id),
+                  titleFontSize: lerpDouble(titleSize, 18, p)!,
+                  titleToArtistGap: lerpDouble(3, 1, p)!,
+                  title: Semantics(
+                    button: true,
+                    label: 'Open album for ${song.title}',
+                    child: InkWell(
+                      onTap: () => openLokalAlbumForSong(context, song),
+                      borderRadius: BorderRadius.circular(8),
+                      child: OverflowMarqueeTitle(
+                        key: ValueKey('full-title:${song.id}'),
+                        title: song.title,
+                        style: TextStyle(
+                          fontFamily: _font,
+                          fontSize: lerpDouble(titleSize, 18, p),
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -.55,
+                          color: FullPlayerVisuals.primaryText,
                         ),
-                        borderRadius: BorderRadius.circular(5),
                       ),
-                      child: Tooltip(
-                        message: _fullPlayerAudioLabel(song, tier),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: (MediaQuery.sizeOf(context).width * .52)
-                                .clamp(110.0, 210.0).toDouble(),
+                    ),
+                  ),
+                  artist: ArtistCreditLinks(
+                    credit: song.artist,
+                    onArtistTap: (name) =>
+                        openLokalArtist(context, name: name, song: song),
+                    style: TextStyle(
+                      fontFamily: _font,
+                      fontSize: lerpDouble(13, 12, p),
+                      fontWeight: FontWeight.w500,
+                      color: FullPlayerVisuals.secondaryText,
+                    ),
+                  ),
+                  trailing: [
+                    if (song.year != null && song.year! > 0) ...[
+                      const _MetadataDot(),
+                      Text(
+                        '${song.year}',
+                        style: TextStyle(
+                          fontFamily: _font,
+                          fontSize: lerpDouble(11, 10, p),
+                          color: FullPlayerVisuals.tertiaryText,
+                        ),
+                      ),
+                    ],
+                    if (_videoActive) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        lokalText('Video').toUpperCase(),
+                        style: const TextStyle(
+                          fontFamily: _font,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: FullPlayerVisuals.secondaryText,
+                          letterSpacing: .6,
+                        ),
+                      ),
+                    ],
+                    if (!_videoActive && song.atmosEncoded) ...[
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => SongMetadataSheet.show(context, song),
+                        child: const LokalAtmosStreamPill(),
+                      ),
+                    ],
+                    if (LokalQualityTier.of(song) case final tier?
+                        when !_videoActive && !song.atmosEncoded) ...[
+                      const SizedBox(width: 12),
+                      InkWell(
+                        onTap: () => SongMetadataSheet.show(context, song),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
                           ),
-                          child: Text(
-                            _fullPlayerAudioLabel(song, tier),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: _font,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: .6,
-                              color: FullPlayerVisuals.primaryText,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: FullPlayerVisuals.secondaryText,
+                            ),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Tooltip(
+                            message: _fullPlayerAudioLabel(song, tier),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    (MediaQuery.sizeOf(context).width * .52)
+                                        .clamp(110.0, 210.0)
+                                        .toDouble(),
+                              ),
+                              child: Text(
+                                _fullPlayerAudioLabel(song, tier),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: _font,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: .6,
+                                  color: FullPlayerVisuals.primaryText,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              ],
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ))),
+          ),
           queue: const QueueList(embedded: true),
           lyrics: _lyricsArea(song),
         );
@@ -1915,10 +2274,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       crossfade: false,
       onArtworkRecovered: current
           ? (cover) => _player.recoverCurrentOnlineArtwork(
-                songId: song.id,
-                originalArtwork: song.albumArt,
-                recoveredArtwork: cover,
-              )
+              songId: song.id,
+              originalArtwork: song.albumArt,
+              recoveredArtwork: cover,
+            )
           : null,
     );
     final motionEnabled =
@@ -1931,48 +2290,49 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             .contains(movingCoverSongKey(song));
     // Video occupies the exact same cover slot; the full player, queue,
     // Canvas settings and Space all stay on their original surfaces.
-    final showVideo = current && _videoActive &&
+    final showVideo =
+        current &&
+        _videoActive &&
         song.id == (_videoOverrideSong ?? widget.videoSong)?.id;
     final art = showVideo
         ? ClipRRect(
-            borderRadius: radius,
+            borderRadius: _usesEmbeddedVideo ? BorderRadius.zero : radius,
             child: ColoredBox(
               color: Colors.black,
               child: Media3MusicVideoSurface(
                 key: _videoSurfaceKey,
                 videoId: _activeVideoId!,
                 controller: _videoController,
-                      maxVideoHeight: ref.watch(videoQualityProvider),
+                maxVideoHeight: ref.watch(videoQualityProvider),
                 showControls: false,
                 onFullscreen: _immersiveLyrics ? null : _toggleVideoFullscreen,
               ),
             ),
           )
         : ClipRRect(
-      borderRadius: radius,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _player.isPlayingNotifier,
-        builder: (context, playing, _) => MotionArtView(
-          sharedPlaybackKey: 'player:${song.id}',
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          duration: song.duration,
-          enabled: motionEnabled,
-          playbackActive: current && progress < .999 && playing,
-          borderRadius: radius,
-          fallback: still,
-        ),
-      ),
-    );
+            borderRadius: radius,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _player.isPlayingNotifier,
+              builder: (context, playing, _) => MotionArtView(
+                sharedPlaybackKey: 'player:${song.id}',
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                duration: song.duration,
+                enabled: motionEnabled,
+                playbackActive: current && progress < .999 && playing,
+                borderRadius: radius,
+                fallback: still,
+              ),
+            ),
+          );
     final shown = _burst;
     return GestureDetector(
-      onDoubleTap: current && progress == 0 ? _likeFromArtwork : null,
+      onDoubleTap: current && progress == 0 && !_usesEmbeddedVideo
+          ? _likeFromArtwork
+          : null,
       child: LokalPlayerArtwork(
-        enabled: current,
-        // The panel paints a 20px cover at rest (12px in queue mode).
-        // The flying artwork must land at the SAME radius; the old 28px
-        // endpoint produced a visible corner snap when the portal released it.
+        enabled: current && !_usesEmbeddedVideo,
         expandedRadius: lerpDouble(20, 12, progress)!,
         child: SizedBox(
           width: side,
@@ -1997,15 +2357,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         ) => AnimatedBuilder(
                           animation: animation,
                           builder: (context, child) => ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              lerpDouble(
-                                21,
-                                20,
-                                Curves.easeInOutCubic.transform(
-                                  animation.value,
-                                ),
-                              )!,
-                            ),
+                            borderRadius: _usesEmbeddedVideo
+                                ? BorderRadius.zero
+                                : BorderRadius.circular(
+                                    lerpDouble(
+                                      21,
+                                      20,
+                                      Curves.easeInOutCubic.transform(
+                                        animation.value,
+                                      ),
+                                    )!,
+                                  ),
                             child: child,
                           ),
                           child: art,
@@ -2014,7 +2376,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   ),
                 ),
               ),
-              if (current && _burstVisible)
+              if (current && _burstVisible && !_usesEmbeddedVideo)
                 LokalLikeBurst(
                   key: ValueKey(_burst),
                   color: context.lokal.accent,
@@ -2095,18 +2457,22 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 ),
               ),
             ),
-            if (display != null && hasUsableLyrics(display))
+            if (data != null && hasUsableLyrics(data))
               LyricsSaveButton(
                 key: const ValueKey('save-current-lyrics-file'),
                 saving: _savingLyricsFile,
-                iconColor: Colors.white70,
-                onSaveOriginal: () => unawaited(_saveLyricsFile(song, data!)),
+                iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                onSaveOriginal: () => unawaited(_saveLyricsFile(song, data)),
                 onSaveWithTranslation: _saveTranslatedLyricsAction(song),
               ),
             if (hasImmersiveLyrics(data))
               IconButton(
                 tooltip: 'Space — immersive lyrics',
-                icon: const Icon(LucideIcons.expand, color: Colors.white70, size: 19),
+                icon: const Icon(
+                  LucideIcons.expand,
+                  color: Colors.white70,
+                  size: 19,
+                ),
                 onPressed: _toggleImmersiveLyrics,
               ),
             LyricsSourceButton(
@@ -2209,12 +2575,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
     return ValueListenableBuilder<Duration>(
       valueListenable: _videoActive
-          ? _videoController.durationNotifier : _player.durationNotifier,
+          ? _videoController.durationNotifier
+          : _player.durationNotifier,
       builder: (context, duration, _) {
         final totalMs = math.max(duration.inMilliseconds, 1).toDouble();
         return ValueListenableBuilder<Duration>(
           valueListenable: _videoActive
-              ? _videoController.positionNotifier : _player.positionNotifier,
+              ? _videoController.positionNotifier
+              : _player.positionNotifier,
           builder: (context, position, _) {
             final live = (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
             final value = _draggingSeek ? _seekDrag : live;
@@ -2233,21 +2601,31 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   ),
                   child: Slider(
                     value: value,
-                    onChangeStart: _videoActive && !_videoController.nativeNotifier.value
-                        ? null : (v) => setState(() {
-                      _draggingSeek = true;
-                      _seekDrag = v;
-                    }),
-                    onChanged: _videoActive && !_videoController.nativeNotifier.value
-                        ? null : (v) => setState(() => _seekDrag = v),
+                    onChangeStart:
+                        _videoActive &&
+                            !_videoController.timingAvailableNotifier.value
+                        ? null
+                        : (v) => setState(() {
+                            _draggingSeek = true;
+                            _seekDrag = v;
+                          }),
+                    onChanged:
+                        _videoActive &&
+                            !_videoController.timingAvailableNotifier.value
+                        ? null
+                        : (v) => setState(() => _seekDrag = v),
                     onChangeEnd: (v) async {
                       // One double-pulse on release, not on continuous drag updates.
                       AppHaptics.doublePulse();
                       final id = _player.currentSongNotifier.value?.id;
                       try {
-                        final target = Duration(milliseconds: (v * totalMs).round());
+                        final target = Duration(
+                          milliseconds: (v * totalMs).round(),
+                        );
                         if (_videoActive) {
-                          await _videoController.seek(target);
+                          await _videoCommand(
+                            () => _videoController.seek(target),
+                          );
                         } else {
                           await _player.seek(target);
                         }
@@ -2283,62 +2661,59 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
   }
 
-  Widget _transport(bool compact, double lyricsProgress) =>
-      ValueListenableBuilder<bool>(
-        valueListenable: _videoActive
-            ? _videoController.playingNotifier : _player.isPlayingNotifier,
-        builder: (context, playing, _) => PlayerTransportControls(
-          compact: compact,
-          tallerButtons: true,
-          lyricsProgress: lyricsProgress,
-          playing: playing,
-          accent: FullPlayerVisuals.fromPalette(
-            ref.watch(albumPaletteSyncProvider),
-          ).play,
-          onAccent: Colors.black,
-          onPrevious: () {
-            if (_videoActive) {
-              if (widget.videoSong != null) {
-                _close();
-              } else {
-                _exitVideoMode(resumeAudio: false);
-                _player.previousBySwipe();
-              }
-              return;
-            }
-            // A transport-button tap restarts the current song once it has
-            // played for ten seconds. An early tap uses the desktop-style
-            // cover dissolve; swiping the artwork still slides as before.
-            if (shouldRestartCurrentTrackOnPrevious(
-              _player.positionNotifier.value,
-            )) {
-              unawaited(_player.previous());
-            } else {
-              _carouselKey.currentState?.animateToPrevious() ??
-                  _player.previous();
-            }
-          },
-          onNext: () {
-            if (_videoActive) {
-              if (widget.videoSong != null) {
-                _close();
-              } else {
-                _exitVideoMode(resumeAudio: false);
-                _player.next();
-              }
-              return;
-            }
-            _carouselKey.currentState?.animateToNext() ?? _player.next();
-          },
-          onPlayPause: () {
-            if (_videoActive) {
-              unawaited(_videoController.togglePlayPause());
-            } else {
-              _player.togglePlayPause();
-            }
-          },
-        ),
-      );
+  Widget _transport(
+    bool compact,
+    double lyricsProgress,
+  ) => ValueListenableBuilder<bool>(
+    valueListenable: _videoActive
+        ? _videoController.playingNotifier
+        : _player.isPlayingNotifier,
+    builder: (context, playing, _) => PlayerTransportControls(
+      compact: compact,
+      tallerButtons: true,
+      lyricsProgress: lyricsProgress,
+      playing: playing,
+      accent: FullPlayerVisuals.fromPalette(ref.watch(albumPaletteSyncProvider))
+          .play,
+      onAccent: Colors.black,
+      onPrevious: () async {
+        if (_videoActive) {
+          if (widget.videoSong != null) {
+            _close();
+          } else {
+            if (await _exitVideoMode(resumeAudio: false))
+              await _player.previousBySwipe();
+          }
+          return;
+        }
+        if (shouldRestartCurrentTrackOnPrevious(
+          _player.positionNotifier.value,
+        )) {
+          await _player.previous();
+        } else {
+          _carouselKey.currentState?.animateToPrevious() ?? _player.previous();
+        }
+      },
+      onNext: () async {
+        if (_videoActive) {
+          if (widget.videoSong != null) {
+            _close();
+          } else {
+            if (await _exitVideoMode(resumeAudio: false)) await _player.next();
+          }
+          return;
+        }
+        _carouselKey.currentState?.animateToNext() ?? _player.next();
+      },
+      onPlayPause: () {
+        if (_videoActive) {
+          unawaited(_videoCommand(_videoController.togglePlayPause));
+        } else {
+          _player.togglePlayPause();
+        }
+      },
+    ),
+  );
 
   Widget _optionsStrip() => ListenableBuilder(
     listenable: _volumeControl,
@@ -2346,6 +2721,40 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   );
 
   Widget _buildOptionsStrip() {
+    if (_videoActive) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: FullPlayerVisuals.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              LucideIcons.volume2,
+              size: 18,
+              color: FullPlayerVisuals.secondaryText,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                lokalText('Use device volume buttons'),
+                style: const TextStyle(
+                  fontFamily: _font,
+                  fontSize: 12,
+                  color: FullPlayerVisuals.secondaryText,
+                ),
+              ),
+            ),
+            _toggle(
+              _displayedFavorite ? Icons.favorite : Icons.favorite_border,
+              _displayedFavorite,
+              _toggleFavorite,
+            ),
+          ],
+        ),
+      );
+    }
     final maxVol = _volumeControl.max;
     final sliderValue = (_draggingVolume ? _volume : _volumeControl.value)
         .clamp(0.0, maxVol)
@@ -2393,11 +2802,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             color: FullPlayerVisuals.secondaryText,
           ),
           const SizedBox(width: 18),
-          Container(
-            width: 1,
-            height: 26,
-            color: FullPlayerVisuals.border,
-          ),
+          Container(width: 1, height: 26, color: FullPlayerVisuals.border),
           const SizedBox(width: 10),
           ValueListenableBuilder<ShuffleMode>(
             valueListenable: _player.shuffleModeNotifier,
@@ -2436,9 +2841,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Material(
-        color: on
-            ? FullPlayerVisuals.selectedSurface
-            : Colors.transparent,
+        color: on ? FullPlayerVisuals.selectedSurface : Colors.transparent,
         borderRadius: BorderRadius.circular(13),
         child: InkWell(
           borderRadius: BorderRadius.circular(13),
@@ -2450,7 +2853,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             child: Icon(
               icon,
               size: 19,
-              color: on ? FullPlayerVisuals.primaryText : FullPlayerVisuals.secondaryText,
+              color: on
+                  ? FullPlayerVisuals.primaryText
+                  : FullPlayerVisuals.secondaryText,
             ),
           ),
         ),
@@ -2467,173 +2872,200 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       VoidCallback onTap, {
       bool active = false,
       double? width,
+      String? semanticLabel,
     }) {
       return Padding(
         padding: const EdgeInsets.only(right: 2),
-        child: SizedBox(
-          width: width,
-          child: _pill(
+        child: Semantics(
+          button: true,
+          label: semanticLabel ?? label,
           selected: active,
-          compact: true,
           onTap: onTap,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 19,
-                color: active
-                    ? FullPlayerVisuals.primaryText
-                    : FullPlayerVisuals.secondaryText,
+          excludeSemantics: true,
+          child: SizedBox(
+            width: width,
+            child: _pill(
+              selected: active,
+              compact: true,
+              onTap: onTap,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 19,
+                    color: active
+                        ? FullPlayerVisuals.primaryText
+                        : FullPlayerVisuals.secondaryText,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: _font,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: FullPlayerVisuals.primaryText,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 4),
-              Flexible(child: Text(
-                label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: _font,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: FullPlayerVisuals.primaryText,
-                ),
-              )),
-            ],
+            ),
           ),
-        )),
+        ),
       );
     }
 
     return LayoutBuilder(
       builder: (context, constraints) => SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          chip(
-            LucideIcons.listMusic,
-            l10n.queue,
-            _toggleQueue,
-            active: _queue.isOpen && !_showLyrics,
-            width: (constraints.maxWidth - 8) / 4,
-          ),
-          chip(
-            LucideIcons.messageSquareQuote,
-            l10n.lyrics,
-            _toggleLyrics,
-            active: _showLyrics,
-            width: (constraints.maxWidth - 8) / 4,
-          ),
-          if (_lyricsForSongId ==
-                  (_videoOverrideSong ?? widget.videoSong ??
-                   _player.currentSongNotifier.value)?.id &&
-              hasImmersiveLyrics(_lyrics))
+        height:
+            44 +
+            (MediaQuery.textScalerOf(context).scale(12) - 12).clamp(0, 24) *
+                1.4,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
             chip(
-              LucideIcons.expand,
-              'Space',
-              _toggleImmersiveLyrics,
-              active: _immersiveLyrics,
+              LucideIcons.listMusic,
+              l10n.queue,
+              _toggleQueue,
+              active: _queue.isOpen && !_showLyrics,
               width: (constraints.maxWidth - 8) / 4,
             ),
-          if (_videoOverrideId != null)
             chip(
-              LucideIcons.disc3,
-              'Audio',
-              _exitVideoMode,
-              active: true,
-              width: (constraints.maxWidth - 8) / 4,
-            )
-          else if (ref.watch(musicVideosEnabledProvider))
-            if (_player.currentSongNotifier.value case final current?)
-              if (ref.watch(musicVideoIndexProvider).videoFor(current.id)
-                  case final videoId?)
-                chip(
-                  LucideIcons.video,
-                  'Video',
-                  () => unawaited(_enterVideoMode(current, videoId)),
-                  width: (constraints.maxWidth - 8) / 4,
-                ),
-          ValueListenableBuilder<Duration?>(
-            valueListenable: _player.sleepTimerRemainingNotifier,
-            builder: (_, remaining, __) => chip(
-              LucideIcons.moonStar,
-              remaining == null ? lokalText('Sleep') : _clock(remaining),
-              () => SleepTimerBottomSheet.show(context, _player),
-              active: remaining != null,
+              LucideIcons.messageSquareQuote,
+              l10n.lyrics,
+              _toggleLyrics,
+              active: _showLyrics,
               width: (constraints.maxWidth - 8) / 4,
             ),
-          ),
-          if (!_videoActive)
-            if (_player.currentSongNotifier.value case final song?)
-            // Probe all configured motion sources, including Spotify Canvas.
-            // A saved per-song "off" setting must not hide this control:
-            // it still needs to offer a way to turn the clip back on.
-            ListenableBuilder(
-              listenable: Listenable.merge([
-                movingCoverRevision,
-                SecureSpotifyTokenStore.sessionRevision,
-                AnimatedArtworkService.instance.revision,
-              ]),
-              builder: (context, _) => Consumer(
-                builder: (context, coverRef, _) {
-                  final available = coverRef.watch(
-                    movingCoverAvailabilityProvider((
-                      title: song.title,
-                      artist: song.artist,
-                      album: song.album,
-                      duration: song.duration,
-                      sourceRevision: movingCoverRevision.value,
-                      spotifySessionRevision:
-                          SecureSpotifyTokenStore.sessionRevision.value,
-                      artworkRevision:
-                          AnimatedArtworkService.instance.revision.value,
-                    )),
-                  );
-                  if (available.value != true) return const SizedBox.shrink();
-                  final disabled = coverRef
-                      .watch(movingCoverSettingsProvider)
-                      .disabledSongs
-                      .contains(movingCoverSongKey(song));
-                  return chip(
-                    Icons.motion_photos_on_rounded,
-                    lokalText('Cover'),
-                    () => coverRef
-                        .read(movingCoverSettingsProvider.notifier)
-                        .setSongEnabled(movingCoverSongKey(song), disabled),
-                    active: !disabled,
+            if (_lyricsForSongId ==
+                    ((_videoActive
+                                ? (_videoOverrideSong ?? widget.videoSong)
+                                : null) ??
+                            _player.currentSongNotifier.value)
+                        ?.id &&
+                hasImmersiveLyrics(_lyrics))
+              chip(
+                LucideIcons.expand,
+                'Space',
+                _toggleImmersiveLyrics,
+                active: _immersiveLyrics,
+                width: (constraints.maxWidth - 8) / 4,
+              ),
+            if (_videoOverrideId != null)
+              chip(
+                LucideIcons.disc3,
+                'Audio',
+                _exitVideoMode,
+                active: true,
+                width: (constraints.maxWidth - 8) / 4,
+              )
+            else if (ref.watch(musicVideosEnabledProvider))
+              if (_player.currentSongNotifier.value case final current?)
+                if (ref.watch(musicVideoIndexProvider).videoFor(current.id)
+                    case final videoId?)
+                  chip(
+                    LucideIcons.video,
+                    'Video',
+                    () => unawaited(_enterVideoMode(current, videoId)),
                     width: (constraints.maxWidth - 8) / 4,
-                  );
-                },
+                  ),
+            ValueListenableBuilder<Duration?>(
+              valueListenable: _player.sleepTimerRemainingNotifier,
+              builder: (_, remaining, __) => chip(
+                LucideIcons.moonStar,
+                remaining == null ? lokalText('Sleep') : _clock(remaining),
+                () => SleepTimerBottomSheet.show(context, _player),
+                active: remaining != null,
+                width: (constraints.maxWidth - 8) / 4,
               ),
             ),
-          ValueListenableBuilder<double>(
-            valueListenable: _player.playbackSpeedNotifier,
-            builder: (_, speed, __) => chip(
-              LucideIcons.gauge,
-              (speed - 1.0).abs() < 0.01
-                  ? l10n.speedUp
-                  : '${speed.toStringAsFixed(2)}x',
-              () => SpeedBottomSheet.show(context, _player),
-              active: (speed - 1.0).abs() >= 0.01,
+            if (!_videoActive)
+              if (_player.currentSongNotifier.value case final song?)
+                // Probe all configured motion sources, including Spotify Canvas.
+                // A saved per-song "off" setting must not hide this control:
+                // it still needs to offer a way to turn the clip back on.
+                ListenableBuilder(
+                  listenable: Listenable.merge([
+                    movingCoverRevision,
+                    SecureSpotifyTokenStore.sessionRevision,
+                    AnimatedArtworkService.instance.revision,
+                  ]),
+                  builder: (context, _) => Consumer(
+                    builder: (context, coverRef, _) {
+                      final available = coverRef.watch(
+                        movingCoverAvailabilityProvider((
+                          title: song.title,
+                          artist: song.artist,
+                          album: song.album,
+                          duration: song.duration,
+                          sourceRevision: movingCoverRevision.value,
+                          spotifySessionRevision:
+                              SecureSpotifyTokenStore.sessionRevision.value,
+                          artworkRevision:
+                              AnimatedArtworkService.instance.revision.value,
+                        )),
+                      );
+                      if (available.value != true)
+                        return const SizedBox.shrink();
+                      final disabled = coverRef
+                          .watch(movingCoverSettingsProvider)
+                          .disabledSongs
+                          .contains(movingCoverSongKey(song));
+                      return chip(
+                        Icons.motion_photos_on_rounded,
+                        lokalText('Cover'),
+                        () => coverRef
+                            .read(movingCoverSettingsProvider.notifier)
+                            .setSongEnabled(movingCoverSongKey(song), disabled),
+                        active: !disabled,
+                        width: (constraints.maxWidth - 8) / 4,
+                      );
+                    },
+                  ),
+                ),
+            ValueListenableBuilder<double>(
+              valueListenable: _player.playbackSpeedNotifier,
+              builder: (_, speed, __) => chip(
+                LucideIcons.gauge,
+                (speed - 1.0).abs() < 0.01
+                    ? l10n.speedUp
+                    : '${speed.toStringAsFixed(2)}x',
+                () => SpeedBottomSheet.show(context, _player),
+                active: (speed - 1.0).abs() >= 0.01,
+                width: (constraints.maxWidth - 8) / 4,
+              ),
+            ),
+            ValueListenableBuilder<double>(
+              valueListenable: _player.pitchSemitonesNotifier,
+              builder: (_, pitch, __) => chip(
+                Icons.graphic_eq_rounded,
+                pitch.abs() < 0.01
+                    ? l10n.pitch
+                    : '${pitch > 0 ? '+' : ''}${pitch.toStringAsFixed(0)} st',
+                () => PitchBottomSheet.show(context, _player),
+                active: pitch.abs() >= 0.01,
+                semanticLabel:
+                    '${l10n.pitch}: ${l10n.pitchSemitones(pitch.round())}',
+                width: (constraints.maxWidth - 8) / 4,
+              ),
+            ),
+            chip(
+              LucideIcons.slidersHorizontal,
+              l10n.equalizer,
+              _openEqualizer,
               width: (constraints.maxWidth - 8) / 4,
             ),
-          ),
-          ValueListenableBuilder<double>(
-            valueListenable: _player.pitchSemitonesNotifier,
-            builder: (_, pitch, __) => chip(
-              Icons.graphic_eq_rounded,
-              pitch.abs() < 0.01
-                  ? l10n.pitch
-                  : '${pitch > 0 ? '+' : ''}${pitch.toStringAsFixed(0)} st',
-              () => PitchBottomSheet.show(context, _player),
-              active: pitch.abs() >= 0.01,
-              width: (constraints.maxWidth - 8) / 4,
-            ),
-          ),
-          chip(LucideIcons.slidersHorizontal, l10n.equalizer, _openEqualizer,
-            width: (constraints.maxWidth - 8) / 4),
-        ],
+          ],
+        ),
       ),
-    ));
+    );
   }
 }
 
@@ -2643,9 +3075,10 @@ class _MetadataDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Padding(
     padding: EdgeInsets.symmetric(horizontal: 7),
-    child: Text('·', style: TextStyle(
-      fontSize: 13, color: FullPlayerVisuals.tertiaryText,
-    )),
+    child: Text(
+      '·',
+      style: TextStyle(fontSize: 13, color: FullPlayerVisuals.tertiaryText),
+    ),
   );
 }
 
@@ -2752,6 +3185,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           null,
     ];
   }
+
   List<int> _ts = const [];
 
   List<double> _heights = const [];
@@ -2836,9 +3270,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     return _anchorPos.inMilliseconds + (elapsed * speed).round();
   }
 
-  int _indexAt(int ms) => focusedLeadUntilVocalsFinish(
-    _lines, Duration(milliseconds: ms),
-  );
+  int _indexAt(int ms) =>
+      focusedLeadUntilVocalsFinish(_lines, Duration(milliseconds: ms));
 
   double _centerFor(int a) =>
       a < 0 ? -(_introHeight + _gap) : _tops[a.clamp(0, _tops.length - 1)];
@@ -2876,7 +3309,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           // LyricMotionLine reserves an additional 8 px for glyph motion;
           // include it in scrolling geometry to prevent translated lines
           // clipping or colliding with the following line.
-          final hasTimedSubline = widget.showTranslation &&
+          final hasTimedSubline =
+              widget.showTranslation &&
               i < _timedSublines.length &&
               _timedSublines[i]?.text == sub;
           sh = _subGap + sp.height + (hasTimedSubline ? 8 : 0);
@@ -2891,7 +3325,12 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     _backgroundVocalHeights = [
       for (final bg in _backgroundVocalLines)
         _subGap +
-            LyricMotionLine.height(context, bg.text, _backingStyle, math.max(w, 40)) +
+            LyricMotionLine.height(
+              context,
+              bg.text,
+              _backingStyle,
+              math.max(w, 40),
+            ) +
             8,
     ];
     _layoutLyrics = widget.lyrics;
@@ -2906,14 +3345,15 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final tops = <double>[], heights = <double>[];
     for (var i = 0; i < _baseHeights.length; i++) {
       tops.add(y);
-      final backgroundHeight = i == _active &&
+      final backgroundHeight =
+          i == _active &&
               _backingReveal.visibleIndex >= 0 &&
               _backingReveal.visibleIndex < _backgroundVocalHeights.length
           ? _backgroundVocalHeights[_backingReveal.visibleIndex] *
-              _backingReveal.value
+                _backingReveal.value
           : 0.0;
-      final height = _baseHeights[i] +
-          _subHeights[i] * _sublineReveal + backgroundHeight;
+      final height =
+          _baseHeights[i] + _subHeights[i] * _sublineReveal + backgroundHeight;
       heights.add(height);
       y += height + _gap;
     }
@@ -2954,15 +3394,15 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final ms = _posNowMs();
     final a = _indexAt(ms);
     final nextBackground = activeFlowingBackgroundVocalIndex(
-      _backgroundVocalLines, Duration(milliseconds: ms),
+      _backgroundVocalLines,
+      Duration(milliseconds: ms),
     );
     final backgroundMoving = _backingReveal.advance(
       nextBackground,
       dt,
       reduceMotion: MediaQuery.disableAnimationsOf(context),
     );
-    if (previousReveal != _sublineReveal ||
-        backgroundMoving || a != _active) {
+    if (previousReveal != _sublineReveal || backgroundMoving || a != _active) {
       _active = a;
       _geometry();
     }
@@ -3033,7 +3473,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           );
 
     final sub = _translationOf(l);
-    final backing = i == _active &&
+    final backing =
+        i == _active &&
             _backingReveal.visibleIndex >= 0 &&
             _backingReveal.visibleIndex < _backgroundVocalLines.length
         ? _backgroundVocalLines[_backingReveal.visibleIndex]
@@ -3061,7 +3502,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
                           offset: Offset(0, (1 - _backingReveal.value) * 8),
                           child: Padding(
                             padding: const EdgeInsets.only(
-                              top: _subGap, bottom: 8,
+                              top: _subGap,
+                              bottom: 8,
                             ),
                             child: LyricMotionLine(
                               line: backing,
@@ -3087,7 +3529,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
                             offset: Offset(0, (1 - _sublineReveal) * 6),
                             child: FlowingLyricSubline(
                               text: sub,
-                              timedLine: widget.showTranslation &&
+                              timedLine:
+                                  widget.showTranslation &&
                                       i < _timedSublines.length &&
                                       _timedSublines[i]?.text == sub
                                   ? _timedSublines[i]
@@ -3096,9 +3539,14 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
                               singing: singing,
                               lightweight: _ultra,
                               style: _sub.copyWith(
-                                color: Colors.white.withValues(
-                                  alpha: i == _active ? .82 : op * .8,
-                                ),
+                                color:
+                                    (_sub.color ??
+                                            Theme.of(context)
+                                                .colorScheme
+                                                .onSurface)
+                                        .withValues(
+                                          alpha: i == _active ? .82 : op * .8,
+                                        ),
                               ),
                             ),
                           ),

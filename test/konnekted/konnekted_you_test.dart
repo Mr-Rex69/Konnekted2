@@ -1,3 +1,7 @@
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:flick/features/discovery/discovery_http.dart';
+import 'package:flick/features/discovery/discovery_artwork.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
@@ -5,14 +9,23 @@ import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 import 'package:flick/features/konnekted/konnekted_destination.dart';
 import 'package:flick/features/konnekted/konnekted_you.dart';
-import 'package:flick/features/discovery/discovery_artwork.dart';
+import 'package:flick/features/manual/screens/manual_screen.dart';
 import 'package:flick/features/settings/lokal/lokal_settings_group.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/milestone_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flick/l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _NoRemoteArtwork extends DiscoveryArtworkResolver {
+  _NoRemoteArtwork()
+    : super(DiscoveryHttp(MockClient((_) async => http.Response('{}', 200))));
+  @override
+  Future<String> resolve(DiscoveryArtworkRequest request) async => '';
+}
 
 const _song = Song(
   id: '1',
@@ -81,6 +94,7 @@ Widget _app({
   VoidCallback? onDockTap,
 }) => ProviderScope(
   overrides: [
+    discoveryArtworkResolverProvider.overrideWithValue(_NoRemoteArtwork()),
     youRecapsProvider.overrideWith((ref) => Stream.value(recaps)),
     youAccountsProvider.overrideWithValue(accounts),
     youStreakProvider.overrideWith((ref) async => streak),
@@ -137,6 +151,43 @@ void _tall(WidgetTester tester) {
 }
 
 void main() {
+  setUpAll(() async {
+    for (final (family, asset) in [
+      (LokalTheme.sans, 'assets/fonts/DMSans-Regular.ttf'),
+      ('NotoSansSC', 'assets/fonts/NotoSansSC-Regular.ttf'),
+    ]) {
+      await (FontLoader(family)..addFont(rootBundle.load(asset))).load();
+    }
+  });
+  testWidgets('profile and account controls fit all locales at 2x on 320px', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(320, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final previous = l10n;
+    addTearDown(() => LocaleController.instance.bind(previous));
+    for (final locale in kSupportedLocales) {
+      LocaleController.instance.bindLocale(locale);
+      await tester.pumpWidget(
+        _app(
+          onNavigate: (_) {},
+          textScale: 2,
+          accounts: const YouAccounts(
+            lastFm: 'A long profile name requiring truncation',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip(lokalText('Settings')), findsOneWidget);
+      expect(
+        tester.getSize(find.byTooltip(lokalText('Settings'))).height,
+        greaterThanOrEqualTo(44),
+      );
+      expect(tester.takeException(), isNull, reason: locale.toString());
+    }
+  });
   testWidgets('You profile and edit action share the aligned header', (
     tester,
   ) async {
@@ -169,40 +220,43 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('2x text scales profile name without clipping or moving actions', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
-    _tall(tester);
-    const longName = 'Long accessibility profile name that needs scrolling';
-    await tester.pumpWidget(
-      _app(
-        onNavigate: (_) {},
-        accounts: const YouAccounts(lastFm: longName),
-        textScale: 2,
-      ),
-    );
-    await tester.pump();
+  testWidgets(
+    '2x text scales profile name without clipping or moving actions',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      _tall(tester);
+      const longName = 'Long accessibility profile name that needs scrolling';
+      await tester.pumpWidget(
+        _app(
+          onNavigate: (_) {},
+          accounts: const YouAccounts(lastFm: longName),
+          textScale: 2,
+        ),
+      );
+      await tester.pump();
 
-    final name = tester.getRect(find.byType(OverflowMarqueeTitle));
-    final row = tester.getRect(
-      find.ancestor(
-        of: find.byType(OverflowMarqueeTitle),
-        matching: find.byType(Row),
-      ).first,
-    );
-    final discord = tester.getRect(find.byTooltip('Discord'));
-    final settings = tester.getRect(find.byTooltip('Settings'));
+      final name = tester.getRect(find.byType(OverflowMarqueeTitle));
+      final row = tester.getRect(
+        find
+            .ancestor(
+              of: find.byType(OverflowMarqueeTitle),
+              matching: find.byType(Row),
+            )
+            .first,
+      );
+      final discord = tester.getRect(find.byTooltip('Discord'));
+      final settings = tester.getRect(find.byTooltip('Settings'));
 
-    expect(row.height, greaterThan(44));
-    expect(name.height, greaterThan(44));
-    expect(name.top, greaterThanOrEqualTo(row.top));
-    expect(name.bottom, lessThanOrEqualTo(row.bottom));
-    expect(discord.center.dy, closeTo(settings.center.dy, .1));
-    expect(discord.center.dy, closeTo(row.center.dy, .1));
-    expect(settings.right, closeTo(390 - 16, .1));
-    expect(tester.takeException(), isNull);
-  });
+      expect(row.height, greaterThan(44));
+      expect(name.height, greaterThan(44));
+      expect(name.top, greaterThanOrEqualTo(row.top));
+      expect(name.bottom, lessThanOrEqualTo(row.bottom));
+      expect(discord.center.dy, closeTo(settings.center.dy, .1));
+      expect(discord.center.dy, closeTo(row.center.dy, .1));
+      expect(settings.right, closeTo(390 - 16, .1));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('empty: a default name, placeholders and no badges', (
     tester,
@@ -294,7 +348,8 @@ void main() {
         disableAnimations: false,
         recaps: {
           ListeningRecapPeriod.weekly: _recap(
-            ListeningRecapPeriod.weekly, plays: 12,
+            ListeningRecapPeriod.weekly,
+            plays: 12,
           ),
         },
       ),
@@ -316,7 +371,8 @@ void main() {
         disableAnimations: false,
         recaps: {
           ListeningRecapPeriod.weekly: _recap(
-            ListeningRecapPeriod.weekly, plays: 12,
+            ListeningRecapPeriod.weekly,
+            plays: 12,
           ),
         },
       ),
@@ -334,8 +390,11 @@ void main() {
     // PR #471 restored the full 330ms navigation slide. The old 90ms
     // hydration timer would start recap/artwork work halfway through it.
     await tester.pump(const Duration(milliseconds: 120));
-    expect(find.byType(DiscoveryArtwork), findsNothing,
-        reason: 'Recap work must not compete with the 330ms tab slide');
+    expect(
+      find.byType(DiscoveryArtwork),
+      findsNothing,
+      reason: 'Recap work must not compete with the 330ms tab slide',
+    );
     await tester.pump(const Duration(milliseconds: 80));
     await tester.pump();
     expect(find.byType(DiscoveryArtwork), findsOneWidget);
@@ -371,10 +430,11 @@ void main() {
     final portraits = tester.widgetList<DiscoveryArtwork>(
       find.byType(DiscoveryArtwork),
     );
-    expect(
-      portraits.map((portrait) => portrait.artist),
-      ['M83', 'Tyler, the Creator', 'Asake'],
-    );
+    expect(portraits.map((portrait) => portrait.artist), [
+      'M83',
+      'Tyler, the Creator',
+      'Asake',
+    ]);
     expect(find.text('M83'), findsWidgets);
     expect(find.text('Tyler, the Creator'), findsOneWidget);
     expect(find.text('Asake'), findsOneWidget);
@@ -404,6 +464,10 @@ void main() {
     await tester.tap(find.bySemanticsLabel('YouTube, not connected'));
     await tester.tap(find.text('Full history'));
     await tester.tap(find.text('Help'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ManualScreen), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.chevron_left_rounded));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('About'));
     await tester.pump();
 
@@ -422,10 +486,6 @@ void main() {
         section: LokalDataSections.accounts,
       ),
       KonnektedDestination.recentlyPlayed,
-      const KonnektedDestination.settingsAt(
-        LokalSettingsGroup.about,
-        section: 'Help',
-      ),
       const KonnektedDestination.settingsAt(
         LokalSettingsGroup.about,
         section: 'About',

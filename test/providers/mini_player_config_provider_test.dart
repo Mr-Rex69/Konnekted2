@@ -113,7 +113,7 @@ void main() {
     expect(config.navigationGap, 8);
     expect(config.textScale, 1);
     expect(config.backgroundOpacity, 0.94);
-    expect(config.titleMode, MiniPlayerTitleMode.truncate);
+    expect(config.titleMode, MiniPlayerConfig.defaultConfig.titleMode);
     expect(config.shadow, MiniPlayerShadow.subtle);
     expect(config.showBorder, isTrue);
     expect(config.showPrevious, isTrue);

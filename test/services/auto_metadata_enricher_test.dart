@@ -73,6 +73,7 @@ class _RecordingRepository implements SongRepository {
     int? discNumber,
     int? year,
     String? genre,
+    bool recordLink = true,
   }) async {
     updatedFiles.add(filePath);
     if (title != null) titles[filePath] = title;
@@ -91,39 +92,36 @@ void main() {
 
   AutoMetadataEnricher enricherWith(MockClient client) {
     final identification = AlbumIdentificationService.create(
-      metadata: AppleMusicMetadataService.create(
-        client: client,
-        cache: cache,
-      ),
+      metadata: AppleMusicMetadataService.create(client: client, cache: cache),
       repository: repository,
     );
     return AutoMetadataEnricher.create(identification: identification);
   }
 
-  MockClient exactMatchClient({void Function()? onSearch}) =>
-      MockClient((request) async {
-        if (request.url.path == '/search') {
-          onSearch?.call();
-          return _json({
-            'resultCount': 1,
-            'results': [_collection(10, 'Dummy')],
-          });
-        }
-        if (request.url.path == '/lookup') {
-          return _json({
-            'resultCount': 2,
-            'results': [
-              _track('Mysterons', 300, 1),
-              _track('Sour Times', 240, 2),
-            ],
-          });
-        }
-        return _json({'resultCount': 0, 'results': []});
+  MockClient exactMatchClient({void Function()? onSearch}) => MockClient((
+    request,
+  ) async {
+    if (request.url.path == '/search') {
+      onSearch?.call();
+      return _json({
+        'resultCount': 1,
+        'results': [_collection(10, 'Dummy')],
       });
+    }
+    if (request.url.path == '/lookup') {
+      return _json({
+        'resultCount': 2,
+        'results': [_track('Mysterons', 300, 1), _track('Sour Times', 240, 2)],
+      });
+    }
+    return _json({'resultCount': 0, 'results': []});
+  });
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({'apple_music_auto_enrich': true});
-    tempDir = await Directory.systemTemp.createTemp('apple_music_enricher_test');
+    tempDir = await Directory.systemTemp.createTemp(
+      'apple_music_enricher_test',
+    );
     cache = AppleMusicCache.forDirectory(tempDir);
     repository = _RecordingRepository();
   });
@@ -147,8 +145,14 @@ void main() {
     expect(summary.groupsQueued, 0);
     expect(summary.songsUpdated, 2);
     expect(repository.updatedFiles, hasLength(2));
-    expect(repository.titles['/storage/emulated/0/Music/Portishead/Dummy/01.wav'], 'Mysterons');
-    expect(repository.titles['/storage/emulated/0/Music/Portishead/Dummy/02.wav'], 'Sour Times');
+    expect(
+      repository.titles['/storage/emulated/0/Music/Portishead/Dummy/01.wav'],
+      'Mysterons',
+    );
+    expect(
+      repository.titles['/storage/emulated/0/Music/Portishead/Dummy/02.wav'],
+      'Sour Times',
+    );
   });
 
   test('queues ambiguous releases instead of applying them', () async {

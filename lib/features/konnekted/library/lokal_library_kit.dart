@@ -2,6 +2,7 @@ import 'package:flick/widgets/lokal/lokal_quality.dart';
 import 'package:flick/widgets/lokal/lokal_page_geometry.dart';
 
 import '../../link/lokal_ghost_availability.dart';
+
 import 'package:flick/services/link/library_song_identity.dart';
 
 import 'dart:async';
@@ -16,12 +17,14 @@ import 'package:flick/features/songs/widgets/song_actions_bottom_sheet.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/player_provider.dart';
+import 'package:flick/services/player_service.dart' show PlayerService;
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
+
 import 'replayable_stream_songs.dart';
 
 /// Shared pieces of Lokal's Library screens: Apple Music's iOS layout on the
@@ -33,78 +36,115 @@ import 'replayable_stream_songs.dart';
 @visibleForTesting
 Future<Song?> firstAvailableLibraryFallback(
   List<Song> queue,
-  Future<bool> Function(Song song) desktopAvailable,
-) async {
+  Future<bool> Function(Song song) desktopAvailable, {
+  bool Function()? stillCurrent,
+}) async {
   for (final song in queue) {
-    if (!song.isNetworkSource && !song.isPending &&
+    if (stillCurrent?.call() == false) return null;
+    if (!song.isNetworkSource &&
+        !song.isPending &&
         song.filePath?.isNotEmpty == true) {
       return song;
     }
   }
   for (final song in queue) {
-    if (song.sourceType == 'lokal' && await desktopAvailable(song)) {
-      return song;
+    if (stillCurrent?.call() == false) return null;
+    if (song.sourceType == 'lokal') {
+      final available = await desktopAvailable(song);
+      if (stillCurrent?.call() == false) return null;
+      if (available) return song;
     }
   }
   return null;
 }
 
+final _libraryPlayRequests = Expando<int>('library play preflight');
+
 /// Plays [queue] from [start] (or its first song); [shuffle] plays it in a
-/// random order. A failure shows a short message instead of throwing.
+/// random order. [startIndex] identifies repeated occurrences in the visible
+/// list, including when two entries refer to the same Song object.
+/// A failure shows a short message instead of throwing.
 Future<void> lokalPlay(
   BuildContext context,
   WidgetRef ref,
   List<Song> queue, {
   Song? start,
+  int? startIndex,
   bool shuffle = false,
 }) async {
   if (queue.isEmpty) return;
+  final player = ref.read(playerProvider.notifier);
+  final request = (_libraryPlayRequests[player] ?? 0) + 1;
+  _libraryPlayRequests[player] = request;
   final list = replayableStreamQueue(
     shuffle ? (List<Song>.of(queue)..shuffle()) : queue,
   );
   // Playback must use the same reconstructed entry as the queue, not a
   // stale favorite object from before the provider refreshed.
-  final selectedId = shuffle ? list.first.id : (start ?? queue.first).id;
-  var selected = list.firstWhere(
-    (song) => song.id == selectedId,
-    orElse: () => list.first,
-  );
-  try {
-    if (selected.sourceType == 'lokal' &&
-        !await ref.read(lokalSongAvailableProvider(selected).future)) {
-      // Play All and Shuffle should still work when the first entry is a
-      // desktop-only song and the PC is disconnected. Keep the original
-      // queue order, starting on the first device-local recording instead.
-      // An explicit tap must not silently select a different recording.
-      Song? fallback;
-      if (start == null) {
-        fallback = await firstAvailableLibraryFallback(
-          list,
-          (candidate) =>
-              ref.read(lokalSongAvailableProvider(candidate).future),
+  final requested =
+      start ??
+      (startIndex != null && startIndex >= 0 && startIndex < queue.length
+          ? queue[startIndex]
+          : queue.first);
+  final index = shuffle
+      ? 0
+      : PlayerService.selectedPlaylistIndex(
+          queue,
+          requested,
+          indexHint: startIndex,
         );
+  var selectedIndex = index < 0 ? 0 : index;
+  var selected = list[selectedIndex];
+  try {
+    if (selected.sourceType == 'lokal') {
+      final service = ref.read(playerServiceProvider);
+      final revision = service.playbackRequestRevision;
+      bool current() =>
+          context.mounted &&
+          _libraryPlayRequests[player] == request &&
+          service.playbackRequestRevision == revision;
+      // A mounted row may still hold an earlier offline result after the PC
+      // wakes. An explicit user action refreshes one shared server probe.
+      final server = selected.remoteServerId;
+      if (server != null) {
+        ref.invalidate(lokalDesktopStreamingAvailableProvider(server));
       }
-      if (fallback != null) {
-        // The fallback has already passed the same offline/cache check.
-        selected = fallback;
-      } else {
-        if (context.mounted) {
+      final available = await ref.read(
+        lokalSongAvailableProvider(selected).future,
+      );
+      if (!current()) return;
+      if (!available) {
+        final fallback = start == null && startIndex == null
+            ? await firstAvailableLibraryFallback(
+                list,
+                (candidate) =>
+                    ref.read(lokalSongAvailableProvider(candidate).future),
+                stillCurrent: current,
+              )
+            : null;
+        if (!current()) return;
+        if (fallback == null) {
           LokalToast.show(
             context,
-            lokalText('Reconnect to this Lokal desktop to stream its songs, or download them for offline playback.'),
+            lokalText(
+              'Reconnect to this Lokal desktop to stream its songs, or download them for offline playback.',
+            ),
           );
+          return;
         }
-        return;
+        selectedIndex = list.indexWhere((song) => identical(song, fallback));
+        selected = list[selectedIndex];
       }
     }
-    await ref
-        .read(playerProvider.notifier)
-        .play(selected, playlist: list);
+    if (!context.mounted || _libraryPlayRequests[player] != request) return;
+    await player.play(selected, playlist: list, playlistIndex: selectedIndex);
   } catch (_) {
     if (!context.mounted) return;
     LokalToast.show(
       context,
-      lokalText('Couldn’t play this song. Check that its file or server is available.'),
+      lokalText(
+        'Couldn’t play this song. Check that its file or server is available.',
+      ),
     );
   }
 }
@@ -186,10 +226,7 @@ class LokalLibraryPage extends StatelessWidget {
                       top: MediaQuery.paddingOf(context).top,
                       left: 0,
                       right: 0,
-                      child: LokalPageBar(
-                        showBack: showBack,
-                        actions: actions,
-                      ),
+                      child: LokalPageBar(showBack: showBack, actions: actions),
                     ),
                   ],
                 ),
@@ -206,25 +243,28 @@ class LokalLibraryPage extends StatelessWidget {
       );
     }
     return Scaffold(
-    backgroundColor: context.lokal.bg,
-    body: SafeArea(
-      bottom: false,
-      child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: LokalPageBar(showBack: showBack, actions: actions),
-          ),
-          SliverToBoxAdapter(
-            child: header ?? LokalLargeTitle(title: title, subtitle: subtitle),
-          ),
-          ...slivers,
-          SliverToBoxAdapter(
-            child: SizedBox(height: 150 + MediaQuery.paddingOf(context).bottom),
-          ),
-        ],
+      backgroundColor: context.lokal.bg,
+      body: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: LokalPageBar(showBack: showBack, actions: actions),
+            ),
+            SliverToBoxAdapter(
+              child:
+                  header ?? LokalLargeTitle(title: title, subtitle: subtitle),
+            ),
+            ...slivers,
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 150 + MediaQuery.paddingOf(context).bottom,
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -361,6 +401,7 @@ class LokalSectionTitle extends StatelessWidget {
 
   final String title;
   final VoidCallback? onSeeAll;
+
   /// Optional action text for expandable sections (e.g. See all / Hide).
   final String? actionLabel;
 
@@ -400,6 +441,7 @@ class LokalPlayShufflePills extends ConsumerWidget {
   const LokalPlayShufflePills({super.key, required this.songs, this.extra});
 
   final List<Song> songs;
+
   /// A third pill after Shuffle, e.g. Start radio.
   final Widget? extra;
 
@@ -525,8 +567,7 @@ class LokalTrackRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.lokal;
-    final second = subtitle ??
-        creditedLeadArtist(song);
+    final second = subtitle ?? creditedLeadArtist(song);
     final available =
         song.sourceType != 'lokal' ||
         (ref.watch(lokalSongAvailableProvider(song)).value ?? false);
@@ -539,20 +580,25 @@ class LokalTrackRow extends ConsumerWidget {
               final index = await player.addToQueue(replayableStreamSong(song));
               if (index > 0) await player.moveQueueItemToNext(index);
               if (context.mounted) {
-                LokalToast.show(context, lokalText('“{arg0}” plays next',
-                    args: {'arg0': song.title}));
+                LokalToast.show(
+                  context,
+                  lokalText('“{arg0}” plays next', args: {'arg0': song.title}),
+                );
               }
             }
           : null,
       onQueue: needsStreamReResolution(song)
           ? () async {
-              await ref.read(playerProvider.notifier)
+              await ref
+                  .read(playerProvider.notifier)
                   .addToQueue(replayableStreamSong(song));
               if (context.mounted) {
                 LokalToast.show(
                   context,
-                  lokalText('Added “{arg0}” to the queue',
-                      args: {'arg0': song.title}),
+                  lokalText(
+                    'Added “{arg0}” to the queue',
+                    args: {'arg0': song.title},
+                  ),
                 );
               }
             }
@@ -657,19 +703,22 @@ class LokalCoverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LokalPressable(
     radius: round ? 100 : 14,
-    semanticLabel: lokalText("{arg0}, {arg1}", args: {'arg0': title, 'arg1': subtitle}),
+    semanticLabel: lokalText(
+      "{arg0}, {arg1}",
+      args: {'arg0': title, 'arg1': subtitle},
+    ),
     onTap: onTap,
     child: ExcludeSemantics(
       child: Column(
-        crossAxisAlignment: round ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        crossAxisAlignment: round
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: [
           AspectRatio(
             aspectRatio: 1,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(round ? 999 : 14),
-              child: heroTag == null
-                  ? art
-                  : Hero(tag: heroTag!, child: art),
+              child: heroTag == null ? art : Hero(tag: heroTag!, child: art),
             ),
           ),
           const SizedBox(height: 9),

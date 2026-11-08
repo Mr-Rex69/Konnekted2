@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'domain/flow_models.dart';
 
+import 'package:flick/l10n/l10n.dart';
+
 /// Desktop's FlowPanel hero, using the currently selected Lokal theme.
 class FlowHero extends StatelessWidget {
   const FlowHero({
@@ -40,9 +42,7 @@ class FlowHero extends StatelessWidget {
         children: [
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: _FlowGlow(t.accent, t.purple),
-              ),
+              child: CustomPaint(painter: _FlowGlow(t.accent, t.purple)),
             ),
           ),
           Padding(
@@ -55,8 +55,10 @@ class FlowHero extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'FLOW',
-                        style: LokalTheme.label(t, color: t.accent)
-                            .copyWith(letterSpacing: 2.5),
+                        style: LokalTheme.label(
+                          t,
+                          color: t.accent,
+                        ).copyWith(letterSpacing: 2.5),
                       ),
                     ),
                     OutlinedButton.icon(
@@ -70,7 +72,7 @@ class FlowHero extends StatelessWidget {
                         side: BorderSide(color: t.border2),
                       ),
                       icon: const Icon(Icons.tune_rounded, size: 18),
-                      label: const Text('Tune'),
+                      label: Text(lokalText('Tune')),
                     ),
                   ],
                 ),
@@ -92,7 +94,7 @@ class FlowHero extends StatelessWidget {
                                 child: Text(
                                   mood == FlowMood.flow
                                       ? 'Flow'
-                                      : 'Flow · ' + mood.label,
+                                      : 'Flow · ' + lokalText(mood.label),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -115,7 +117,7 @@ class FlowHero extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Your personal soundtrack',
+                            lokalText('Your personal soundtrack'),
                             style: TextStyle(
                               color: t.muted,
                               fontSize: 14,
@@ -124,7 +126,10 @@ class FlowHero extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '$count tracks · Local library',
+                            lokalText(
+                              '{arg0} tracks · Your mix',
+                              args: {'arg0': count},
+                            ),
                             style: TextStyle(color: t.muted2, fontSize: 12),
                           ),
                         ],
@@ -148,11 +153,24 @@ class FlowHero extends StatelessWidget {
                         minimumSize: const Size(0, 44),
                         padding: const EdgeInsets.symmetric(horizontal: 18),
                       ),
-                      icon: Icon(playing ? Icons.pause : Icons.play_arrow, size: 20),
-                      label: Text(playing ? 'Pause' : 'Play'),
+                      icon: Icon(
+                        playing ? Icons.pause : Icons.play_arrow,
+                        size: 20,
+                      ),
+                      label: Text(lokalText(playing ? 'Pause' : 'Play')),
                     ),
-                    _outline(t, 'Shuffle', Icons.shuffle, enabled ? onShuffle : null),
-                    _outline(t, 'Save', Icons.playlist_add, enabled ? onSave : null),
+                    _outline(
+                      t,
+                      'Shuffle',
+                      Icons.shuffle,
+                      enabled ? onShuffle : null,
+                    ),
+                    _outline(
+                      t,
+                      'Save',
+                      Icons.playlist_add,
+                      enabled ? onSave : null,
+                    ),
                   ],
                 ),
                 if (busy)
@@ -186,7 +204,7 @@ class FlowHero extends StatelessWidget {
       side: BorderSide(color: t.border2),
     ),
     icon: Icon(icon, size: 18),
-    label: Text(name),
+    label: Text(lokalText(name)),
   );
 }
 
@@ -237,7 +255,7 @@ class FlowInfinityOrb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.lokal;
-    final label = playing ? 'Pause Flow' : 'Play Flow';
+    final label = lokalText(playing ? 'Pause Flow' : 'Play Flow');
     return Tooltip(
       message: label,
       child: Semantics(
@@ -286,13 +304,11 @@ class FlowInfinityOrb extends StatelessWidget {
                       gradient: SweepGradient(
                         colors: [t.accent, t.purple, t.accentDim, t.accent],
                       ),
-                      border: Border.all(
-                        color: t.text.withValues(alpha: .18),
-                      ),
+                      border: Border.all(color: t.text.withValues(alpha: .18)),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.all_inclusive_rounded,
-                      color: Colors.white,
+                      color: t.onAccent,
                       size: 30,
                     ),
                   ),

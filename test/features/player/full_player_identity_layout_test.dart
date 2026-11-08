@@ -16,54 +16,67 @@ void main() {
     var quality = 'LOSSLESS';
     late StateSetter change;
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: SizedBox(
-            width: 360,
-            child: StatefulBuilder(
-              builder: (context, setState) {
-                change = setState;
-                return FullPlayerIdentityLayout(
-                  titleFontSize: 29,
-                  titleToArtistGap: 3,
-                  title: OverflowMarqueeTitle(
-                    title: longTitle
-                        ? 'Let\'s Get It Started - Spike Mix - Extra Long Extended Edit'
-                        : 'ATTENTION',
-                    style: const TextStyle(fontSize: 29, fontWeight: FontWeight.w700),
-                  ),
-                  artist: Text(
-                    credit,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  trailing: [
-                    const SizedBox(width: 12),
-                    DecoratedBox(
-                      key: const ValueKey('quality-tag'),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3,
-                        ),
-                        child: Text(quality, style: const TextStyle(fontSize: 9)),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  change = setState;
+                  return FullPlayerIdentityLayout(
+                    titleFontSize: 29,
+                    titleToArtistGap: 3,
+                    title: OverflowMarqueeTitle(
+                      title: longTitle
+                          ? 'Let\'s Get It Started - Spike Mix - Extra Long Extended Edit'
+                          : 'ATTENTION',
+                      style: const TextStyle(
+                        fontSize: 29,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ],
-                );
-              },
+                    artist: Text(
+                      credit,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    trailing: [
+                      const SizedBox(width: 12),
+                      DecoratedBox(
+                        key: const ValueKey('quality-tag'),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          child: Text(
+                            quality,
+                            style: const TextStyle(fontSize: 9),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
-    final first = tester.getTopLeft(find.byKey(const ValueKey('quality-tag'))).dy;
-    final initialInfoHeight = tester.getSize(find.byType(FullPlayerIdentityLayout)).height;
+    final first = tester
+        .getTopLeft(find.byKey(const ValueKey('quality-tag')))
+        .dy;
+    final initialInfoHeight = tester
+        .getSize(find.byType(FullPlayerIdentityLayout))
+        .height;
 
     change(() {
       longTitle = true;
@@ -71,7 +84,9 @@ void main() {
       quality = 'HI-RES LOSSLESS';
     });
     await tester.pumpAndSettle();
-    final second = tester.getTopLeft(find.byKey(const ValueKey('quality-tag'))).dy;
+    final second = tester
+        .getTopLeft(find.byKey(const ValueKey('quality-tag')))
+        .dy;
     expect(second, closeTo(first, .01));
     expect(
       tester.getSize(find.byType(FullPlayerIdentityLayout)).height,
@@ -90,28 +105,35 @@ void main() {
       closeTo(first, .01),
     );
     expect(tester.takeException(), isNull);
+    // Retire the overflow marquee and drain its already scheduled pause.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets('metadata slot also scales with accessibility text', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: MediaQuery(
-        data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
-        child: const Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 320,
-              child: FullPlayerIdentityLayout(
-                titleFontSize: 29,
-                titleToArtistGap: 3,
-                title: Text('A title'),
-                artist: Text('Artist'),
-                trailing: [Text('LOSSLESS')],
+  testWidgets('metadata slot also scales with accessibility text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+          child: const Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                child: FullPlayerIdentityLayout(
+                  titleFontSize: 29,
+                  titleToArtistGap: 3,
+                  title: Text('A title'),
+                  artist: Text('Artist'),
+                  trailing: [Text('LOSSLESS')],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ));
+    );
     expect(
       tester.getSize(find.byType(FullPlayerIdentityLayout)).height,
       greaterThan(80),

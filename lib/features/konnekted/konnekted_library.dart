@@ -50,8 +50,7 @@ class KonnektedLibrary extends ConsumerWidget {
       case LokalLibraryAddAction.m3u:
         await lokalImportM3u(context, ref);
       case LokalLibraryAddAction.folder:
-        // The action promises to add a folder; go straight to Android's
-        // persisted folder picker and start its library scan.
+        // Open the platform folder/import picker after the sheet has closed.
         _addFolder(context);
       case null:
         break;
@@ -80,8 +79,9 @@ class KonnektedLibrary extends ConsumerWidget {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           // Preserve the Classipod easter egg on the title.
-                          onLongPress: () => Navigator.of(context)
-                              .push(ClassipodScreen.route(context)),
+                          onLongPress: () =>
+                              Navigator.of(context)
+                                  .push(ClassipodScreen.route(context)),
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
@@ -108,9 +108,8 @@ class KonnektedLibrary extends ConsumerWidget {
                     ),
                     const SizedBox(width: 10),
                     KonnektedHeaderActions(
-                      onSettings: () => onNavigate(
-                        KonnektedDestination.settings,
-                      ),
+                      onSettings: () =>
+                          onNavigate(KonnektedDestination.settings),
                     ),
                   ],
                 ),
@@ -123,7 +122,7 @@ class KonnektedLibrary extends ConsumerWidget {
               child: KonnektedMessage(
                 title: lokalText('Couldn’t open your collection'),
                 message: lokalText('Try again or manage your music folders.'),
-                actionLabel: 'Try again',
+                actionLabel: lokalText('Try again'),
                 onAction: () => ref.invalidate(songsProvider),
               ),
             )
@@ -135,29 +134,28 @@ class KonnektedLibrary extends ConsumerWidget {
                   'Choose a folder and let your collection take shape.',
                 ),
                 icon: Icons.library_music_rounded,
-                actionLabel: 'Add a music folder',
+                actionLabel: lokalText('Add a music folder'),
                 onAction: () => _addFolder(context),
               ),
             ),
           SliverToBoxAdapter(
-            child: RepaintBoundary(
-              child: _Tiles(onNavigate: onNavigate),
-            ),
+            child: RepaintBoundary(child: _Tiles(onNavigate: onNavigate)),
           ),
           if (songs != null && songs.isNotEmpty)
             SliverToBoxAdapter(
               child: RepaintBoundary(
                 child: KonnektedSongShelf(
-                title: lokalText('Library'),
-                songs: ref.watch(konnektedRecentlyAddedProvider),
-                summarySongs: library,
-                showTotalDuration: true,
-                emptyTitle: 'Your library is empty',
-                emptyMessage: 'Add music to see it here.',
-                onSeeAll: () => onNavigate(KonnektedDestination.recentlyAdded),
-                onRetry: () => ref.invalidate(songsProvider),
-                onPlay: (song, queue) =>
-                    lokalPlay(context, ref, queue, start: song),
+                  title: lokalText('Library'),
+                  songs: ref.watch(konnektedRecentlyAddedProvider),
+                  summarySongs: library,
+                  showTotalDuration: true,
+                  emptyTitle: 'Your library is empty',
+                  emptyMessage: 'Add music to see it here.',
+                  onSeeAll: () =>
+                      onNavigate(KonnektedDestination.recentlyAdded),
+                  onRetry: () => ref.invalidate(songsProvider),
+                  onPlay: (song, queue) =>
+                      lokalPlay(context, ref, queue, start: song),
                 ),
               ),
             ),
@@ -165,21 +163,19 @@ class KonnektedLibrary extends ConsumerWidget {
             child: LokalSectionTitle(title: lokalText('More')),
           ),
           SliverToBoxAdapter(
-            child: RepaintBoundary(
-              child: _MoreRows(onNavigate: onNavigate),
-            ),
+            child: RepaintBoundary(child: _MoreRows(onNavigate: onNavigate)),
           ),
           SliverToBoxAdapter(
             child: RepaintBoundary(
               child: KonnektedSongShelf(
-              title: lokalText('Recently played'),
-              songs: ref.watch(konnektedRecentSongsProvider),
-              emptyTitle: 'Nothing played yet',
-              emptyMessage: 'Songs you play show up here.',
-              onSeeAll: () => onNavigate(KonnektedDestination.recentlyPlayed),
-              onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
-              onPlay: (song, queue) =>
-                  lokalPlay(context, ref, queue, start: song),
+                title: lokalText('Recently played'),
+                songs: ref.watch(konnektedRecentSongsProvider),
+                emptyTitle: 'Nothing played yet',
+                emptyMessage: 'Songs you play show up here.',
+                onSeeAll: () => onNavigate(KonnektedDestination.recentlyPlayed),
+                onRetry: () => ref.invalidate(konnektedRecentSongsProvider),
+                onPlay: (song, queue) =>
+                    lokalPlay(context, ref, queue, start: song),
               ),
             ),
           ),
@@ -189,9 +185,6 @@ class KonnektedLibrary extends ConsumerWidget {
                 label: lokalText('Opening your collection'),
               ),
             ),
-
-          // The shell provides the floating dock clearance via MediaQuery.
-          // Avoid stacking an extra 150px spacer beneath the final shelf.
           SliverToBoxAdapter(
             child: SizedBox(
               key: const Key('library-bottom-clearance'),
@@ -224,7 +217,7 @@ class _Tiles extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 4),
       child: LayoutBuilder(
         builder: (context, c) {
-          final columns = c.maxWidth < 300 ? 1 : 2;
+          final columns = c.maxWidth < 2 * 148 * scale + 12 ? 1 : 2;
           final width = (c.maxWidth - 12 * (columns - 1)) / columns;
           return Wrap(
             spacing: 12,
@@ -235,7 +228,7 @@ class _Tiles extends ConsumerWidget {
                   width: width,
                   height: 58 * scale,
                   child: _Tile(
-                    label: label,
+                    label: lokalText(label),
                     icon: icon,
                     onTap: destination == null
                         ? () => pushLokal(context, const MusicVideosPage())
@@ -281,7 +274,7 @@ class _Tile extends StatelessWidget {
                   Expanded(
                     child: Text(
                       label,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 16,
@@ -308,6 +301,16 @@ class _MoreRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(
     children: [
+      LokalNavRow(
+        icon: Icons.music_note_rounded,
+        label: lokalText('Songs'),
+        onTap: () => onNavigate(KonnektedDestination.songs),
+      ),
+      LokalNavRow(
+        icon: Icons.download_rounded,
+        label: lokalText('Downloads'),
+        onTap: () => onNavigate(KonnektedDestination.downloads),
+      ),
       LokalNavRow(
         icon: Icons.auto_graph_rounded,
         label: lokalText('Recap'),

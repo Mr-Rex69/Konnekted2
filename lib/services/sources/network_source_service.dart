@@ -1,3 +1,4 @@
+import '../ios_library_scan_epoch.dart';
 import '../../data/database.dart';
 import '../../data/repositories/song_repository.dart';
 import '../library_scanner_service.dart' show ScanProgress;
@@ -46,7 +47,6 @@ abstract class NetworkSourceService {
   /// Raw cover-art bytes for [marker] (the opaque id/path/url stored after
   /// [coverScheme] in [SongEntity.albumArtPath]).
   Future<List<int>> getCoverArt(NetworkServerEntity server, String marker);
-
 
   /// Download (or cache-hit) the audio for [remoteId] into the network cache
   /// and return the local file path. [onProgress] reports 0..1 during a miss.
@@ -141,6 +141,7 @@ Future<void> purgeAndStampNetworkSync(
   NetworkServerEntity server,
   Set<String> syncedRemoteIds, {
   SongRepository? repo,
+  bool enforceScanEpoch = false,
 }) async {
   final songs = repo ?? SongRepository();
   final existing = await songs.getSongsByRemoteServer(server.id);
@@ -148,10 +149,15 @@ Future<void> purgeAndStampNetworkSync(
       .where((e) => e.remoteId != null && !syncedRemoteIds.contains(e.remoteId))
       .toList();
   if (stale.isNotEmpty) {
-    await songs.deleteSongsByIds(stale.map((e) => e.id).toList());
+    if (enforceScanEpoch) {
+      await songs.deleteScannedSongsByIds(stale.map((e) => e.id).toList());
+    } else {
+      await songs.deleteSongsByIds(stale.map((e) => e.id).toList());
+    }
   }
   final isar = songs.isar;
   await isar.writeTxn(() async {
+    if (enforceScanEpoch) IosLibraryScanEpoch.requireCurrent();
     final stored = await isar.networkServerEntitys.get(server.id);
     if (stored != null) {
       stored.lastSyncedAt = DateTime.now();

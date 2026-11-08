@@ -39,14 +39,25 @@ class _ShareBottomSheetState extends State<ShareBottomSheet> {
   bool _preparing = true, _busy = false, _saving = false;
   bool _lyricEdited = false, _autoFit = true;
   bool _lyricsLoading = true;
+  bool _preparationStarted = false;
   double _lyricSize = 32;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _prepare();
     _loadLyric();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // precacheImage reads inherited image configuration (including MediaQuery).
+    // Start after dependencies are available, once for this mounted preview.
+    if (!_preparationStarted) {
+      _preparationStarted = true;
+      _prepare();
+    }
   }
 
   @override
@@ -170,7 +181,10 @@ class _ShareBottomSheetState extends State<ShareBottomSheet> {
           fileName: 'lokal_card_${DateTime.now().millisecondsSinceEpoch}',
         );
         if (mounted)
-          LokalToast.fromSnackBar(context, SnackBar(content: Text(l10n.savedToGallery)));
+          LokalToast.fromSnackBar(
+            context,
+            SnackBar(content: Text(l10n.savedToGallery)),
+          );
       } else {
         final cache = await getTemporaryDirectory();
         final directory = await Directory('${cache.path}/share_cards')

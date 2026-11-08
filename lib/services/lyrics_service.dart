@@ -1,5 +1,6 @@
 import 'lyrics_matching.dart';
 import 'lyrics_flac_vorbis_reader.dart';
+
 import 'package:flick/data/database.dart';
 
 import 'dart:convert';
@@ -192,10 +193,14 @@ class LyricsService {
   /// measures lead timing and can silently replace a complete local lyric set
   /// with a lead-only word-timed copy.
   static int supportingVocalCount(LyricsData? lyrics) =>
-      lyrics?.lines.where(
-        (line) => line.voice == 'bg' ||
-            line.backgroundText?.trim().isNotEmpty == true,
-      ).length ?? 0;
+      lyrics?.lines
+          .where(
+            (line) =>
+                line.voice == 'bg' ||
+                line.backgroundText?.trim().isNotEmpty == true,
+          )
+          .length ??
+      0;
 
   /// Merge backing vocals from different representations of this SAME song
   /// without replacing the chosen lead, translation, or word timings.
@@ -278,9 +283,7 @@ class LyricsService {
   static LyricsSourceHit? sourceHitFor(Song song, String provider) =>
       _sourceHits[_hitKey(song)]?[provider];
 
-  static void _setSourceHit(
-    Song song, String provider, LyricsSourceHit value,
-  ) {
+  static void _setSourceHit(Song song, String provider, LyricsSourceHit value) {
     final key = _hitKey(song);
     if (!_sourceHits.containsKey(key) && _sourceHits.length >= 24) {
       final oldest = _sourceHits.keys.first;
@@ -299,19 +302,21 @@ class LyricsService {
     final running = _sourceProbes[key];
     if (running != null) return running;
     final checked = _sourceHitChecks[key];
-    if (checked != null &&
-        DateTime.now().difference(checked) < _sourceHitTtl) {
+    if (checked != null && DateTime.now().difference(checked) < _sourceHitTtl) {
       return Future.value();
     }
-    final ids = <String>['local', ...lyricsSources.keys]
-        .where((id) => _sourceHits[key]?[id]?.status != 'hit')
-        .toList();
+    final ids = <String>[
+      'local',
+      ...lyricsSources.keys,
+    ].where((id) => _sourceHits[key]?[id]?.status != 'hit').toList();
     for (final id in ids) {
       _setSourceHit(song, id, const LyricsSourceHit('checking'));
     }
     final future = _probeSourceHits(song, ids);
     _sourceProbes[key] = future;
-    return future.whenComplete(() { _sourceProbes.remove(key); });
+    return future.whenComplete(() {
+      _sourceProbes.remove(key);
+    });
   }
 
   Future<void> _probeSourceHits(Song song, List<String> ids) async {
@@ -321,21 +326,29 @@ class LyricsService {
         final id = ids[index++];
         LyricsData? result;
         try {
-          result = await (id == 'local'
-              ? loadLyricsForSong(song, source: 'local')
-              : fetchOnlineLyrics(song, source: id))
-              .timeout(const Duration(seconds: 20), onTimeout: () => null);
+          result =
+              await (id == 'local'
+                      ? loadLyricsForSong(song, source: 'local')
+                      : fetchOnlineLyrics(song, source: id))
+                  .timeout(const Duration(seconds: 20), onTimeout: () => null);
         } catch (_) {}
-        _setSourceHit(song, id, result != null && result.lines.isNotEmpty
-            ? LyricsSourceHit(
-                'hit',
-                result.lines.any((l) => l.words?.isNotEmpty == true)
-                    ? 'Syllable'
-                    : result.isSynchronized ? 'Line' : 'Plain',
-              )
-            : const LyricsSourceHit('miss'));
+        _setSourceHit(
+          song,
+          id,
+          result != null && result.lines.isNotEmpty
+              ? LyricsSourceHit(
+                  'hit',
+                  result.lines.any((l) => l.words?.isNotEmpty == true)
+                      ? 'Syllable'
+                      : result.isSynchronized
+                      ? 'Line'
+                      : 'Plain',
+                )
+              : const LyricsSourceHit('miss'),
+        );
       }
     }
+
     await Future.wait(List.generate(3, (_) => worker()));
     _sourceHitChecks[_hitKey(song)] = DateTime.now();
   }
@@ -376,17 +389,19 @@ class LyricsService {
     if (!fetchOnline ||
         source == 'local' ||
         (!refreshOnline &&
-            own?.lines.any((l) =>
-                l.voice != 'bg' && l.words?.isNotEmpty == true) == true))
+            own?.lines.any(
+                  (l) => l.voice != 'bg' && l.words?.isNotEmpty == true,
+                ) ==
+                true))
       return own;
     if (own != null && await getManualLyricsPathForSong(song) != null)
       return own;
     final found = await fetchOnlineLyrics(song, stillCurrent: stillCurrent);
-    int rank(LyricsData? data) => data == null ||
+    int rank(LyricsData? data) =>
+        data == null ||
             !data.lines.any((l) => l.voice != 'bg' && l.text.trim().isNotEmpty)
         ? 0
-        : data.lines.any((l) =>
-            l.voice != 'bg' && l.words?.isNotEmpty == true)
+        : data.lines.any((l) => l.voice != 'bg' && l.words?.isNotEmpty == true)
         ? 3
         : data.isSynchronized
         ? 2
@@ -451,11 +466,18 @@ class LyricsService {
         if (parsed.lines.isEmpty) return null;
         // Populate the chooser from lyrics the ordinary auto-lookup already
         // found. Opening it should not re-fetch known successful providers.
-        _setSourceHit(song, id, LyricsSourceHit(
-          'hit',
-          parsed.lines.any((line) => line.words?.isNotEmpty == true)
-              ? 'Syllable' : parsed.isSynchronized ? 'Line' : 'Plain',
-        ));
+        _setSourceHit(
+          song,
+          id,
+          LyricsSourceHit(
+            'hit',
+            parsed.lines.any((line) => line.words?.isNotEmpty == true)
+                ? 'Syllable'
+                : parsed.isSynchronized
+                ? 'Line'
+                : 'Plain',
+          ),
+        );
         return parsed;
       } catch (_) {
         return null;
@@ -546,11 +568,16 @@ class LyricsService {
     // A sidecar is the explicitly supplied local source. Otherwise preserve
     // word timing from linked Desktop lyrics, but overlay backing vocals from
     // the actual audio file even when the lead is equally word-synchronized.
-    bool hasLead(LyricsData? data) => data?.lines.any(
-      (line) => line.voice != 'bg' && line.text.trim().isNotEmpty,
-    ) == true;
-    final desktopTimed = desktop?.lines.any((line) =>
-        line.voice != 'bg' && line.words?.isNotEmpty == true) == true;
+    bool hasLead(LyricsData? data) =>
+        data?.lines.any(
+          (line) => line.voice != 'bg' && line.text.trim().isNotEmpty,
+        ) ==
+        true;
+    final desktopTimed =
+        desktop?.lines.any(
+          (line) => line.voice != 'bg' && line.words?.isNotEmpty == true,
+        ) ==
+        true;
     final ordered = <LyricsData?>[
       sidecarData,
       if (desktopTimed) desktop,
@@ -560,15 +587,14 @@ class LyricsService {
     // Never choose a bg-only field over another source's actual lead.
     final primary = ordered.firstWhere(
       hasLead,
-      orElse: () => ordered.firstWhere(
-        (data) => data != null,
-        orElse: () => null,
-      ),
+      orElse: () =>
+          ordered.firstWhere((data) => data != null, orElse: () => null),
     );
-    final selected = mergeSupportingVocals(
-      primary,
-      [embeddedData, sidecarData, desktop],
-    );
+    final selected = mergeSupportingVocals(primary, [
+      embeddedData,
+      sidecarData,
+      desktop,
+    ]);
     AppLog.instance.add(
       '[LyricsLocalSelected] bg=${supportingVocalCount(selected)} '
       'leadLines=${selected?.lines.where((l) => l.voice != 'bg').length ?? 0}',
@@ -614,8 +640,8 @@ class LyricsService {
       }
       final backgroundText = row['bgText']?.toString();
       final text = row['text']?.toString() ?? '';
-      if (text.trim().isEmpty &&
-          (backgroundText?.trim().isEmpty ?? true)) continue;
+      if (text.trim().isEmpty && (backgroundText?.trim().isEmpty ?? true))
+        continue;
       final (cleanText, cleanWords, voice) = _stripVoicePrefix(
         text,
         words.isEmpty ? null : words,
@@ -1021,7 +1047,17 @@ class LyricsService {
           .substring(segStart, segEnd)
           .replaceAll(_wordTimestampPattern, '');
       if (segment.isEmpty && i > 0) continue;
-      words.add(LyricsWord(start: times[i], end: times[i], text: segment));
+      var explicitEnd = times[i];
+      if (i + 1 < times.length && times[i + 1] > times[i]) {
+        final afterNext = i + 2 < times.length ? starts[i + 2] : body.length;
+        // Consecutive markers with no sung text between them encode a word
+        // end followed by a vocal gap. Keep ordinary start-only ELRC's existing
+        // playback completion policy, while retaining explicitly saved gaps.
+        if (body.substring(ends[i + 1], afterNext).trim().isEmpty) {
+          explicitEnd = times[i + 1];
+        }
+      }
+      words.add(LyricsWord(start: times[i], end: explicitEnd, text: segment));
     }
     return words.isEmpty ? null : words;
   }
@@ -1071,7 +1107,14 @@ class LyricsService {
       buffer.writeln();
     }
 
+    final timestampCounts = <int, int>{};
     for (final line in lines) {
+      final time = line.timestamp.inMilliseconds;
+      timestampCounts[time] = (timestampCounts[time] ?? 0) + 1;
+    }
+    var untaggedTranslations = 0;
+    for (var index = 0; index < lines.length; index++) {
+      final line = lines[index];
       final words = line.words;
       if (words != null && words.isNotEmpty) {
         final enhanced = words
@@ -1085,9 +1128,9 @@ class LyricsService {
       if (line.backgroundText?.trim().isNotEmpty == true) {
         final bgWords = line.backgroundWords;
         if (bgWords != null && bgWords.isNotEmpty) {
-          final timed = bgWords.map(
-            (w) => '<${_formatClock(w.start)}>${w.text}',
-          ).join();
+          final timed = bgWords
+              .map((w) => '<${_formatClock(w.start)}>${w.text}')
+              .join();
           final tail = bgWords.last.end > bgWords.last.start
               ? '<${_formatClock(bgWords.last.end)}>'
               : '';
@@ -1102,7 +1145,14 @@ class LyricsService {
       if (line.translation case final translation?
           when translation.trim().isNotEmpty &&
               translation.trim() != line.text.trim()) {
-        buffer.writeln('${formatTimestamp(line.timestamp)}${translation.trim()}');
+        if ((timestampCounts[line.timestamp.inMilliseconds] ?? 0) > 1) {
+          buffer.writeln('[lokaltr:${index + untaggedTranslations}]');
+        } else {
+          untaggedTranslations++;
+        }
+        buffer.writeln(
+          '${formatTimestamp(line.timestamp)}${translation.trim()}',
+        );
       }
     }
     return buffer.toString().trimRight();
@@ -1190,7 +1240,8 @@ class LyricsService {
     if (filePath == null || filePath.isEmpty) return null;
     final storedUri = await _storedMediaStoreUriForSong(song);
     final candidates = embeddedUriCandidates(
-      filePath, mediaStoreUri: storedUri,
+      filePath,
+      mediaStoreUri: storedUri,
     );
     _LoadedLyrics? selected;
     var nativeSuccess = 0;
@@ -1226,7 +1277,8 @@ class LyricsService {
     // Select the version containing most backing events, not merely the
     // first metadata value Android reports.
     final path = _resolveLocalPath(filePath);
-    final direct = path == null ? null
+    final direct = path == null
+        ? null
         : await FlacVorbisLyricsReader.readFile(path);
     final directBg = FlacVorbisLyricsReader.backgroundCount(direct);
     if (direct != null && directBg > bestCount) {
@@ -1361,6 +1413,7 @@ class LyricsService {
         if (seconds is! num || !seconds.isFinite || seconds < 0) return null;
         return Duration(microseconds: (seconds * 1000000).round());
       }
+
       List<LyricsWord>? units(Object? entries) {
         if (entries is! List) return null;
         final output = <LyricsWord>[];
@@ -1370,10 +1423,13 @@ class LyricsService {
           final end = at(unit[2]);
           if (start == null || end == null || end < start) continue;
           final spaced = unit.length > 3 && unit[3] == 1;
-          output.add(LyricsWord(
-            start: start, end: end,
-            text: (unit[0] as String) + (spaced ? ' ' : ''),
-          ));
+          output.add(
+            LyricsWord(
+              start: start,
+              end: end,
+              text: (unit[0] as String) + (spaced ? ' ' : ''),
+            ),
+          );
         }
         return output.isEmpty ? null : output;
       }
@@ -1384,19 +1440,21 @@ class LyricsService {
         final time = at(value['t']);
         if (time == null || value['x'] is! String) continue;
         final text = value['x'] as String;
-        final background = value['b'] is String &&
-                (value['b'] as String).trim().isNotEmpty
+        final background =
+            value['b'] is String && (value['b'] as String).trim().isNotEmpty
             ? value['b'] as String
             : null;
-        lines.add(LyricsLine(
-          timestamp: time,
-          text: text,
-          words: units(value['w']),
-          backgroundText: background,
-          backgroundWords: units(value['bw']),
-          translation: value['tr'] is String ? value['tr'] as String : null,
-          voice: value['a'] is String ? value['a'] as String : null,
-        ));
+        lines.add(
+          LyricsLine(
+            timestamp: time,
+            text: text,
+            words: units(value['w']),
+            backgroundText: background,
+            backgroundWords: units(value['bw']),
+            translation: value['tr'] is String ? value['tr'] as String : null,
+            voice: value['a'] is String ? value['a'] as String : null,
+          ),
+        );
       }
       if (lines.isEmpty) return null;
       lines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -1405,7 +1463,9 @@ class LyricsService {
         isSynchronized: data['sync'] != 'none',
         source: source ?? 'embedded:lokal',
         rawContent: raw,
-        language: data['language'] is String ? data['language'] as String : null,
+        language: data['language'] is String
+            ? data['language'] as String
+            : null,
       );
     } catch (_) {
       return null;
@@ -1421,7 +1481,8 @@ class LyricsService {
   LyricsLine _splitTrailingBackingVoice(LyricsLine line) {
     if (line.voice == 'bg' ||
         line.backgroundText?.trim().isNotEmpty == true ||
-        !line.text.trimRight().endsWith(')')) return line;
+        !line.text.trimRight().endsWith(')'))
+      return line;
     final text = line.text.trimRight();
     var depth = 0;
     int? opening;
@@ -1443,7 +1504,8 @@ class LyricsService {
     final lead = text.substring(0, opening).trimRight();
     final backing = text.substring(opening).trim();
     if (lead.isEmpty ||
-        !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(backing)) return line;
+        !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(backing))
+      return line;
 
     final words = line.words;
     List<LyricsWord>? leadWords;
@@ -1573,8 +1635,10 @@ class LyricsService {
         final body = backing.group(1)!;
         final text = body.replaceAll(_wordTimestampPattern, '').trim();
         if (text.isNotEmpty) {
-          final rawWords = (_extractWords(body, offsetMs) ?? const <LyricsWord>[])
-              .where((w) => w.text.trim().isNotEmpty).toList();
+          final rawWords =
+              (_extractWords(body, offsetMs) ?? const <LyricsWord>[])
+                  .where((w) => w.text.trim().isNotEmpty)
+                  .toList();
           final stamps = _wordTimestampPattern.allMatches(body).toList();
           final tail = stamps.isEmpty
               ? null
@@ -1584,14 +1648,15 @@ class LyricsService {
             for (var i = 0; i < rawWords.length; i++)
               LyricsWord(
                 start: rawWords[i].start,
-                end: i + 1 < rawWords.length &&
+                end:
+                    i + 1 < rawWords.length &&
                         rawWords[i + 1].start > rawWords[i].start
                     ? rawWords[i + 1].start
                     : i + 1 == rawWords.length &&
                           tailMs != null &&
                           tailMs > rawWords[i].start.inMilliseconds
-                        ? Duration(milliseconds: tailMs)
-                        : rawWords[i].start + const Duration(milliseconds: 500),
+                    ? Duration(milliseconds: tailMs)
+                    : rawWords[i].start + const Duration(milliseconds: 500),
                 text: rawWords[i].text,
               ),
           ];
@@ -1604,7 +1669,10 @@ class LyricsService {
             // Untimed annotations can still follow their immediately
             // preceding lead; timed vocals never depend on textual ordering.
             for (final index in previous) {
-              parsedLines[index] = parsedLines[index].withBackground(text, null);
+              parsedLines[index] = parsedLines[index].withBackground(
+                text,
+                null,
+              );
             }
           }
         }
@@ -1631,8 +1699,9 @@ class LyricsService {
           if (time != null &&
               parsedLines[target].timestamp.inMilliseconds ==
                   (time.inMilliseconds + offsetMs).clamp(0, 1 << 62)) {
-            parsedLines[target] =
-                parsedLines[target].withTranslation(lyricText);
+            parsedLines[target] = parsedLines[target].withTranslation(
+              lyricText,
+            );
             continue;
           }
         }
@@ -1677,12 +1746,9 @@ class LyricsService {
         // Some Vorbis tags contain ONLY [bg:] entries. Preserve them as
         // independently timed vocals; another source may supply the lead.
         for (final (text, words, onset) in backingRows) {
-          parsedLines.add(LyricsLine(
-            timestamp: onset,
-            text: text,
-            words: words,
-            voice: 'bg',
-          ));
+          parsedLines.add(
+            LyricsLine(timestamp: onset, text: text, words: words, voice: 'bg'),
+          );
         }
         backingRows.clear();
       }
@@ -1740,12 +1806,14 @@ class LyricsService {
         i = end;
       }
       bilingualLines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return _splitTrailingBackingVoices(LyricsData(
-        lines: bilingualLines,
-        isSynchronized: true,
-        source: source,
-        rawContent: raw,
-      ));
+      return _splitTrailingBackingVoices(
+        LyricsData(
+          lines: bilingualLines,
+          isSynchronized: true,
+          source: source,
+          rawContent: raw,
+        ),
+      );
     }
 
     return LyricsData(
@@ -1791,7 +1859,8 @@ class LyricsService {
       // which misses the ttm prefix on Android.
       String? role(XmlElement element) => element.attributes
           .where((attribute) => attribute.name.local == 'role')
-          .firstOrNull?.value;
+          .firstOrNull
+          ?.value;
 
       String leadText(XmlNode node) {
         if (node is XmlText) return node.value;
@@ -1814,6 +1883,7 @@ class LyricsService {
           if (const {'x-translation', 'x-roman'}.contains(role(node))) return;
           for (final child in node.children) walk(child);
         }
+
         walk(paragraph);
         return parts.join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
       }
@@ -1826,16 +1896,21 @@ class LyricsService {
       for (final paragraph in paragraphs) {
         final start = time(paragraph.getAttribute('begin'));
         final rawText = leadText(paragraph)
-            .replaceAll(RegExp(r'\s+'), ' ').trim();
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
         final bgText = backingText(paragraph);
         if (rawText.isEmpty && bgText.isEmpty) continue;
         if (start == null) {
           final (text, _, voice) = _stripVoicePrefix(rawText, null);
           if (text.isNotEmpty) {
-            plain.add(LyricsLine(
-              timestamp: Duration.zero, text: text, voice: voice,
-              backgroundText: bgText.isEmpty ? null : bgText,
-            ));
+            plain.add(
+              LyricsLine(
+                timestamp: Duration.zero,
+                text: text,
+                voice: voice,
+                backgroundText: bgText.isEmpty ? null : bgText,
+              ),
+            );
           }
           continue;
         }
@@ -1854,7 +1929,8 @@ class LyricsService {
           }
           if (span.descendants.whereType<XmlElement>().any(
             (child) => child.getAttribute('begin') != null,
-          )) continue;
+          ))
+            continue;
           // The x-bg role is often on an untimed enclosing span. Walk back
           // to the paragraph to assign each timed leaf to its own vocal lane.
           var owner = span as XmlNode?;
@@ -1876,11 +1952,13 @@ class LyricsService {
           final separator = tail is XmlText && tail.value.trim().isEmpty
               ? tail.value
               : '';
-          (backing ? bgWords : words).add(LyricsWord(
-            start: begin,
-            end: end,
-            text: span.innerText + separator,
-          ));
+          (backing ? bgWords : words).add(
+            LyricsWord(
+              start: begin,
+              end: end,
+              text: span.innerText + separator,
+            ),
+          );
         }
         final (text, cleanedWords, voice) = _stripVoicePrefix(
           rawText,
@@ -1888,22 +1966,26 @@ class LyricsService {
         );
         // A background-only TTML paragraph must not become a new lead row.
         if (text.isEmpty && bgText.isNotEmpty) {
-          lines.add(LyricsLine(
-            timestamp: bgWords.isNotEmpty ? bgWords.first.start : start,
-            text: bgText,
-            words: bgWords.isEmpty ? null : bgWords,
-            voice: 'bg',
-          ));
+          lines.add(
+            LyricsLine(
+              timestamp: bgWords.isNotEmpty ? bgWords.first.start : start,
+              text: bgText,
+              words: bgWords.isEmpty ? null : bgWords,
+              voice: 'bg',
+            ),
+          );
           continue;
         }
-        lines.add(LyricsLine(
-          timestamp: start,
-          text: text,
-          words: cleanedWords,
-          voice: voice,
-          backgroundText: bgText.isEmpty ? null : bgText,
-          backgroundWords: bgWords.isEmpty ? null : bgWords,
-        ));
+        lines.add(
+          LyricsLine(
+            timestamp: start,
+            text: text,
+            words: cleanedWords,
+            voice: voice,
+            backgroundText: bgText.isEmpty ? null : bgText,
+            backgroundWords: bgWords.isEmpty ? null : bgWords,
+          ),
+        );
       }
       if (lines.isNotEmpty || plain.isNotEmpty) {
         final timed = lines.isNotEmpty;

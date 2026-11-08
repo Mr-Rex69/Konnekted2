@@ -3,28 +3,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/appearance/lokal_performance_advisor.dart';
 
 void main() {
-  test('delayed frame timings use original page and navigation overrides scroll',
-      () {
-    // Raw FrameTiming timestamps and the engine's system frame stamp share
-    // an epoch; Unix DateTime timestamps do not.
-    final rawStart =
-        SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds + 1;
-    LokalPerformanceAdvisor.noteScroll(surface: 'Library');
-    expect(
-      LokalPerformanceAdvisor.activityForRawFrame(rawStart),
-      (kind: 'scroll', surface: 'Library'),
-    );
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'delayed frame timings use original page and navigation overrides scroll',
+    () {
+      // Raw FrameTiming timestamps and the engine's system frame stamp share
+      // an epoch; Unix DateTime timestamps do not.
+      final rawStart =
+          SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds +
+          1;
+      LokalPerformanceAdvisor.noteScroll(surface: 'Library');
+      expect(LokalPerformanceAdvisor.activityForRawFrame(rawStart), (
+        kind: 'scroll',
+        surface: 'Library',
+      ));
 
-    LokalPerformanceAdvisor.noteNavigation(surface: 'You');
-    expect(
-      LokalPerformanceAdvisor.activityForRawFrame(rawStart),
-      (kind: 'navigation', surface: 'You'),
-    );
-    expect(
-      LokalPerformanceAdvisor.activityForRawFrame(rawStart + 1000001),
-      (kind: 'idle', surface: 'other'),
-    );
-  });
+      LokalPerformanceAdvisor.noteNavigation(surface: 'You');
+      expect(LokalPerformanceAdvisor.activityForRawFrame(rawStart), (
+        kind: 'navigation',
+        surface: 'You',
+      ));
+      expect(LokalPerformanceAdvisor.activityForRawFrame(rawStart + 1000001), (
+        kind: 'idle',
+        surface: 'other',
+      ));
+    },
+  );
 
   test('scroll frame diagnostics identify the active tab', () {
     LokalPerformanceAdvisor.noteScroll(surface: 'Library');

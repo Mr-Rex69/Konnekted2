@@ -20,16 +20,19 @@ A new Flutter FFI plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '11.0'
+  s.platform = :ios, '15.0'
+  s.libraries = 'c++'
+  s.frameworks = 'AVFoundation', 'AudioToolbox', 'CoreAudio', 'CoreFoundation', 'Security', 'SystemConfiguration'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
 
+
   s.script_phase = {
     :name => 'Build Rust library',
     # First argument is relative path to the `rust` folder, second is name of rust library
-    :script => 'sh "$PODS_TARGET_SRCROOT/../cargokit/build_pod.sh" ../../rust rust_lib_flick_player',
+    :script => 'bash "$PODS_TARGET_SRCROOT/../cargokit/build_pod.sh" ../../rust rust_lib_flick_player',
     :execution_position => :before_compile,
     :input_files => ['${BUILT_PRODUCTS_DIR}/cargokit_phony'],
     # Let XCode know that the static library referenced in -force_load below is
@@ -40,6 +43,8 @@ A new Flutter FFI plugin project.
     'DEFINES_MODULE' => 'YES',
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_flick_player.a',
+    # Isolate lookups are invisible to native reachability. Retain exports in
+    # their defining framework, preserving the app's aggregate linker flags.
+    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_flick_player.a -Wl,-u,_lokal_soulseek_invoke -Wl,-u,_lokal_soulseek_free -Wl,-u,_lokal_soulseek_suspend -Wl,-u,_lokal_soulseek_resume',
   }
 end

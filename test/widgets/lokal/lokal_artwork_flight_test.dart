@@ -2,6 +2,11 @@ import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+Matcher sameSize(Size expected) => allOf(
+  isA<Size>().having((s) => s.width, 'width', closeTo(expected.width, 1e-9)),
+  isA<Size>().having((s) => s.height, 'height', closeTo(expected.height, 1e-9)),
+);
+
 void main() {
   const mini = Rect.fromLTWH(18, 710, 42, 42);
   const expanded = Rect.fromLTWH(0, 110, 400, 400);
@@ -20,8 +25,11 @@ void main() {
     expect(early.center.dx, greaterThan(dip.center.dx + 100));
     expect(dip.center.dy, greaterThan(mini.center.dy + 20));
     expect(recovery.center.dy, greaterThan(mini.center.dy + 10));
-    expect(recovery.center.dy, lessThan(dip.center.dy),
-        reason: 'Cover must rise from below its destination to dock');
+    expect(
+      recovery.center.dy,
+      lessThan(dip.center.dy),
+      reason: 'Cover must rise from below its destination to dock',
+    );
 
     // It curves to the mini from the right, rather than executing the old
     // centred horizontal sine hump or moving the whole player sheet.
@@ -30,7 +38,7 @@ void main() {
     for (final progress in [.01, .2, .5, .75, .99]) {
       expect(
         LokalArtworkFlight.rect(mini, expanded, progress).size,
-        Rect.lerp(mini, expanded, progress)!.size,
+        sameSize(Rect.lerp(mini, expanded, progress)!.size),
         reason: 'Only the cover centre curves; size/crop never squashes',
       );
     }
@@ -41,12 +49,18 @@ void main() {
     final hook = LokalArtworkFlight.rect(mini, expanded, .25);
     final rising = LokalArtworkFlight.rect(mini, expanded, .10);
 
-    expect(early.center.dx, lessThan(expanded.center.dx - 10),
-        reason: 'The long stroke must be diagonal, not vertical');
+    expect(
+      early.center.dx,
+      lessThan(expanded.center.dx - 10),
+      reason: 'The long stroke must be diagonal, not vertical',
+    );
     expect(early.center.dy, greaterThan(expanded.center.dy + 40));
     expect(hook.center.dx, greaterThan(mini.center.dx));
-    expect((hook.center.dx - mini.center.dx).abs(), lessThan(35),
-        reason: 'Bottom hook stays close to the miniature entry point');
+    expect(
+      (hook.center.dx - mini.center.dx).abs(),
+      lessThan(35),
+      reason: 'Bottom hook stays close to the miniature entry point',
+    );
     expect(hook.center.dy, greaterThan(mini.center.dy + 25));
     expect(rising.center.dx, lessThan(hook.center.dx));
     expect(rising.center.dy, lessThan(hook.center.dy));
@@ -71,20 +85,31 @@ void main() {
     expect(LokalArtworkFlight.rect(rightMini, expanded, 0), rightMini);
   });
 
-  test('full-size and Canvas covers use the same J with exact endpoint landing', () {
-    const wideMini = Rect.fromLTWH(18, 710, 52, 52);
-    for (final full in [
-      const Rect.fromLTWH(0, 0, 400, 480),
-      const Rect.fromLTWH(0, 0, 400, 800),
-    ]) {
-      final dip = LokalArtworkFlight.rect(wideMini, full, .15, sheetTravel: 700);
-      expect(dip.center.dy, greaterThan(wideMini.center.dy + 20));
-      expect(dip.bottom, greaterThan(wideMini.bottom),
-          reason: 'The return must visibly travel below its final position');
-      expect(LokalArtworkFlight.rect(wideMini, full, 0), wideMini);
-      expect(LokalArtworkFlight.rect(wideMini, full, 1), full);
-    }
-  });
+  test(
+    'full-size and Canvas covers use the same J with exact endpoint landing',
+    () {
+      const wideMini = Rect.fromLTWH(18, 710, 52, 52);
+      for (final full in [
+        const Rect.fromLTWH(0, 0, 400, 480),
+        const Rect.fromLTWH(0, 0, 400, 800),
+      ]) {
+        final dip = LokalArtworkFlight.rect(
+          wideMini,
+          full,
+          .15,
+          sheetTravel: 700,
+        );
+        expect(dip.center.dy, greaterThan(wideMini.center.dy + 20));
+        expect(
+          dip.bottom,
+          greaterThan(wideMini.bottom),
+          reason: 'The return must visibly travel below its final position',
+        );
+        expect(LokalArtworkFlight.rect(wideMini, full, 0), wideMini);
+        expect(LokalArtworkFlight.rect(wideMini, full, 1), full);
+      }
+    },
+  );
 
   test('temporary GlobalKey detachment does not cancel the active morph', () {
     Rect? live = mini;
@@ -104,7 +129,7 @@ void main() {
     final nearMini = LokalArtworkFlight.rect(mini, expanded, .001);
     expect(nearMini.center.dy, greaterThan(dock.dy));
     expect((nearMini.center - dock).distance, lessThan(1));
-    expect(nearMini.size, Rect.lerp(mini, expanded, .001)!.size);
+    expect(nearMini.size, sameSize(Rect.lerp(mini, expanded, .001)!.size));
 
     final nearFull = LokalArtworkFlight.rect(mini, expanded, .999);
     expect((nearFull.center - expanded.center).distance, lessThan(2));
@@ -133,14 +158,20 @@ void main() {
   });
   test('the J dip scales with sheet travel and remains bounded', () {
     final longer = LokalArtworkFlight.rect(
-      mini, expanded, .2, sheetTravel: 700,
+      mini,
+      expanded,
+      .2,
+      sheetTravel: 700,
     );
     final shorter = LokalArtworkFlight.rect(
-      mini, expanded, .2, sheetTravel: 100,
+      mini,
+      expanded,
+      .2,
+      sheetTravel: 100,
     );
     expect(longer.center.dy, greaterThan(shorter.center.dy + 25));
     expect(longer.center.dy, greaterThan(mini.center.dy));
-    expect(shorter.size, longer.size);
+    expect(shorter.size, sameSize(longer.size));
 
     // No inverted J when the mini artwork is *above* its expanded target.
     const upperMini = Rect.fromLTWH(20, 0, 48, 48);
@@ -148,6 +179,4 @@ void main() {
     final direct = Rect.lerp(upperMini, upperFull, .5)!;
     expect(LokalArtworkFlight.rect(upperMini, upperFull, .5), direct);
   });
-
-
 }

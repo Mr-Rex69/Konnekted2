@@ -150,10 +150,14 @@ void main() {
     expect(disposed, 1);
     await tester.pumpWidget(const SizedBox());
     suppression.dispose();
+    // Process-lifetime recovery is intentionally armed by the pressure event;
+    // cancel it before Flutter's pending-timer invariant runs.
+    MotionArtMemoryPressure.instance.resetForTesting();
   });
 
-  testWidgets('memory pressure without any mounted view still gates new video',
-      (tester) async {
+  testWidgets('memory pressure without any mounted view still gates new video', (
+    tester,
+  ) async {
     final previousPlatform = VideoPlayerPlatform.instance;
     VideoPlayerPlatform.instance = _VideoPlatform();
     addTearDown(() => VideoPlayerPlatform.instance = previousPlatform);
@@ -216,5 +220,4 @@ void main() {
     await warm.release(immediate: true);
     suppression.dispose();
   });
-
 }

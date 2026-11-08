@@ -55,53 +55,64 @@ void main() {
     final health = await addon.health(exactManifestUrl: pasted);
     expect(health.name, 'Qobuz [Heisenbergg]');
     expect(requests, [pasted]);
-    expect(addon.base.toString(),
-        'https://addons.example/private/a/Qobuz-Token');
+    expect(
+      addon.base.toString(),
+      'https://addons.example/private/a/Qobuz-Token',
+    );
   });
 
-  test('encoded manifest path survives secure settings and later checks', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-    final store = DiscoverySettingsStore();
-    const exact = 'https://addons.example/private/a%40b/manifest.json';
-    final endpoint = normalizeAddonEndpoint(exact).toString();
-    await store.save(DiscoverySettings(addons: [
-      DiscoveryAddonConfig(
-        id: 'encoded',
-        endpoint: endpoint,
-        manifestUrl: exact,
-        label: 'Private source',
-        enabled: true,
-      ),
-    ]));
-    final saved = (await store.load()).addons.single;
-    expect(saved.manifestUrl, exact);
-    final requests = <Uri>[];
-    final client = MockClient((request) async {
-      requests.add(request.url);
-      if (request.url.toString() == exact) return _json(_manifest);
-      if (request.url.path.endsWith('/stream/track')) {
-        return _json({'url': 'https://media.example/song.flac'});
-      }
-      return http.Response('Not found', 404);
-    });
-    addTearDown(client.close);
-    final addon = DiscoveryAddon(
-      DiscoveryHttp(client),
-      endpoint: saved.endpoint,
-      exactManifestUrl: Uri.parse(saved.manifestUrl!),
-      configId: saved.id,
-    );
-    expect((await addon.health()).cacheAllowed, isTrue);
-    expect(requests.single.toString(), exact);
-    final song = DiscoveryTrack(
-      id: 'track', title: 'Song', artist: 'Artist',
-      source: DiscoverySource.addon,
-      addonId: saved.id,
-      addonBase: addon.base,
-    );
-    await addon.resolve(song, forDownload: true);
-    expect(requests[1].toString(), exact);
-  });
+  test(
+    'encoded manifest path survives secure settings and later checks',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final store = DiscoverySettingsStore();
+      const exact = 'https://addons.example/private/a%40b/manifest.json';
+      final endpoint = normalizeAddonEndpoint(exact).toString();
+      await store.save(
+        DiscoverySettings(
+          addons: [
+            DiscoveryAddonConfig(
+              id: 'encoded',
+              endpoint: endpoint,
+              manifestUrl: exact,
+              label: 'Private source',
+              enabled: true,
+            ),
+          ],
+        ),
+      );
+      final saved = (await store.load()).addons.single;
+      expect(saved.manifestUrl, exact);
+      final requests = <Uri>[];
+      final client = MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.toString() == exact) return _json(_manifest);
+        if (request.url.path.endsWith('/stream/track')) {
+          return _json({'url': 'https://media.example/song.flac'});
+        }
+        return http.Response('Not found', 404);
+      });
+      addTearDown(client.close);
+      final addon = DiscoveryAddon(
+        DiscoveryHttp(client),
+        endpoint: saved.endpoint,
+        exactManifestUrl: Uri.parse(saved.manifestUrl!),
+        configId: saved.id,
+      );
+      expect((await addon.health()).cacheAllowed, isTrue);
+      expect(requests.single.toString(), exact);
+      final song = DiscoveryTrack(
+        id: 'track',
+        title: 'Song',
+        artist: 'Artist',
+        source: DiscoverySource.addon,
+        addonId: saved.id,
+        addonBase: addon.base,
+      );
+      await addon.resolve(song, forDownload: true);
+      expect(requests[1].toString(), exact);
+    },
+  );
 
   test('rejects foreign and malformed persisted manifest URLs', () {
     for (final manifestUrl in [
@@ -112,7 +123,8 @@ void main() {
     ]) {
       expect(
         () => DiscoveryAddonConfig(
-          id: 'bad', endpoint: 'https://addon.example/path',
+          id: 'bad',
+          endpoint: 'https://addon.example/path',
           manifestUrl: manifestUrl,
         ).validated(),
         throwsA(isA<DiscoveryException>()),
@@ -153,71 +165,84 @@ void main() {
     final quality = health.settings.single;
     expect(quality.label, 'quality');
     expect(quality.defaultValue, 'LOSSLESS');
-    expect(
-      quality.options.map((o) => o.value),
-      ['LOSSLESS', 'HI_RES', 'HIGH', 'LOW'],
-    );
+    expect(quality.options.map((o) => o.value), [
+      'LOSSLESS',
+      'HI_RES',
+      'HIGH',
+      'LOW',
+    ]);
   });
 
-  test('cover metadata reaches player track; quality goes to search/stream', () async {
-    final requests = <Uri>[];
-    final client = MockClient((request) async {
-      requests.add(request.url);
-      if (request.url.path.endsWith('/manifest.json')) return _json(_manifest);
-      if (request.url.path.endsWith('/search')) {
-        return _json({
-          'tracks': [
-            {
-              'id': 'track/1',
-              'title': 'Song with artwork',
-              'artist': 'Artist',
-              'artworkURL': 'https://images.example/track.jpg',
-            },
-            {
-              'id': 'track/2',
-              'title': 'Album artwork',
-              'albumArtworkURL': 'https://images.example/album.jpg',
-            },
-            {
-              'id': 'track/3',
-              'title': 'Unsafe artwork',
-              'artworkURL': 'http://insecure.example/pic.jpg',
-            },
-          ],
-        });
-      }
-      return _json({'url': 'https://media.example/song.flac'});
-    });
-    addTearDown(client.close);
-    final addon = DiscoveryAddon(
-      DiscoveryHttp(client),
-      endpoint: 'https://addon.example/private',
-      settings: const {'quality': 'HI_RES'},
-    );
-    final tracks = await addon.search('song');
-    expect(tracks, hasLength(3));
-    expect(tracks[0].artwork, 'https://images.example/track.jpg');
-    expect(tracks[1].artwork, 'https://images.example/album.jpg');
-    expect(tracks[2].artwork, isNull);
-    expect(requests[0].queryParameters, {'quality': 'HI_RES', 'q': 'song'});
-    await addon.resolve(tracks[0]);
-    expect(requests, hasLength(2));
-    expect(requests[1].pathSegments.last, 'track/1');
-    expect(requests[1].queryParameters['quality'], 'HI_RES');
-  });
+  test(
+    'cover metadata reaches player track; quality goes to search/stream',
+    () async {
+      final requests = <Uri>[];
+      final client = MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.path.endsWith('/manifest.json'))
+          return _json(_manifest);
+        if (request.url.path.endsWith('/search')) {
+          return _json({
+            'tracks': [
+              {
+                'id': 'track/1',
+                'title': 'Song with artwork',
+                'artist': 'Artist',
+                'artworkURL': 'https://images.example/track.jpg',
+              },
+              {
+                'id': 'track/2',
+                'title': 'Album artwork',
+                'albumArtworkURL': 'https://images.example/album.jpg',
+              },
+              {
+                'id': 'track/3',
+                'title': 'Unsafe artwork',
+                'artworkURL': 'http://insecure.example/pic.jpg',
+              },
+            ],
+          });
+        }
+        return _json({'url': 'https://media.example/song.flac'});
+      });
+      addTearDown(client.close);
+      final addon = DiscoveryAddon(
+        DiscoveryHttp(client),
+        endpoint: 'https://addon.example/private',
+        settings: const {'quality': 'HI_RES'},
+      );
+      final tracks = await addon.search('song');
+      expect(tracks, hasLength(3));
+      expect(tracks[0].artwork, 'https://images.example/track.jpg');
+      expect(tracks[1].artwork, 'https://images.example/album.jpg');
+      expect(tracks[2].artwork, isNull);
+      expect(requests[0].queryParameters, {'quality': 'HI_RES', 'q': 'song'});
+      await addon.resolve(tracks[0]);
+      expect(requests, hasLength(2));
+      expect(requests[1].pathSegments.last, 'track/1');
+      expect(requests[1].queryParameters['quality'], 'HI_RES');
+      // Explicit saving must still enforce the current manifest policy.
+      await addon.resolve(tracks[0], forDownload: true);
+      expect(requests[2].path, '/private/manifest.json');
+      expect(requests[3].pathSegments.last, 'track/1');
+      expect(requests[3].queryParameters['quality'], 'HI_RES');
+    },
+  );
 
   test('secure settings survive reload and older version 2 records', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final store = DiscoverySettingsStore();
-    final withSettings = DiscoverySettings(addons: [
-      const DiscoveryAddonConfig(
-        id: 'qobuz',
-        endpoint: 'https://addon.example/private',
-        label: 'Qobuz [Heisenbergg]',
-        settings: {'quality': 'HI_RES'},
-        enabled: true,
-      ),
-    ]);
+    final withSettings = DiscoverySettings(
+      addons: [
+        const DiscoveryAddonConfig(
+          id: 'qobuz',
+          endpoint: 'https://addon.example/private',
+          label: 'Qobuz [Heisenbergg]',
+          settings: {'quality': 'HI_RES'},
+          enabled: true,
+        ),
+      ],
+    );
     await store.save(withSettings);
     final reloaded = await store.load();
     expect(reloaded.addons.single.displayName, 'Qobuz [Heisenbergg]');

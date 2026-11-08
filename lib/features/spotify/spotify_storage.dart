@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flick/services/playback_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'spotify_models.dart';
@@ -58,7 +59,7 @@ abstract interface class SpotifyTokenStore {
 /// ordinary preferences because they are not credentials.
 class SecureSpotifyTokenStore implements SpotifyTokenStore {
   SecureSpotifyTokenStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const PlaybackSecureStorage();
 
   static const _key = 'konnekted.spotify.tokens.v1';
   static final sessionRevision = ValueNotifier<int>(0);
@@ -169,7 +170,8 @@ class SpotifySettingsStore {
   static const clientIdKey = 'konnekted.spotify.client_id.v1';
   static const metadataKey = 'konnekted.spotify.metadata.v1';
   static const discoveryEnabledKey = 'konnekted.spotify.discovery_enabled.v1';
-  static const playlistAutoUpdateKey = 'konnekted.spotify.playlists_auto_update.v1';
+  static const playlistAutoUpdateKey =
+      'konnekted.spotify.playlists_auto_update.v1';
 
   final SpotifyPreferenceStore preferences;
   final SpotifyTokenStore tokenStore;
@@ -189,10 +191,9 @@ class SpotifySettingsStore {
   Future<bool> loadPlaylistAutoUpdate() async =>
       (await preferences.read(playlistAutoUpdateKey)) == 'true';
 
-  Future<void> savePlaylistAutoUpdate(bool enabled) =>
-      enabled
-          ? preferences.write(playlistAutoUpdateKey, 'true')
-          : preferences.remove(playlistAutoUpdateKey);
+  Future<void> savePlaylistAutoUpdate(bool enabled) => enabled
+      ? preferences.write(playlistAutoUpdateKey, 'true')
+      : preferences.remove(playlistAutoUpdateKey);
 
   Future<bool> loadDiscoveryEnabled() async =>
       (await preferences.read(discoveryEnabledKey)) == 'true';

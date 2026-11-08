@@ -7,10 +7,12 @@ import 'package:path/path.dart' as p;
 
 import '../data/repositories/song_repository.dart';
 import '../models/song.dart';
+import '../features/discovery/discovery_http.dart';
 import '../core/utils/artist_credits.dart' show splitArtistCredits;
 import 'album_art_import_service.dart';
 import 'album_art_service.dart';
 import 'artwork_pixel_validation.dart';
+import 'graceful_http_client.dart';
 
 /// An explicit maintenance operation, never a startup/background scan.
 /// Only exact album/artist matches are eligible; user-selected artwork is
@@ -59,8 +61,13 @@ bool canRepairAlbum(Song song) {
   final artist = repairIdentity(repairLeadArtist(song));
   return album.isNotEmpty &&
       artist.isNotEmpty &&
-      !const {'unknown album', 'unknown', 'untitled', 'n/a', 'various artists'}
-          .contains(album) &&
+      !const {
+        'unknown album',
+        'unknown',
+        'untitled',
+        'n/a',
+        'various artists',
+      }.contains(album) &&
       !const {'unknown artist', 'unknown', 'various artists'}.contains(artist);
 }
 
@@ -73,10 +80,17 @@ AlbumArtCandidate? exactRepairCandidate(
   final album = repairIdentity(song.album ?? '');
   final artist = repairIdentity(repairLeadArtist(song));
   if (!canRepairAlbum(song)) return null;
-  final exact = candidates.where((candidate) =>
-      repairIdentity(candidate.title) == album &&
-      repairIdentity(splitArtistCredits(candidate.artist).firstOrNull ??
-          candidate.artist) == artist).toList();
+  final exact = candidates
+      .where(
+        (candidate) =>
+            repairIdentity(candidate.title) == album &&
+            repairIdentity(
+                  splitArtistCredits(candidate.artist).firstOrNull ??
+                      candidate.artist,
+                ) ==
+                artist,
+      )
+      .toList();
   AlbumArtCandidate? unique(List<AlbumArtCandidate> matches) {
     final urls = matches.map((candidate) => candidate.imageUrl).toSet();
     if (urls.length == 1) return matches.first;
@@ -86,20 +100,29 @@ AlbumArtCandidate? exactRepairCandidate(
     // one candidate; otherwise leave the existing cover unchanged.
     final year = song.year;
     if (year == null || year <= 0) return null;
-    final dated = matches.where((item) =>
-        item.releaseDate?.startsWith('$year') == true).toList();
+    final dated = matches
+        .where((item) => item.releaseDate?.startsWith('$year') == true)
+        .toList();
     return dated.map((item) => item.imageUrl).toSet().length == 1 &&
-            dated.isNotEmpty ? dated.first : null;
+            dated.isNotEmpty
+        ? dated.first
+        : null;
   }
+
   for (final source in ['iTunes', 'Deezer', 'Cover Art Archive']) {
-    final matches = exact.where((candidate) => candidate.sourceLabel == source).toList();
+    final matches = exact
+        .where((candidate) => candidate.sourceLabel == source)
+        .toList();
     if (matches.isNotEmpty) return unique(matches);
   }
   // Other providers are used only when the edition is unambiguous.
   return unique(exact);
 }
 
-bool isCoverUpgrade({required int currentShortSide, required int newShortSide}) {
+bool isCoverUpgrade({
+  required int currentShortSide,
+  required int newShortSide,
+}) {
   return currentShortSide < 640 &&
       newShortSide >= 640 &&
       newShortSide >= currentShortSide * 1.5;
@@ -112,7 +135,7 @@ class ArtworkRepairService {
     http.Client? client,
   }) : _repository = repository ?? SongRepository(),
        _importer = importer ?? AlbumArtImportService.instance,
-       _client = client ?? http.Client(),
+       _client = client ?? GracefulHttpClient(),
        _ownsClient = client == null;
 
   final SongRepository _repository;
@@ -121,9 +144,16 @@ class ArtworkRepairService {
   final bool _ownsClient;
   bool _cancel = false;
   bool _running = false;
+  Completer<void>? _cancelRequest;
 
-  void cancel() => _cancel = true;
+  void cancel() {
+    _cancel = true;
+    final request = _cancelRequest;
+    if (request != null && !request.isCompleted) request.complete();
+  }
+
   void dispose() {
+    cancel();
     if (_ownsClient) _client.close();
   }
 
@@ -166,24 +196,22 @@ class ArtworkRepairService {
   Future<Uint8List?> _fetchArtwork(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != 'https') return null;
-    const limit = 5 * 1024 * 1024;
+    if (_cancel) return null;
     try {
-      final request = http.Request('GET', uri);
-      final response = await _client.send(request).timeout(
-        const Duration(seconds: 12),
-      );
-      if (response.statusCode != 200 || response.contentLength != null &&
-          response.contentLength! > limit) return null;
       final builder = BytesBuilder(copy: false);
-      var total = 0;
-      await for (final chunk in response.stream.timeout(
-          const Duration(seconds: 12))) {
-        total += chunk.length;
-        if (_cancel || total > limit) return null;
-        builder.add(chunk);
-      }
+      await DiscoveryHttp(_client).transfer(
+        uri,
+        headers: const {'Accept': 'image/*'},
+        maxBytes: artworkMaxBytes,
+        deadline: const Duration(seconds: 12),
+        onChunk: builder.add,
+        cancel: _cancelRequest!.future,
+        followArtworkRedirects: true,
+      );
       return builder.takeBytes();
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<ArtworkRepairProgress> refresh({
@@ -192,23 +220,37 @@ class ArtworkRepairService {
     if (_running) throw StateError('Artwork refresh already running');
     _running = true;
     _cancel = false;
+    _cancelRequest = Completer<void>();
     var total = 0, checked = 0, updated = 0, skipped = 0, failed = 0;
-    void report() => onProgress(ArtworkRepairProgress(
-      total: total, checked: checked, updated: updated, skipped: skipped,
-      failed: failed, running: _running, cancelled: _cancel,
-    ));
+    void report() => onProgress(
+      ArtworkRepairProgress(
+        total: total,
+        checked: checked,
+        updated: updated,
+        skipped: skipped,
+        failed: failed,
+        running: _running,
+        cancelled: _cancel,
+      ),
+    );
     try {
       final songs = await _repository.getAllSongs();
       final eligible = <String, List<Song>>{};
       for (final song in songs) {
         if (!isRepairableLocalSource(song) ||
             _importer.isCustomArtworkPath(song.albumArt) ||
-            !canRepairAlbum(song)) continue;
-        final key = '${repairIdentity(song.album!)}|'
+            !canRepairAlbum(song)) {
+          continue;
+        }
+        final key =
+            '${repairIdentity(song.album!)}|'
             '${repairIdentity(repairLeadArtist(song))}';
         eligible.putIfAbsent(key, () => []).add(song);
       }
-      total = eligible.values.fold<int>(0, (sum, tracks) => sum + tracks.length);
+      total = eligible.values.fold<int>(
+        0,
+        (sum, tracks) => sum + tracks.length,
+      );
       report();
       final measured = <String, int?>{};
       for (final group in eligible.values) {
@@ -234,8 +276,13 @@ class ArtworkRepairService {
         AlbumArtCandidate? candidate;
         try {
           candidate = exactRepairCandidate(
-            low.first.$1, await _importer.searchOnlineCandidates(low.first.$1));
-        } catch (_) { /* Offline catalogue: leave originals untouched. */ }
+            low.first.$1,
+            await _importer.searchOnlineCandidates(low.first.$1),
+          );
+        } catch (_) {
+          /* Offline catalogue: leave originals untouched. */
+        }
+        if (_cancel) break;
         if (candidate == null) {
           skipped += low.length;
           checked += low.length;
@@ -243,6 +290,7 @@ class ArtworkRepairService {
           continue;
         }
         final bytes = await _fetchArtwork(candidate.imageUrl);
+        if (_cancel) break;
         if (bytes == null) {
           failed += low.length;
           checked += low.length;
@@ -254,15 +302,26 @@ class ArtworkRepairService {
         for (final (song, currentSide) in low) {
           if (_cancel) break;
           try {
-            final latest = await _repository.getSongByFilePath(song.filePath!);
-            if (latest == null || _importer.isCustomArtworkPath(latest.albumArt) ||
-                !isCoverUpgrade(
-                  currentShortSide: currentSide, newShortSide: newSide,
-                ) ||
-                await _existingShortSide(latest) != currentSide) {
-              // A manual edit or scanner update must never be overwritten.
+            if (!isCoverUpgrade(
+              currentShortSide: currentSide,
+              newShortSide: newSide,
+            )) {
               skipped++;
             } else {
+              // Reload the row: the original Song is an immutable snapshot and
+              // cannot reveal an artwork edit made during the network lookup.
+              final latest = await _repository.getSongById(song.id);
+              if (_cancel) break;
+              if (latest == null ||
+                  latest.filePath != song.filePath ||
+                  latest.albumArt != song.albumArt ||
+                  _importer.isCustomArtworkPath(latest.albumArt) ||
+                  exactRepairCandidate(latest, [candidate]) == null ||
+                  await _existingShortSide(latest) != currentSide) {
+                skipped++;
+                continue;
+              }
+              if (_cancel) break;
               replacements.add(latest);
             }
           } catch (_) {
@@ -277,7 +336,8 @@ class ArtworkRepairService {
             // One durable image and one DB operation per album, not one
             // misleading custom override per song in the album.
             final result = await _importer.applyAutomaticRepair(
-              songs: replacements, bytes: bytes,
+              songs: replacements,
+              bytes: bytes,
             );
             updated += result.filePaths.length;
             skipped += replacements.length - result.filePaths.length;
@@ -291,11 +351,16 @@ class ArtworkRepairService {
       }
     } finally {
       _running = false;
+      _cancelRequest = null;
       report();
     }
     return ArtworkRepairProgress(
-      total: total, checked: checked, updated: updated, skipped: skipped,
-      failed: failed, cancelled: _cancel,
+      total: total,
+      checked: checked,
+      updated: updated,
+      skipped: skipped,
+      failed: failed,
+      cancelled: _cancel,
     );
   }
 }

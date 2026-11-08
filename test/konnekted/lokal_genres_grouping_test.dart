@@ -7,8 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Song track(String id, String? genre, {String? path, DateTime? added,
-    String? sourcePackage}) => Song(
+Song track(
+  String id,
+  String? genre, {
+  String? path,
+  DateTime? added,
+  String? sourcePackage,
+}) => Song(
   id: id,
   title: 'Track $id',
   artist: 'Artist',
@@ -44,54 +49,74 @@ void main() {
   });
 
   test('ignored tags are not genres; do not modify stored raw metadata', () {
-    for (final raw in ['Karaoke_Plain', 'Instrumental', 'Unknown',
-        '255', 'No genre', 'Podcast', '']) {
+    for (final raw in [
+      'Karaoke_Plain',
+      'Instrumental',
+      'Unknown',
+      '255',
+      'No genre',
+      'Podcast',
+      '',
+    ]) {
       expect(lokalNormalizeGenreName(raw), isNull, reason: raw);
     }
     final song = track('raw', 'VGM; Video Game Soundtrack / Rock');
-    expect(lokalSplitGenres(song.genre),
-        ['VGM', 'Video Game Soundtrack', 'Rock']);
+    expect(lokalSplitGenres(song.genre), [
+      'VGM',
+      'Video Game Soundtrack',
+      'Rock',
+    ]);
     expect(lokalTrackGenres(song), ['Soundtrack', 'Rock']);
     expect(song.genre, 'VGM; Video Game Soundtrack / Rock');
   });
 
-  test('desktop genre summary maps repeated unknown styles into existing families', () {
-    final items = [
-      track('1', 'VGM'),
-      track('2', 'video game'),
-      track('3', 'Rock, EDM'),
-      track('4', 'Classic Rock'),
-      track('5', 'Indie Rock; Techno'),
-      track('6', 'House'),
-      track('7', 'Random Tag One'),
-      track('8', 'Random Tag Two'),
-      track('9', 'Baroque'),
-      track('10', 'Karaoke_Plain, Unknown, 128'),
-      track('11', 'Unknown'),
-      track('12', 'Future Jazz'),
-      track('13', 'future-jazz'),
-    ];
-    final summary = lokalGenreSummary(items);
-    final byName = {for (final g in summary.genres) g.name: g};
-    expect(byName['Soundtrack']!.songs.length, 2);
-    expect(byName['Rock']!.songs.length, 3);
-    expect(byName['Electronic']!.songs.length, 3);
-    expect(byName['Other']!.songs.length, 2);
-    expect(byName['Classical']!.songs.length, 1);
-    expect(byName['Jazz']!.songs.length, 2);
-    expect(byName.containsKey('Future Jazz'), isFalse);
-    expect(summary.noGenre.map((s) => s.id), ['10', '11']);
-    expect(summary.genres.where((g) => g.songs.length == 1).map((g) => g.name),
-        ['Classical']);
-    expect(summary.genres.map((g) => g.name).toList(),
-        ['Electronic', 'Rock', 'Jazz', 'Other',
-         'Soundtrack', 'Classical']);
-    // Each category is populated from the same recordings as the cards.
-    expect(byName['Rock']!.songs.map((s) => s.id), ['3', '4', '5']);
-    expect(items[0].genre, 'VGM');
-  });
+  test(
+    'desktop genre summary maps repeated unknown styles into existing families',
+    () {
+      final items = [
+        track('1', 'VGM'),
+        track('2', 'video game'),
+        track('3', 'Rock, EDM'),
+        track('4', 'Classic Rock'),
+        track('5', 'Indie Rock; Techno'),
+        track('6', 'House'),
+        track('7', 'Random Tag One'),
+        track('8', 'Random Tag Two'),
+        track('9', 'Baroque'),
+        track('10', 'Karaoke_Plain, Unknown, 128'),
+        track('11', 'Unknown'),
+        track('12', 'Future Jazz'),
+        track('13', 'future-jazz'),
+      ];
+      final summary = lokalGenreSummary(items);
+      final byName = {for (final g in summary.genres) g.name: g};
+      expect(byName['Soundtrack']!.songs.length, 2);
+      expect(byName['Rock']!.songs.length, 3);
+      expect(byName['Electronic']!.songs.length, 3);
+      expect(byName['Other']!.songs.length, 2);
+      expect(byName['Classical']!.songs.length, 1);
+      expect(byName['Jazz']!.songs.length, 2);
+      expect(byName.containsKey('Future Jazz'), isFalse);
+      expect(summary.noGenre.map((s) => s.id), ['10', '11']);
+      expect(
+        summary.genres.where((g) => g.songs.length == 1).map((g) => g.name),
+        ['Classical'],
+      );
+      expect(summary.genres.map((g) => g.name).toList(), [
+        'Electronic',
+        'Rock',
+        'Jazz',
+        'Other',
+        'Soundtrack',
+        'Classical',
+      ]);
+      // Each category is populated from the same recordings as the cards.
+      expect(byName['Rock']!.songs.map((s) => s.id), ['3', '4', '5']);
+      expect(items[0].genre, 'VGM');
+    },
+  );
 
-  test('VGM and every soundtrack alias share one canonical group', () {
+  test('game and film aliases share one card without rewriting raw tags', () {
     for (final raw in [
       'VGM',
       'Video Game Music',
@@ -101,53 +126,66 @@ void main() {
       'Film Score',
       'Soundtrack',
       'game music score',
+      'videogame',
+      'videogame ost',
+      'retro videogame music',
     ]) {
       expect(lokalNormalizeGenreName(raw), 'Soundtrack', reason: raw);
     }
     expect(lokalNormalizeGenreName('anime soundtrack'), 'Anime');
-
     final both = track('both', 'VGM / Original Soundtrack; Video Game Music');
-    expect(lokalTrackGenres(both), ['Soundtrack'],
-        reason: 'A multi-tagged track must not be counted three times');
-    final library = [
+    final summary = lokalGenreSummary([
       both,
       track('game', 'Video Game Music'),
       track('film', 'Original Motion Picture Soundtrack'),
       track('score', 'Film Score'),
-    ];
-    final summary = lokalGenreSummary(library);
-    expect(summary.genres.map((genre) => genre.name), ['Soundtrack']);
-    expect(summary.genres.single.songs.map((song) => song.id),
-        ['both', 'game', 'film', 'score']);
-    expect(summary.noGenre, isEmpty);
-    expect(both.genre, 'VGM / Original Soundtrack; Video Game Music',
-        reason: 'Browsing must never rewrite the file metadata');
-  });
-
-  test('rare unknown tag becomes No genre when Other cannot reach two tracks', () {
-    final summary = lokalGenreSummary([
-      track('1', 'Baroque'),
-      track('2', 'Hip-Hop'),
-      track('3', 'Hip Hop'),
-      track('4', 'Unknown'),
     ]);
-    expect(summary.genres.map((x) => x.name), ['Hip-Hop', 'Classical']);
-    expect(summary.noGenre.map((x) => x.id), ['4']);
-  });
-
-  test('multi-tag tracks prefer common genre rather than being put in Other', () {
-    final summary = lokalGenreSummary([
-      track('1', 'Random Tag, Hip Hop'),
-      track('2', 'Hip-Hop'),
-      track('3', 'House'),
-      track('4', 'Electronic'),
+    expect(lokalTrackGenres(both), ['Soundtrack']);
+    expect(summary.genres.map((group) => group.name), ['Soundtrack']);
+    expect(summary.genres.single.songs.map((song) => song.id), [
+      'both',
+      'game',
+      'film',
+      'score',
     ]);
-    expect(summary.genres.map((g) => g.name), ['Electronic', 'Hip-Hop']);
-    expect(summary.genres.firstWhere((g) => g.name == 'Hip-Hop')
-        .songs.map((s) => s.id), ['1', '2']);
     expect(summary.noGenre, isEmpty);
+    expect(both.genre, 'VGM / Original Soundtrack; Video Game Music');
   });
 
+  test(
+    'rare unknown tag becomes No genre when Other cannot reach two tracks',
+    () {
+      final summary = lokalGenreSummary([
+        track('1', 'Baroque'),
+        track('2', 'Hip-Hop'),
+        track('3', 'Hip Hop'),
+        track('4', 'Unknown'),
+      ]);
+      expect(summary.genres.map((x) => x.name), ['Hip-Hop', 'Classical']);
+      expect(summary.noGenre.map((x) => x.id), ['4']);
+    },
+  );
+
+  test(
+    'multi-tag tracks prefer common genre rather than being put in Other',
+    () {
+      final summary = lokalGenreSummary([
+        track('1', 'Random Tag, Hip Hop'),
+        track('2', 'Hip-Hop'),
+        track('3', 'House'),
+        track('4', 'Electronic'),
+      ]);
+      expect(summary.genres.map((g) => g.name), ['Electronic', 'Hip-Hop']);
+      expect(
+        summary.genres
+            .firstWhere((g) => g.name == 'Hip-Hop')
+            .songs
+            .map((s) => s.id),
+        ['1', '2'],
+      );
+      expect(summary.noGenre, isEmpty);
+    },
+  );
 
   test('meaningful unknown styles consolidate into known families, not custom cards', () {
     final summary = lokalGenreSummary([
@@ -164,74 +202,94 @@ void main() {
     expect(genres['Other']!.songs.map((s) => s.id), ['4', '5']);
   });
 
-  test('recognized one-track categories stay visible and do not pollute Other', () {
-    final summary = lokalGenreSummary([
-      track('1', 'Classical'),
-      track('2', 'Unknown style a'),
-      track('3', 'Unknown style b'),
-      track('4', 'Rock, Unknown style c'),
-    ]);
-    final byName = {for (final g in summary.genres) g.name: g};
-    expect(byName['Classical']!.songs.map((s) => s.id), ['1']);
-    expect(byName['Rock']!.songs.map((s) => s.id), ['4']);
-    expect(byName['Other']!.songs.map((s) => s.id), ['2', '3']);
-    expect(summary.noGenre, isEmpty);
-  });
+  test(
+    'recognized one-track categories stay visible and do not pollute Other',
+    () {
+      final summary = lokalGenreSummary([
+        track('1', 'Classical'),
+        track('2', 'Unknown style a'),
+        track('3', 'Unknown style b'),
+        track('4', 'Rock, Unknown style c'),
+      ]);
+      final byName = {for (final g in summary.genres) g.name: g};
+      expect(byName['Classical']!.songs.map((s) => s.id), ['1']);
+      expect(byName['Rock']!.songs.map((s) => s.id), ['4']);
+      expect(byName['Other']!.songs.map((s) => s.id), ['2', '3']);
+      expect(summary.noGenre, isEmpty);
+    },
+  );
 
+  test(
+    'word-boundary rules classify broad families without inventing labels',
+    () {
+      const examples = <(String, String)>[
+        ('deep melodic techno', 'Electronic'),
+        ('future jazz', 'Jazz'),
+        ('Future Soul', 'R&B / Soul'),
+        ('experimental shoegaze', 'Rock'),
+        ('retro disco funk', 'R&B / Soul'),
+        ('modern bluegrass', 'Country'),
+        ('new school boom bap', 'Hip-Hop'),
+        ('vintage delta blues', 'Blues'),
+        ('Traditional Klezmer', 'World'),
+        ('cinematic ambient', 'Ambient / New Age'),
+        ('modern samba', 'Latin'),
+        ('Jazz Rap', 'Hip-Hop'),
+        ('jazz house', 'Electronic'),
+        ('indie shoegaze', 'Rock'),
+        ('alternative jazz', 'Jazz'),
+        ('alternative techno', 'Electronic'),
+        ('indie', 'Indie / Alternative'),
+        ('Acid House', 'Electronic'),
+      ];
+      for (final (raw, expected) in examples) {
+        expect(lokalNormalizeGenreName(raw), expected, reason: raw);
+      }
+    },
+  );
 
-  test('word-boundary rules classify broad families without inventing labels', () {
-    const examples = <(String, String)>[
-      ('deep melodic techno', 'Electronic'),
-      ('future jazz', 'Jazz'),
-      ('Future Soul', 'R&B / Soul'),
-      ('experimental shoegaze', 'Rock'),
-      ('retro disco funk', 'R&B / Soul'),
-      ('modern bluegrass', 'Country'),
-      ('new school boom bap', 'Hip-Hop'),
-      ('vintage delta blues', 'Blues'),
-      ('Traditional Klezmer', 'World'),
-      ('cinematic ambient', 'Ambient / New Age'),
-      ('modern samba', 'Latin'),
-      ('Jazz Rap', 'Hip-Hop'),
-      ('jazz house', 'Electronic'),
-      ('indie shoegaze', 'Rock'),
-      ('alternative jazz', 'Jazz'),
-      ('alternative techno', 'Electronic'),
-      ('indie', 'Indie / Alternative'),
-      ('Acid House', 'Electronic'),
-    ];
-    for (final (raw, expected) in examples) {
-      expect(lokalNormalizeGenreName(raw), expected, reason: raw);
-    }
-  });
+  test(
+    'ambiguous and unrelated genre strings remain Other, not separate groups',
+    () {
+      for (final raw in [
+        'Electronic Jazz',
+        'Unlisted niche genre',
+        'Rockstar Anthem',
+        'Synthpopcorn',
+        'Nichecustomgenre',
+      ]) {
+        expect(lokalNormalizeGenreName(raw), 'Other', reason: raw);
+      }
+      final summary = lokalGenreSummary([
+        track('1', 'Unlisted niche genre'),
+        track('2', 'Unlisted niche genre'),
+        track('3', 'Deep deep techno'),
+        track('4', 'Jazz House'),
+      ]);
+      expect(summary.genres.map((g) => g.name), ['Electronic', 'Other']);
+      expect(
+        summary.genres.firstWhere((g) => g.name == 'Other').songs.length,
+        2,
+      );
+      expect(
+        summary.genres.firstWhere((g) => g.name == 'Electronic').songs.length,
+        2,
+      );
+    },
+  );
 
-  test('ambiguous and unrelated genre strings remain Other, not separate groups', () {
-    for (final raw in [
-      'Electronic Jazz', 'Unlisted niche genre', 'Rockstar Anthem',
-      'Synthpopcorn', 'Nichecustomgenre',
-    ]) {
-      expect(lokalNormalizeGenreName(raw), 'Other', reason: raw);
-    }
-    final summary = lokalGenreSummary([
-      track('1', 'Unlisted niche genre'),
-      track('2', 'Unlisted niche genre'),
-      track('3', 'Deep deep techno'),
-      track('4', 'Jazz House'),
-    ]);
-    expect(summary.genres.map((g) => g.name), ['Electronic', 'Other']);
-    expect(summary.genres.firstWhere((g) => g.name == 'Other').songs.length, 2);
-    expect(summary.genres.firstWhere((g) => g.name == 'Electronic').songs.length, 2);
-  });
-
-  test('pending placeholders are excluded and art order follows added date', () {
-    final summary = lokalGenreSummary([
-      track('old', 'Rock', added: DateTime(2024)),
-      track('ghost', 'Rock', path: 'ghost://catalogue/1'),
-      track('pending', 'Rock', sourcePackage: Song.pendingSourcePackage),
-      track('new', 'Rock', added: DateTime(2026)),
-    ]);
-    expect(summary.genres.single.songs.map((s) => s.id), ['new', 'old']);
-  });
+  test(
+    'pending placeholders are excluded and art order follows added date',
+    () {
+      final summary = lokalGenreSummary([
+        track('old', 'Rock', added: DateTime(2024)),
+        track('ghost', 'Rock', path: 'ghost://catalogue/1'),
+        track('pending', 'Rock', sourcePackage: Song.pendingSourcePackage),
+        track('new', 'Rock', added: DateTime(2026)),
+      ]);
+      expect(summary.genres.single.songs.map((s) => s.id), ['new', 'old']);
+    },
+  );
 
   testWidgets('Genres page searches canonical groups and keeps No genre', (
     tester,
@@ -241,7 +299,9 @@ void main() {
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final library = [
-      track('r1', 'Rock'), track('r2', 'Indie Rock'),
+      track('r1', 'Rock'),
+      track('r2', 'Indie Rock'),
+      track('vgm', 'Video Game Music'),
       track('x1', 'Unknown'),
     ];
     await tester.pumpWidget(
@@ -260,6 +320,16 @@ void main() {
     expect(find.text('Rock'), findsOneWidget);
     expect(find.text('Indie Rock'), findsNothing);
     expect(find.text('No genre'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'VGM');
+    await tester.pumpAndSettle();
+    expect(find.text('Soundtrack'), findsOneWidget);
+    expect(find.text('Rock'), findsNothing);
+    expect(find.text('No genre'), findsNothing);
+
+    await tester.enterText(find.byType(TextField).first, 'game ost');
+    await tester.pumpAndSettle();
+    expect(find.text('Soundtrack'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'rock');
     await tester.pumpAndSettle();

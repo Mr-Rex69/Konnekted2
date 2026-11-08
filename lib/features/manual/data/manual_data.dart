@@ -23,6 +23,36 @@ class ManualSection {
   });
 }
 
+List<ManualSection> manualSections({required bool forIos}) => !forIos
+    ? kManualSections
+    : [
+        for (final section in kManualSections)
+          if (section.id != 'home_widget')
+            ManualSection(
+              id: section.id,
+              title: section.title,
+              icon: section.icon,
+              entries: [
+                for (final entry in section.entries)
+                  if (entry.title != 'Bit-perfect capsule' &&
+                      !(section.id == 'settings' && entry.title == 'Widgets'))
+                    if (section.id == 'settings' && entry.title == 'Audio')
+                      const ManualEntry(
+                        title: 'Audio',
+                        body: 'Choose system playback or audio processing, and send audio through AirPlay or Bluetooth.',
+                      )
+                    else if (section.id == 'settings' &&
+                        entry.title == 'Library')
+                      const ManualEntry(
+                        title: 'Library',
+                        body: 'Import files and folders with Files, then scan your music library.',
+                      )
+                    else
+                      entry,
+              ],
+            ),
+      ];
+
 const List<ManualSection> kManualSections = [
   ManualSection(
     id: 'songs',

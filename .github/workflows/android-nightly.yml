@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.repository == 'lokal-music/Mobile'
+    if: github.repository == 'Lokal-music/lokal-mobile'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -95,41 +95,25 @@ jobs:
           path: release
       # Only fixed shell commands run in this write-token job; the renderer
       # ran earlier with a read-only token and no signing secrets.
-      - name: Store a publicly readable banner (best effort)
+      - name: Store a publicly readable banner (also visible in release drafts)
         id: banner
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          set -euo pipefail
-          # The generated PNG is also uploaded as a release asset. A GitHub
-          # banner-branch push outage must not prevent publishing signed APKs.
-          BANNER_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/release-banner.png"
-          if git fetch --quiet --depth=1 origin refs/heads/release-banners; then
-            export GIT_INDEX_FILE="$RUNNER_TEMP/banner-index"
-            rm -f "$GIT_INDEX_FILE"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/banner-index"
+          rm -f "$GIT_INDEX_FILE"
+          PARENT=""
+          if git fetch --quiet --depth=1 origin refs/heads/release-banners 2>/dev/null; then
             PARENT=$(git rev-parse FETCH_HEAD)
             git read-tree "$PARENT"
-            BLOB=$(git hash-object -w release/release-banner.png)
-            git update-index --add --cacheinfo "100644,$BLOB,$TAG.png"
-            TREE=$(git write-tree)
-            COMMIT=$(git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit-tree "$TREE" -p "$PARENT" -m "Mobile banner for $TAG")
-            for attempt in 1 2 3; do
-              if git push origin "$COMMIT:refs/heads/release-banners"; then
-                BANNER_URL="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$COMMIT/$TAG.png"
-                break
-              fi
-              if [ "$attempt" -lt 3 ]; then
-                echo "::warning::Banner push failed (attempt $attempt/3); retrying."
-                sleep "$((attempt * 3))"
-              fi
-            done
-          else
-            echo "::warning::Could not fetch release-banners; using the attached release banner."
           fi
-          if [[ "$BANNER_URL" == https://github.com/* ]]; then
-            echo "::warning::Banner not stored on the public branch; falling back to the release asset URL (draft inline preview may be unavailable)."
-          fi
-          echo "url=$BANNER_URL" >> "$GITHUB_OUTPUT"
+          BLOB=$(git hash-object -w release/release-banner.png)
+          git update-index --add --cacheinfo "100644,$BLOB,$TAG.png"
+          TREE=$(git write-tree)
+          args=(); if [ -n "$PARENT" ]; then args=(-p "$PARENT"); fi
+          COMMIT=$(git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit-tree "$TREE" "${args[@]}" -m "Mobile banner for $TAG")
+          git push origin "$COMMIT:refs/heads/release-banners"
+          echo "url=https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$COMMIT/$TAG.png" >> "$GITHUB_OUTPUT"
       - name: Verify and publish nightly
         working-directory: release
         env:

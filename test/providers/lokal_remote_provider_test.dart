@@ -4,6 +4,26 @@ import 'package:flick/services/lokal_remote_credentials_store.dart';
 import 'package:flick/services/lokal_remote_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'dart:async';
+
+import 'package:flick/services/link/lokal_link_service.dart';
+
+class _DelayedPairing extends LokalLinkService {
+  final started = Completer<void>();
+  final response = Completer<LokalRemoteCredentials>();
+  @override
+  Future<LokalRemoteCredentials> pair({
+    required Uri origin,
+    required String code,
+    String? expectedDesktopId,
+    String deviceName = 'Lokal phone',
+  }) {
+    started.complete();
+    return response.future;
+  }
+}
 
 class _Store implements LokalRemoteCredentialsStore {
   LokalRemoteCredentials? value;
@@ -14,6 +34,14 @@ class _Store implements LokalRemoteCredentialsStore {
   @override
   Future<void> write(LokalRemoteCredentials credentials) async =>
       value = credentials;
+
+  @override
+  Future<void> clearIfMatching(LokalRemoteCredentials? expected) async {
+    if (!SecureLokalRemoteCredentialsStore.sameAuthority(value, expected)) {
+      throw StateError('Pairing changed.');
+    }
+    value = null;
+  }
 
   @override
   Future<void> clear() async => value = null;
@@ -73,12 +101,77 @@ ProviderContainer _container(_Store store, _Service service) =>
     );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'forgetting a desktop retires a pairing reply still in flight',
+    () async {
+      final store = _Store();
+      final link = _DelayedPairing();
+      final container = ProviderContainer(
+        overrides: [
+          lokalRemoteCredentialsStoreProvider.overrideWithValue(store),
+          lokalRemoteServiceProvider.overrideWithValue(_Service([])),
+          lokalLinkServiceProvider.overrideWithValue(link),
+        ],
+      );
+      addTearDown(link.close);
+      addTearDown(container.dispose);
+      final controller = container.read(lokalRemoteControllerProvider.notifier);
+      final pairing = controller.pairDesktop(
+        origin: 'http://desktop',
+        code: '123456',
+      );
+      await link.started.future;
+      await controller.forgetConfiguration(expected: null);
+      link.response.complete(
+        LokalRemoteCredentials(
+          origin: Uri.parse('http://desktop'),
+          remoteToken: 'synthetic-retired-token',
+          desktopId: 'retired-desktop',
+        ),
+      );
+      await pairing;
+      expect(store.value, isNull);
+      expect(
+        container.read(lokalRemoteControllerProvider).status,
+        LokalRemoteConnectionStatus.unconfigured,
+      );
+    },
+  );
+  test(
+    'a stale confirmed Forget leaves the replacement desktop intact',
+    () async {
+      final store = _Store()..value = _credentials;
+      final container = _container(store, _Service([]));
+      addTearDown(container.dispose);
+      final controller = container.read(lokalRemoteControllerProvider.notifier);
+      final expected = await store.read();
+      final replacement = LokalRemoteCredentials(
+        origin: Uri.parse('http://replacement-desktop'),
+        desktopId: 'replacement-id',
+        remoteToken: 'synthetic-replacement',
+      );
+      store.value = replacement;
+      await expectLater(
+        controller.forgetConfiguration(expected: expected),
+        throwsStateError,
+      );
+      expect(store.value, same(replacement));
+    },
+  );
   test('Android notification takes the new desktop recording duration, not stale player duration', () {
     const oldRecording = LokalRemoteTrack(
-      id: 'one', title: 'One', artist: 'Artist', duration: 237,
+      id: 'one',
+      title: 'One',
+      artist: 'Artist',
+      duration: 237,
     );
     const newRecording = LokalRemoteTrack(
-      id: 'two', title: 'Two', artist: 'Artist', duration: 174,
+      id: 'two',
+      title: 'Two',
+      artist: 'Artist',
+      duration: 174,
     );
     LokalRemoteSnapshot state(LokalRemoteTrack track, double duration) =>
         LokalRemoteSnapshot(
@@ -93,23 +186,35 @@ void main() {
           updatedAt: 20,
         );
 
-    expect(desktopNotificationDuration(state(oldRecording, 237)),
-        const Duration(seconds: 237));
+    expect(
+      desktopNotificationDuration(state(oldRecording, 237)),
+      const Duration(seconds: 237),
+    );
     // Mobile next can deliver new title before desktop top-level duration
     // updates. Its currentTrack metadata already knows the recording length.
-    expect(desktopNotificationDuration(state(newRecording, 237)),
-        const Duration(seconds: 174));
-    expect(desktopNotificationDuration(state(newRecording, 174)),
-        const Duration(seconds: 174));
+    expect(
+      desktopNotificationDuration(state(newRecording, 237)),
+      const Duration(seconds: 174),
+    );
+    expect(
+      desktopNotificationDuration(state(newRecording, 174)),
+      const Duration(seconds: 174),
+    );
     // Older/online desktop tracks may omit metadata duration; later player
     // duration snapshots must still be able to correct the notification.
     const missingDuration = LokalRemoteTrack(
-      id: 'three', title: 'Three', artist: 'Artist',
+      id: 'three',
+      title: 'Three',
+      artist: 'Artist',
     );
-    expect(desktopNotificationDuration(state(missingDuration, 237)),
-        const Duration(seconds: 237));
-    expect(desktopNotificationDuration(state(missingDuration, 189)),
-        const Duration(seconds: 189));
+    expect(
+      desktopNotificationDuration(state(missingDuration, 237)),
+      const Duration(seconds: 237),
+    );
+    expect(
+      desktopNotificationDuration(state(missingDuration, 189)),
+      const Duration(seconds: 189),
+    );
   });
 
   bool idleLink({
@@ -132,10 +237,10 @@ void main() {
 
   test('desktop remote control stays connected past three minutes of no phone playback', () {
     expect(idleLink(controlsDesktop: true), isFalse);
-    expect(idleLink(
-      controlsDesktop: true,
-      idleFor: const Duration(hours: 2),
-    ), isFalse);
+    expect(
+      idleLink(controlsDesktop: true, idleFor: const Duration(hours: 2)),
+      isFalse,
+    );
     // Remote control remains active even if the desktop is paused.
     expect(idleLink(controlsDesktop: true, desktopPlaying: false), isFalse);
     // A desktop playing music must not be mistaken for an idle phone link.

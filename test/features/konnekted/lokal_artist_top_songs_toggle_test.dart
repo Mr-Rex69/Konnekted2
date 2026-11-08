@@ -7,32 +7,35 @@ import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
 
 void main() {
-  testWidgets('artist Top songs action toggles See all and Hide', (tester) async {
+  testWidgets('artist Top songs action toggles See all and Hide', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
     var expanded = false;
 
-    await tester.pumpWidget(MaterialApp(
-      theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-      home: Scaffold(
-        body: StatefulBuilder(
-          builder: (context, setState) {
-            final tracks = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'];
-            return Column(
-              children: [
-                LokalSectionTitle(
-                  title: 'Top songs',
-                  onSeeAll: () => setState(() => expanded = !expanded),
-                  actionLabel: expanded ? 'Hide' : null,
-                ),
-                for (final title in expanded ? tracks : tracks.take(5))
-                  Text(title),
-              ],
-            );
-          },
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              final tracks = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'];
+              return Column(
+                children: [
+                  LokalSectionTitle(
+                    title: 'Top songs',
+                    onSeeAll: () => setState(() => expanded = !expanded),
+                    actionLabel: expanded ? 'Hide' : null,
+                  ),
+                  for (final title in expanded ? tracks : tracks.take(5))
+                    Text(title),
+                ],
+              );
+            },
+          ),
         ),
       ),
-    ));
+    );
 
     expect(find.text('See all'), findsOneWidget);
     expect(find.text('Hide'), findsNothing);
@@ -55,15 +58,16 @@ void main() {
     expect(find.text('Hide'), findsNothing);
     expect(find.text('Six'), findsNothing);
     expect(find.bySemanticsLabel('See all Top songs'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('sections without a toggle do not show See all', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-      home: const Scaffold(
-        body: LokalSectionTitle(title: 'Songs'),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: const Scaffold(body: LokalSectionTitle(title: 'Songs')),
       ),
-    ));
+    );
     expect(find.text('See all'), findsNothing);
     expect(find.text('Hide'), findsNothing);
   });

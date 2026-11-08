@@ -62,6 +62,7 @@ void main() {
       expect(find.text('Opening…'), findsNothing);
       expect(find.text('Select Your Music Folder'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 4));
     },
   );
 

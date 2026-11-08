@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('tap saves originals and long-press can save translation',
-      (tester) async {
+  testWidgets('tap saves originals and long-press can save translation', (
+    tester,
+  ) async {
     var originalSaves = 0;
     var translatedSaves = 0;
     await tester.pumpWidget(
@@ -44,16 +45,14 @@ void main() {
     expect(translatedSaves, 1);
   });
 
-  testWidgets('translation option is disabled without a selected subline',
-      (tester) async {
+  testWidgets('translation option is disabled without a selected subline', (
+    tester,
+  ) async {
     var saves = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: LyricsSaveButton(
-            saving: false,
-            onSaveOriginal: () => saves++,
-          ),
+          body: LyricsSaveButton(saving: false, onSaveOriginal: () => saves++),
         ),
       ),
     );
@@ -88,8 +87,10 @@ void main() {
 
     await tester.tap(find.byType(IconButton));
     await tester.longPress(find.byType(IconButton));
-    await tester.pumpAndSettle();
+    // The deliberately busy control contains an indeterminate spinner.
+    await tester.pump(const Duration(milliseconds: 500));
     expect(saves, 0);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('Save original lyrics'), findsNothing);
   });
 }

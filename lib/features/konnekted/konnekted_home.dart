@@ -92,10 +92,12 @@ class _KonnektedHomeState extends ConsumerState<KonnektedHome> {
     if (_tab == KonnektedHomeTab.flow) {
       return SafeArea(
         bottom: false,
-        child: Column(children: [
-          topBar,
-          const Expanded(child: FlowScreen(embedded: true)),
-        ]),
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverToBoxAdapter(child: topBar),
+          ],
+          body: const FlowScreen(embedded: true),
+        ),
       );
     }
     return SafeArea(
@@ -121,9 +123,7 @@ class _KonnektedHomeState extends ConsumerState<KonnektedHome> {
               )
             else ...[
               SliverToBoxAdapter(
-                child: KonnektedCoverFlowSection(
-                  onPlay: onPlay,
-                ),
+                child: KonnektedCoverFlowSection(onPlay: onPlay),
               ),
               SliverToBoxAdapter(
                 child: library.when(
@@ -243,30 +243,30 @@ class KonnektedHomeTopBar extends ConsumerWidget {
             child: Row(
               children: [
                 SizedBox.square(
-                dimension: 44,
-                child: Semantics(
-                  button: true,
-                  label: lokalText('Appearance'),
-                  excludeSemantics: true,
-                  onTap: onAppearance,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      onAppearance();
-                    },
-                    child: const Center(child: LokalLogo(size: 32)),
+                  dimension: 44,
+                  child: Semantics(
+                    button: true,
+                    label: lokalText('Appearance'),
+                    excludeSemantics: true,
+                    onTap: onAppearance,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onAppearance();
+                      },
+                      child: const Center(child: LokalLogo(size: 32)),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _HomeModeSelector(
-                  selectedTab: selectedTab,
-                  onTabChanged: onTabChanged,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _HomeModeSelector(
+                    selectedTab: selectedTab,
+                    onTabChanged: onTabChanged,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
                 KonnektedHeaderActions(onSettings: onSettings),
               ],
             ),
@@ -296,7 +296,10 @@ class KonnektedHomeTopBar extends ConsumerWidget {
                   (greeting ?? lokalHomeMessages(const [], now: at)).subheader,
                 ),
                 key: ValueKey(greeting),
-                style: TextStyle(fontSize: context.responsiveText(15), color: context.lokal.muted),
+                style: TextStyle(
+                  fontSize: context.responsiveText(15),
+                  color: context.lokal.muted,
+                ),
               ),
             ),
           ],
@@ -326,6 +329,7 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
   static const _selectorMinWidth = 196.0;
   static const _segmentGap = 4.0;
 
+  bool _revealScheduled = false;
   final _segmentKeys = {
     for (final tab in KonnektedHomeTab.values) tab: GlobalKey(),
   };
@@ -337,13 +341,22 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _revealSelection();
+  }
+
+  @override
   void didUpdateWidget(covariant _HomeModeSelector oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedTab != widget.selectedTab) _revealSelection();
   }
 
   void _revealSelection() {
+    if (_revealScheduled) return;
+    _revealScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _revealScheduled = false;
       if (!mounted) return;
       final selected = _segmentKeys[widget.selectedTab]?.currentContext;
       if (selected == null) return;
@@ -367,23 +380,27 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
     });
   }
 
-  Widget _segments() => Row(
+  Widget _segment(KonnektedHomeTab tab) => _ShelfChip(
+    key: _segmentKeys[tab],
+    indicatorKey: ValueKey('home-mode-indicator-${tab.name}'),
+    label: lokalText(tab.label),
+    selected: tab == widget.selectedTab,
+    onTap: () => widget.onTabChanged?.call(tab),
+  );
+
+  Widget _segments({Map<KonnektedHomeTab, double>? scrollWidths}) => Row(
+    mainAxisSize: scrollWidths == null ? MainAxisSize.max : MainAxisSize.min,
     children: [
       for (final tab in KonnektedHomeTab.values) ...[
         if (tab != KonnektedHomeTab.values.first)
           const SizedBox(width: _segmentGap),
-        Expanded(
-          // "Discovery" has almost twice as many letters as "Local".
-          // Equal slots were pinching its label against the selected pill.
-          flex: tab == KonnektedHomeTab.discovery ? 16 : 10,
-          child: _ShelfChip(
-            key: _segmentKeys[tab],
-            indicatorKey: ValueKey('home-mode-indicator-${tab.name}'),
-            label: lokalText(tab.label),
-            selected: tab == widget.selectedTab,
-            onTap: () => widget.onTabChanged?.call(tab),
+        if (scrollWidths != null)
+          SizedBox(width: scrollWidths[tab], child: _segment(tab))
+        else
+          Expanded(
+            flex: tab == KonnektedHomeTab.discovery ? 16 : 10,
+            child: _segment(tab),
           ),
-        ),
       ],
     ],
   );
@@ -391,9 +408,27 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final textScale =
-          MediaQuery.textScalerOf(context).scale(11.0) / 11.0;
-      final minWidth = _selectorMinWidth * textScale;
+      var minWidth = _selectorMinWidth;
+      final scrollWidths = <KonnektedHomeTab, double>{};
+      var contentWidth = 14.0;
+      for (final tab in KonnektedHomeTab.values) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: lokalText(tab.label).toUpperCase(),
+            style: LokalTheme.label(
+              context.lokal,
+              size: 11,
+            ).copyWith(fontWeight: FontWeight.w700, letterSpacing: .6),
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        final required = (painter.width + 12).clamp(44.0, double.infinity);
+        scrollWidths[tab] = required;
+        contentWidth += required;
+        painter.dispose();
+      }
+      if (contentWidth > minWidth) minWidth = contentWidth;
       final needsScroll = constraints.maxWidth < minWidth;
       return SizedBox(
         width: constraints.maxWidth,
@@ -406,10 +441,7 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
               ? SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   physics: const ClampingScrollPhysics(),
-                  child: SizedBox(
-                    width: minWidth - 6,
-                    child: _segments(),
-                  ),
+                  child: _segments(scrollWidths: scrollWidths),
                 )
               : _segments(),
         ),
@@ -420,10 +452,7 @@ class _HomeModeSelectorState extends State<_HomeModeSelector> {
 
 /// Local Cover Flow. One tap plays the selected album with the shelf queued.
 class KonnektedCoverFlowSection extends ConsumerStatefulWidget {
-  const KonnektedCoverFlowSection({
-    super.key,
-    required this.onPlay,
-  });
+  const KonnektedCoverFlowSection({super.key, required this.onPlay});
 
   final void Function(Song song, List<Song> shelf) onPlay;
 
@@ -450,16 +479,13 @@ class _KonnektedCoverFlowSectionState
           initialIndex: list.length ~/ 2,
           albums: list,
           onPlay: widget.onPlay,
-          onSelect: (i) => widget.onPlay(
-            list[i].coverSong ?? list[i].songs.first,
-            [
-              // Cover Flow is a shelf of recommended tracks. Expanding each
-              // card's back must not turn a front-face tap into a queue of
-              // every album (nor duplicate songs across featured covers).
-              for (final entry in list)
-                entry.coverSong ?? entry.songs.first,
-            ],
-          ),
+          onSelect: (i) =>
+              widget.onPlay(list[i].coverSong ?? list[i].songs.first, [
+                // Cover Flow is a shelf of recommended tracks. Expanding each
+                // card's back must not turn a front-face tap into a queue of
+                // every album (nor duplicate songs across featured covers).
+                for (final entry in list) entry.coverSong ?? entry.songs.first,
+              ]),
           cover: (entry) {
             final placeholder = Container(
               color: t.surface3,
@@ -480,8 +506,6 @@ class _KonnektedCoverFlowSectionState
   }
 }
 
-/// Hit targets occupy the full header height. Only the inset selected lens
-/// is tinted, and its fully rounded ends follow the outer capsule geometry.
 class _ShelfChip extends StatelessWidget {
   const _ShelfChip({
     super.key,
@@ -525,8 +549,8 @@ class _ShelfChip extends StatelessWidget {
               decoration: BoxDecoration(
                 color: selected
                     ? (t.isLight
-                        ? Colors.black.withValues(alpha: .08)
-                        : Colors.white.withValues(alpha: .14))
+                          ? Colors.black.withValues(alpha: .08)
+                          : Colors.white.withValues(alpha: .14))
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(999),
               ),
@@ -536,14 +560,15 @@ class _ShelfChip extends StatelessWidget {
                 softWrap: false,
                 overflow: TextOverflow.fade,
                 textAlign: TextAlign.center,
-                style: LokalTheme.label(
-                  t,
-                  size: 11,
-                  color: selected ? t.text : t.muted,
-                ).copyWith(
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  letterSpacing: .6,
-                ),
+                style:
+                    LokalTheme.label(
+                      t,
+                      size: 11,
+                      color: selected ? t.text : t.muted,
+                    ).copyWith(
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      letterSpacing: .6,
+                    ),
               ),
             ),
           ),
@@ -570,6 +595,7 @@ class KonnektedSongShelf extends StatelessWidget {
   final String title;
   final AsyncValue<List<Song>> songs;
   final bool showTotalDuration;
+
   /// Optional full list for metadata when the shelf displays only 12 tracks.
   final AsyncValue<List<Song>>? summarySongs;
   final String emptyTitle;
@@ -786,55 +812,56 @@ class _MixCard extends StatelessWidget {
     }
 
     return InkWell(
-        onTap: play,
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              button: true,
-              label: lokalText(
-                "Play {arg0}, {arg1} songs",
-                args: {'arg0': mix.title, 'arg1': mix.tracks.length},
-              ),
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: KonnektedMixArt(songs: mix.tracks),
-                ),
+      onTap: play,
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            button: true,
+            label: lokalText(
+              "Play {arg0}, {arg1} songs",
+              args: {'arg0': mix.title, 'arg1': mix.tracks.length},
+            ),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: KonnektedMixArt(songs: mix.tracks),
               ),
             ),
-            const SizedBox(height: 10),
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: () => pushLokalPage(
-                context,
-                LokalMixPage(mix: mix),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => pushLokalPage(context, LokalMixPage(mix: mix)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
                       mix.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600),
-                    )),
-                    const Icon(Icons.chevron_right_rounded, size: 18),
-                  ],
-                ),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 18),
+                ],
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              lokalText("{arg0} songs", args: {'arg0': mix.tracks.length}),
-              style: TextStyle(fontSize: 12, color: t.muted),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            lokalText("{arg0} songs", args: {'arg0': mix.tracks.length}),
+            style: TextStyle(fontSize: 12, color: t.muted),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -861,8 +888,10 @@ class LokalMixPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Text(mix.title,
-              style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700)),
+            Text(
+              mix.title,
+              style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
+            ),
             Text(lokalSongCount(mix.tracks.length)),
           ],
         ),

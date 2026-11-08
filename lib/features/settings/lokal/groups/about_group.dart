@@ -23,8 +23,7 @@ void _push(BuildContext context, Widget page) => unawaited(
 );
 
 /// Where Lokal for Android's releases are published.
-const lokalReleasesUrl =
-    'https://github.com/lokal-music/Mobile/releases';
+const lokalReleasesUrl = 'https://github.com/lokal-music/Mobile/releases';
 
 bool _licencesRegistered = false;
 
@@ -41,10 +40,12 @@ void openLokalLicences(BuildContext context) {
       yield LicenseEntryWithLineBreaks([
         'Noto Sans SC',
       ], await rootBundle.loadString('assets/fonts/NotoSansSC-OFL.txt'));
-      yield LicenseEntryWithLineBreaks(
-        ['libsmb2 (native SMB2/3 library)'],
-        await rootBundle.loadString('assets/licenses/libsmb2.txt'),
-      );
+      yield LicenseEntryWithLineBreaks([
+        'libsmb2 (native SMB2/3 library)',
+      ], await rootBundle.loadString('assets/licenses/libsmb2.txt'));
+      yield LicenseEntryWithLineBreaks([
+        'soulseek-rs-lib (native protocol engine)',
+      ], await rootBundle.loadString('assets/licenses/soulseek-rs-lib.txt'));
     });
   }
   _push(context, const LokalLicencesPage());
@@ -70,23 +71,27 @@ List<LokalSettingsSection> aboutSettings(BuildContext context, WidgetRef ref) {
             style: LokalTheme.label(t, size: 12, color: t.text),
           ),
         ),
-        LokalSettingRow.toggle(
-          label: lokalText('Automatic update checks'),
-          description: lokalText(
-            'Check for new APK releases when online. Manual checks remain available.',
+        if (defaultTargetPlatform == TargetPlatform.android)
+          LokalSettingRow.toggle(
+            label: lokalText('Automatic update checks'),
+            description: lokalText(
+              'Check for new APK releases when online. Manual checks remain available.',
+            ),
+            value: ref.watch(automaticUpdatePreferenceProvider).value ?? true,
+            onChanged: (enabled) => unawaited(
+              ref
+                  .read(automaticUpdatePreferenceProvider.notifier)
+                  .select(enabled),
+            ),
           ),
-          value: ref.watch(automaticUpdatePreferenceProvider).value ?? true,
-          onChanged: (enabled) => unawaited(
-            ref.read(automaticUpdatePreferenceProvider.notifier).select(enabled),
+        if (defaultTargetPlatform == TargetPlatform.android)
+          LokalSettingLink(
+            label: lokalText('Updates'),
+            description: lokalText(
+              'Check for updates, download and install a newer APK.',
+            ),
+            onTap: () => unawaited(showLokalUpdates(context, check: true)),
           ),
-        ),
-        LokalSettingLink(
-          label: lokalText('Updates'),
-          description: lokalText(
-            'Check for updates, download and install a newer APK.',
-          ),
-          onTap: () => unawaited(showLokalUpdates(context, check: true)),
-        ),
         LokalSettingLink(
           label: lokalText('What’s new'),
           description: lokalText('What changed in this version.'),

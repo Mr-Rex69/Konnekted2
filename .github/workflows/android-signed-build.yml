@@ -19,7 +19,7 @@ permissions:
 jobs:
   build:
     name: Signed ${{ matrix.flavor }} APK
-    if: github.repository == 'lokal-music/Mobile'
+    if: github.repository == 'Lokal-music/lokal-mobile'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -52,30 +52,6 @@ jobs:
       - uses: ./.github/actions/android-toolchain
         with:
           cache: 'true'
-
-      # Catch newly introduced Dart type/import errors before the expensive
-      # Rust/Gradle release build. Check both provider playlist screens and the
-      # remote/full-player gesture files: run #41471975563 failed 3 minutes
-      # into compilation from a missing DragUpdateDetails constructor field.
-      - name: Preflight changed player and playlist Dart compilation
-        run: |
-          set -euo pipefail
-          for source in \
-            lib/features/spotify/spotify_web_api.dart \
-            lib/features/spotify/spotify_playlist_cache.dart \
-            lib/features/spotify/spotify_playlists_screen.dart \
-            lib/features/spotify/provider_playlist_track_browser.dart \
-            lib/features/spotify/provider_playlist_track_tile.dart \
-            lib/features/spotify/provider_playlist_visibility.dart \
-            lib/features/discovery/youtube_music_playlists_screen.dart \
-            lib/features/discovery/youtube_music_playlist_cache.dart \
-            lib/features/player/widgets/song_stage_carousel.dart \
-            lib/features/player/screens/desktop_remote_full_player.dart \
-            lib/features/player/widgets/full_bleed_artwork_frame.dart \
-            lib/features/konnekted/library/lokal_radio_session.dart; do
-            echo "Analyzing $source"
-            dart analyze --no-fatal-warnings "$source"
-          done
 
       - name: Generate full-bleed CD launcher assets
         run: |

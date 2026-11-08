@@ -26,7 +26,10 @@ typedef DiscoveryAudioProbe = Future<native.AudioProbeFormat> Function(
   String path,
 );
 
-typedef DiscoverySpatialProbe = Future<bool> Function(String path, String codec);
+typedef DiscoverySpatialProbe = Future<bool> Function(
+  String path,
+  String codec,
+);
 
 /// Downloads actual media before engine handoff. Never treats a URL as a File.
 /// The native probe is mandatory; provider file/quality labels are ignored.
@@ -44,8 +47,9 @@ class DiscoveryPlaybackCache {
     Future<void> Function(String audio, String cover)? embedCover,
   }) : _embedCover = embedCover ?? _embedCoverInFile,
        _probe = probe ?? ((path) => native.audioProbeFormat(path: path)),
-       _spatialProbe = spatialProbe ?? ((path, codec) =>
-           codec == 'ac4'
+       _spatialProbe =
+           spatialProbe ??
+           ((path, codec) => codec == 'ac4'
                ? AtmosPlaybackSupport.isAc4File(path)
                : AtmosPlaybackSupport.isJocFile(path)),
        _directory = directory ?? _defaultDirectory,
@@ -90,7 +94,8 @@ class DiscoveryPlaybackCache {
     var cancelled = false;
     if (cancel != null) unawaited(cancel.then((_) => cancelled = true));
     try {
-      if (requestedSpatialCodec != null && requireNativeOutput &&
+      if (requestedSpatialCodec != null &&
+          requireNativeOutput &&
           !await AtmosPlaybackSupport.availableFor(requestedSpatialCodec)) {
         throw const DiscoveryException(
           'The device cannot decode the selected native spatial audio tier. '
@@ -238,8 +243,8 @@ class DiscoveryPlaybackCache {
       final format = requestedSpatialCodec == 'ac4'
           ? 'mp4'
           : requestedSpatialCodec == 'eac3-joc'
-              ? 'm4a'
-              : sniffAudioContainer(prefix);
+          ? 'm4a'
+          : sniffAudioContainer(prefix);
       ready = await partial.rename(p.setExtension(partial.path, '.$format'));
       partial = null;
       if (requestedSpatialCodec != null) {
@@ -253,10 +258,14 @@ class DiscoveryPlaybackCache {
       }
       final song = requestedSpatialCodec == null
           ? await _verified(track, ready, format, hash)
-          : await _verifiedAtmos(track, ready, hash,
+          : await _verifiedAtmos(
+              track,
+              ready,
+              hash,
               sourceInfo: {
                 'codec': requestedSpatialCodec == 'ac4' ? 'ac4' : 'eac3-joc',
-              });
+              },
+            );
       if (cancelled) throw const DiscoveryException('Request cancelled.');
       ready = null; // Ownership passes to bounded cache / PlayerService.
       return song;
@@ -273,7 +282,9 @@ class DiscoveryPlaybackCache {
 
   /// Moves [source], a file an add-on already downloaded, into the cache
   /// and checks it like a downloaded one.
-  Future<Song> adopt(DiscoveryTrack track, File source, {
+  Future<Song> adopt(
+    DiscoveryTrack track,
+    File source, {
     bool atmosEncoded = false,
     Map? sourceInfo,
     // For on-demand Morneye playback, the downloader has already probed the
@@ -300,9 +311,7 @@ class DiscoveryPlaybackCache {
           .fold<List<int>>([], (all, chunk) => all..addAll(chunk));
       String format;
       try {
-        format = atmosEncoded
-            ? (sourceInfo?['codec'] == 'ac4' ? 'mp4' : 'm4a')
-            : sniffAudioContainer(prefix);
+        format = atmosEncoded ? (sourceInfo?['codec'] == 'ac4' ? 'mp4' : 'm4a') : sniffAudioContainer(prefix);
       } on DiscoveryException {
         // Containers only the add-on's own probe knows: it named the file.
         format = p.extension(source.path).replaceFirst('.', '').toLowerCase();
@@ -321,8 +330,14 @@ class DiscoveryPlaybackCache {
       }
       final song = atmosEncoded
           ? await _verifiedAtmos(track, ready, hash, sourceInfo: sourceInfo)
-          : await _verified(track, ready, format, hash,
-              sourceInfo: sourceInfo, fastPlayback: fastPlayback);
+          : await _verified(
+              track,
+              ready,
+              format,
+              hash,
+              sourceInfo: sourceInfo,
+              fastPlayback: fastPlayback,
+            );
       ready = null; // Ownership passes to bounded cache / PlayerService.
       return song;
     } finally {
@@ -334,9 +349,16 @@ class DiscoveryPlaybackCache {
     }
   }
 
-  /// Verified original compressed E-AC-3 JOC or AC-4 from the addon.
-  /// Do not decode/transcode to PCM: preserve all encoded presentation data.
-  Future<Song> _verifiedAtmos(DiscoveryTrack track, File ready, String hash, {Map? sourceInfo}) async {
+  /// An Android MediaExtractor-confirmed E-AC-3 JOC stream. Do not use
+  /// Symphonia or a PCM metadata decoder: Atmos objects must reach Android's
+  /// licensed E-AC-3 JOC implementation unchanged.
+  Future<Song> _verifiedAtmos(
+    DiscoveryTrack track,
+    File ready,
+    String hash, {
+    Map? sourceInfo,
+  }) async {
+    final ac4 = sourceInfo?['codec'] == 'ac4';
     final artwork = await _cover(track, ready, embed: false);
     return Song(
       id: 'discovery:$hash',
@@ -345,15 +367,17 @@ class DiscoveryPlaybackCache {
       album: track.album,
       albumArt: artwork,
       duration: track.duration ?? Duration.zero,
-      fileType: sourceInfo?['codec'] == 'ac4' ? 'AC-4' : 'E-AC-3 JOC',
+      fileType: ac4 ? 'AC-4' : 'E-AC-3 JOC',
       filePath: ready.path,
       sourcePackage: 'konnekted.discovery',
-      sourceDisplayName: track.sourceName ??
-          (track.source == DiscoverySource.youtubeMusic ? 'YouTube Music' : null),
+      sourceDisplayName:
+          track.sourceName ??
+          (track.source == DiscoverySource.youtubeMusic
+              ? 'YouTube Music'
+              : null),
       fileSizeBytes: await ready.length(),
       isExternal: true,
-      atmosAvailable: sourceInfo?['codec'] == 'ac4'
-          ? track.atmosAvailable : true,
+      atmosAvailable: ac4 ? track.atmosAvailable : true,
       atmosEncoded: true,
       remoteId: track.id,
     );
@@ -375,11 +399,14 @@ class DiscoveryPlaybackCache {
     final measuredRate =
         (sourceInfo?['sample_rate'] ?? sourceInfo?['sampleRate']) as num?;
     final measuredChannels = sourceInfo?['channels'] as num?;
-    final trustedInfo = fastPlayback &&
+    final trustedInfo =
+        fastPlayback &&
         verifiedAudioCodec(sourceInfo?['codec']) != null &&
-        measuredRate != null && measuredRate >= 8000 &&
+        measuredRate != null &&
+        measuredRate >= 8000 &&
         measuredRate <= 768000 &&
-        measuredChannels != null && measuredChannels >= 1 &&
+        measuredChannels != null &&
+        measuredChannels >= 1 &&
         measuredChannels <= 32;
     native.AudioProbeFormat? metadata;
     if (!trustedInfo) {
@@ -400,7 +427,8 @@ class DiscoveryPlaybackCache {
       }
     }
     final sampleRate = trustedInfo
-        ? measuredRate!.toInt() : metadata!.sampleRate;
+        ? measuredRate.toInt()
+        : metadata!.sampleRate;
     final verifiedBits = trustedInfo
         ? (sourceInfo?['bit_depth'] as num?)?.toInt()
         : metadata!.bitsPerSample;
@@ -410,29 +438,32 @@ class DiscoveryPlaybackCache {
     Map? audio = sourceInfo;
     if (audio == null) {
       try {
-        audio = jsonDecode(await morneye.morneyeMediaInfo(path: ready.path)) as Map;
+        audio =
+            jsonDecode(await morneye.morneyeMediaInfo(path: ready.path)) as Map;
       } catch (_) {
         // Some Android-supported containers are outside Symphonia's probe.
       }
     }
     final codec = verifiedAudioCodec(audio?['codec']);
-    final type = codec ?? switch (format.toLowerCase()) {
-      'flac' => 'FLAC',
-      'mp3' => 'MP3',
-      'aac' => 'AAC',
-      'wav' || 'wave' => 'WAV',
-      'wv' => 'WAVPACK',
-      _ => 'ONLINE', // Never show WEBM/M4A as an audio quality.
-    };
+    final type =
+        codec ??
+        switch (format.toLowerCase()) {
+          'flac' => 'FLAC',
+          'mp3' => 'MP3',
+          'aac' => 'AAC',
+          'wav' || 'wave' => 'WAV',
+          'wv' => 'WAVPACK',
+          _ => 'ONLINE', // Never show WEBM/M4A as an audio quality.
+        };
     const lossless = {'FLAC', 'ALAC', 'WAV', 'WAVPACK'};
     // A lossy decoder's PCM sample width is NOT the source bit depth.
     final nativeBits = (audio?['bit_depth'] as num?)?.toInt();
     final bits = lossless.contains(type)
         ? (verifiedBits != null && verifiedBits > 0
-            ? verifiedBits
-            : nativeBits != null && nativeBits > 0 && nativeBits <= 64
-                ? nativeBits
-                : null)
+              ? verifiedBits
+              : nativeBits != null && nativeBits > 0 && nativeBits <= 64
+              ? nativeBits
+              : null)
         : null;
     final resolution = measuredLossyBitrate(
       codec: type,
@@ -445,8 +476,9 @@ class DiscoveryPlaybackCache {
     // still embeds full-resolution artwork; Play keeps the catalogue cover
     // and caches a separate cover file best-effort without embedding.
     if (fastPlayback) {
-      unawaited(_cover(track, ready, embed: false)
-          .catchError((Object _) => null));
+      unawaited(
+        _cover(track, ready, embed: false).catchError((Object _) => null),
+      );
     }
     final cover = fastPlayback ? track.artwork : await _cover(track, ready);
     return Song(
@@ -465,8 +497,11 @@ class DiscoveryPlaybackCache {
       // Signed media URLs remain in memory, never in the playback queue.
       remoteId: track.sourceUrl?.toString() ?? track.id,
       sourcePackage: 'konnekted.discovery',
-      sourceDisplayName: track.sourceName ??
-          (track.source == DiscoverySource.youtubeMusic ? 'YouTube Music' : null),
+      sourceDisplayName:
+          track.sourceName ??
+          (track.source == DiscoverySource.youtubeMusic
+              ? 'YouTube Music'
+              : null),
       fileSizeBytes: await ready.length(),
       atmosAvailable: track.atmosAvailable,
       isExternal: true,
@@ -482,7 +517,11 @@ class DiscoveryPlaybackCache {
 
   /// Downloads [track]'s cover next to [ready]; null when it has none or
   /// it can't be fetched (the song still plays, without a picture).
-  Future<String?> _cover(DiscoveryTrack track, File ready, {bool embed = true}) async {
+  Future<String?> _cover(
+    DiscoveryTrack track,
+    File ready, {
+    bool embed = true,
+  }) async {
     final url = Uri.tryParse(track.artwork ?? '');
     if (url == null || url.scheme != 'https') return null;
     final file = File(coverPath(ready.path));
@@ -537,7 +576,9 @@ class DiscoveryPlaybackCache {
       } catch (_) {}
       return file.path;
     } catch (_) {
-      try { if (await file.exists()) await file.delete(); } catch (_) {}
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
       return null;
     }
   }

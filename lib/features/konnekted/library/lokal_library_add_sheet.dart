@@ -7,15 +7,14 @@ import 'package:flutter/material.dart';
 /// Android's document/folder picker.
 enum LokalLibraryAddAction { playlist, link, m3u, folder }
 
-Future<LokalLibraryAddAction?> showLokalLibraryAddSheet(
-  BuildContext context,
-) {
+Future<LokalLibraryAddAction?> showLokalLibraryAddSheet(BuildContext context) {
   final t = context.lokal;
   return showModalBottomSheet<LokalLibraryAddAction>(
     context: context,
     useRootNavigator: true,
     backgroundColor: t.surface,
     showDragHandle: true,
+    isScrollControlled: true,
     builder: (sheetContext) {
       Widget row(IconData icon, String label, LokalLibraryAddAction action) =>
           ListTile(
@@ -25,17 +24,29 @@ Future<LokalLibraryAddAction?> showLokalLibraryAddSheet(
           );
 
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: ListView(
+          shrinkWrap: true,
           children: [
-            row(Icons.queue_music_rounded, 'New playlist',
-                LokalLibraryAddAction.playlist),
-            row(Icons.link_rounded, 'Import a playlist link',
-                LokalLibraryAddAction.link),
-            row(Icons.playlist_add_rounded, 'Import M3U',
-                LokalLibraryAddAction.m3u),
-            row(Icons.create_new_folder_rounded, 'Add a music folder',
-                LokalLibraryAddAction.folder),
+            row(
+              Icons.queue_music_rounded,
+              'New playlist',
+              LokalLibraryAddAction.playlist,
+            ),
+            row(
+              Icons.link_rounded,
+              'Import a playlist link',
+              LokalLibraryAddAction.link,
+            ),
+            row(
+              Icons.playlist_add_rounded,
+              'Import M3U',
+              LokalLibraryAddAction.m3u,
+            ),
+            row(
+              Icons.create_new_folder_rounded,
+              'Add a music folder',
+              LokalLibraryAddAction.folder,
+            ),
           ],
         ),
       );

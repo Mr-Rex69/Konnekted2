@@ -50,7 +50,8 @@ List<AlbumArtCandidate> relevantAlbumArtwork({
   required String artist,
   required List<AlbumArtCandidate> candidates,
 }) {
-  String normalize(String value) => value.toLowerCase()
+  String normalize(String value) => value
+      .toLowerCase()
       .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
       .trim();
   final title = normalize(album);
@@ -61,23 +62,26 @@ List<AlbumArtCandidate> relevantAlbumArtwork({
     final candidateArtist = normalize(candidate.artist);
     final titleExact = candidateTitle == title;
     final suffix = candidateTitle.startsWith('$title ')
-        ? candidateTitle.substring(title.length).trim() : '';
-    final titleVariant = suffix.isNotEmpty &&
-        RegExp(r'^(?:(?:super )?deluxe|expanded|anniversary|remaster(?:ed)?|edition|bonus|special|digital|reissue)(?: .+)?$')
-            .hasMatch(suffix);
+        ? candidateTitle.substring(title.length).trim()
+        : '';
+    final titleVariant =
+        suffix.isNotEmpty &&
+        RegExp(
+          r'^(?:(?:super )?deluxe|expanded|anniversary|remaster(?:ed)?|edition|bonus|special|digital|reissue)(?: .+)?$',
+        ).hasMatch(suffix);
     if (!titleExact && !titleVariant) return -1;
     final artistExact = candidateArtist == lead;
-    final artistCredited = splitArtistCredits(candidate.artist).any(
-      (credit) => normalize(credit) == lead,
-    );
+    final artistCredited = splitArtistCredits(candidate.artist)
+        .any((credit) => normalize(credit) == lead);
     if (lead.isNotEmpty && !artistExact && !artistCredited) return -1;
     return (titleExact ? 100 : 50) + (artistExact ? 40 : 15);
   }
+
   final scored = [
     for (final candidate in candidates)
       if (score(candidate) >= 0)
         (candidate: candidate, score: score(candidate)),
-  ]..sort((a,b) => b.score.compareTo(a.score));
+  ]..sort((a, b) => b.score.compareTo(a.score));
   final seen = <String>{};
   return [
     for (final item in scored)
@@ -103,7 +107,7 @@ class AlbumArtUpdateResult {
 
 class AlbumArtImportService {
   AlbumArtImportService._({SongRepository? songRepository, http.Client? client})
-    : _songRepository = songRepository ?? SongRepository(),
+    : _songRepositoryOverride = songRepository,
       _client = client ?? http.Client();
 
   static final AlbumArtImportService instance = AlbumArtImportService._();
@@ -112,7 +116,9 @@ class AlbumArtImportService {
   static const String _musicBrainzHost = 'musicbrainz.org';
   static const String _coverArtHost = 'coverartarchive.org';
 
-  final SongRepository _songRepository;
+  final SongRepository? _songRepositoryOverride;
+  late final SongRepository _songRepository =
+      _songRepositoryOverride ?? SongRepository();
   final http.Client _client;
 
   bool isCustomArtworkPath(String? path) {
@@ -147,7 +153,12 @@ class AlbumArtImportService {
       lastError = error;
     }
 
-    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 8) {
+    if (relevantAlbumArtwork(
+          album: album,
+          artist: artist,
+          candidates: candidates,
+        ).length <
+        8) {
       try {
         candidates.addAll(
           await _searchCoverArtArchive(
@@ -162,7 +173,12 @@ class AlbumArtImportService {
       }
     }
 
-    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 12) {
+    if (relevantAlbumArtwork(
+          album: album,
+          artist: artist,
+          candidates: candidates,
+        ).length <
+        12) {
       try {
         candidates.addAll(await _searchITunes(album: album, artist: artist));
       } catch (error) {
@@ -172,17 +188,27 @@ class AlbumArtImportService {
 
     // iTunes editions are region-dependent. GB may have a cover absent in US
     // and vice versa, so ask the second storefront only if needed.
-    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 8) {
+    if (relevantAlbumArtwork(
+          album: album,
+          artist: artist,
+          candidates: candidates,
+        ).length <
+        8) {
       try {
-        candidates.addAll(await _searchITunes(
-          album: album, artist: artist, country: 'US',
-        ));
+        candidates.addAll(
+          await _searchITunes(album: album, artist: artist, country: 'US'),
+        );
       } catch (error) {
         lastError ??= error;
       }
     }
 
-    if (relevantAlbumArtwork(album: album, artist: artist, candidates: candidates).length < 12) {
+    if (relevantAlbumArtwork(
+          album: album,
+          artist: artist,
+          candidates: candidates,
+        ).length <
+        12) {
       try {
         candidates.addAll(await _searchDeezer(album: album, artist: artist));
       } catch (error) {
@@ -191,7 +217,9 @@ class AlbumArtImportService {
     }
 
     final deduped = relevantAlbumArtwork(
-      album: album, artist: artist, candidates: candidates,
+      album: album,
+      artist: artist,
+      candidates: candidates,
     );
     if (deduped.isEmpty && lastError != null) {
       throw _asImportException(lastError);
@@ -329,8 +357,12 @@ class AlbumArtImportService {
     if (songs.isEmpty || !_looksLikeImage(bytes)) {
       throw const AlbumArtImportException('No valid album artwork to repair.');
     }
-    final filePaths = songs.map((song) => song.filePath)
-        .whereType<String>().where((path) => path.isNotEmpty).toSet().toList();
+    final filePaths = songs
+        .map((song) => song.filePath)
+        .whereType<String>()
+        .where((path) => path.isNotEmpty)
+        .toSet()
+        .toList();
     if (filePaths.isEmpty) {
       throw const AlbumArtImportException('Album has no local files.');
     }
@@ -340,7 +372,9 @@ class AlbumArtImportService {
     );
     await directory.create(recursive: true);
     final digest = sha256.convert(bytes).toString();
-    final file = File('${directory.path}${Platform.pathSeparator}$digest.cover');
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}$digest.cover',
+    );
     if (!await file.exists()) {
       final temporary = File('${file.path}.part');
       await temporary.writeAsBytes(bytes, flush: true);
@@ -357,7 +391,8 @@ class AlbumArtImportService {
           song.filePath!: song.albumArt,
     };
     final applied = await _songRepository.updateAlbumArtPathsIfUnchanged(
-      expected, file.path,
+      expected,
+      file.path,
     );
     if (applied.isNotEmpty) {
       PlayerService().syncAlbumArtPaths(

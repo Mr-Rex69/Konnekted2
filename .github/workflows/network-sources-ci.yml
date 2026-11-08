@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'lib/services/album_art_service.dart'
-      - 'lib/widgets/common/cached_image_widget.dart'
       - 'lib/services/remote_source_service.dart'
       - 'lib/services/android_audio_engine.dart'
       - 'lib/services/process_exit_diagnostics_service.dart'
@@ -17,16 +16,19 @@ on:
       - 'lib/services/sources/local_network_access.dart'
       - 'lib/services/sources/smb_service.dart'
       - 'lib/services/sources/native_smb_transport.dart'
-      - 'lib/services/sources/network_embedded_artwork.dart'
-      - 'android/app/src/main/kotlin/com/mossapps/flick/MusicNotificationService.kt'
-      - 'test/services/network_embedded_artwork_test.dart'
       - 'lib/services/sources/webdav_service.dart'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - 'lib/features/settings/screens/network_server_edit_screen.dart'
       - 'rust/src/api/smb_api.rs'
       - 'test/services/smb_service_parse_test.dart'
+      - 'test/services/smb_native_transport_test.dart'
+      - 'test/services/ios_nas_scan_retirement_test.dart'
+      - 'lib/services/sources/network_source_service.dart'
+      - 'lib/data/repositories/song_repository.dart'
+      - 'test/data/repositories/link_history_projection_test.dart'
       - 'test/services/webdav_service_test.dart'
+      - 'test/services/webdav_sync_integration_test.dart'
       - 'test/services/local_network_access_test.dart'
       - '.github/workflows/network-sources-ci.yml'
   workflow_dispatch:
@@ -43,39 +45,33 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/android-toolchain
-      - name: Ensure Gradle wrapper is executable for Flutter's Android build
-        run: chmod +x android/gradlew
       - name: Analyze network implementations and settings
-        # dart analyze accepts only one file or directory per invocation.
-        run: |
-          set -e
-          for source in \
-            lib/services/album_art_service.dart \
-            lib/services/remote_source_service.dart \
-            lib/services/android_audio_engine.dart \
-            lib/services/process_exit_diagnostics_service.dart \
-            lib/services/sources/local_network_access.dart \
-            lib/services/sources/smb_service.dart \
-            lib/services/sources/native_smb_transport.dart \
-            lib/services/sources/network_embedded_artwork.dart \
-            lib/services/sources/webdav_service.dart \
-            lib/features/settings/screens/network_server_edit_screen.dart \
-            lib/widgets/common/cached_image_widget.dart; do
-            dart analyze --no-fatal-warnings "$source"
-          done
+        run: >-
+          dart analyze --no-fatal-warnings
+          lib/services/album_art_service.dart
+          lib/services/remote_source_service.dart
+          lib/services/android_audio_engine.dart
+          lib/services/process_exit_diagnostics_service.dart
+          lib/services/sources/local_network_access.dart
+          lib/services/sources/smb_service.dart
+          lib/services/sources/native_smb_transport.dart
+          lib/services/sources/webdav_service.dart
+          lib/features/settings/screens/network_server_edit_screen.dart
       - name: Run SMB, WebDAV and Android LAN permission regressions
         run: >-
           flutter test --no-pub
           test/services/album_art_service_test.dart
+          test/data/repositories/link_history_projection_test.dart
           test/services/smb_service_parse_test.dart
           test/services/smb_native_transport_test.dart
-          test/services/network_embedded_artwork_test.dart
+          test/services/ios_nas_scan_retirement_test.dart
           test/services/webdav_service_test.dart
+          test/services/webdav_sync_integration_test.dart
           test/services/local_network_access_test.dart
       - name: Run Rust SMB transport tests
         run: cargo test --locked --lib --manifest-path rust/Cargo.toml smb_api
       - name: Test Android native crash tombstone decoder
-        run: cd android && bash ./gradlew :app:testFullDebugUnitTest --no-daemon
+        run: cd android && ./gradlew :app:testFullDebugUnitTest --no-daemon
       - name: Compile mobile network code into Android test APK
         run: flutter build apk --debug --flavor full --target-platform android-arm64 --no-pub
       - name: Verify dependency locks

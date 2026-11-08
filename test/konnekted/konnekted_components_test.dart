@@ -13,6 +13,7 @@ import 'package:flick/models/song.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -62,10 +63,7 @@ void main() {
       _app(
         SafeArea(
           bottom: false,
-          child: KonnektedHomeTopBar(
-            onSettings: () {},
-            onAppearance: () {},
-          ),
+          child: KonnektedHomeTopBar(onSettings: () {}, onAppearance: () {}),
         ),
       ),
     );
@@ -92,10 +90,8 @@ void main() {
       find.bySemanticsLabel('Add music, playlists and folders'),
     );
     final title = tester.getRect(find.text('Library'));
-    // The title starts at the page margin: no empty 44dp action slot.
     expect(title.left, closeTo(20, .1));
     expect(title.right, lessThanOrEqualTo(addButton.left));
-    // Add joins the trailing action group; Discord and Settings stay fixed.
     expect(addButton.right + 10, closeTo(libraryDiscord.left, .1));
     expect((title.center.dy - addButton.center.dy).abs(), lessThan(2));
     await tester.tap(find.bySemanticsLabel('Add music, playlists and folders'));
@@ -103,7 +99,6 @@ void main() {
     expect(find.text('New playlist'), findsOneWidget);
     expect(find.text('Import a playlist link'), findsOneWidget);
     expect(find.text('Import M3U'), findsOneWidget);
-    // Also present in the empty-library action behind the add sheet.
     expect(find.text('Add a music folder'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
@@ -120,10 +115,7 @@ void main() {
       _app(
         SafeArea(
           bottom: false,
-          child: KonnektedHomeTopBar(
-            onSettings: () {},
-            onAppearance: () {},
-          ),
+          child: KonnektedHomeTopBar(onSettings: () {}, onAppearance: () {}),
         ),
         scale: 2,
       ),
@@ -138,10 +130,7 @@ void main() {
         overrides: [
           konnektedLibraryProvider.overrideWithValue(const AsyncData([])),
         ],
-        child: _app(
-          KonnektedLibrary(onNavigate: (_) {}),
-          scale: 2,
-        ),
+        child: _app(KonnektedLibrary(onNavigate: (_) {}), scale: 2),
       ),
     );
     await tester.pump();
@@ -160,11 +149,25 @@ void main() {
     final discord = tester.getRect(find.byTooltip('Discord'));
     expect(add.right + 10, closeTo(discord.left, .1));
     expect(title.right, lessThanOrEqualTo(add.left));
-    expect(tester.getRect(find.byTooltip('Discord')).center, homeDiscord.center);
-    expect(tester.getRect(find.byTooltip('Settings')).center, homeSettings.center);
+    expect(
+      tester.getRect(find.byTooltip('Discord')).center,
+      homeDiscord.center,
+    );
+    expect(
+      tester.getRect(find.byTooltip('Settings')).center,
+      homeSettings.center,
+    );
     expect(tester.takeException(), isNull);
   });
 
+  setUpAll(() async {
+    for (final (family, asset) in [
+      (LokalTheme.sans, 'assets/fonts/DMSans-Regular.ttf'),
+      ('NotoSansSC', 'assets/fonts/NotoSansSC-Regular.ttf'),
+    ]) {
+      await (FontLoader(family)..addFont(rootBundle.load(asset))).load();
+    }
+  });
   testWidgets('Home modes share the logo and header actions row', (
     tester,
   ) async {
@@ -199,66 +202,81 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Appearance hides both Home greeting lines without leaving a gap in any mode', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
-    tester.view
-      ..physicalSize = const Size(393, 852)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'Appearance hides both Home greeting lines without leaving a gap in any mode',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view
+        ..physicalSize = const Size(393, 852)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    var selected = KonnektedHomeTab.local;
-    await tester.pumpWidget(
-      _app(
-        SingleChildScrollView(
-          child: StatefulBuilder(
-            builder: (context, rebuild) => KonnektedHomeTopBar(
-              onSettings: () {},
-              onAppearance: () {},
-              selectedTab: selected,
-              onTabChanged: (tab) => rebuild(() => selected = tab),
-              greeting: const LokalHomeMessages(
-                'Header greeting',
-                'Listening now',
+      var selected = KonnektedHomeTab.local;
+      await tester.pumpWidget(
+        _app(
+          SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, rebuild) => KonnektedHomeTopBar(
+                onSettings: () {},
+                onAppearance: () {},
+                selectedTab: selected,
+                onTabChanged: (tab) => rebuild(() => selected = tab),
+                greeting: const LokalHomeMessages(
+                  'Header greeting',
+                  'Listening now',
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final expandedHeight = tester.getSize(find.byType(KonnektedHomeTopBar)).height;
-    expect(find.text('Header greeting'), findsOneWidget);
-    expect(find.text('Listening now'), findsOneWidget);
-
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(KonnektedHomeTopBar)),
-    );
-    await container.read(lokalAppearanceProvider.notifier).setShowHomeGreeting(false);
-    await tester.pumpAndSettle();
-    expect(find.text('Header greeting'), findsNothing);
-    expect(find.text('Listening now'), findsNothing);
-    final compactHeight = tester.getSize(find.byType(KonnektedHomeTopBar)).height;
-    expect(expandedHeight - compactHeight, greaterThan(40));
-
-    for (final tab in KonnektedHomeTab.values) {
-      await tester.tap(find.bySemanticsLabel(tab.label));
+      );
       await tester.pumpAndSettle();
-      expect(selected, tab);
+      final expandedHeight = tester
+          .getSize(find.byType(KonnektedHomeTopBar))
+          .height;
+      expect(find.text('Header greeting'), findsOneWidget);
+      expect(find.text('Listening now'), findsOneWidget);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(KonnektedHomeTopBar)),
+      );
+      await container
+          .read(lokalAppearanceProvider.notifier)
+          .setShowHomeGreeting(false);
+      await tester.pumpAndSettle();
       expect(find.text('Header greeting'), findsNothing);
       expect(find.text('Listening now'), findsNothing);
-      expect(tester.getSize(find.byType(KonnektedHomeTopBar)).height, compactHeight);
-      expect(find.bySemanticsLabel('Settings'), findsOneWidget);
-    }
+      final compactHeight = tester
+          .getSize(find.byType(KonnektedHomeTopBar))
+          .height;
+      expect(expandedHeight - compactHeight, greaterThan(40));
 
-    await container.read(lokalAppearanceProvider.notifier).setShowHomeGreeting(true);
-    await tester.pumpAndSettle();
-    expect(find.text('Header greeting'), findsOneWidget);
-    expect(find.text('Listening now'), findsOneWidget);
-    expect(tester.getSize(find.byType(KonnektedHomeTopBar)).height, expandedHeight);
-    expect(tester.takeException(), isNull);
-  });
+      for (final tab in KonnektedHomeTab.values) {
+        await tester.tap(find.bySemanticsLabel(tab.label));
+        await tester.pumpAndSettle();
+        expect(selected, tab);
+        expect(find.text('Header greeting'), findsNothing);
+        expect(find.text('Listening now'), findsNothing);
+        expect(
+          tester.getSize(find.byType(KonnektedHomeTopBar)).height,
+          compactHeight,
+        );
+        expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+      }
+
+      await container
+          .read(lokalAppearanceProvider.notifier)
+          .setShowHomeGreeting(true);
+      await tester.pumpAndSettle();
+      expect(find.text('Header greeting'), findsOneWidget);
+      expect(find.text('Listening now'), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(KonnektedHomeTopBar)).height,
+        expandedHeight,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('Compact header reveals selected mode without shrinking tabs', (
     tester,
@@ -288,8 +306,10 @@ void main() {
     expect(flow.left, greaterThanOrEqualTo(logo.right));
     expect(flow.right, lessThanOrEqualTo(discord.left));
     expect(flow.height, greaterThanOrEqualTo(44));
-    expect(tester.getRect(find.text('Header greeting')).top,
-        greaterThan(flow.bottom));
+    expect(
+      tester.getRect(find.text('Header greeting')).top,
+      greaterThan(flow.bottom),
+    );
 
     final semantics = tester.ensureSemantics();
     final node = tester.getSemantics(find.bySemanticsLabel('Flow'));
@@ -300,8 +320,8 @@ void main() {
     );
     await tester.pump();
     expect(tabs, [KonnektedHomeTab.flow]);
-    expect(tester.takeException(), isNull);
     semantics.dispose();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Home header tabs remain readable and screen-reader actionable', (
@@ -331,12 +351,13 @@ void main() {
     final node = tester.getSemantics(discovery);
     expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
     tester.binding.pipelineOwner.semanticsOwner!.performAction(
-      node.id, SemanticsAction.tap,
+      node.id,
+      SemanticsAction.tap,
     );
     await tester.pump();
     expect(selected, [KonnektedHomeTab.discovery]);
-    expect(tester.takeException(), isNull);
     semantics.dispose();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Home mode selector has balanced lanes and rounded selection', (
@@ -405,41 +426,49 @@ void main() {
     await checkSelection(KonnektedHomeTab.flow);
   });
 
-  testWidgets('Very narrow header scrolls to the selected mode without moving actions', (
-    tester,
-  ) async {
-    tester.view
-      ..physicalSize = const Size(320, 568)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      _app(
-        KonnektedHomeTopBar(
-          onSettings: () {},
-          onAppearance: () {},
-          selectedTab: KonnektedHomeTab.flow,
+  testWidgets(
+    'Very narrow header scrolls to the selected mode without moving actions',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(320, 568)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _app(
+          KonnektedHomeTopBar(
+            onSettings: () {},
+            onAppearance: () {},
+            selectedTab: KonnektedHomeTab.flow,
+          ),
+          scale: 2,
         ),
-        scale: 2,
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final selectorScroll = find.descendant(
-      of: find.byType(KonnektedHomeTopBar),
-      matching: find.byType(SingleChildScrollView),
-    );
-    expect(selectorScroll, findsOneWidget);
-    final viewport = tester.getRect(selectorScroll);
-    final selectedIndicator =
-        tester.getRect(find.byKey(const ValueKey('home-mode-indicator-flow')));
-    expect(selectedIndicator.left, greaterThanOrEqualTo(viewport.left));
-    expect(selectedIndicator.right, lessThanOrEqualTo(viewport.right));
-    expect(tester.getSize(find.bySemanticsLabel('Flow')).height,
-        greaterThanOrEqualTo(44));
-    expect(viewport.right, lessThanOrEqualTo(
-        tester.getRect(find.bySemanticsLabel('Discord')).left));
-    expect(tester.takeException(), isNull);
-  });
+      final selectorScroll = find.descendant(
+        of: find.byType(KonnektedHomeTopBar),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(selectorScroll, findsOneWidget);
+      final viewport = tester.getRect(selectorScroll);
+      final selectedIndicator = tester.getRect(
+        find.byKey(const ValueKey('home-mode-indicator-flow')),
+      );
+      expect(selectedIndicator.left, greaterThanOrEqualTo(viewport.left));
+      expect(selectedIndicator.right, lessThanOrEqualTo(viewport.right));
+      expect(
+        tester.getSize(find.bySemanticsLabel('Flow')).height,
+        greaterThanOrEqualTo(44),
+      );
+      expect(
+        viewport.right,
+        lessThanOrEqualTo(
+          tester.getRect(find.bySemanticsLabel('Discord')).left,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('Your Mixes play with their own queues', (tester) async {
     final mixes = [
@@ -468,59 +497,68 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(find.text('Most Played'));
+    final artwork = find.byWidgetPredicate(
+      (widget) =>
+          widget is KonnektedMixArt &&
+          widget.songs.first.id == mixes[2].tracks.first.id,
+    );
+    await tester.ensureVisible(artwork);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Most Played'));
+    await tester.tap(artwork);
     expect(played.last.$1, mixes[2].tracks.first);
     expect(played.last.$2, mixes[2].tracks);
     expect(find.text('4 songs'), findsNWidgets(3));
   });
 
-  testWidgets('Cover Flow has no redundant heading; a tap plays with it queued', (
-    tester,
-  ) async {
-    final recent = [_track('r1'), _track('r2'), _track('r3')];
-    const mix = LokalMix(
-      id: 'm',
-      name: 'Daily Mix',
-      type: LokalMixType.daily,
-      tracks: [],
-    );
-    Song? played;
-    List<Song>? queue;
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          konnektedLibraryProvider.overrideWithValue(AsyncData(recent)),
-          konnektedMadeForYouProvider.overrideWithValue(
-            AsyncData([
-              for (final song in recent)
-                LokalMadeForYouPick(song: song, mix: mix),
-            ]),
-          ),
-        ],
-        child: _app(
-          KonnektedCoverFlowSection(
-            onPlay: (song, shelf) {
-              played = song;
-              queue = shelf;
-            },
+  testWidgets(
+    'Cover Flow has no redundant heading; a tap plays with it queued',
+    (tester) async {
+      final recent = [_track('r1'), _track('r2'), _track('r3')];
+      const mix = LokalMix(
+        id: 'm',
+        name: 'Daily Mix',
+        type: LokalMixType.daily,
+        tracks: [],
+      );
+      Song? played;
+      List<Song>? queue;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            konnektedLibraryProvider.overrideWithValue(AsyncData(recent)),
+            konnektedMadeForYouProvider.overrideWithValue(
+              AsyncData([
+                for (final song in recent)
+                  LokalMadeForYouPick(song: song, mix: mix),
+              ]),
+            ),
+          ],
+          child: _app(
+            KonnektedCoverFlowSection(
+              onPlay: (song, shelf) {
+                played = song;
+                queue = shelf;
+              },
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('MADE FOR YOU'), findsNothing);
-    expect(find.text('RECENT'), findsNothing);
-    expect(find.text('NEW'), findsNothing);
-    expect(find.text('Track r2'), findsOneWidget);
-    final stage = find.bySemanticsLabel(RegExp('^Cover Flow'));
-    await tester.tapAt(tester.getCenter(stage));
-    await tester.pumpAndSettle();
-    expect(played?.id, 'r2');
-    expect(queue?.map((s) => s.id), ['r1', 'r2', 'r3']);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('MADE FOR YOU'), findsNothing);
+      expect(find.text('RECENT'), findsNothing);
+      expect(find.text('NEW'), findsNothing);
+      expect(
+        find.text('Track r2'),
+        findsOneWidget,
+      ); // The shelf starts in the middle.
+      final stage = find.bySemanticsLabel(RegExp('^Cover Flow'));
+      await tester.tapAt(tester.getCenter(stage));
+      await tester.pumpAndSettle();
+      expect(played?.id, 'r2');
+      expect(queue?.map((s) => s.id), ['r1', 'r2', 'r3']);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'long-press on recommended cover shows local album tracks and queues album',
@@ -592,8 +630,11 @@ void main() {
       expect(find.text('Third Song'), findsOneWidget);
       await tester.tap(find.text('Third Song'));
       expect(played.last.$1.id, 'third');
-      expect(played.last.$2.map((song) => song.id),
-          ['first', 'featured', 'third']);
+      expect(played.last.$2.map((song) => song.id), [
+        'first',
+        'featured',
+        'third',
+      ]);
       expect(tester.takeException(), isNull);
     },
   );
@@ -606,18 +647,14 @@ void main() {
         overrides: [
           konnektedLibraryProvider.overrideWithValue(const AsyncData([])),
           konnektedFavoritesProvider.overrideWithValue(const AsyncData([])),
-          konnektedRecentSongsProvider.overrideWith(
-            (ref) => Stream.value([]),
-          ),
+          konnektedRecentSongsProvider.overrideWith((ref) => Stream.value([])),
           konnektedGreetingProvider.overrideWith(
             (ref) => Stream.value(
               const LokalHomeMessages('A quiet day', 'Your music'),
             ),
           ),
         ],
-        child: _app(
-          KonnektedHome(onNavigate: (_) {}, onPlay: (_, _) {}),
-        ),
+        child: _app(KonnektedHome(onNavigate: (_) {}, onPlay: (_, _) {})),
       ),
     );
     await tester.pumpAndSettle();
@@ -707,7 +744,16 @@ void main() {
         KonnektedDestination.settings,
         const KonnektedDestination.settingsAt(LokalSettingsGroup.themeAccent),
       ]);
-      await tester.scrollUntilVisible(find.text('Add your music'), 180);
+      await tester.scrollUntilVisible(
+        find.text('Add your music'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Add your music'));
       expect(
@@ -782,9 +828,17 @@ void main() {
       expect(find.text(gone), findsNothing);
     }
     expect(find.text('Spotify library'), findsNothing);
-    expect(find.text('Downloads'), findsNothing);
+    expect(find.text('Downloads'), findsOneWidget);
+    expect(find.text('Songs'), findsOneWidget);
     expect(find.text('Videos'), findsOneWidget);
     expect(find.text('Linked playlists'), findsOneWidget);
+    await tester.tap(find.text('Songs'));
+    await tester.tap(find.text('Downloads'));
+    expect(opened, [
+      KonnektedDestination.settings,
+      KonnektedDestination.songs,
+      KonnektedDestination.downloads,
+    ]);
   });
 
   testWidgets('shelf reports errors and retry without pretending to be empty', (
@@ -1046,7 +1100,7 @@ void main() {
     );
     // Hidden controls remain mounted for an uninterrupted reverse spring,
     // but leave the semantics tree and cannot intercept taps.
-    expect(find.bySemanticsLabel('Home'), findsNothing);
+    expect(find.bySemanticsLabel('Home'), findsOneWidget);
     expect(find.bySemanticsLabel('Open queue'), findsNothing);
     expect(find.bySemanticsLabel(RegExp('Open player for')), findsOneWidget);
     expect(find.bySemanticsLabel('Search'), findsOneWidget);

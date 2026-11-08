@@ -66,8 +66,7 @@ class LokalCoverFlow extends StatefulWidget {
     // Solve the perspective divide for the horizontal world translation.
     // This keeps rendered movement on the projected X rail even as covers
     // rotate back into the side stack in Z.
-    return projectedCenterDistance(a) *
-        (1 + depthDistance(a) / _focalLength);
+    return projectedCenterDistance(a) * (1 + depthDistance(a) / _focalLength);
   }
 
   const LokalCoverFlow({
@@ -158,7 +157,8 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     // easeOutCubic's initial derivative is 3. This duration bound limits
     // movement to <= 14 cover positions per second even on a hard fling.
     final ms = (1000 * 3 * distance / _maxGlideSpeed)
-        .clamp(220.0, 6000.0).round();
+        .clamp(220.0, 6000.0)
+        .round();
     _position.animateTo(
       target,
       duration: Duration(milliseconds: ms),
@@ -217,8 +217,7 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     _glideTo(target);
   }
 
-  void goTo(int index) =>
-      _glideTo(index.clamp(0, _last).toDouble());
+  void goTo(int index) => _glideTo(index.clamp(0, _last).toDouble());
 
   void _onDragUpdate(DragUpdateDetails details) {
     _position.stop();
@@ -256,28 +255,32 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     final side = distance.sign;
     final near = ad.clamp(0.0, 1.0);
     final reduced = _reduceMotion || _performance;
-    final dx = reduced ? distance * size * 1.06
+    final dx = reduced
+        ? distance * size * 1.06
         : side * size * LokalCoverFlow.centerDistance(ad);
-    final depth = reduced ? 0.0
-        : -size * LokalCoverFlow.depthDistance(ad);
-    final angle = (reduced ? 0.0
-        : -side * (2 * near - near * near) * _fanAngle * math.pi / 180)
-        + (index == _index ? _flip.value * math.pi : 0.0);
+    final depth = reduced ? 0.0 : -size * LokalCoverFlow.depthDistance(ad);
+    final angle =
+        (reduced
+            ? 0.0
+            : -side * (2 * near - near * near) * _fanAngle * math.pi / 180) +
+        (index == _index ? _flip.value * math.pi : 0.0);
     final vanish = size * _vanishY;
     Offset project(double x, double y) {
       final worldX = dx + math.cos(angle) * x;
       final worldZ = depth - math.sin(angle) * x;
-      final scale = reduced ? 1.0
-          : 1 / (1 - worldZ / (_perspective * size));
+      final scale = reduced ? 1.0 : 1 / (1 - worldZ / (_perspective * size));
       return Offset(
         _stageWidth / 2 + worldX * scale,
         size * .56 + (reduced ? y : vanish + (y - vanish) * scale),
       );
     }
+
     final half = size / 2;
     return [
-      project(-half, -half), project(half, -half),
-      project(half, half), project(-half, half),
+      project(-half, -half),
+      project(half, -half),
+      project(half, half),
+      project(-half, half),
     ];
   }
 
@@ -285,8 +288,8 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     bool? sign;
     for (var i = 0; i < corners.length; i++) {
       final a = corners[i], b = corners[(i + 1) % corners.length];
-      final cross = (b.dx - a.dx) * (point.dy - a.dy) -
-          (b.dy - a.dy) * (point.dx - a.dx);
+      final cross =
+          (b.dx - a.dx) * (point.dy - a.dy) - (b.dy - a.dy) * (point.dx - a.dx);
       if (cross.abs() < 0.00001) continue;
       final positive = cross > 0;
       if (sign != null && sign != positive) return false;
@@ -300,8 +303,7 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
   int _indexAt(double x, double y, double size) {
     final offset = x - _stageWidth / 2;
     if (_reduceMotion || _performance) {
-      return (_position.value + offset / (size * 1.06))
-          .round().clamp(0, _last);
+      return (_position.value + offset / (size * 1.06)).round().clamp(0, _last);
     }
 
     final pos = _position.value;
@@ -392,13 +394,17 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
                 onHorizontalDragCancel: _settle,
                 // A tap in a gap between covers picks the nearest one; a tap
                 // on a cover is claimed by that cover first.
-                onTapUp: (details) =>
-                    _select(_indexAt(details.localPosition.dx, details.localPosition.dy, size)),
+                onTapUp: (details) => _select(
+                  _indexAt(
+                    details.localPosition.dx,
+                    details.localPosition.dy,
+                    size,
+                  ),
+                ),
                 child: SizedBox(
                   height: size * 1.18,
                   width: constraints.maxWidth,
-                  // Leave the stage unpainted: Home's artwork-tinted gradient
-                  // must continue behind and between covers without a seam.
+                  // Preserve the shell's actual artwork-tinted gradient.
                   child: AnimatedBuilder(
                     animation: _animation,
                     builder: (context, _) => _stage(size),
@@ -430,7 +436,10 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: context.responsiveText(14), color: t.muted),
+                    style: TextStyle(
+                      fontSize: context.responsiveText(14),
+                      color: t.muted,
+                    ),
                   ),
                 ],
               ),
@@ -473,12 +482,14 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     final ad = d.abs();
     final side = d.sign;
     final near = ad.clamp(0.0, 1.0);
-    final dx = reduce ? d * size * 1.06
+    final dx = reduce
+        ? d * size * 1.06
         : side * size * LokalCoverFlow.centerDistance(ad);
     // Both front and side covers rotate about their own center. The *entire*
     // translated panel must pass through the same perspective divide; moving
     // dx outside perspective makes the reference triangles impossible.
-    final angle = reduce ? 0.0
+    final angle = reduce
+        ? 0.0
         : -side * (2 * near - near * near) * _fanAngle * math.pi / 180;
     final depth = reduce ? 0.0 : -size * LokalCoverFlow.depthDistance(ad);
     final facing = i == _index;
@@ -497,9 +508,16 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     final album = widget.albums[i];
     // Cached face contains only the original artwork; no reflection shader,
     // mirrored image, offscreen render pass or duplicated cover subtree.
-    final face = _faces.putIfAbsent(album.key, () => RepaintBoundary(
-      child: _Front(cover: widget.cover(album), size: size, shadow: !_performance),
-    ));
+    final face = _faces.putIfAbsent(
+      album.key,
+      () => RepaintBoundary(
+        child: _Front(
+          cover: widget.cover(album),
+          size: size,
+          shadow: !_performance,
+        ),
+      ),
+    );
     final showBack = flip > .5;
     return Positioned(
       key: ValueKey(album.key),

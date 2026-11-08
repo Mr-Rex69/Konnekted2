@@ -50,7 +50,8 @@ class LokalNavigationSwitcher extends StatefulWidget {
   static const curve = Cubic(.2, 0, 0, 1);
 
   @override
-  State<LokalNavigationSwitcher> createState() => _LokalNavigationSwitcherState();
+  State<LokalNavigationSwitcher> createState() =>
+      _LokalNavigationSwitcherState();
 }
 
 class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
@@ -94,7 +95,8 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
   // request efficient motion without retention, preserve the original
   // generic two-page transition instead of dereferencing a null _outgoing.
   bool get _useEfficientMotion =>
-      widget.efficientMotion && widget.retainVisitedTabs &&
+      widget.efficientMotion &&
+      widget.retainVisitedTabs &&
       widget.child.key != null;
 
   bool get _reduceMotion =>
@@ -150,7 +152,9 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
     final current = widget.child.key;
     final exiting = _useEfficientMotion
         ? null
-        : animating ? _outgoing?.key : null;
+        : animating
+        ? _outgoing?.key
+        : null;
     final travel = _useEfficientMotion ? .045 : 1.0;
     // Put the incoming surface last so it paints in front, while the
     // outgoing screen occupies the adjacent viewport region.
@@ -194,7 +198,9 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
                       translation: Offset(
                         isCurrent
                             ? direction * travel * (1 - progress)
-                            : isExiting ? -direction * travel * progress : 0,
+                            : isExiting
+                            ? -direction * travel * progress
+                            : 0,
                         0,
                       ),
                       child: page!,
@@ -211,7 +217,9 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
   @override
   Widget build(BuildContext context) {
     final reduceMotion = _reduceMotion;
-    final animating = !reduceMotion && !widget.instantNavigation &&
+    final animating =
+        !reduceMotion &&
+        !widget.instantNavigation &&
         (_useEfficientMotion ? _progress.isAnimating : _outgoing != null);
     final direction =
         (Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0) *
@@ -234,8 +242,9 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
               animation: _progress,
               child: _outgoing,
               builder: (context, outgoing) {
-                final progress = LokalNavigationSwitcher.curve
-                    .transform(_progress.value);
+                final progress = LokalNavigationSwitcher.curve.transform(
+                  _progress.value,
+                );
                 return IgnorePointer(
                   ignoring: true,
                   child: ExcludeSemantics(
@@ -258,9 +267,20 @@ class _LokalNavigationSwitcherState extends State<LokalNavigationSwitcher>
               final progress = animating
                   ? LokalNavigationSwitcher.curve.transform(_progress.value)
                   : 1.0;
-              return FractionalTranslation(
-                translation: Offset(direction * (1 - progress), 0),
-                child: RepaintBoundary(child: incoming!),
+              // Keep the same ancestry when this page becomes outgoing.
+              // Changing wrapper types would recreate its entire state tree.
+              return IgnorePointer(
+                ignoring: false,
+                child: ExcludeSemantics(
+                  excluding: false,
+                  child: TickerMode(
+                    enabled: true,
+                    child: FractionalTranslation(
+                      translation: Offset(direction * (1 - progress), 0),
+                      child: RepaintBoundary(child: incoming!),
+                    ),
+                  ),
+                ),
               );
             },
           ),

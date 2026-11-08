@@ -66,7 +66,7 @@ class AtmosPlaybackSupport {
     try {
       final streams = await (probeStreams ?? _probeStreams)(path);
       return streams.any((stream) =>
-        '${stream['codec_name'] ?? stream['codec'] ?? ''}'.toLowerCase() == 'ac4' &&
+        '${stream['codec_name'] ?? stream['codec'] ?? ''}'.trim().toLowerCase().replaceAll('-', '') == 'ac4' &&
         '${stream['codec_type'] ?? 'audio'}'.toLowerCase() == 'audio');
     } catch (_) { return false; }
   }

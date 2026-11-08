@@ -40,6 +40,7 @@ class LokalRemoteCredentials {
     this.apiKey = '',
     this.desktopId,
     this.desktopUserId,
+    this.pairingID,
   });
 
   final Uri origin;
@@ -47,6 +48,10 @@ class LokalRemoteCredentials {
   final String apiKey;
   final String? desktopId;
   final String? desktopUserId;
+
+  /// Public identity of this pairing, renewed when the desktop is re-paired.
+  /// Background jobs never persist bearer tokens or token hashes.
+  final String? pairingID;
 
   bool get hasRemoteToken => remoteToken.isNotEmpty;
   bool get hasApiKey => apiKey.isNotEmpty;
@@ -319,9 +324,11 @@ class LokalRemoteControllerState {
   final bool commandInFlight;
   final bool socketConnected;
   final bool controlsDesktop;
+
   /// The downloaded, app-private cover for the desktop's current recording.
   /// Never expose a PC filesystem path as an Android image file.
   final String? remoteArtworkPath;
+
   /// Id of the authenticated Lokal network-source row backing desktop covers.
   /// Queue thumbnails use it to resolve each track's own artwork on demand.
   final int? artworkServerId;
@@ -364,8 +371,12 @@ class LokalRemoteControllerState {
     commandInFlight: commandInFlight ?? this.commandInFlight,
     socketConnected: socketConnected ?? this.socketConnected,
     controlsDesktop: controlsDesktop ?? this.controlsDesktop,
-    remoteArtworkPath: clearRemoteArtwork ? null : remoteArtworkPath ?? this.remoteArtworkPath,
-    artworkServerId: clearArtworkServer ? null : artworkServerId ?? this.artworkServerId,
+    remoteArtworkPath: clearRemoteArtwork
+        ? null
+        : remoteArtworkPath ?? this.remoteArtworkPath,
+    artworkServerId: clearArtworkServer
+        ? null
+        : artworkServerId ?? this.artworkServerId,
     desktopName: desktopName ?? this.desktopName,
     mergeApproved: mergeApproved ?? this.mergeApproved,
     syncPreview: syncPreview ?? this.syncPreview,

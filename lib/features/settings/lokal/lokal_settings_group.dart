@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'dart:io';
+
 /// Lokal's main settings groups, followed by shortcut-only subpages.
 ///
 /// Desktop's Integrations and Add-ons are one flow here: [integrations] is
@@ -58,15 +60,23 @@ enum LokalSettingsGroup {
   );
 
   const LokalSettingsGroup(
-    this.label,
-    this.description,
-    this.icon, {
+    this._label,
+    this._description,
+    this._icon, {
     this.parent,
   });
 
-  final String label;
-  final String description;
-  final IconData icon;
+  final String _label;
+  final String _description;
+  final IconData _icon;
+
+  String get label =>
+      this == output && Platform.isIOS ? 'Audio output' : _label;
+  String get description => this == output && Platform.isIOS
+      ? 'AirPlay, Bluetooth, volume and crossfeed'
+      : _description;
+  IconData get icon =>
+      this == output && Platform.isIOS ? Icons.headphones_rounded : _icon;
 
   /// The group this page opens from; `null` for the listed groups.
   final LokalSettingsGroup? parent;

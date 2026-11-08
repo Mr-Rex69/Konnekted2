@@ -16,6 +16,7 @@ import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/library_scan_preferences_provider.dart';
 import 'package:flick/services/library_scanner_service.dart' show ScanMode;
 import 'package:flick/services/music_folder_service.dart';
+import 'package:flick/widgets/common/ios_transfer_root.dart';
 import 'package:flick/services/permission_service.dart';
 import 'package:flick/services/scan_session_controller.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
@@ -188,7 +189,12 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
     );
     if (ok != true || !mounted) return;
     try {
-      await _folderService.removeFolder(folder.uri);
+      // A folder purge deletes all its song rows. Retire any active native
+      // import owner before the first permission/cache/database mutation.
+      await IosTransferRoot.withMutationBarrier(
+        context,
+        () => _folderService.removeFolder(folder.uri),
+      );
       await _loadLibraryData();
     } catch (e) {
       if (mounted) _say('Couldn’t remove the folder ($e).');
@@ -223,15 +229,24 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
       selected: deepScan ? _FolderAction.deepScan : null,
       choices: [
         if (!scanning)
-          const LokalChoice(value: _FolderAction.rescan,
-            label: 'Rescan this folder', icon: Icons.refresh_rounded),
+          const LokalChoice(
+            value: _FolderAction.rescan,
+            label: 'Rescan this folder',
+            icon: Icons.refresh_rounded,
+          ),
         if (_isAndroid)
-          const LokalChoice(value: _FolderAction.deepScan,
-            label: 'Deep scan', icon: Icons.search_rounded),
+          const LokalChoice(
+            value: _FolderAction.deepScan,
+            label: 'Deep scan',
+            icon: Icons.search_rounded,
+          ),
         if (!scanning)
-          const LokalChoice(value: _FolderAction.remove,
-            label: 'Remove', icon: Icons.delete_outline_rounded,
-            destructive: true),
+          const LokalChoice(
+            value: _FolderAction.remove,
+            label: 'Remove',
+            icon: Icons.delete_outline_rounded,
+            destructive: true,
+          ),
       ],
     );
     if (selected != null && mounted) {
@@ -244,14 +259,25 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
       context: context,
       title: 'Rescan',
       choices: [
-        const LokalChoice(value: _Rescan.quick, label: 'Quick',
-          description: 'Only new and changed files', icon: Icons.flash_on_rounded),
-        const LokalChoice(value: _Rescan.full, label: 'Full',
-          description: 'Reread every file', icon: Icons.refresh_rounded),
+        const LokalChoice(
+          value: _Rescan.quick,
+          label: 'Quick',
+          description: 'Only new and changed files',
+          icon: Icons.flash_on_rounded,
+        ),
+        const LokalChoice(
+          value: _Rescan.full,
+          label: 'Full',
+          description: 'Reread every file',
+          icon: Icons.refresh_rounded,
+        ),
         if (_isAndroid)
-          const LokalChoice(value: _Rescan.deep, label: 'Deep',
+          const LokalChoice(
+            value: _Rescan.deep,
+            label: 'Deep',
             description: 'Full, read straight from storage',
-            icon: Icons.folder_open_rounded),
+            icon: Icons.folder_open_rounded,
+          ),
       ],
     );
     if (selected != null && mounted) await _rescan(selected);
@@ -300,7 +326,7 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
                     key: const ValueKey('folders-add'),
                     onPressed: scanning ? null : _addFolder,
                     icon: const Icon(Icons.create_new_folder_rounded),
-                    label: const Text('Add folder'),
+                    label: Text(Platform.isIOS ? 'Import music' : 'Add folder'),
                     style: FilledButton.styleFrom(
                       backgroundColor: t.accent,
                       foregroundColor: t.onAccent,
@@ -384,9 +410,7 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
       trailing: IconButton(
         tooltip: 'Folder options',
         icon: Icon(Icons.more_horiz_rounded, color: t.muted),
-        onPressed: () => unawaited(
-          _showFolderMenu(folder, deepScan, scanning),
-        ),
+        onPressed: () => unawaited(_showFolderMenu(folder, deepScan, scanning)),
       ),
     );
   }

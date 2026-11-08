@@ -1,4 +1,4 @@
-// First-party Monochrome catalogue integration, based on the public Tracks API.
+// Native Monochrome catalogue integration, based on the public Tracks API.
 // Protocol reference: monochrome-music/monochrome (Apache-2.0).
 // No credentials, dynamic hosts, or third-party add-on manifests are involved.
 import 'discovery_http.dart';
@@ -30,7 +30,8 @@ abstract final class MonochromeSource {
     } on DiscoveryException catch (error) {
       // The public API intermittently responds with Cloudflare 5xx.
       // Avoid retrying auth failures, invalid JSON or missing tracks.
-      if (!RegExp(r'HTTP 5\d\d|rate limiting requests').hasMatch(error.message)) {
+      if (!RegExp(r'HTTP 5\d\d|rate limiting requests')
+          .hasMatch(error.message)) {
         rethrow;
       }
       await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -38,7 +39,9 @@ abstract final class MonochromeSource {
     }
     final rows = json['tracks'];
     if (rows is! List) {
-      throw const DiscoveryException('Monochrome returned an unsupported catalogue response.');
+      throw const DiscoveryException(
+        'Monochrome returned an unsupported catalogue response.',
+      );
     }
     final tracks = <DiscoveryTrack>[];
     final seen = <String>{};
@@ -46,45 +49,65 @@ abstract final class MonochromeSource {
       if (entry is! Map) continue;
       final id = (entry['trackId'] ?? entry['id'])?.toString() ?? '';
       final title = discoveryText(entry['title']);
-      if (!_trackId.hasMatch(id) || title == null ||
-          entry['playable'] == false || !seen.add(id)) continue;
+      if (!_trackId.hasMatch(id) ||
+          title == null ||
+          entry['playable'] == false ||
+          !seen.add(id))
+        continue;
 
       final names = entry['artistNames'];
       final credits = entry['artists'];
       // Some catalogue responses provide artist objects rather than artistNames.
       // Keep the display/embedded tag instead of falling back to "Unknown Artist".
       final artists = names is List
-          ? names.whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty).take(8).join(', ')
+          ? names
+                .whereType<String>()
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .take(8)
+                .join(', ')
           : credits is List
-              ? credits.whereType<Map>().map((a) => discoveryText(a['name']))
-                  .whereType<String>().take(8).join(', ')
-              : '';
+          ? credits
+                .whereType<Map>()
+                .map((a) => discoveryText(a['name']))
+                .whereType<String>()
+                .take(8)
+                .join(', ')
+          : '';
       final rawDuration = entry['duration'];
       final seconds = rawDuration is num && rawDuration.isFinite
           ? (rawDuration > 1000 ? rawDuration / 1000 : rawDuration)
           : null;
-      final rawCover = discoveryText(entry['artwork'] ?? entry['cover'], maxLength: 2000);
+      final rawCover = discoveryText(
+        entry['artwork'] ?? entry['cover'],
+        maxLength: 2000,
+      );
       final coverUri = rawCover == null ? null : Uri.tryParse(rawCover);
-      final artwork = coverUri?.scheme == 'https' &&
+      final artwork =
+          coverUri?.scheme == 'https' &&
               coverUri?.host.isNotEmpty == true &&
               coverUri?.userInfo.isEmpty == true
           ? rawCover
           : null;
-      tracks.add(DiscoveryTrack(
-        id: id,
-        title: title,
-        artist: artists.isEmpty ? 'Artist not supplied' : artists,
-        album: discoveryText(entry['albumTitle'] ?? entry['releaseTitle'] ?? entry['album']),
-        duration: seconds == null ? null : discoveryDuration(seconds),
-        source: DiscoverySource.monochrome,
-        sourceName: 'Monochrome',
-        sourceUrl: streamUri(id),
-        artwork: artwork,
-        // The catalogue does not supply a verified bit depth or sample rate.
-        // The actual decoder is authoritative; never invent Hi-Res values.
-        catalogueQuality: 'LOSSLESS',
-        catalogueCodec: 'FLAC',
-      ));
+      tracks.add(
+        DiscoveryTrack(
+          id: id,
+          title: title,
+          artist: artists.isEmpty ? 'Artist not supplied' : artists,
+          album: discoveryText(
+            entry['albumTitle'] ?? entry['releaseTitle'] ?? entry['album'],
+          ),
+          duration: seconds == null ? null : discoveryDuration(seconds),
+          source: DiscoverySource.monochrome,
+          sourceName: 'Monochrome',
+          sourceUrl: streamUri(id),
+          artwork: artwork,
+          // The catalogue does not supply a verified bit depth or sample rate.
+          // The actual decoder is authoritative; never invent Hi-Res values.
+          catalogueQuality: 'LOSSLESS',
+          catalogueCodec: 'FLAC',
+        ),
+      );
     }
     return tracks;
   }

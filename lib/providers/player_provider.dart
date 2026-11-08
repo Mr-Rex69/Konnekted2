@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'lastfm_provider.dart';
 import 'lokal_remote_provider.dart';
+
 import 'package:flick/features/link/lokal_ghost_availability.dart';
+
 import '../models/lokal_remote_state.dart';
 import '../services/link/remote_playback_target.dart';
 import '../services/link/library_song_identity.dart';
@@ -30,6 +32,7 @@ export '../models/playback_context.dart' show PlaybackContext, PlaybackSource;
 class PlayerState {
   final Song? currentSong;
   final bool isPlaying;
+  final bool isBuffering;
   final Duration position;
   final Duration duration;
   final Duration bufferedPosition;
@@ -41,6 +44,7 @@ class PlayerState {
   final List<Song> queue;
   final List<Song> upNext;
   final List<Song> autoplayUpNext;
+
   /// The full ordered playback context, including tracks before Now Playing.
   final List<Song> playlist;
   final int currentIndex;
@@ -48,6 +52,7 @@ class PlayerState {
   const PlayerState({
     this.currentSong,
     this.isPlaying = false,
+    this.isBuffering = false,
     this.position = Duration.zero,
     this.duration = Duration.zero,
     this.bufferedPosition = Duration.zero,
@@ -66,6 +71,7 @@ class PlayerState {
   PlayerState copyWith({
     Song? currentSong,
     bool? isPlaying,
+    bool? isBuffering,
     Duration? position,
     Duration? duration,
     Duration? bufferedPosition,
@@ -85,6 +91,7 @@ class PlayerState {
     return PlayerState(
       currentSong: clearSong ? null : (currentSong ?? this.currentSong),
       isPlaying: isPlaying ?? this.isPlaying,
+      isBuffering: isBuffering ?? this.isBuffering,
       position: position ?? this.position,
       duration: duration ?? this.duration,
       bufferedPosition: bufferedPosition ?? this.bufferedPosition,
@@ -181,15 +188,18 @@ class PlayerNotifier extends Notifier<PlayerState> {
         'Connect to the desktop before selecting a remote song.',
       );
     }
-    final credentials =
-        await ref.read(lokalRemoteCredentialsStoreProvider).read();
-    if (credentials == null || credentials.desktopId == null ||
+    final credentials = await ref
+        .read(lokalRemoteCredentialsStoreProvider)
+        .read();
+    if (credentials == null ||
+        credentials.desktopId == null ||
         credentials.origin != connection.config?.origin) {
       throw const LokalRemoteProtocolException(
         'Pair this desktop and sync its library before playing shared songs.',
       );
     }
-    final serverId = connection.artworkServerId ??
+    final serverId =
+        connection.artworkServerId ??
         (await LokalDesktopSource.instance.ensureServer(credentials)).id;
 
     final library = await ref.read(songsProvider.future);
@@ -242,7 +252,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // Async library/credential reads cannot dispatch an obsolete selection
     // after the listener switches back to the phone or a different desktop.
     final latest = ref.read(lokalRemoteControllerProvider);
-    if (!latest.controlsDesktop || !latest.reachable ||
+    if (!latest.controlsDesktop ||
+        !latest.reachable ||
         latest.config?.origin != connection.config?.origin) {
       throw const LokalRemoteNetworkException(
         'The selected desktop changed during playback.',
@@ -276,6 +287,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final initial = PlayerState(
       currentSong: _service.currentSongNotifier.value,
       isPlaying: _service.isPlayingNotifier.value,
+      isBuffering: !_service.isCasting && _service.isBufferingNotifier.value,
       position: _service.positionNotifier.value,
       duration: _service.durationNotifier.value,
       bufferedPosition: _service.bufferedPositionNotifier.value,
@@ -331,6 +343,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       state = state.copyWith(
         currentSong: latestSong,
         isPlaying: _service.isPlayingNotifier.value,
+        isBuffering: !_service.isCasting && _service.isBufferingNotifier.value,
         position: _service.positionNotifier.value,
         duration: _service.durationNotifier.value,
         bufferedPosition: _service.bufferedPositionNotifier.value,
@@ -427,6 +440,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
               : convert(remote.currentTrack!, current: true),
           clearSong: remote.currentTrack == null,
           isPlaying: remote.isPlaying,
+          isBuffering: false,
           position: Duration(milliseconds: (remote.progress * 1000).round()),
           duration: Duration(milliseconds: (remote.duration * 1000).round()),
           isShuffle: remote.shuffle,
@@ -452,6 +466,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // Add listeners
     _service.currentSongNotifier.addListener(syncState);
     _service.isPlayingNotifier.addListener(syncState);
+    _service.isBufferingNotifier.addListener(syncState);
     _service.positionNotifier.addListener(syncPosition);
     _service.durationNotifier.addListener(syncState);
     _service.bufferedPositionNotifier.addListener(syncPosition);
@@ -469,6 +484,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     ref.onDispose(() {
       _service.currentSongNotifier.removeListener(syncState);
       _service.isPlayingNotifier.removeListener(syncState);
+      _service.isBufferingNotifier.removeListener(syncState);
       _service.positionNotifier.removeListener(syncPosition);
       _service.durationNotifier.removeListener(syncState);
       _service.bufferedPositionNotifier.removeListener(syncPosition);
@@ -556,17 +572,24 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> play(
     Song song, {
     List<Song>? playlist,
+    int? playlistIndex,
     PlaybackContext? context,
   }) async {
     final desktop = _desktop;
     if (desktop != null) {
       final selection = await _resolveDesktopSelection(
-        song, playlist: playlist,
+        song,
+        playlist: playlist,
       );
       await desktop.playLibrarySelection(selection);
       return;
     }
-    await _service.play(song, playlist: playlist, context: context);
+    await _service.play(
+      song,
+      playlist: playlist,
+      playlistIndex: playlistIndex,
+      context: context,
+    );
   }
 
   /// Toggle play/pause.

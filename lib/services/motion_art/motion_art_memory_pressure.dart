@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 ///
 /// A widget observer cannot see memory pressure that arrives while the player
 /// screen is unmounted. Start this at app bootstrap so even the next newly
-/// mounted artwork view respects Android's complete recovery window.
+/// mounted artwork view respects the complete memory recovery window.
 class MotionArtMemoryPressure extends WidgetsBindingObserver {
   MotionArtMemoryPressure._();
 

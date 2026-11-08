@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
 import 'package:flick/features/player/widgets/artwork_mesh_blur_backdrop.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
@@ -38,6 +39,8 @@ enum KonnektedTab {
 
   final String label;
   final IconData icon;
+
+  String get localizedLabel => this == explore ? l10n.search : lokalText(label);
 
   /// The tabs inside the capsule; [explore] is the separate search circle,
   /// as in Apple Music on iOS 26.
@@ -226,7 +229,10 @@ class _KonnektedDockState extends State<KonnektedDock>
     final tabsShut = const Rect.fromLTWH(inset, 0, compact, compact);
     final searchOpen = Rect.fromLTWH(width - bar, top, bar, bar);
     final searchShut = Rect.fromLTWH(
-      width - inset - compact, 0, compact, compact,
+      width - inset - compact,
+      0,
+      compact,
+      compact,
     );
     final miniOpen = Rect.fromLTWH(0, 0, width, mini);
     final miniShut = Rect.fromLTWH(
@@ -281,7 +287,8 @@ class _KonnektedDockState extends State<KonnektedDock>
                         ),
                         builder: (context, pressed, child) => AnimatedScale(
                           key: const ValueKey('dock-mini-press'),
-                          scale: pressed &&
+                          scale:
+                              pressed &&
                                   !MediaQuery.disableAnimationsOf(context)
                               ? 1.035
                               : 1,
@@ -342,12 +349,13 @@ class KonnektedMiniPlayerScope extends InheritedWidget {
   static double progressOf(BuildContext context) {
     final scope = context
         .dependOnInheritedWidgetOfExactType<KonnektedMiniPlayerScope>();
-    return (scope?.progress ?? (scope?.collapsed == true ? 1.0 : 0.0))
-        .clamp(0.0, 1.0);
+    return (scope?.progress ?? (scope?.collapsed == true ? 1.0 : 0.0)).clamp(
+      0.0,
+      1.0,
+    );
   }
 
-  static bool collapsedOf(BuildContext context) =>
-      progressOf(context) >= 1;
+  static bool collapsedOf(BuildContext context) => progressOf(context) >= 1;
 
   @override
   bool updateShouldNotify(KonnektedMiniPlayerScope old) =>
@@ -442,8 +450,10 @@ class _TabCapsuleState extends State<_TabCapsule>
     final index = _dragIndex;
     final position = _dragX == null
         ? null
-        : ((_dragX! - _inset) / _slot - .5)
-            .clamp(0.0, (_tabs.length - 1).toDouble());
+        : ((_dragX! - _inset) / _slot - .5).clamp(
+            0.0,
+            (_tabs.length - 1).toDouble(),
+          );
     // Hand the exact finger position and velocity to the same spring
     // responsible for a tapped selection. This avoids an end-drag jump back
     // to the old tab before the selected pill takes off again.
@@ -479,32 +489,34 @@ class _TabCapsuleState extends State<_TabCapsule>
       builder: (context, _) {
         final lensLeft = _dragX != null
             ? (_dragX! - _slot / 2).clamp(_inset, widget.width - _inset - _slot)
-            : _inset + _slot *
-                _selectionPosition.value.clamp(
-                  0.0, (_tabs.length - 1).toDouble(),
-                );
+            : _inset +
+                  _slot *
+                      _selectionPosition.value.clamp(
+                        0.0,
+                        (_tabs.length - 1).toDouble(),
+                      );
         return LokalGlass.capsule(
-        key: const ValueKey('dock-tab-glass'),
-        grouped: true,
-        lens: _dockGlassLens,
-        liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
-        liquidBlurRadius: _dockBlurRadius,
-        singlePassLens: true,
-        fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
-        fallbackBlurSigma: 2,
-        backdropBlurSigma: _dockBackdropBlurSigma,
-        performanceTintOpacity: context.lokal.isLight
-            ? _dockPerformanceLightTint
-            : _dockPerformanceDarkTint,
-        pronouncedRim: true,
-        rimStrength: .82,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Keep the whole expanded subtree mounted at both endpoints.
-            // Unmounting it on the final frame flashes a new backdrop/lens
-            // hierarchy and can read as a one-frame collapse jitter.
-            IgnorePointer(
+          key: const ValueKey('dock-tab-glass'),
+          grouped: true,
+          lens: _dockGlassLens,
+          liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
+          liquidBlurRadius: _dockBlurRadius,
+          singlePassLens: true,
+          fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
+          fallbackBlurSigma: 2,
+          backdropBlurSigma: _dockBackdropBlurSigma,
+          performanceTintOpacity: context.lokal.isLight
+              ? _dockPerformanceLightTint
+              : _dockPerformanceDarkTint,
+          pronouncedRim: true,
+          rimStrength: .82,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Keep the whole expanded subtree mounted at both endpoints.
+              // Unmounting it on the final frame flashes a new backdrop/lens
+              // hierarchy and can read as a one-frame collapse jitter.
+              IgnorePointer(
                 ignoring: widget.collapse > .5,
                 child: Opacity(
                   opacity: Curves.easeIn.transform(open),
@@ -538,7 +550,9 @@ class _TabCapsuleState extends State<_TabCapsule>
                                       ? 1.08
                                       : 1,
                                   child: _Lens(
-                                    key: const ValueKey('dock-selection-indicator'),
+                                    key: const ValueKey(
+                                      'dock-selection-indicator',
+                                    ),
                                     color: t.accent,
                                     active: _dragX != null && !reduceMotion,
                                   ),
@@ -572,7 +586,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                   ),
                 ),
               ),
-            IgnorePointer(
+              IgnorePointer(
                 ignoring: widget.collapse <= .5,
                 child: Opacity(
                   opacity: Curves.easeOut.transform(widget.collapse),
@@ -582,7 +596,7 @@ class _TabCapsuleState extends State<_TabCapsule>
                       button: true,
                       label: lokalText(
                         "Show tabs. {arg0}",
-                        args: {'arg0': shown.label},
+                        args: {'arg0': shown.localizedLabel},
                       ),
                       onTap: widget.onExpand,
                       excludeSemantics: true,
@@ -598,14 +612,16 @@ class _TabCapsuleState extends State<_TabCapsule>
                   ),
                 ),
               ),
-            // BitChord uses a shared element for the selected glyph: unlike
-            // a crossfade between two separate icons, this is always one
-            // drawable. Its centre follows the capsule as it shrinks and the
-            // icon grows from the expanded 22dp to a readable compact ~28dp.
-            Builder(
+              // BitChord uses a shared element for the selected glyph: unlike
+              // a crossfade between two separate icons, this is always one
+              // drawable. Its centre follows the capsule as it shrinks and the
+              // icon grows from the expanded 22dp to a readable compact ~28dp.
+              Builder(
                 builder: (context) {
-                  final tabIndex = _selectionPosition.value
-                      .clamp(0.0, (_tabs.length - 1).toDouble());
+                  final tabIndex = _selectionPosition.value.clamp(
+                    0.0,
+                    (_tabs.length - 1).toDouble(),
+                  );
                   final visualWidth = lerpDouble(
                     widget.width,
                     KonnektedDock.collapsedHeight,
@@ -635,26 +651,21 @@ class _TabCapsuleState extends State<_TabCapsule>
                         // expanding keeps the glyph completely undistorted.
                         // Neither the icon nor its glass uses a spring.
                         alignment: Alignment.centerLeft,
-                        scaleX: 1.08 *
+                        scaleX:
+                            1.08 *
                             (reduceMotion || !widget.squashOnCollapse
                                 ? 1.0
-                                : dockSelectedIconLeftSquash(
-                                    widget.collapse,
-                                  )),
+                                : dockSelectedIconLeftSquash(widget.collapse)),
                         scaleY: 1.08,
-                        child: Icon(
-                          shown.icon,
-                          color: t.accent,
-                          size: 22,
-                        ),
+                        child: Icon(shown.icon, color: t.accent, size: 22),
                       ),
                     ),
                   );
                 },
               ),
-          ],
-        ),
-      );
+            ],
+          ),
+        );
       },
     );
   }
@@ -690,6 +701,7 @@ class _TabButton extends StatelessWidget {
   final KonnektedTab tab;
   final bool selected;
   final VoidCallback onTap;
+
   /// The selected glyph has a persistent counterpart that moves inline.
   final bool hideIcon;
 
@@ -699,10 +711,10 @@ class _TabButton extends StatelessWidget {
     return Semantics(
       selected: selected,
       button: true,
-      label: tab.label,
+      label: tab.localizedLabel,
       onTap: onTap,
       child: Tooltip(
-        message: tab.label,
+        message: tab.localizedLabel,
         excludeFromSemantics: true,
         child: InkWell(
           onTap: onTap,
@@ -733,7 +745,7 @@ class _TabButton extends StatelessWidget {
                   ),
                 const SizedBox(height: 2),
                 Text(
-                  tab.label,
+                  tab.localizedLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -778,10 +790,10 @@ class _SearchCircle extends StatelessWidget {
     return Semantics(
       selected: selected,
       button: true,
-      label: tab.label,
+      label: tab.localizedLabel,
       onTap: onTap,
       child: Tooltip(
-        message: tab.label,
+        message: tab.localizedLabel,
         excludeFromSemantics: true,
         child: LokalGlass.capsule(
           key: const ValueKey('dock-search-glass'),
@@ -806,9 +818,7 @@ class _SearchCircle extends StatelessWidget {
                 opacity: selected ? 1 : 0,
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: _Lens(
-                    color: t.accent,
-                  ),
+                  child: _Lens(color: t.accent),
                 ),
               ),
               InkWell(
@@ -856,12 +866,14 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
     final radio = ref.watch(radioPlayerProvider);
     final station = radio.station;
     if (station == null) return const SizedBox.shrink();
-    final title = radio.trackMetadata?.title ??
-        radio.nowPlaying ?? station.title;
+    final title =
+        radio.trackMetadata?.title ?? radio.nowPlaying ?? station.title;
     final performer = radio.trackMetadata?.artist.isNotEmpty == true
-        ? radio.trackMetadata!.artist : station.title;
+        ? radio.trackMetadata!.artist
+        : station.title;
     final quality = station.lossless
-        ? 'Lossless' : station.bitrate.toString() + ' kbps';
+        ? 'Lossless'
+        : station.bitrate.toString() + ' kbps';
     // Exactly the same mini-player component, artwork Hero, hit regions,
     // marquee, next button and upward pull used by ordinary songs.
     // Only its callbacks and track model are adapted to a live station.
@@ -882,12 +894,12 @@ class KonnektedRadioMiniPlayer extends ConsumerWidget {
       onPullUpStart: onPullUpStart,
       onPullUpUpdate: onPullUpUpdate,
       onPullUpEnd: onPullUpEnd,
-      onPlayPause: () => unawaited(
-        ref.read(radioPlayerProvider.notifier).toggle()),
-      onNext: () => unawaited(
-        ref.read(radioPlayerProvider.notifier).nextStation()),
-      onPrevious: () => unawaited(
-        ref.read(radioPlayerProvider.notifier).previousStation()),
+      onPlayPause: () =>
+          unawaited(ref.read(radioPlayerProvider.notifier).toggle()),
+      onNext: () =>
+          unawaited(ref.read(radioPlayerProvider.notifier).nextStation()),
+      onPrevious: () =>
+          unawaited(ref.read(radioPlayerProvider.notifier).previousStation()),
       // Live broadcasts are not seekable; never invent track progress.
       progress: const SizedBox.shrink(),
     );
@@ -933,7 +945,10 @@ class KonnektedMiniPlayer extends ConsumerWidget {
           onPullUpEnd: onPullUpEnd,
           onPlayPause: () {
             AppHaptics.doublePulse();
-            _transport(context, () => ref.read(playerProvider.notifier).togglePlayPause());
+            _transport(
+              context,
+              () => ref.read(playerProvider.notifier).togglePlayPause(),
+            );
           },
           onNext: () {
             AppHaptics.triplePulse();
@@ -941,7 +956,10 @@ class KonnektedMiniPlayer extends ConsumerWidget {
           },
           onPrevious: () {
             AppHaptics.triplePulse();
-            _transport(context, () => ref.read(playerProvider.notifier).previous());
+            _transport(
+              context,
+              () => ref.read(playerProvider.notifier).previous(),
+            );
           },
           progress: Consumer(
             builder: (context, ref, _) {
@@ -1048,12 +1066,13 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
     // BitChord keeps both title and artist in the narrow accessory. Lokal
     // previously deleted the artist and made the compact player look empty.
     const artistReveal = 1.0;
-    final queueReveal = 1 - Curves.easeInOutCubic.transform(
-      ((collapse - .18) / .70).clamp(0.0, 1.0),
-    );
-    final nextReveal = 1 - Curves.easeInOutCubic.transform(
-      (collapse / .56).clamp(0.0, 1.0),
-    );
+    final queueReveal =
+        1 -
+        Curves.easeInOutCubic.transform(
+          ((collapse - .18) / .70).clamp(0.0, 1.0),
+        );
+    final nextReveal =
+        1 - Curves.easeInOutCubic.transform((collapse / .56).clamp(0.0, 1.0));
     return Stack(
       children: [
         // Glass remains clear, but text needs stable contrast when a bright
@@ -1087,13 +1106,15 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
             // The width actively shrinks while collapsing. Check the
             // *expanded* width when deciding whether Next can appear, so
             // it doesn't pop away when crossing 360 logical pixels mid-flight.
-            final expandedWidth = constraints.maxWidth +
-                2 * (
-                  KonnektedDock.inlineInset +
-                  KonnektedDock.collapsedHeight +
-                  KonnektedDock.inlineSpacing
-                ) * collapse;
-            final compactAtRest = expandedWidth < 360 ||
+            final expandedWidth =
+                constraints.maxWidth +
+                2 *
+                    (KonnektedDock.inlineInset +
+                        KonnektedDock.collapsedHeight +
+                        KonnektedDock.inlineSpacing) *
+                    collapse;
+            final compactAtRest =
+                expandedWidth < 360 ||
                 MediaQuery.textScalerOf(context).scale(14) > 23;
             return Padding(
               padding: EdgeInsets.fromLTRB(
@@ -1124,7 +1145,10 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                 // The artwork travels directly between the
                                 // two real layouts, like BitChord's docked art.
                                 createRectTween: (begin, end) =>
-                                    LokalArtworkRectTween(begin: begin, end: end),
+                                    LokalArtworkRectTween(
+                                      begin: begin,
+                                      end: end,
+                                    ),
                                 flightShuttleBuilder: _flight,
                                 child: SizedBox(
                                   key: artworkKey,
@@ -1148,7 +1172,9 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                     // A song ID key restarts at the beginning
                                     // instead of inheriting the old scroll.
                                     OverflowMarqueeTitle(
-                                      key: ValueKey('dock-mini-title:${song.id}'),
+                                      key: ValueKey(
+                                        'dock-mini-title:${song.id}',
+                                      ),
                                       title: song.title,
                                       style: TextStyle(
                                         fontSize: 13,
@@ -1157,8 +1183,12 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                         shadows: [
                                           Shadow(
                                             color: context.lokal.isLight
-                                                ? Colors.white.withValues(alpha: .85)
-                                                : Colors.black.withValues(alpha: .80),
+                                                ? Colors.white.withValues(
+                                                    alpha: .85,
+                                                  )
+                                                : Colors.black.withValues(
+                                                    alpha: .80,
+                                                  ),
                                             blurRadius: 5,
                                           ),
                                         ],
@@ -1172,14 +1202,17 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                           child: Opacity(
                                             opacity: artistReveal,
                                             child: Padding(
-                                              padding: const EdgeInsets.only(top: 2),
+                                              padding: const EdgeInsets.only(
+                                                top: 2,
+                                              ),
                                               child: Row(
                                                 children: [
                                                   Expanded(
                                                     child: Text(
                                                       song.artist,
                                                       maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                       style: TextStyle(
                                                         fontSize: 11,
                                                         color: Color.lerp(
@@ -1189,9 +1222,20 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                                         ),
                                                         shadows: [
                                                           Shadow(
-                                                            color: context.lokal.isLight
-                                                                ? Colors.white.withValues(alpha: .8)
-                                                                : Colors.black.withValues(alpha: .8),
+                                                            color:
+                                                                context
+                                                                    .lokal
+                                                                    .isLight
+                                                                ? Colors.white
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            .8,
+                                                                      )
+                                                                : Colors.black
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            .8,
+                                                                      ),
                                                             blurRadius: 4,
                                                           ),
                                                         ],
@@ -1201,11 +1245,14 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
                                                   Flexible(
                                                     child: ClipRect(
                                                       child: Align(
-                                                        alignment: Alignment.centerLeft,
-                                                        widthFactor: 1 - collapse,
+                                                        alignment: Alignment
+                                                            .centerLeft,
+                                                        widthFactor:
+                                                            1 - collapse,
                                                         child: Opacity(
                                                           opacity: 1 - collapse,
-                                                          child: const LokalOutputPill(),
+                                                          child:
+                                                              const LokalOutputPill(),
                                                         ),
                                                       ),
                                                     ),

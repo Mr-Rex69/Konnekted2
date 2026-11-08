@@ -1,0 +1,722 @@
+import Foundation
+import Flutter
+import UIKit
+
+private struct LokalTransferCapability: Encodable, Sendable {
+  let available = true
+  let protocolVersion = LokalTransferProtocol.version
+  let download = true
+  // The product adapter must require acknowledged library import before it
+  // replaces existing copy flows. These flags describe actual implemented APIs.
+  let libraryImport = true
+  let upload = true
+  let maximumIntents = LokalTransferProtocol.maximumBatch
+  let maximumIntentBytes = LokalTransferProtocol.maximumPayloadBytes
+}
+
+private final class LokalTransferReply: @unchecked Sendable {
+  private enum Value: Sendable {
+    case data(Data), empty, failure(String, String)
+  }
+  private let callback: FlutterResult
+  private let lock = NSLock()
+  private var delivered = false
+  init(_ callback: @escaping FlutterResult) { self.callback = callback }
+
+  private func send(_ value: Value) {
+    lock.lock()
+    guard !delivered else { lock.unlock(); return }
+    delivered = true
+    lock.unlock()
+    DispatchQueue.main.async {
+      dispatchPrecondition(condition: .onQueue(.main))
+      switch value {
+      case .data(let bytes): self.callback(FlutterStandardTypedData(bytes: bytes))
+      case .empty: self.callback(nil)
+      case .failure(let code, let message):
+        self.callback(FlutterError(code: code, message: message, details: nil))
+      }
+    }
+  }
+
+  func empty() { send(.empty) }
+  func unsupported() { send(.failure("UNSUPPORTED_TRANSFER_METHOD", "Unknown transfer operation.")) }
+
+  func encode<T: Encodable & Sendable>(_ result: Result<T, Error>) {
+    do { send(.data(try JSONEncoder().encode(result.get()))) }
+    catch { failure(error) }
+  }
+
+  func failure(_ error: Error) {
+    if let failure = error as? LokalTransferError {
+      switch failure {
+      case .invalidRecord, .limitExceeded:
+        send(.failure("INVALID_TRANSFER_REQUEST", "Invalid transfer request or queue limit."))
+      case .staleRevision:
+        send(.failure("TRANSFER_CHANGED", "This transfer changed. Refresh and try again."))
+      case .duplicateJob:
+        send(.failure("TRANSFER_ALREADY_QUEUED", "This original is already queued."))
+      case .missingJob:
+        send(.failure("TRANSFER_MISSING", "This transfer is no longer available."))
+      case .invalidTransition:
+        send(.failure("TRANSFER_NOT_READY", "This transfer cannot perform that operation now."))
+      case .checksumMismatch:
+        send(.failure("TRANSFER_CHECKSUM_MISMATCH", "The transferred file did not match its checksum."))
+      case .unsupportedSchema:
+        send(.failure("TRANSFER_STORAGE_NEEDS_REPAIR", "Transfer storage needs a compatible app version or repair."))
+      case .unsafeFile, .posix, .database:
+        send(.failure("TRANSFER_STORAGE_UNAVAILABLE", "Transfer storage is unavailable."))
+      }
+    } else if error is DecodingError || error is EncodingError {
+      send(.failure("INVALID_TRANSFER_REQUEST", "Invalid transfer document."))
+    } else if error is LokalTransferCredentialError {
+      send(.failure("TRANSFER_PAIRING_UNAVAILABLE", "Reconnect to your paired desktop before starting transfers."))
+    } else {
+      // Never forward NSError/JSON/HTTP descriptions containing request or
+      // credential bytes. The UI localizes these fixed protocol error codes.
+      send(.failure("TRANSFER_OPERATION_FAILED", "The transfer operation could not be completed."))
+    }
+  }
+}
+
+private enum LokalTransferOperation: String, Sendable {
+  case capability, summary, page, enqueue, cancel, retry, resume, verify, recover, currentPairing
+
+  var needsPayload: Bool {
+    switch self {
+    case .page, .enqueue, .cancel, .retry, .resume, .verify: return true
+    default: return false
+    }
+  }
+}
+
+private func executeTransfer(_ operation: LokalTransferOperation, payload: Data?,
+                             runtime: LokalTransferRuntime, reply: LokalTransferReply) {
+  do {
+    switch operation {
+    case .capability: reply.encode(.success(LokalTransferCapability()))
+    case .summary: runtime.summary { reply.encode($0) }
+    case .currentPairing: runtime.currentPairing { reply.encode($0) }
+    case .recover: runtime.recover { reply.encode($0) }
+    case .page:
+      let request = try LokalTransferProtocol.page(payload!)
+      runtime.page(offset: request.offset, limit: request.limit) { reply.encode($0) }
+    case .enqueue:
+      // Submission is decoded and ticketed synchronously in handle(), before
+      // host dispatch. Never provide an unowned generic execution path.
+      reply.failure(LokalTransferError.invalidRecord)
+    case .resume:
+      runtime.resume(scope: try LokalTransferProtocol.scope(payload!)) { reply.encode($0) }
+    case .cancel, .retry, .verify:
+      let request = try LokalTransferProtocol.control(payload!)
+      switch operation {
+      case .cancel: runtime.cancel(id: request.id, revision: request.revision) { reply.encode($0) }
+      case .retry: runtime.retry(id: request.id, revision: request.revision) { reply.encode($0) }
+      case .verify: runtime.verify(id: request.id, revision: request.revision) { reply.encode($0) }
+      default: break
+      }
+    }
+  } catch { reply.failure(error) }
+}
+
+private final class LokalTransferObservationLease: @unchecked Sendable {
+  let id = UUID().uuidString.lowercased()
+  private let host: LokalTransferHost
+  init(_ host: LokalTransferHost) { self.host = host }
+  func stop() { host.stopObserving(id: id) }
+  deinit { stop() }
+}
+
+/// Independent of foreground observation: inactive scenes retain their root
+/// client, while releasing/replacing an engine immediately cancels its import.
+private final class LokalTransferImportEngineLease: @unchecked Sendable {
+  let id: String
+  private let ownership: LokalTransferImportOwnership
+  init(_ ownership: LokalTransferImportOwnership) {
+    self.ownership = ownership
+    id = ownership.attachEngine()
+  }
+  deinit { ownership.detachEngine(id) }
+}
+
+private final class LokalTransferNotifications: @unchecked Sendable {
+  // Registration occurs once during main-actor initialization. Afterwards the
+  // immutable tokens are only removed when their owner is released.
+  private var tokens: [NSObjectProtocol] = []
+  func add(_ token: NSObjectProtocol) { tokens.append(token) }
+  deinit { for token in tokens { NotificationCenter.default.removeObserver(token) } }
+}
+
+/// Main-actor channel and observation only. Typed work and replies cross to
+/// utility/native queues; engine disposal never tears down the app's session.
+@MainActor
+final class LokalTransferBridge {
+  private let channel: FlutterMethodChannel
+  private let host: LokalTransferHost
+  private let lease: LokalTransferObservationLease
+  private let importEngine: LokalTransferImportEngineLease
+  private var importOwner: LokalTransferImportOwnership.Owner?
+  private let notifications = LokalTransferNotifications()
+  private var clientID: String?
+  private var wantsObservation = false
+  private var active: Bool
+
+  init(messenger: FlutterBinaryMessenger, host: LokalTransferHost,
+       channelName: String = "lokal/transfers") {
+    self.host = host
+    channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
+    lease = LokalTransferObservationLease(host)
+    importEngine = LokalTransferImportEngineLease(host.importOwnership)
+    active = UIApplication.shared.applicationState == .active
+    channel.setMethodCallHandler { [weak self] call, result in
+      let reply = LokalTransferReply(result)
+      guard let self else { reply.failure(LokalTransferError.invalidTransition); return }
+      self.handle(call, reply: reply)
+    }
+    notifications.add(NotificationCenter.default.addObserver(
+      forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      DispatchQueue.main.async { self?.setActive(false) }
+    })
+    notifications.add(NotificationCenter.default.addObserver(
+      forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      DispatchQueue.main.async { self?.setActive(true) }
+    })
+  }
+
+  private func setActive(_ value: Bool) { active = value; updateObservation() }
+
+  private func updateObservation() {
+    guard active, wantsObservation, let owner = importOwner else { lease.stop(); return }
+    let ownerID = lease.id
+    let ownership = host.importOwnership
+    host.withRuntime({ [weak self] runtime in
+      runtime.observe(id: ownerID, when: { (try? ownership.capture(owner)) != nil }) { [weak self] in
+        DispatchQueue.main.async { self?.changed() }
+      }
+    }, unavailable: { _ in })
+  }
+
+  private func changed() {
+    guard active, wantsObservation, let owner = importOwner,
+          (try? host.importOwnership.capture(owner)) != nil else { return }
+    channel.invokeMethod("changed", arguments: nil)
+  }
+
+  private func handle(_ call: FlutterMethodCall, reply: LokalTransferReply) {
+    if call.method == "retireSubmissions" {
+      do {
+        guard let data = call.arguments as? FlutterStandardTypedData else { throw LokalTransferError.invalidRecord }
+        let request = try LokalTransferProtocol.client(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        try host.importOwnership.retireSubmissions(owner)
+        host.withRuntime({ runtime in runtime.drainUploadSources { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } catch { reply.failure(error) }
+      return
+    }
+    if call.method == "observe" || call.method == "stopObserving" {
+      do {
+        guard let data = call.arguments as? FlutterStandardTypedData, data.data.count <= 8192 else {
+          throw LokalTransferError.invalidRecord
+        }
+        let client = try LokalTransferProtocol.client(data.data)
+        if call.method == "observe" {
+          importOwner = try host.importOwnership.attachClient(engineID: importEngine.id, clientID: client.clientID)
+          clientID = client.clientID
+          wantsObservation = true
+          updateObservation()
+        } else if clientID == client.clientID {
+          if let owner = importOwner { host.importOwnership.stopClient(owner) }
+          importOwner = nil
+          wantsObservation = false
+          lease.stop()
+        }
+        reply.empty()
+      } catch { reply.failure(error) }
+      return
+    }
+    if ["queueResumeScope", "queueCancel", "queueRetryDownload", "uploadSourceContext", "authorizeUploadSource", "releaseUploadSource", "enqueueUpload", "matchUploadedOriginal", "retryUpload", "confirmUploadRetirement", "cleanupUploadBody", "cancelNetworkScopePreservingFiles", "preserveImportPublicFile", "retireNetworkScope", "drainImports", "completedHistoryPage", "compactCompletedImport", "importCandidatesPage", "importWorkPage", "claimImport", "claimImportCleanup", "claimOrphanCleanup", "validateOrphanCleanup", "resolveImportCleanup", "finalizeImportCleanup", "publishImport", "acknowledgeImport", "validateImport", "validateImportCleanup", "validateImportReconciliation", "releaseImport"].contains(call.method) {
+      handleImport(call, reply: reply)
+      return
+    }
+    guard let operation = LokalTransferOperation(rawValue: call.method) else { reply.unsupported(); return }
+    let bytes: Data?
+    if operation.needsPayload {
+      let budget = operation == .enqueue ? LokalTransferProtocol.maximumPayloadBytes : 8192
+      guard let data = call.arguments as? FlutterStandardTypedData,
+            !data.data.isEmpty, data.data.count <= budget else {
+        reply.failure(LokalTransferError.invalidRecord); return
+      }
+      bytes = data.data
+    } else {
+      guard call.arguments == nil else { reply.failure(LokalTransferError.invalidRecord); return }
+      bytes = nil
+    }
+    if operation == .enqueue {
+      do {
+        let request = try LokalTransferProtocol.submission(bytes!)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        host.withRuntime({ runtime in runtime.enqueue(request.jobs, submission: ticket) { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } catch { reply.failure(error) }
+      return
+    }
+    host.withRuntime({ runtime in
+      executeTransfer(operation, payload: bytes, runtime: runtime, reply: reply)
+    }, unavailable: { reply.failure($0) })
+  }
+
+  private func handleImport(_ call: FlutterMethodCall, reply: LokalTransferReply) {
+    do {
+      guard let data = call.arguments as? FlutterStandardTypedData,
+            !data.data.isEmpty, data.data.count <= (call.method == "enqueueUpload" ? 64 * 1024 : 8192) else { throw LokalTransferError.invalidRecord }
+      if call.method == "queueResumeScope" {
+        let request = try LokalTransferProtocol.scopeRetirement(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        host.withRuntime({ runtime in
+          runtime.resume(scope: request.scope, submission: ticket) { reply.encode($0) }
+        }, unavailable: { reply.failure($0) })
+      } else if call.method == "queueCancel" || call.method == "queueRetryDownload" {
+        let request = try LokalTransferProtocol.importCleanupClaim(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        let cancelling = call.method == "queueCancel"
+        host.withRuntime({ runtime in
+          if cancelling {
+            runtime.cancel(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          } else {
+            runtime.retry(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          }
+        }, unavailable: { reply.failure($0) })
+      } else if call.method == "uploadSourceContext" {
+        let request = try LokalTransferProtocol.client(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        host.withRuntime({ runtime in runtime.uploadSourceContext(submission: ticket) { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } else if call.method == "authorizeUploadSource" {
+        let request = try LokalTransferProtocol.uploadSource(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        host.withRuntime({ runtime in
+          runtime.authorizeUploadSource(contextID: request.contextID, relativePath: request.relativePath,
+            songID: request.songID, submission: ticket) { reply.encode($0) }
+        }, unavailable: { reply.failure($0) })
+      } else if call.method == "releaseUploadSource" {
+        let request = try LokalTransferProtocol.uploadSourceRelease(data.data)
+        guard request.clientID == clientID, let owner = importOwner else { throw LokalTransferError.staleRevision }
+        _ = try host.importOwnership.capture(owner)
+        host.withRuntime({ runtime in runtime.releaseUploadSource(request.id) { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } else if call.method == "enqueueUpload" {
+        let request = try LokalTransferProtocol.uploadSubmission(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        host.withRuntime({ runtime in
+          runtime.enqueueAuthorizedUpload(request.job, grantID: request.grantID, submission: ticket) { reply.encode($0) }
+        }, unavailable: { reply.failure($0) })
+      } else if ["matchUploadedOriginal", "retryUpload", "confirmUploadRetirement", "cleanupUploadBody"].contains(call.method) {
+        // Same strict owner-bound job control envelope; no path or credential.
+        let request = try LokalTransferProtocol.importCleanupClaim(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.captureSubmission(owner)
+        if call.method == "matchUploadedOriginal" {
+          host.withRuntime({ runtime in
+            runtime.matchUploadedOriginal(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          }, unavailable: { reply.failure($0) })
+        } else if call.method == "retryUpload" {
+          host.withRuntime({ runtime in
+            runtime.retryUpload(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          }, unavailable: { reply.failure($0) })
+        } else if call.method == "confirmUploadRetirement" {
+          host.withRuntime({ runtime in
+            runtime.confirmUploadRetirement(id: request.id, revision: request.revision, submission: ticket) { reply.encode($0) }
+          }, unavailable: { reply.failure($0) })
+        } else {
+          host.withRuntime({ runtime in
+            runtime.cleanupUploadBody(id: request.id, revision: request.revision) { reply.encode($0) }
+          }, unavailable: { reply.failure($0) })
+        }
+      } else if call.method == "drainImports" {
+        let request = try LokalTransferProtocol.client(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.capture(owner)
+        host.withRuntime({ runtime in runtime.drainImports(ticket: ticket) { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } else if call.method == "retireNetworkScope" || call.method == "cancelNetworkScopePreservingFiles" {
+        let request = try LokalTransferProtocol.scopeRetirement(data.data)
+        guard let owner = importOwner, request.clientID == clientID else {
+          throw LokalTransferError.staleRevision
+        }
+        // Retire native tickets synchronously at bridge dispatch, before a
+        // previously queued enqueue could commit after the journal's batch.
+        let ticket = try host.importOwnership.beginScopeRetirement(owner, scope: request.scope)
+        let retirePairing = call.method == "retireNetworkScope"
+        host.withRuntime({ runtime in
+          runtime.retireNetworkScope(request.scope, ticket: ticket, retirePairing: retirePairing) { reply.encode($0) }
+        }, unavailable: { reply.failure($0) })
+      } else if call.method == "importWorkPage" || call.method == "importCandidatesPage" || call.method == "completedHistoryPage" {
+        let request = try LokalTransferProtocol.importWorkPage(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ticket = try host.importOwnership.capture(owner)
+        if call.method == "completedHistoryPage" {
+          host.withRuntime({ runtime in runtime.completedHistoryPage(request, ticket: ticket) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        } else if call.method == "importWorkPage" {
+          host.withRuntime({ runtime in runtime.importWorkPage(request, ticket: ticket) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        } else {
+          host.withRuntime({ runtime in runtime.importCandidatesPage(request, ticket: ticket) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        }
+      } else if call.method == "claimOrphanCleanup" {
+        let request = try LokalTransferProtocol.importOrphanClaim(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ownership = host.importOwnership
+        let ticket = try ownership.beginCleanup(ownership.capture(owner))
+        host.withRuntime({ runtime in runtime.claimOrphanCleanup(request, ticket: ticket) { reply.encode($0) } },
+                         unavailable: { ownership.abortCleanup(ticket); reply.failure($0) })
+      } else if call.method == "preserveImportPublicFile" {
+        let request = try LokalTransferProtocol.importLease(data.data)
+        guard let owner = importOwner, request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        try host.importOwnership.validateCleanup(owner, jobID: request.id,
+          revision: request.revision, leaseID: request.leaseID)
+        host.withRuntime({ runtime in runtime.preserveImportPublicFile(request, owner: owner) { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } else if call.method == "claimImportCleanup" {
+        let request = try LokalTransferProtocol.importCleanupClaim(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        let ownership = host.importOwnership
+        let ticket = try ownership.beginCleanup(ownership.capture(owner))
+        host.withRuntime({ runtime in runtime.claimImportCleanup(request, ticket: ticket) { reply.encode($0) } },
+                         unavailable: { ownership.abortCleanup(ticket); reply.failure($0) })
+      } else if call.method == "resolveImportCleanup" || call.method == "finalizeImportCleanup" {
+        let request = try LokalTransferProtocol.importCleanupDecision(data.data,
+          finalized: call.method == "finalizeImportCleanup")
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        try host.importOwnership.validateCleanup(owner, jobID: request.id,
+          revision: request.revision, leaseID: request.leaseID)
+        if call.method == "resolveImportCleanup" {
+          host.withRuntime({ runtime in runtime.resolveImportCleanup(request, owner: owner) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        } else {
+          host.withRuntime({ runtime in runtime.finalizeImportCleanup(request, owner: owner) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        }
+      } else if call.method == "claimImport" {
+        let request = try LokalTransferProtocol.importClaim(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        // Capture before host/runtime dispatch, so a queued claim cannot cross
+        // clear, revocation, client replacement or engine disposal barriers.
+        let ticket = try host.importOwnership.capture(owner)
+        host.withRuntime({ runtime in runtime.claimImport(request, ticket: ticket) { reply.encode($0) } },
+                         unavailable: { reply.failure($0) })
+      } else if call.method == "publishImport" || call.method == "acknowledgeImport" || call.method == "compactCompletedImport" {
+        let request = try LokalTransferProtocol.importPublication(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        try host.importOwnership.validate(owner, jobID: request.id, revision: request.revision,
+          leaseID: request.leaseID, requiresWrite: call.method == "publishImport")
+        if call.method == "compactCompletedImport" {
+          host.withRuntime({ runtime in runtime.compactCompletedImport(request, owner: owner) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        } else if call.method == "publishImport" {
+          host.withRuntime({ runtime in runtime.publishImport(request, owner: owner) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        } else {
+          host.withRuntime({ runtime in runtime.acknowledgeImport(request, owner: owner) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        }
+      } else {
+        let request = try LokalTransferProtocol.importLease(data.data)
+        guard let owner = importOwner else { throw LokalTransferError.invalidTransition }
+        guard request.clientID == clientID else { throw LokalTransferError.staleRevision }
+        if call.method == "releaseImport" {
+          // Stop publication before entering a potentially busy host queue.
+          try host.importOwnership.cancel(owner, jobID: request.id,
+            revision: request.revision, leaseID: request.leaseID)
+          host.withRuntime({ runtime in runtime.releaseImport(request, owner: owner) { reply.encode($0) } },
+                           unavailable: { reply.failure($0) })
+        } else if call.method == "validateOrphanCleanup" {
+          try host.importOwnership.validateOrphanCleanup(owner, jobID: request.id,
+            revision: request.revision, leaseID: request.leaseID)
+          reply.encode(.success(true))
+        } else if call.method == "validateImportCleanup" {
+          try host.importOwnership.validateCleanup(owner, jobID: request.id,
+            revision: request.revision, leaseID: request.leaseID)
+          reply.encode(.success(true))
+        } else {
+          // Intentionally direct. Isar's writer must not wait behind native
+          // fsync, hashing, journal I/O or a Keychain read to check ownership.
+          try host.importOwnership.validate(owner, jobID: request.id, revision: request.revision,
+            leaseID: request.leaseID, requiresWrite: call.method == "validateImport")
+          reply.encode(.success(true))
+        }
+      }
+    } catch { reply.failure(error) }
+  }
+}
+
+#if DEBUG
+/// Isolated installed-app contract fixture. It cannot write production transfer
+/// state, choose a caller destination, change Keychain, or enable product imports.
+/// Ephemeral networking deliberately makes no OS-background-delivery claim.
+@MainActor
+final class LokalTransferIntegrationHarness {
+  private struct Configuration: Decodable { let port: Int }
+  private struct Paths: Encodable, Sendable {
+    let musicRoot: String
+    let databaseDirectory: String
+  }
+  private let channel: FlutterMethodChannel
+  private let messenger: FlutterBinaryMessenger
+  private var host: LokalTransferHost?
+  private var bridge: LokalTransferBridge?
+  private var root: URL?
+  private var stopping = false
+
+  init(messenger: FlutterBinaryMessenger) {
+    self.messenger = messenger
+    channel = FlutterMethodChannel(name: "lokal/transfers-integration-control",
+      binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] call, result in
+      let reply = LokalTransferReply(result)
+      guard let self else { reply.failure(LokalTransferError.invalidTransition); return }
+      do {
+        switch call.method {
+        case "configure":
+          guard self.host == nil, self.root == nil, !self.stopping,
+                let typed = call.arguments as? FlutterStandardTypedData,
+                typed.data.count <= 1024,
+                let fields = try JSONSerialization.jsonObject(with: typed.data) as? [String: Any],
+                Set(fields.keys) == Set(["port"]) else { throw LokalTransferError.invalidRecord }
+          let configuration = try JSONDecoder().decode(Configuration.self, from: typed.data)
+          guard (1...65535).contains(configuration.port) else { throw LokalTransferError.invalidRecord }
+          let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("lokal-import-integration-" + UUID().uuidString)
+          try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+          self.root = root
+          let music = root.appendingPathComponent("Music")
+          let database = root.appendingPathComponent("Isar")
+          let native = root.appendingPathComponent("Native")
+          for directory in [music, database, native] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+          }
+          let authorization = try LokalTransferAuthorization(desktopID: "integration-fixture-pc",
+            origin: "http://127.0.0.1:\(configuration.port)", token: "lokal-integration-fixture",
+            pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64")
+          let host = LokalTransferHost(container: { native }, configuration: { .ephemeral },
+            library: { try LokalTransferLibrary(root: music) }, credentials: { authorization })
+          self.host = host
+          self.bridge = LokalTransferBridge(messenger: self.messenger, host: host,
+            channelName: "lokal/transfers-integration")
+          host.start()
+          reply.encode(.success(Paths(musicRoot: music.path, databaseDirectory: database.path)))
+        case "reset":
+          guard !self.stopping, call.arguments == nil else { throw LokalTransferError.invalidTransition }
+          self.stopping = true
+          self.bridge = nil
+          let root = self.root
+          if let host = self.host {
+            host.shutdown {
+              DispatchQueue.main.async { self.finishReset(root: root, reply: reply) }
+            }
+          } else { self.finishReset(root: root, reply: reply) }
+        default: reply.unsupported()
+        }
+      } catch { reply.failure(error) }
+    }
+  }
+
+  private func finishReset(root: URL?, reply: LokalTransferReply) {
+    host = nil
+    self.root = nil
+    defer { stopping = false }
+    do {
+      if let root { try FileManager.default.removeItem(at: root) }
+      reply.encode(.success(true))
+    } catch { reply.failure(error) }
+  }
+}
+#endif
+#if DEBUG
+/// Test-only owner for real background URLSession daemon qualification. Its
+/// journal, Music and session identifier are isolated from the shipping owner.
+/// The controller supplies only synthetic loopback fixture coordinates.
+final class LokalTransferDaemonProbe: @unchecked Sendable {
+  private final class Reply<T: Sendable>: @unchecked Sendable {
+    let ready = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var value: Result<T, Error>?
+    func finish(_ result: Result<T, Error>) {
+      lock.lock(); value = result; lock.unlock(); ready.signal()
+    }
+    func get() throws -> T {
+      guard ready.wait(timeout: .now() + 30) == .success else { throw LokalTransferError.invalidTransition }
+      lock.lock(); defer { lock.unlock() }
+      return try value!.get()
+    }
+  }
+  private static func wait<T: Sendable>(_ work: (@escaping LokalTransferCompletion<T>) -> Void) throws -> T {
+    let reply = Reply<T>(); work { reply.finish($0) }; return try reply.get()
+  }
+  let identifier: String
+  private let root: URL
+  private let host: LokalTransferHost
+  private let origin: String
+  private let checksum: String
+  private let length: Int64
+  private let recovering: Bool
+  private let downloadID: String
+  private let uploadID: String
+  private var stage = "initialization"
+  private var lastEvidence: [String: Any] = [:]
+
+  init?(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    guard let run = environment["LOKAL_IOS_DAEMON_PROBE_RUN"] else { return nil }
+    guard UUID(uuidString: run)?.uuidString.lowercased() == run,
+          let port = Int(environment["LOKAL_IOS_DAEMON_PROBE_PORT"] ?? ""), (1...65535).contains(port),
+          let length = Int64(environment["LOKAL_IOS_DAEMON_PROBE_BYTES"] ?? ""), length > 0,
+          let checksum = environment["LOKAL_IOS_DAEMON_PROBE_SHA256"],
+          checksum.count == 64, checksum.allSatisfy({ "0123456789abcdef".contains($0) }),
+          let downloadID = environment["LOKAL_IOS_DAEMON_PROBE_DOWNLOAD"],
+          UUID(uuidString: downloadID)?.uuidString.lowercased() == downloadID,
+          let uploadID = environment["LOKAL_IOS_DAEMON_PROBE_UPLOAD"],
+          UUID(uuidString: uploadID)?.uuidString.lowercased() == uploadID else {
+      throw LokalTransferError.invalidRecord
+    }
+    self.length = length; self.checksum = checksum
+    self.downloadID = downloadID; self.uploadID = uploadID
+    recovering = environment["LOKAL_IOS_DAEMON_PROBE_RECOVER"] == "true"
+    identifier = "app.lokal.mobile.integration-daemon." + run
+    origin = "http://127.0.0.1:\(port)"
+    let root = try LokalTransferHost.applicationContainer().appendingPathComponent("IOSDaemonProbe-" + run)
+    self.root = root
+    for name in ["", "Music", "Native"] {
+      try FileManager.default.createDirectory(at: name.isEmpty ? root : root.appendingPathComponent(name),
+        withIntermediateDirectories: true)
+    }
+    let authorization = try LokalTransferAuthorization(desktopID: "fixture-pc", origin: origin,
+      token: "transfer-fixture-token", pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64")
+    let identifier = self.identifier
+    host = LokalTransferHost(container: { root.appendingPathComponent("Native") }, configuration: {
+      let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+      configuration.isDiscretionary = false; configuration.sessionSendsLaunchEvents = true
+      return configuration
+    }, library: { try LokalTransferLibrary(root: root.appendingPathComponent("Music")) },
+      credentials: { authorization })
+  }
+
+  func start() {
+    DispatchQueue.global(qos: .utility).async {
+      do { try self.run() }
+      catch { self.record(["error": String(describing: error), "stage": self.stage]) }
+    }
+  }
+  func backgrounded() {
+    try? Data("backgrounded".utf8).write(to: root.appendingPathComponent("background.txt"), options: .atomic)
+  }
+  func handleBackgroundEvents(_ reply: @escaping () -> Void) { host.handleBackgroundEvents(completion: reply) }
+  private func record(_ value: [String: Any]) {
+    do {
+      var evidence = value["error"] == nil ? value : lastEvidence.merging(value) { _, new in new }
+      evidence["stage"] = stage
+      evidence["processID"] = Int(ProcessInfo.processInfo.processIdentifier)
+      evidence["sessionIdentifier"] = identifier
+      lastEvidence = evidence
+      let data = try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+      try data.write(to: root.appendingPathComponent(recovering ? "recovered.json" : "state.json"), options: .atomic)
+    } catch { NSLog("Isolated daemon probe evidence failed") }
+  }
+  private func run() throws {
+    stage = "native host"
+    let runtime: LokalTransferRuntime = try Self.wait { reply in
+      host.withRuntime({ reply(.success($0)) }, unavailable: { reply(.failure($0)) })
+    }
+    let ownership = host.importOwnership
+    let owner = try ownership.attachClient(engineID: ownership.attachEngine(), clientID: UUID().uuidString.lowercased())
+    stage = "journal recovery"
+    let _: LokalTransferSummary = try Self.wait { runtime.recover($0) }
+    // Recovery deliberately revokes queued consent. Capture new authorization
+    // only after it has reconciled durable truth, as the product client does.
+    let ticket = try ownership.captureSubmission(owner)
+    if !recovering {
+      stage = "generated source"
+      let bytes = try Data(contentsOf: URL(string: origin + "/__upload_payload")!)
+      guard bytes.count == length else { throw LokalTransferError.checksumMismatch }
+      try bytes.write(to: root.appendingPathComponent("Music/source.wav"), options: .atomic)
+      stage = "source context"
+      let context: LokalTransferUploadSourceContext = try Self.wait { runtime.uploadSourceContext(submission: ticket, reply: $0) }
+      stage = "source grant"
+      let grant: LokalTransferUploadSourceGrant = try Self.wait {
+        runtime.authorizeUploadSource(contextID: context.contextID, relativePath: "source.wav", songID: "1", submission: ticket, reply: $0)
+      }
+      guard grant.bytes == length, grant.sha256 == checksum else { throw LokalTransferError.checksumMismatch }
+      let now = Int64(Date().timeIntervalSince1970 * 1000)
+      let download = try LokalTransferJob(id: downloadID, direction: .download,
+        identity: LokalTransferIdentity(desktopID: "fixture-pc", sourceID: "storage-download-daemon", localSongID: nil,
+          origin: origin, pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64"),
+        metadata: LokalTransferMetadata(title: "Daemon download", artist: "Fixture", album: nil, fileExtension: "wav"),
+        nowMs: now, expectedBytes: length, expectedSHA256: checksum)
+      let upload = try LokalTransferJob(id: uploadID, direction: .upload,
+        identity: LokalTransferIdentity(desktopID: "fixture-pc", sourceID: "daemon-source", localSongID: "1",
+          origin: origin, pairingID: "579d4066-94a7-4d77-8102-3aeb89c4db64"),
+        metadata: LokalTransferMetadata(title: "storage-upload-daemon", artist: "Native fixture — Café", album: nil, fileExtension: "wav"),
+        nowMs: now, expectedBytes: length, expectedSHA256: checksum)
+      stage = "download admission"
+      let _: LokalTransferSummary = try Self.wait { runtime.enqueue([download], submission: ticket, reply: $0) }
+      stage = "upload admission"
+      let _: LokalTransferSummary = try Self.wait { runtime.enqueueAuthorizedUpload(upload, grantID: grant.grantID, submission: ticket, reply: $0) }
+      stage = "source grant release"
+      let _: Bool = try Self.wait { runtime.releaseUploadSource(grant.grantID, reply: $0) }
+      let _: Bool = try Self.wait { runtime.releaseUploadSource(context.contextID, reply: $0) }
+    }
+    stage = "transfer reconciliation"
+    let deadline = Date().addingTimeInterval(240)
+    while Date() < deadline {
+      let jobs: [LokalTransferJob] = try Self.wait { runtime.page(offset: 0, limit: 10, reply: $0) }
+      guard jobs.count == 2 else { throw LokalTransferError.invalidRecord }
+      let download = jobs.first { $0.id == downloadID }!
+      let upload = jobs.first { $0.id == uploadID }!
+      let source = try Data(contentsOf: root.appendingPathComponent("Music/source.wav"))
+      guard source.count == length else { throw LokalTransferError.unsafeFile }
+      let summary: LokalTransferSummary = try Self.wait { runtime.summary($0) }
+      record(["download": download.phase.rawValue, "upload": upload.phase.rawValue,
+        "downloadFailure": download.lastFailure?.rawValue ?? "", "uploadFailure": upload.lastFailure?.rawValue ?? "",
+        "uploadProtocol": upload.uploadProtocolVersion ?? 0,
+        "sourceBytes": source.count, "generation": summary.generation,
+        "downloadBytes": download.receivedBytes ?? 0,
+        "downloadSHA256": download.receivedSHA256 ?? "",
+        "originalID": upload.resultOriginalID ?? "", "recovering": recovering])
+      if download.phase == .staged && upload.phase == .complete { return }
+      if download.phase == .downloaded {
+        stage = "download verification"
+        let _: LokalTransferJob = try Self.wait {
+          runtime.verify(id: downloadID, revision: download.revision, reply: $0)
+        }
+        stage = "transfer reconciliation"
+      }
+      if [.interrupted, .failed].contains(upload.phase) {
+        stage = "upload receipt reconciliation"
+        let _: LokalTransferJob? = try Self.wait {
+          runtime.matchUploadedOriginal(id: uploadID, revision: upload.revision, submission: ticket, reply: $0)
+        }
+        stage = "transfer reconciliation"
+      }
+      guard ![.failed, .cancelled, .interrupted].contains(download.phase), upload.phase != .cancelled else {
+        throw LokalTransferError.invalidTransition
+      }
+      Thread.sleep(forTimeInterval: 0.2)
+    }
+    throw LokalTransferError.invalidTransition
+  }
+}
+#endif
