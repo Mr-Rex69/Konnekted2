@@ -6,8 +6,8 @@ AltStore Classic and SideStore install Lokal on your iPhone, manage its signing 
 
 Choose one and follow its official installation instructions:
 
-- [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore): install AltServer on your Windows PC or Mac, then install AltStore Classic on your iPhone. Keep AltServer reachable when your store needs it for signing, installation or refresh.
-- [SideStore](https://docs.sidestore.io/docs/installation): complete its initial installation, pairing and VPN setup. After setup, it uses the documented on-device signing/refresh flow. Follow its current connectivity and VPN requirements.
+- AltStore Classic ([Windows](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows) / [macOS](https://faq.altstore.io/altstore-classic/how-to-install-altstore-macos)): install AltServer on your Windows PC or Mac, then install AltStore Classic on your iPhone. Keep AltServer reachable when your store needs it for signing, installation or refresh.
+- [SideStore](https://docs.sidestore.io/docs/installation/prerequisites): complete its initial installation, pairing and VPN setup. After setup, it uses the documented on-device signing/refresh flow. Follow its current connectivity and VPN requirements.
 
 Use **AltStore Classic** for this source. AltStore PAL uses a different distribution system.
 

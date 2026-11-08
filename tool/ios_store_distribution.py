@@ -137,7 +137,7 @@ def release_notes(metadata, changes):
 
 ## Install and update with AltStore or SideStore
 
-1. Install [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore) or [SideStore](https://docs.sidestore.io/docs/installation). Follow your store's setup instructions first. AltStore Classic uses AltServer on your computer; SideStore uses its pairing and VPN setup for on-device signing.
+1. Install [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows) or [SideStore](https://docs.sidestore.io/docs/installation/prerequisites). Follow your store's setup instructions first. AltStore Classic uses AltServer on your computer; SideStore uses its pairing and VPN setup for on-device signing.
 2. In your store, open **Sources**, tap **+**, and add this permanent Lokal source URL:
 
    `{SOURCE_URL}`
