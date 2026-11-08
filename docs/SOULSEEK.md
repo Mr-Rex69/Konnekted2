@@ -33,7 +33,9 @@ accounts on first successful connection.
 ## Engineering notes
 
 - Library: [soulseek-rs-lib 20.0.0](https://github.com/michel/soulseek-rs),
-  pinned to commit 3c5f1d12f25f98730ad8f1ca57621250d7c3bd41.
+  pinned to commit 3c5f1d12f25f98730ad8f1ca57621250d7c3bd41. The vendored
+  snapshot includes one Android file-limit-width compatibility fix; see
+  `rust/vendor/soulseek-rs-lib/LOKAL_PATCHES.md`.
 - Native ABI: rust/src/soulseek_ffi.rs; Dart facade:
   lib/services/soulseek_service.dart; Android foreground service:
   android/app/src/main/kotlin/com/mossapps/flick/SoulseekForegroundService.kt.

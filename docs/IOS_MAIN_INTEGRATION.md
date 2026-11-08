@@ -8,7 +8,9 @@ This integration combines that source history with Android main through PR #507
 (`878204c52ec56a8c6f825276818609520f545841`), including offline motion-cover
 caching, cellular Eco behavior, playlist hero precaching and Morneye 5.3.
 It preserves the current Android native tree, USB/mixer implementation and both
-Android flavors. Shared Rust/Dart bindings are regenerated from the combined API.
+Android flavors. Shared Rust/Dart bindings are regenerated from the combined API. A documented
+one-line compatibility fix in the pinned Soulseek snapshot widens the file-limit
+comparison for Android libc; the upstream protocol revision is unchanged.
 
 ```mermaid
 flowchart LR

@@ -1,5 +1,5 @@
-//! Embedded Soulseek client for Android and foreground iPhone sessions. The protocol engine is an unmodified,
-//! MIT-licensed soulseek-rs-lib pinned in Cargo.toml. This tiny C ABI avoids
+//! Embedded Soulseek client for Android and foreground iPhone sessions. The protocol engine is the MIT-licensed
+//! soulseek-rs-lib pinned in Cargo.toml, with the documented Android limit-width fix. This tiny C ABI avoids
 //! regenerating Flutter Rust Bridge bindings for each protocol-library update.
 //! Passwords never enter logs, arguments, preferences or returned JSON.
 use serde_json::{json, Value};
