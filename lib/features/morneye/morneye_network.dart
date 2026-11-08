@@ -261,15 +261,46 @@ class MorneyeResponse {
   /// Lower-cased names; repeated headers joined with ", " (set-cookie aside).
   final Map<String, String> headers;
   final HttpClientResponse _response;
+  StreamSubscription<List<int>>? _subscription;
+  bool _drained = false;
+  bool _closed = false;
 
-  Stream<List<int>> get body => _response;
+  late final Stream<List<int>> body = _MorneyeResponseBody(this);
 
   Future<void> close() async {
-    try {
-      await _response.detachSocket().then((socket) => socket.destroy());
-    } catch (_) {
-      // Already consumed or closed.
-    }
+    if (_closed || _drained) return;
+    _closed = true;
+    // detachSocket removes the connection from HttpClient's pool before its
+    // pending dataDone callback can return it. That races _returnConnection
+    // after ordinary add-on downloads. Let the response subscription own
+    // cancellation and pool cleanup instead, including unread error bodies.
+    final subscription =
+        _subscription ??
+        _response.listen(null, onError: (Object _, StackTrace _) {});
+    await subscription.cancel();
+  }
+}
+
+class _MorneyeResponseBody extends Stream<List<int>> {
+  _MorneyeResponseBody(this.owner);
+  final MorneyeResponse owner;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    return owner._subscription = owner._response.listen(
+      onData,
+      onError: onError,
+      cancelOnError: cancelOnError,
+      onDone: () {
+        owner._drained = true;
+        onDone?.call();
+      },
+    );
   }
 }
 
@@ -292,6 +323,7 @@ class MorneyeNetwork {
   final HttpClient _client;
   final MorneyeLookup _lookup;
   final String userAgent;
+
   /// Allows slow signed catalogue endpoints more time without slowing all add-ons.
   final Duration requestTimeout;
 
@@ -319,7 +351,8 @@ class MorneyeNetwork {
     final literal = InternetAddress.tryParse(host);
     // Unlike openUrl/request.close, DNS had no deadline: a stalled Qobuz
     // hostname lookup could hold the foreground playback resolver forever.
-    final addresses = literal != null ? [literal]
+    final addresses = literal != null
+        ? [literal]
         : await _lookup(host).timeout(timeout);
     final explicitLocal =
         permissions.network.contains(host) &&
@@ -438,9 +471,7 @@ class MorneyeNetwork {
       headers: headers,
     );
     final bytes = BytesBuilder(copy: false);
-    await for (final chunk in response.body.timeout(
-      requestTimeout,
-    )) {
+    await for (final chunk in response.body.timeout(requestTimeout)) {
       bytes.add(chunk);
       if (bytes.length > 16 * 1024 * 1024) {
         await response.close();

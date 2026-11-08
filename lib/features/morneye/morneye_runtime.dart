@@ -160,8 +160,10 @@ class MorneyeRuntime {
         args is List ? args : [args],
         callback,
       );
+      host.diagnostics?.host(method, value);
       return jsonEncode({'value': value}, toEncodable: _encodable);
     } catch (error) {
+      host.diagnostics?.host(method, null, error: error);
       return jsonEncode({'failure': _message(error)});
     }
   }
@@ -202,20 +204,33 @@ class MorneyeRuntime {
     Duration timeout = const Duration(seconds: 30),
   ]) {
     final result = _queue.then((_) async {
-      if (closed) throw const MorneyeRuntimeError('Extension runtime closed');
+      host.diagnostics?.method(method);
       try {
+        if (closed) throw const MorneyeRuntimeError('Extension runtime closed');
         final json = await _guest.invoke(
           method,
           jsonEncode(args, toEncodable: _encodable),
           timeout,
         );
-        return jsonDecode(json);
+        final decoded = jsonDecode(json);
+        host.diagnostics?.method(
+          method,
+          finished: true,
+          error: decoded is Map && decoded['success'] == false
+              ? decoded['error_type'] ??
+                    decoded['error_message'] ??
+                    decoded['error'] ??
+                    'provider_error'
+              : null,
+        );
+        return decoded;
       } catch (error) {
         final text = '$error'.replaceFirst(
           RegExp(r'^AnyhowException\((.*)\)$', dotAll: true),
           r'$1',
         );
         final message = text.split('\n').first;
+        host.diagnostics?.method(method, error: message);
         if (RegExp(
           'timed out|cancelled|closed',
           caseSensitive: false,
