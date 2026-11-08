@@ -8,8 +8,8 @@ class Channels(unittest.TestCase):
         return calculate(self.spec, channel, tags, '7', now=EPOCH+123456, **kwargs)
     def test_first_stable_and_nightly_share_an_updateable_code(self):
         stable=self.calc('stable');nightly=self.calc('nightly')
-        self.assertEqual(stable['tag'],'v1.0.0')
-        self.assertEqual(nightly['tag'],'v1.0.0-nightly.7')
+        self.assertEqual(stable['tag'],'android')
+        self.assertEqual(nightly['tag'],'')
         self.assertEqual(stable['build_number'],nightly['build_number'])
         self.assertGreater(int(stable['build_number']),1000)
         self.assertEqual(stable['prerelease'],'false')
@@ -46,8 +46,19 @@ class Channels(unittest.TestCase):
         self.assertEqual(result['previous'],'v1.0.0')
     def test_previous_notes_baseline_ignores_nightly_and_beta(self):
         self.assertEqual(self.calc('stable',['v0.9.0','v0.8.9','v0.9.1-nightly.7','beta-60-1'])['previous'],'v0.9.0')
-    def test_retry_nightly_gets_a_distinct_tag(self):
-        self.assertEqual(self.calc('nightly',attempt='2')['tag'],'v1.0.0-nightly.7.r2')
+    def test_retry_nightly_gets_a_distinct_artifact_version_without_a_tag(self):
+        self.assertEqual(self.calc('nightly',attempt='2')['version'],'1.0.0-nightly.7.r2')
+        self.assertEqual(self.calc('nightly',attempt='2')['tag'],'')
+
+    def test_rolling_metadata_preserves_version_after_legacy_tags_are_removed(self):
+        result = self.calc('stable', published_version='7.5.2', published_build='900000')
+        self.assertEqual(result['version'], '7.5.3')
+        self.assertEqual(result['tag'], 'android')
+        self.assertEqual(result['build_number'], '900001')
+        self.assertEqual(self.calc('stable', published_version='7.5.2', replace=True)['version'], '7.5.2')
+        self.assertEqual(self.calc('nightly', published_version='7.5.2')['version'], '7.5.3-nightly.7')
+        with self.assertRaises(ValueError):
+            self.calc('stable', published_version='7.5.2', requested='1.0.0')
     def test_tag_must_match_pubspec_and_manual_runs_main(self):
         self.assertEqual(self.calc('stable',ref='refs/tags/v1.0.0')['version'],'1.0.0')
         for ref in ['refs/heads/feature','refs/tags/v0.9.0','refs/tags/v1.0.0-rc.1','refs/tags/v1.0.0\nsha=bad']:

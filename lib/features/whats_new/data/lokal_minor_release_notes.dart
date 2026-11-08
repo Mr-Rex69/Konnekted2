@@ -16,8 +16,8 @@ bool lokalMinorHasChanged(String currentMinor, String? lastSeen) =>
     lastSeen != null &&
     lokalMinorVersion(lastSeen.split('+').first) != currentMinor;
 
-/// Offline notes for already-shipped minor releases. The GitHub vX.Y.0
-/// release is the authoritative source and also supports future minors
+/// Offline notes for already-shipped minor releases. The matching platform's
+/// GitHub release supplies current notes and also supports future minors
 /// without needing an app update just to change the What's New content.
 const lokalMinorReleaseFallback = <String, ChangelogEntry>{
   '4.2': ChangelogEntry(
@@ -95,8 +95,7 @@ const lokalIosMinorReleaseFallback = <String, ChangelogEntry>{
   ),
 };
 
-/// Parse the tagged minor release's "What's Changed" section. Patch releases
-/// deliberately do not change the notes for the current minor line.
+/// Parse the platform release's "What's Changed" section for the matching minor.
 ChangelogEntry? parseLokalMinorRelease(String minor, String body, String date) {
   final start = body.indexOf("## What's Changed");
   if (start < 0) return null;
@@ -128,8 +127,8 @@ ChangelogEntry? parseLokalMinorRelease(String minor, String body, String date) {
   );
 }
 
-/// The release tag is pinned at the first patch of the minor version. Never
-/// substitute previous-minor notes if this minor has not been published yet.
+/// Read the platform's permanent release page. Only use its notes for the
+/// matching minor version; Android notes must never stand in for iPhone notes.
 Future<ChangelogEntry?> loadLokalMinorRelease(
   String minor, {
   http.Client? client,
@@ -143,7 +142,7 @@ Future<ChangelogEntry?> loadLokalMinorRelease(
   try {
     final uri = Uri.https(
       'api.github.com',
-      '/repos/lokal-music/Mobile/releases/tags/v$minor.0',
+      '/repos/lokal-music/Mobile/releases/tags/${forIos ? 'ios' : 'android'}',
     );
     final response = await requestClient
         .get(uri, headers: {'Accept': 'application/vnd.github+json'})
@@ -154,6 +153,11 @@ Future<ChangelogEntry?> loadLokalMinorRelease(
     final body = release['body'];
     final date = (release['published_at'] as String?)?.split('T').first ?? '';
     if (body is! String) return fallback;
+    final platform = forIos ? 'ios' : 'android';
+    final published = RegExp(
+      '<!-- lokal-platform:$platform version:([^ ]+) build:[0-9]+ -->',
+    ).firstMatch(body)?.group(1);
+    if (lokalMinorVersion(published) != minor) return fallback;
     return parseLokalMinorRelease(minor, body, date) ?? fallback;
   } catch (_) {
     return fallback;

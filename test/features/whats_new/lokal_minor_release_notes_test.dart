@@ -25,10 +25,11 @@ void main() {
 
   test('parses only the current minor tagged release notes', () async {
     final client = MockClient((request) async {
-      expect(request.url.pathSegments.last, 'v4.3.0');
+      expect(request.url.pathSegments.last, 'android');
       return http.Response(
         jsonEncode({
-          'body': """Intro
+          'body': """<!-- lokal-platform:android version:4.3.2 build:123 -->
+Intro
 
 ## What's Changed
 * Improve playback by @dev in https://github.com/lokal-music/Mobile/pull/1
@@ -66,10 +67,35 @@ void main() {
   );
 
   test(
+    'a rolling release for another minor or platform uses bundled notes',
+    () async {
+      for (final marker in [
+        'lokal-platform:android version:4.3.0 build:123',
+        'lokal-platform:ios version:4.2.0 build:123',
+      ]) {
+        final client = MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'body': '<!-- $marker -->\n\n## What\'s Changed\n* Wrong notes',
+              'published_at': '2026-11-08T10:00:00Z',
+            }),
+            200,
+          ),
+        );
+        addTearDown(client.close);
+        expect(
+          await loadLokalMinorRelease('4.2', client: client),
+          same(lokalMinorReleaseFallback['4.2']),
+        );
+      }
+    },
+  );
+
+  test(
     'iPhone fetches its own tag and retains only its own offline notes',
     () async {
       final client = MockClient((request) async {
-        expect(request.url.pathSegments.last, startsWith('ios-v'));
+        expect(request.url.pathSegments.last, 'ios');
         return http.Response('Not found', 404);
       });
       addTearDown(client.close);

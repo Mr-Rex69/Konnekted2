@@ -3,12 +3,12 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump (releases the prepared 1.0.0 first)
+        description: Version bump
         type: choice
         options: [patch, minor, major]
         default: patch
       version:
-        description: Optional exact version, e.g. 1.2.0 (overrides bump)
+        description: Optional exact version (overrides bump)
         type: string
         default: ''
       flavor:
@@ -17,7 +17,7 @@ on:
         options: [full, play, both]
         default: full
       replace_existing:
-        description: Replace the existing stable release (same version, newer APK build)
+        description: Keep the current Android version and publish a newer build
         type: boolean
         default: false
       build_number:
@@ -25,14 +25,11 @@ on:
         type: string
         default: ''
       draft:
-        description: Prepare a draft to review before publishing
+        description: Build artifacts only; leave the public Android release unchanged
         type: boolean
-        default: true
-  push:
-    tags: ['v*', '!v*-*']
+        default: false
 permissions:
   contents: read
-# Shared signing identity and versionCode clock: serialize both channels.
 concurrency:
   group: lokal-mobile-publication
   cancel-in-progress: false
@@ -45,40 +42,34 @@ jobs:
       version: ${{ steps.metadata.outputs.version }}
       build_number: ${{ steps.metadata.outputs.build_number }}
       flavors: ${{ steps.metadata.outputs.flavors }}
-      tag: ${{ steps.metadata.outputs.tag }}
-      previous: ${{ steps.metadata.outputs.previous }}
       sha: ${{ steps.metadata.outputs.sha }}
-      replace: ${{ steps.metadata.outputs.replace }}
-      tag_oid: ${{ steps.metadata.outputs.tag_oid }}
+      previous_sha: ${{ steps.published.outputs.published_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Require trusted main history
-        run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
-      - name: Work out version and pin this commit
-        id: metadata
-        env:
-          RELEASE_REPLACE: ${{ github.event_name == 'workflow_dispatch' && inputs.replace_existing }}
-          RELEASE_BUMP: ${{ inputs.bump || 'patch' }}
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_CHANNEL: stable
-          RELEASE_FLAVOR: ${{ inputs.flavor || 'full' }}
-          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
-        run: python3 tool/release_channels.py
-      - name: Check whether this release may be created or replaced
+      - name: Require main
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+      - name: Read the published Android version and build
+        id: published
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.metadata.outputs.tag }}
-          REPLACE: ${{ steps.metadata.outputs.replace }}
-        run: |
-          if [ "$REPLACE" = true ]; then
-            gh release view "$TAG" --json tagName,isDraft
-          elif gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists. Enable replacement explicitly or choose a new version." >&2
-            exit 1
-          fi
+        run: python3 tool/platform_releases.py metadata --platform android
+      - name: Calculate version and pin this commit
+        id: metadata
+        env:
+          RELEASE_REPLACE: ${{ inputs.replace_existing }}
+          RELEASE_BUMP: ${{ inputs.bump }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_CHANNEL: stable
+          RELEASE_FLAVOR: ${{ inputs.flavor }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+          RELEASE_PUBLISHED_VERSION: ${{ steps.published.outputs.published_version }}
+          RELEASE_PUBLISHED_BUILD: ${{ steps.published.outputs.published_build }}
+        run: python3 tool/release_channels.py
       - name: Render mobile release banner
         env:
           BANNER_VERSION: ${{ steps.metadata.outputs.version }}
@@ -102,14 +93,17 @@ jobs:
     secrets: inherit
   publish:
     needs: [prepare, build]
+    if: ${{ !inputs.draft }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: android-*-${{ needs.prepare.outputs.build_number }}
@@ -119,97 +113,34 @@ jobs:
         with:
           name: mobile-banner-${{ needs.prepare.outputs.build_number }}
           path: release
-      # Only fixed shell commands run in this write-token job; the renderer
-      # ran earlier with a read-only token and no signing secrets.
-      - name: Store a publicly readable banner (best effort)
-        id: banner
+      - name: Verify APKs and prepare platform release notes
         env:
-          TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # The generated PNG is also uploaded as a release asset. A GitHub
-          # banner-branch push outage must not prevent publishing signed APKs.
-          BANNER_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/release-banner.png"
-          if git fetch --quiet --depth=1 origin refs/heads/release-banners; then
-            export GIT_INDEX_FILE="$RUNNER_TEMP/banner-index"
-            rm -f "$GIT_INDEX_FILE"
-            PARENT=$(git rev-parse FETCH_HEAD)
-            git read-tree "$PARENT"
-            BLOB=$(git hash-object -w release/release-banner.png)
-            git update-index --add --cacheinfo "100644,$BLOB,$TAG.png"
-            TREE=$(git write-tree)
-            COMMIT=$(git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit-tree "$TREE" -p "$PARENT" -m "Mobile banner for $TAG")
-            for attempt in 1 2 3; do
-              if git push origin "$COMMIT:refs/heads/release-banners"; then
-                BANNER_URL="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$COMMIT/$TAG.png"
-                break
-              fi
-              if [ "$attempt" -lt 3 ]; then
-                echo "::warning::Banner push failed (attempt $attempt/3); retrying."
-                sleep "$((attempt * 3))"
-              fi
-            done
-          else
-            echo "::warning::Could not fetch release-banners; using the attached release banner."
-          fi
-          if [[ "$BANNER_URL" == https://github.com/* ]]; then
-            echo "::warning::Banner not stored on the public branch; falling back to the release asset URL (draft inline preview may be unavailable)."
-          fi
-          echo "url=$BANNER_URL" >> "$GITHUB_OUTPUT"
-      - name: Verify and publish release
-        working-directory: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-          SHA: ${{ needs.prepare.outputs.sha }}
           VERSION: ${{ needs.prepare.outputs.version }}
           CODE: ${{ needs.prepare.outputs.build_number }}
-          PREVIOUS: ${{ needs.prepare.outputs.previous }}
-          BANNER_URL: ${{ steps.banner.outputs.url }}
-          REPLACE: ${{ needs.prepare.outputs.replace }}
-          OLD_TAG_OID: ${{ needs.prepare.outputs.tag_oid }}
-          DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
+          PREVIOUS_SHA: ${{ needs.prepare.outputs.previous_sha }}
         run: |
-          cat SHA256SUMS-*.txt > SHA256SUMS
-          sha256sum --check --strict SHA256SUMS
+          set -euo pipefail
+          (cd release && cat SHA256SUMS-*.txt > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
           cat > "$RUNNER_TEMP/mobile-release-notes.md" <<EOF_NOTES
-          ![Lokal Mobile release]($BANNER_URL)
+          ![Lokal Mobile](https://github.com/$GITHUB_REPOSITORY/releases/download/android/release-banner.png)
 
           **Lokal Mobile $VERSION** · Android 8.0+ · 64-bit ARM phones · versionCode $CODE
 
-          Stable Android release. Review the changes below before publishing.
+          Download the full APK below for sideloading. Signed releases update existing installs without uninstalling.
+          This Android download page and tag stay the same; successful releases replace the attached build.
 
-          Install the full APK for sideloading. Keep the same signing identity to update in place; no uninstall is needed for signed betas, nightlies and stable releases from this repository. SHA-256 checksums and signing certificate metadata are attached.
+          ## What's Changed
           EOF_NOTES
-          if [ "$REPLACE" = true ]; then
-            # Save asset IDs first; remove outdated files only after uploading
-            # the verified replacement. Leave unrelated attachments untouched.
-            gh api "repos/$GH_REPO/releases/tags/$TAG" > "$RUNNER_TEMP/previous-release.json"
-            gh release upload "$TAG" ./*.apk ./*-metadata.json SHA256SUMS release-banner.png --clobber
-            # The APK and release source must refer to the same commit. Refuse
-            # to move a tag that changed while this build was running.
-            git push --force-with-lease="refs/tags/$TAG:$OLD_TAG_OID" origin "$SHA:refs/tags/$TAG"
-            note_flags=()
-            if [ -n "$PREVIOUS" ]; then note_flags+=(-f "previous_tag_name=$PREVIOUS"); fi
-            gh api --method POST "repos/$GH_REPO/releases/generate-notes" \
-              -f tag_name="$TAG" -f target_commitish="$SHA" \
-              "${note_flags[@]}" --jq .body >> "$RUNNER_TEMP/mobile-release-notes.md"
-            gh release edit "$TAG" --title "Lokal Mobile $VERSION" --latest \
-              --notes-file "$RUNNER_TEMP/mobile-release-notes.md"
-            # A published release stays published; replacing a draft keeps it
-            # a draft. The creation-only draft checkbox does not hide releases.
-            for OLD_ID in $(jq -r '.assets[] | select((.name | test("^Lokal-.*\\.apk$|^(full|play)-metadata\\.json$|^SHA256SUMS$|^release-banner\\.png$"))) | .id' "$RUNNER_TEMP/previous-release.json"); do
-              OLD_NAME=$(jq -r --argjson id "$OLD_ID" '.assets[] | select(.id == $id) | .name' "$RUNNER_TEMP/previous-release.json")
-              if [ ! -f "$OLD_NAME" ]; then
-                gh api --method DELETE "repos/$GH_REPO/releases/assets/$OLD_ID"
-              fi
-            done
-            exit 0
+          if [ -n "$PREVIOUS_SHA" ] && [ "$PREVIOUS_SHA" != "$GITHUB_SHA" ]; then
+            git log --format='* %s' -50 "$PREVIOUS_SHA..$GITHUB_SHA" >> "$RUNNER_TEMP/mobile-release-notes.md"
+            printf '\n[Full changelog](https://github.com/%s/compare/%s...%s)\n' "$GITHUB_REPOSITORY" "$PREVIOUS_SHA" "$GITHUB_SHA" >> "$RUNNER_TEMP/mobile-release-notes.md"
+          else
+            printf '* Updated signed Android build.\n' >> "$RUNNER_TEMP/mobile-release-notes.md"
           fi
-          flags=(--latest)
-          if [ "$DRAFT" = true ]; then flags+=(--draft); fi
-          if [ -n "$PREVIOUS" ]; then flags+=(--notes-start-tag "$PREVIOUS"); fi
-          gh release create "$TAG" ./*.apk ./*-metadata.json SHA256SUMS release-banner.png \
-            --target "$SHA" --title "Lokal Mobile $VERSION" --generate-notes \
-            --notes-file "$RUNNER_TEMP/mobile-release-notes.md" "${flags[@]}"
+      - name: Update the Android release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tool/platform_releases.py publish --platform android --assets release \
+            --sha "$GITHUB_SHA" --notes "$RUNNER_TEMP/mobile-release-notes.md"
+          gh release view android --repo "$GITHUB_REPOSITORY" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

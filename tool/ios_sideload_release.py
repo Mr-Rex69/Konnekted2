@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Prepare a pre-device iPhone beta from the exact independently audited IPA.
 
-Called only by the release-branch job after both installed simulator suites and
-external background tests pass. Signing/device acceptance is deliberately not
+Called by an explicit release-branch push or manual main publication after both
+installed simulator suites and external background tests pass. Signing/device acceptance is deliberately not
 claimed. This script does not send network requests or change package bytes.
 """
 import argparse
@@ -18,9 +18,13 @@ from ios_verify_engineering_release import verify
 
 
 def validate_context(repo, environment):
-    if environment.get('GITHUB_EVENT_NAME') != 'push' or not re.fullmatch(
-            r'release/ios-sideload-[a-zA-Z0-9._-]+', environment.get('GITHUB_REF_NAME', '')):
-        raise ValueError('Publishing requires an explicit iOS sideload release branch push')
+    branch_push = environment.get('GITHUB_EVENT_NAME') == 'push' and re.fullmatch(
+        r'release/ios-sideload-[a-zA-Z0-9._-]+', environment.get('GITHUB_REF_NAME', ''))
+    manual_main = (environment.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and
+                   environment.get('GITHUB_REF_NAME') == 'main' and
+                   environment.get('LOKAL_IOS_PUBLISH') == 'true')
+    if not (branch_push or manual_main):
+        raise ValueError('Publishing requires a release branch push or an explicit manual main publication')
     commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
     if environment.get('GITHUB_SHA') != commit:
         raise ValueError('Release job source must equal its triggering commit')
@@ -58,9 +62,7 @@ def prepare(artifact, repo, destination, environment):
         'package_audit': result,
     }
     (destination / 'qualification.json').write_text(json.dumps(report, indent=2) + '\n')
-    number = environment['GITHUB_RUN_NUMBER']
-    attempt = environment['GITHUB_RUN_ATTEMPT']
-    tag = f'ios-sideload-beta-{number}-attempt{attempt}'
+    tag = 'ios'
     repository = environment['GITHUB_REPOSITORY']
     notes = (
         '# Unsigned iPhone beta — ready for device testing\n\n'
