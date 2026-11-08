@@ -20,7 +20,7 @@ class LocalYouProfile {
 /// support makes the profile survive a restart without a gallery permission.
 class YouProfileService {
   YouProfileService({Directory? avatarDirectory})
-      : _avatarDirectory = avatarDirectory;
+    : _avatarDirectory = avatarDirectory;
 
   static const _key = 'lokal.you.profile.v1';
   final Directory? _avatarDirectory;
@@ -36,9 +36,11 @@ class YouProfileService {
       final avatarPath = json['avatarPath'];
       return LocalYouProfile(
         username: username is String && username.trim().isNotEmpty
-            ? username.trim() : null,
+            ? username.trim()
+            : null,
         avatarPath: avatarPath is String && avatarPath.isNotEmpty
-            ? avatarPath : null,
+            ? avatarPath
+            : null,
       );
     } on FormatException {
       return const LocalYouProfile();
@@ -53,7 +55,9 @@ class YouProfileService {
     final normalized = username.trim();
     if (normalized.length > 40 ||
         RegExp(r'[\x00-\x1f\x7f]').hasMatch(normalized)) {
-      throw const FormatException('Username must be at most 40 characters without control characters.');
+      throw const FormatException(
+        'Username must be at most 40 characters without control characters.',
+      );
     }
     final existing = await load();
     String? path = existing.avatarPath;
@@ -63,18 +67,30 @@ class YouProfileService {
       if (avatarBytes.isEmpty || avatarBytes.length > 12 * 1024 * 1024) {
         throw const FormatException('Choose a photo smaller than 12 MB.');
       }
-      final original = img.decodeImage(avatarBytes);
-      if (original == null || original.width < 1 || original.height < 1 ||
-          original.width > 8192 || original.height > 8192) {
+      img.Image? original;
+      try {
+        original = img.decodeImage(avatarBytes);
+      } on RangeError {
+        throw const FormatException('This photo format could not be opened.');
+      }
+      if (original == null ||
+          original.width < 1 ||
+          original.height < 1 ||
+          original.width > 8192 ||
+          original.height > 8192) {
         throw const FormatException('This photo format could not be opened.');
       }
       // Respect EXIF rotation from camera photos before cropping.
       final oriented = img.bakeOrientation(original);
       final side = oriented.width < oriented.height
-          ? oriented.width : oriented.height;
+          ? oriented.width
+          : oriented.height;
       final square = img.copyCrop(
-        oriented, x: (oriented.width - side) ~/ 2,
-        y: (oriented.height - side) ~/ 2, width: side, height: side,
+        oriented,
+        x: (oriented.width - side) ~/ 2,
+        y: (oriented.height - side) ~/ 2,
+        width: side,
+        height: side,
       );
       final sized = img.copyResize(square, width: 320, height: 320);
       final bytes = img.encodeJpg(sized, quality: 85);
@@ -94,13 +110,17 @@ class YouProfileService {
       path = null;
     }
     final prefs = await SharedPreferences.getInstance();
-    final saved = await prefs.setString(_key, jsonEncode({
-      'username': normalized.isEmpty ? null : normalized,
-      'avatarPath': path,
-    }));
+    final saved = await prefs.setString(
+      _key,
+      jsonEncode({
+        'username': normalized.isEmpty ? null : normalized,
+        'avatarPath': path,
+      }),
+    );
     if (!saved) throw StateError('Could not save You profile.');
     if ((removeAvatar || avatarBytes != null) &&
-        existing.avatarPath != null && existing.avatarPath != path) {
+        existing.avatarPath != null &&
+        existing.avatarPath != path) {
       await _deleteOwnedAvatar(existing.avatarPath!);
     }
     return LocalYouProfile(
@@ -111,13 +131,16 @@ class YouProfileService {
 
   Future<Directory> _directory() async =>
       _avatarDirectory ??
-      Directory('${(await getApplicationSupportDirectory()).path}'
-          '${Platform.pathSeparator}you_profile');
+      Directory(
+        '${(await getApplicationSupportDirectory()).path}'
+        '${Platform.pathSeparator}you_profile',
+      );
 
   Future<void> _deleteOwnedAvatar(String path) async {
     final dir = await _directory();
     if (!path.startsWith('${dir.path}${Platform.pathSeparator}you_avatar_') ||
-        !path.endsWith('.jpg')) return;
+        !path.endsWith('.jpg'))
+      return;
     final file = File(path);
     if (await file.exists()) {
       try {

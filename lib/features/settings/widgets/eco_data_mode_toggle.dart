@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/services/playback_source_priority.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
@@ -11,9 +12,7 @@ class EcoDataModeToggle extends StatefulWidget implements LokalSearchable {
 
   static const label = 'Eco Data Mode';
   static const description =
-      'On mobile data, try YouTube Music and SoundCloud before lossless sources. '
-      'Only previously downloaded moving covers play on mobile data; '
-      'other songs use static artwork. Wi-Fi behavior is unchanged.';
+      "On mobile data, try enabled YouTube Music and SoundCloud sources before lossless sources. Only previously downloaded moving covers play on mobile data; other songs use static artwork. Uses your normal order on Wi-Fi and for manually selected sources.";
 
   @override
   String get searchText => '$label $description mobile cellular bandwidth';
@@ -35,7 +34,11 @@ class _EcoDataModeToggleState extends State<EcoDataModeToggle> {
   Future<void> _load() async {
     try {
       final enabled = await EcoDataMode.enabled();
-      if (mounted) setState(() { _enabled = enabled; _busy = false; });
+      if (mounted)
+        setState(() {
+          _enabled = enabled;
+          _busy = false;
+        });
     } catch (_) {
       if (mounted) setState(() => _busy = false);
     }
@@ -43,11 +46,24 @@ class _EcoDataModeToggleState extends State<EcoDataModeToggle> {
 
   Future<void> _change(bool value) async {
     if (_busy) return;
-    setState(() { _busy = true; _enabled = value; });
+    setState(() {
+      _busy = true;
+      _enabled = value;
+    });
     try {
       await EcoDataMode.setEnabled(value);
     } catch (_) {
-      if (mounted) setState(() => _enabled = !value);
+      if (mounted) {
+        setState(() => _enabled = !value);
+        LokalToast.fromSnackBar(
+          context,
+          SnackBar(
+            content: Text(
+              lokalText('Could not save data settings. Try again.'),
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

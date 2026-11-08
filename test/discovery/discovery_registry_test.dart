@@ -163,7 +163,6 @@ void main() {
     );
     expect(audio.url.toString(), 'https://cdn.example/audio.flac');
     expect(requests.map((r) => r.url.path), [
-      '/manifest.json',
       '/stream/same-id',
     ]);
   });
@@ -244,11 +243,11 @@ void main() {
         ).resolve(pinned()),
         throwsA(isA<DiscoveryException>()),
       );
-      expect(requests, hasLength(1));
+      expect(requests, hasLength(2));
     },
   );
 
-  test('cancelled resolution never fetches a stream from any addon', () async {
+  test('cancelled resolution aborts the selected stream without contacting another addon', () async {
     final manifestRequested = Completer<void>();
     final response = Completer<http.Response>();
     final cancel = Completer<void>();
@@ -256,7 +255,7 @@ void main() {
     final client = MockClient((request) async {
       requests++;
       expect(request.url.host, 'alpha.example');
-      expect(request.url.pathSegments.last, 'manifest.json');
+      expect(request.url.pathSegments.last, 'same-id');
       manifestRequested.complete();
       return response.future;
     });

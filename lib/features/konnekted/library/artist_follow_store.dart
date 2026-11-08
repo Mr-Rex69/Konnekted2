@@ -6,7 +6,7 @@ import 'package:flick/features/discovery/recommendation_match.dart';
 /// older artist detail pages and records display names for Spotify-only follows.
 class ArtistFollowStore extends ChangeNotifier {
   ArtistFollowStore({Future<SharedPreferences> Function()? preferences})
-      : _preferences = preferences ?? SharedPreferences.getInstance;
+    : _preferences = preferences ?? SharedPreferences.getInstance;
   static final instance = ArtistFollowStore();
   static const _prefix = 'lokal.artist.follow.';
   static const registryKey = 'lokal.artist.follow.names.v1';
@@ -15,6 +15,13 @@ class ArtistFollowStore extends ChangeNotifier {
   SharedPreferences? _prefs;
   Map<String, String> _names = {};
   Map<String, String> _known = {};
+  Future<void> _mutations = Future<void>.value();
+
+  Future<T> _mutate<T>(Future<T> Function() action) {
+    final work = _mutations.then((_) => action());
+    _mutations = work.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return work;
+  }
 
   static String keyOf(String? name) => recommendationKey(name);
   bool get isLoaded => _prefs != null;
@@ -43,8 +50,10 @@ class ArtistFollowStore extends ChangeNotifier {
     }
     // Legacy flags remain authoritative (even when there is no registry).
     for (final key in prefs.getKeys()) {
-      if (key == registryKey || !key.startsWith(_prefix) ||
-          prefs.getBool(key) != true) continue;
+      if (key == registryKey ||
+          !key.startsWith(_prefix) ||
+          prefs.getBool(key) != true)
+        continue;
       final artistKey = key.substring(_prefix.length);
       if (artistKey.isNotEmpty) {
         known.putIfAbsent(artistKey, () => artistKey);
@@ -57,7 +66,7 @@ class ArtistFollowStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setFollowed(String artist, bool value) async {
+  Future<void> setFollowed(String artist, bool value) => _mutate(() async {
     await load();
     final name = artist.trim();
     final key = keyOf(name);
@@ -70,44 +79,51 @@ class ArtistFollowStore extends ChangeNotifier {
     } else {
       next.remove(key);
     }
-    await _prefs!.setBool('$_prefix$key', value);
-    await _prefs!.setStringList(registryKey, known.values.toList());
+    if (!await _prefs!.setBool('$_prefix$key', value) ||
+        !await _prefs!.setStringList(registryKey, known.values.toList())) {
+      throw StateError('Artist favorites could not be saved.');
+    }
     _names = next;
     _known = known;
     notifyListeners();
-  }
+  });
 
   /// Additive, one-way import: never unfollow a local artist or change Spotify.
   /// Fetching all remote pages before calling this avoids partial imports.
-  Future<ArtistFollowImport> importNames(Iterable<String> artists) async {
-    await load();
-    final next = Map<String, String>.of(_names);
-    final known = Map<String, String>.of(_known);
-    final reenabled = <String>[];
-    var received = 0;
-    var added = 0;
-    for (final raw in artists) {
-      final name = raw.trim();
-      final key = keyOf(name);
-      if (name.isEmpty || name.length > 200 || key.isEmpty) continue;
-      if (++received > 2000) {
-        throw StateError('Too many Spotify artists to import safely.');
-      }
-      known.putIfAbsent(key, () => name);
-      if (next.containsKey(key)) continue;
-      if (_prefs!.getBool('$_prefix$key') == false) reenabled.add(key);
-      next[key] = name;
-      added++;
-    }
-    for (final key in reenabled) {
-      await _prefs!.setBool('$_prefix$key', true);
-    }
-    await _prefs!.setStringList(registryKey, known.values.toList());
-    _names = next;
-    _known = known;
-    notifyListeners();
-    return ArtistFollowImport(received: received, added: added);
-  }
+  Future<ArtistFollowImport> importNames(Iterable<String> artists) =>
+      _mutate(() async {
+        await load();
+        final next = Map<String, String>.of(_names);
+        final known = Map<String, String>.of(_known);
+        final reenabled = <String>[];
+        var received = 0;
+        var added = 0;
+        for (final raw in artists) {
+          final name = raw.trim();
+          final key = keyOf(name);
+          if (name.isEmpty || name.length > 200 || key.isEmpty) continue;
+          if (++received > 2000) {
+            throw StateError('Too many Spotify artists to import safely.');
+          }
+          known.putIfAbsent(key, () => name);
+          if (next.containsKey(key)) continue;
+          if (_prefs!.getBool('$_prefix$key') == false) reenabled.add(key);
+          next[key] = name;
+          added++;
+        }
+        for (final key in reenabled) {
+          if (!await _prefs!.setBool('$_prefix$key', true)) {
+            throw StateError('Artist favorites could not be saved.');
+          }
+        }
+        if (!await _prefs!.setStringList(registryKey, known.values.toList())) {
+          throw StateError('Artist favorites could not be saved.');
+        }
+        _names = next;
+        _known = known;
+        notifyListeners();
+        return ArtistFollowImport(received: received, added: added);
+      });
 }
 
 @immutable

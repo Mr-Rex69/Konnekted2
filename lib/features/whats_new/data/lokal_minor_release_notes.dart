@@ -70,6 +70,31 @@ const lokalMinorReleaseFallback = <String, ChangelogEntry>{
   ),
 };
 
+/// iPhone releases have their own notes and tag namespace. Android's USB/DSD
+/// release notes must never be presented as features of the iPhone port.
+const lokalIosMinorReleaseFallback = <String, ChangelogEntry>{
+  '1.0': ChangelogEntry(
+    version: '1.0',
+    date: '2026-10-29',
+    sections: [
+      ChangelogSection(
+        title: 'Your library on iPhone',
+        bullets: [
+          'Import music from Files and organize your library and playlists.',
+          'Read synchronized lyrics and manage playback from Now Playing.',
+        ],
+      ),
+      ChangelogSection(
+        title: 'Player and discovery',
+        bullets: [
+          'Reorder the queue, explore Cover Flow and choose your online sources.',
+          'Connect your desktop to sync your library and copy music to your phone.',
+        ],
+      ),
+    ],
+  ),
+};
+
 /// Parse the tagged minor release's "What's Changed" section. Patch releases
 /// deliberately do not change the notes for the current minor line.
 ChangelogEntry? parseLokalMinorRelease(String minor, String body, String date) {
@@ -78,17 +103,18 @@ ChangelogEntry? parseLokalMinorRelease(String minor, String body, String date) {
   final bullets = <String>[];
   for (final raw in body.substring(start).split('\n').skip(1)) {
     final line = raw.trim();
-    if (line.startsWith('## ') ||
-        line.startsWith('**Full Changelog**')) {
+    if (line.startsWith('## ') || line.startsWith('**Full Changelog**')) {
       break;
     }
     if (!line.startsWith('* ')) continue;
     var description = line.substring(2).trim();
     description = description.replaceFirst(
-      RegExp(r'\s+by\s+@[^\s]+\s+in\s+https?://\S+$'), '',
+      RegExp(r'\s+by\s+@[^\s]+\s+in\s+https?://\S+$'),
+      '',
     );
     description = description.replaceFirst(
-      RegExp(r'\s+in\s+https?://\S+$'), '',
+      RegExp(r'\s+in\s+https?://\S+$'),
+      '',
     );
     if (description.isNotEmpty) bullets.add(description);
   }
@@ -107,18 +133,21 @@ ChangelogEntry? parseLokalMinorRelease(String minor, String body, String date) {
 Future<ChangelogEntry?> loadLokalMinorRelease(
   String minor, {
   http.Client? client,
+  bool forIos = false,
 }) async {
-  final fallback = lokalMinorReleaseFallback[minor];
+  if (!RegExp(r'^\d+\.\d+$').hasMatch(minor)) return null;
+  final fallback = (forIos
+      ? lokalIosMinorReleaseFallback
+      : lokalMinorReleaseFallback)[minor];
   final requestClient = client ?? http.Client();
   try {
     final uri = Uri.https(
       'api.github.com',
       '/repos/lokal-music/Mobile/releases/tags/v$minor.0',
     );
-    final response = await requestClient.get(
-      uri,
-      headers: {'Accept': 'application/vnd.github+json'},
-    ).timeout(const Duration(seconds: 5));
+    final response = await requestClient
+        .get(uri, headers: {'Accept': 'application/vnd.github+json'})
+        .timeout(const Duration(seconds: 5));
     if (response.statusCode != 200) return fallback;
     final release = jsonDecode(response.body);
     if (release is! Map<String, dynamic>) return fallback;

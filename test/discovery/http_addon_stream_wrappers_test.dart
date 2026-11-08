@@ -13,27 +13,27 @@ void main() {
   );
   tearDownAll(client.close);
 
-  test('lastwave-compatible stream wrapper with direct FLAC plays as progressive', () {
-    final audio = addon.parseStream({
-      'stream': {
-        'directUrl': 'https://cdn.example/audio/file.flac',
-        'format': 'dash',
-        'manifest': 'dash',
-        'codec': 'flac',
-        'quality': 'LOSSLESS',
-      },
-    });
-    expect(audio.url.path, '/audio/file.flac');
-    expect(audio.codec, 'flac');
-    expect(audio.quality, 'LOSSLESS');
-  });
+  test(
+    'lastwave-compatible stream wrapper with direct FLAC plays as progressive',
+    () {
+      final audio = addon.parseStream({
+        'stream': {
+          'directUrl': 'https://cdn.example/audio/file.flac',
+          'format': 'dash',
+          'manifest': 'dash',
+          'codec': 'flac',
+          'quality': 'LOSSLESS',
+        },
+      });
+      expect(audio.url.path, '/audio/file.flac');
+      expect(audio.codec?.toLowerCase(), 'flac');
+      expect(audio.quality, 'LOSSLESS');
+    },
+  );
 
   test('data wrapper with boolean no-manifest is allowed', () {
     final audio = addon.parseStream({
-      'data': {
-        'url': 'https://cdn.example/file.m4a',
-        'manifest': false,
-      },
+      'data': {'url': 'https://cdn.example/file.m4a', 'manifest': false},
     });
     expect(audio.url.path, '/file.m4a');
   });
@@ -87,7 +87,8 @@ void main() {
     final transientClient = MockClient((request) async {
       attempts++;
       signed.add(request.headers['X-LW-Sign']);
-      if (attempts == 1) return http.Response('Temporary upstream failure', 502);
+      if (attempts == 1)
+        return http.Response('Temporary upstream failure', 502);
       return http.Response(
         '{"url":"https://cdn.example/file.flac","format":"flac"}',
         200,

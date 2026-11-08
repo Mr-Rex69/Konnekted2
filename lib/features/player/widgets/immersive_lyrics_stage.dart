@@ -69,11 +69,13 @@ List<int> immersiveActiveLineIndices(
     final line = lines[i];
     final overlappingWords =
         (line.words?.any(
-          (word) => word.start <= position && word.end > position,
-        ) ?? false) ||
+              (word) => word.start <= position && word.end > position,
+            ) ??
+            false) ||
         (line.backgroundWords?.any(
-          (word) => word.start <= position && word.end > position,
-        ) ?? false);
+              (word) => word.start <= position && word.end > position,
+            ) ??
+            false);
     if (line.timestamp == latestTimestamp || overlappingWords) {
       active.add(i);
     }
@@ -105,7 +107,8 @@ class ImmersiveLyricsSubtitle extends StatefulWidget {
   final bool loading;
 
   @override
-  State<ImmersiveLyricsSubtitle> createState() => _ImmersiveLyricsSubtitleState();
+  State<ImmersiveLyricsSubtitle> createState() =>
+      _ImmersiveLyricsSubtitleState();
 }
 
 class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
@@ -125,8 +128,9 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
   // once per lyrics update so glyph layout and syllable runs remain stable.
   List<LyricsLine?> _preparedSublines = const [];
   late final Ticker _ticker;
-  final ValueNotifier<Duration> _framePosition =
-      ValueNotifier<Duration>(Duration.zero);
+  final ValueNotifier<Duration> _framePosition = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   Duration _frameElapsed = Duration.zero;
   Duration _anchorElapsed = Duration.zero;
   Duration _anchorPosition = Duration.zero;
@@ -204,10 +208,10 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
 
   Duration _interpolated(Duration frame) {
     if (!_playing) return _anchorPosition;
-    final milliseconds = (frame - _anchorElapsed).inMicroseconds /
-        1000.0 * _speed;
-    return _anchorPosition + Duration(microseconds:
-        (milliseconds * 1000).round());
+    final milliseconds =
+        (frame - _anchorElapsed).inMicroseconds / 1000.0 * _speed;
+    return _anchorPosition +
+        Duration(microseconds: (milliseconds * 1000).round());
   }
 
   void _onPosition() {
@@ -279,13 +283,17 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
         if (lyrics == null || !hasImmersiveLyrics(lyrics)) {
           return widget.loading
               ? const Center(
-                  child: Text('Finding lyrics…',
-                      style: TextStyle(color: Colors.white70, fontSize: 16)),
+                  child: Text(
+                    'Finding lyrics…',
+                    style: TextStyle(color: Colors.white70, fontSize: 16),
+                  ),
                 )
               : const SizedBox.shrink();
         }
         final indices = immersiveActiveLineIndices(
-          lyrics, position, playbackLines: _preparedLines,
+          lyrics,
+          position,
+          playbackLines: _preparedLines,
         );
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -303,11 +311,15 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
   );
 
   Widget _subtitleLine(LyricsLine line, int index, Duration position) {
+    final sublineColor =
+        _lyricStyle.color ?? Theme.of(context).colorScheme.onSurface;
     final isSupportingVoice = line.voice == 'bg';
     return Column(
       // Keep the entire line's subtree stable as adjacent active lines expire.
       // A key only on LyricMotionLine cannot preserve its state if Column moves.
-      key: ValueKey('space-line-container:${line.timestamp.inMilliseconds}:$index'),
+      key: ValueKey(
+        'space-line-container:${line.timestamp.inMilliseconds}:$index',
+      ),
       mainAxisSize: MainAxisSize.min,
       children: [
         RepaintBoundary(
@@ -370,8 +382,8 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
                 fontWeight: FontWeight.w600,
                 height: 1.25,
               ),
-              sung: Colors.white,
-              unsung: Colors.white54,
+              sung: sublineColor,
+              unsung: sublineColor.withValues(alpha: sublineColor.a * .54),
             )
           else
             Text(
@@ -392,7 +404,6 @@ class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
     );
   }
 }
-
 
 /// Animated, bottom-anchored multi-voice lyric stack.
 ///
@@ -435,8 +446,8 @@ class _ImmersiveLineTransitionsState extends State<_ImmersiveLineTransitions> {
     super.didUpdateWidget(oldWidget);
     // A seek is not a natural transition between concurrent voices: clear
     // outgoing items instead of leaving old-song subtitles over the new spot.
-    final jumped = (widget.position - oldWidget.position).inMilliseconds.abs() >
-        1400;
+    final jumped =
+        (widget.position - oldWidget.position).inMilliseconds.abs() > 1400;
     if (jumped) {
       _rendered
         ..clear()

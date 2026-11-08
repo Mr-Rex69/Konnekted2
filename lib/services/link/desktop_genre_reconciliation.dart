@@ -8,8 +8,16 @@ bool isUnclassifiedLinkGenre(String? value) {
   final text = (value ?? '').trim().toLowerCase();
   return text.isEmpty ||
       const {
-        'music', 'unknown', 'unknown genre', 'no genre', 'nogenre',
-        'not set', 'notset', 'unspecified', 'undefined', 'genre',
+        'music',
+        'unknown',
+        'unknown genre',
+        'no genre',
+        'nogenre',
+        'not set',
+        'notset',
+        'unspecified',
+        'undefined',
+        'genre',
       }.contains(text);
 }
 
@@ -40,7 +48,9 @@ String? desktopLinkGenres(Map<String, dynamic> track) {
   for (final tag in tags) {
     final normalized = tag.trim();
     if (isUnclassifiedLinkGenre(normalized) ||
-        !seen.add(normalized.toLowerCase())) continue;
+        !seen.add(normalized.toLowerCase())) {
+      continue;
+    }
     meaningful.add(normalized);
   }
   return meaningful.isEmpty ? null : meaningful.join('; ');
@@ -77,7 +87,9 @@ class DesktopGenreMatcher {
   DesktopGenreMatcher(Iterable<DesktopGenreIdentity> records) {
     for (final record in records) {
       final remote = record.remoteId;
-      if (remote != null && remote.isNotEmpty && record.remoteServerId != null) {
+      if (remote != null &&
+          remote.isNotEmpty &&
+          record.remoteServerId != null) {
         (_remote['${record.remoteServerId}:$remote'] ??= []).add(record);
       }
       final key = _key(record.artist, record.title);
@@ -107,22 +119,28 @@ class DesktopGenreMatcher {
       return [for (final row in linked) row.id];
     }
     final album = _normalizeLinkName(desktop['album']?.toString());
-    final matching = (_titles[_key(artist, title)] ?? const <DesktopGenreIdentity>[])
-        .where((row) =>
-            (row.remoteServerId == null ||
-                row.remoteServerId == serverId ||
-                row.isLocalFile) &&
-            (row.durationMs / 1000 - duration).abs() <= 2 &&
-            (album.isEmpty || _normalizeLinkName(row.album).isEmpty ||
-                _normalizeLinkName(row.album) == album))
-        .toList();
+    final matching =
+        (_titles[_key(artist, title)] ?? const <DesktopGenreIdentity>[])
+            .where(
+              (row) =>
+                  (row.remoteServerId == null ||
+                      row.remoteServerId == serverId ||
+                      row.isLocalFile) &&
+                  (row.durationMs / 1000 - duration).abs() <= 2 &&
+                  (album.isEmpty ||
+                      _normalizeLinkName(row.album).isEmpty ||
+                      _normalizeLinkName(row.album) == album),
+            )
+            .toList();
     final local = matching.where((row) => row.isLocalFile).toList();
     // A cached desktop catalogue placeholder must not prevent a matching
     // physical local copy from receiving the genre too. Never select an
     // ambiguous local version (e.g. two otherwise identical remasters).
     final chosen = local.length == 1
         ? local.single
-        : local.isEmpty && matching.length == 1 ? matching.single : null;
+        : local.isEmpty && matching.length == 1
+        ? matching.single
+        : null;
     if (linked.isNotEmpty) {
       return {
         for (final row in linked) row.id,

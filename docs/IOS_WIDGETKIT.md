@@ -1,0 +1,702 @@
+# iPhone widgets: shared data and implementation gates
+
+**Archived research — excluded from the iOS release by user request on
+29 October 2026 (Europe/Paris).** The following implementation/evidence history
+is retained for reference. WidgetKit rendering, provisioning and actions are
+not release gates. The app does not start the iOS publisher/sampler or register
+its widget publication channel; the research workflow is manual-only. Android
+widgets and iPhone system media controls remain separate and unchanged.
+
+Status: native publication/sampler contracts and standalone extension linkage accepted; rendering candidate, 27 October 2026 (Europe/Paris).
+The canonical-state builder and Swift/Foundation reader pass the hosted Swift 6
+[shared contract run](https://github.com/lokal-music/lokal-mobile/actions/runs/40447057390):
+45 shared cases plus native numeric/clock guards and 64 Dart contracts. The [storage run](https://github.com/lokal-music/lokal-mobile/actions/runs/40450346881)
+also passes 19 real filesystem/image/process cases and the actual iOS 16 arm64
+device plus arm64 simulator SDK checks with Swift 6 warnings treated as errors.
+The [corrected publication run](https://github.com/lokal-music/lokal-mobile/actions/runs/40472952795)
+passes the reader's 45 cases, storage's 20 cases and publication's 14 cases,
+plus the actual iOS 16 SDK checks. The current candidate adds the host channel
+and Flutter coordinator. The later run-14 correction passes 23 storage cases,
+50×24-worker POSIX and real-store rounds, 45 reader, 14 publisher and 88 Flutter
+cases plus both real bridge SDK checks. The [live-sampler contract run 15](https://github.com/lokal-music/lokal-mobile/actions/runs/40510204249)
+passes 48 reader cases, the same 23 store cases and both stress controls, 14
+publisher cases, 109 Flutter contracts and both real Flutter bridge SDK checks.
+**Full runtime sampling acceptance remains pending. The standalone WidgetKit
+candidate is not embedded or provisioned in the main IPA.**
+
+The product remains exactly three configurations—Now Playing, Flow / Radio and
+Cover Flow—with responsive small/medium/large families. Artwork, Dynamic Type,
+Reduce Motion, empty/offline states and iOS 16/17 action differences follow the
+[post-172 widget specification](IOS_POST172_REVIEW.md#widgetkit-design-and-implementation-gates).
+The existing Android publisher and its settings remain independent.
+
+```mermaid
+flowchart LR
+  State[Canonical PlayerState] --> Builder[Dart metadata allowlist]
+  Theme[App theme accent] --> Builder
+  Owned[Materialized owned artwork names] --> Builder
+  Builder --> Contract[Version 1 bounded JSON]
+  Corpus[Shared malformed / legacy / progress corpus] --> Contract
+  Contract --> Reader[Swift Foundation tolerant reader]
+  Reader --> Store[Descriptor-relative atomic snapshot / owned artwork store]
+  Store --> Future[Next: runtime state sampler + WidgetKit timelines]
+  Future --> Action[Next: validated app-owned command inbox]
+  Action --> Coordinator[Existing app playback coordinator]
+```
+
+The reader is deliberately independent of UIKit/WidgetKit and can be compiled
+and exercised before extension provisioning. The new macOS contract workflow
+compiles the real reader in Swift 6 with warnings as errors; Dart and Swift run
+the same expected fixture values. A host/reader pass establishes the wire
+boundary, not extension installation, rendering or signed-device behavior.
+
+## Version 1 wire boundary
+
+| Field | Rule |
+| --- | --- |
+| `schemaVersion` | Exactly 1; unknown/missing/bool versions produce an empty snapshot. Unknown additive fields are discarded. |
+| `revision` | Nonnegative integer through 2^53−1. Future persistence must allocate it monotonically and acknowledge the actual written revision. |
+| `updatedAtMs` | Milliseconds since UTC epoch, positive through 2100-01-01. Invalid/missing time is stale. |
+| `current` | Nullable metadata record: alias, title, artist, album and owned artwork filename. No codec/backend or delivery URL is inferred. |
+| Record `id` | 64 lowercase hex characters. The app builder hashes `lokal-widget-track-v1` + NUL + the stable app song ID with SHA-256. It never exports raw IDs/paths/remote IDs. |
+| Labels/status | At most 256 Unicode scalars / 1024 UTF-8 bytes; controls and invalid surrogates are discarded. Bound scanning to 1024 input scalars. Trim ASCII spaces consistently across runtimes. |
+| `artwork`, `lastArtwork` | Content-addressed 64-hex `.jpg`/`.png` filename only. No URL, absolute path, traversal or URI. Current valid art replaces last-good art; unavailable art retains an explicitly supplied valid last-good filename. |
+| `positionMs`, `durationMs` | Integral, nonnegative and at most seven days. A known duration caps position; no current record clears both values. This display limit does not restrict playback. |
+| `isPlaying`, `playbackRate` | Explicit bool and finite rate 0.25–4.0. A missing record cannot be playing; no string/numeric truth conversion. |
+| `accentArgb` | Valid signed Int32; legacy unsigned UInt32 becomes its signed bit pattern. Reject out-of-range/fractional/bool values before conversion. Zero delegates to the renderer's theme default. |
+| `queueCount` | Integer 0–1,000,000, from canonical `upNext` count. |
+| `flowKind`, `flowStatus` | `none` / `flow` / `radio`, plus bounded app-localized status. No discovery starts while building the snapshot. |
+| `recommendations` | At most 12 distinct valid records from the first 48 candidates. Invalid rows fall back independently. |
+
+Documents are bounded to 64 KiB and eight nesting levels before parsing. Both
+decoders reject malformed Unicode/nonfinite JSON consistently. They normalize
+individual damaged fields without discarding unrelated valid metadata. Every
+accepted normalized document must round-trip within the same byte budget.
+
+Progress projects only a confirmed playing, known-duration, current recording.
+Use the captured raw position, elapsed wall time and captured playback rate,
+capped at duration. Hold the recorded position when paused, over 15 minutes old,
+more than five minutes in the future, or missing a valid timestamp. Validate
+extreme clock values before subtraction/conversion. This contract never causes
+playback or uses a periodic widget process to imitate a live player.
+
+## Next implementation boundaries
+
+1. **Atomic store and artwork.** Resolve the actual provisioned App Group at
+   runtime; report unavailable explicitly. Copy/downsample verified artwork into
+   the owned group directory with byte/pixel limits, content hashes and atomic
+   writes. Reject symlink escapes. Write the complete snapshot atomically after
+   its referenced assets exist; serialize publications and reject a superseded
+   acknowledgement. Retain referenced/last-good artwork during cleanup. Do not
+   fetch remote artwork inside an extension render pass.
+2. **Read-only WidgetKit target.** Implement the three layouts from the shared
+   spec, theme-derived surfaces, accessibility labels, stale/empty states and
+   system progress. Validate the exact extension's device/simulator linkage,
+   rendered family/large-text snapshots and timeline reload budgeting. The basic
+   sideload IPA must remain independent of extension entitlements.
+3. **Owned commands.** Use iOS 16 deep links and eligible iOS 17+ AppIntent entry
+   points. A durable bounded inbox needs command UUID, expiry, expected current
+   alias/revision and an absolute action, so replay cannot toggle twice or play
+   the wrong newer selection. The app must validate, serialize, perform and
+   acknowledge through the existing playback coordinator. The extension must
+   never create another Flutter/Rust engine. App-start failures remain visible;
+   dequeuing a command is not playback acknowledgement.
+4. **Windows/device acceptance.** Prove matching host/extension App Groups in
+   the actual free-account profile and Windows re-sign/install/upgrade/refresh
+   path. Apple's capability table is not proof of a particular profile or tool.
+   A missing group must leave base-app playback usable and explain widget
+   availability. No paid-membership assumption or signing credential belongs in
+   this repository or CI.
+
+Current Dart coverage includes the shared corruption/legacy/progress corpus,
+immutable exports, maximum-size payload, canonical clock/theme mapping, stable
+aliases, bounded recommendations and absence of source URLs/private paths.
+The Foundation executable additionally checks extreme native clock/numeric
+values. Actual WidgetKit rendering, background controls and signed installation
+remain open until those later gates pass.
+
+
+## Atomic store and artwork candidate
+
+`LokalWidgetStore` accepts an explicitly supplied container; its optional iOS
+factory resolves the actual provisioned App Group or throws unavailable. A
+read-only instance cannot create a missing store. The host publisher is not
+wired, so this introduces no entitlement dependency into base-app startup.
+
+The store opens its owned directory without following a terminal symlink and
+retains that descriptor. All subsequent I/O uses fixed/validated flat names and
+`openat` / `renameat` / `unlinkat`. Regular-file and single-link checks reject
+FIFOs, directories and hard links; nonblocking opens prevent a planted FIFO from
+hanging the widget. Moving/replacing the original container path cannot redirect
+a held descriptor to another directory. Instance locking and a regular-file
+`flock` serialize separate threads, instances and processes.
+
+```mermaid
+sequenceDiagram
+  participant P as Future host publisher
+  participant I as ImageIO preparation
+  participant S as Owned store + process lock
+  participant R as Widget reader
+  P->>I: Bounded PNG/JPEG bytes, off the main queue
+  I-->>P: Downsampled metadata-free PNG + content hash
+  P->>S: Candidate revision + referenced prepared images
+  S->>S: Reject stale revision; validate cache and asset set
+  S->>S: Write and fsync owned temporary images; rename
+  S->>S: Verify every referenced image hash
+  S->>S: Preserve previous snapshot; atomically rename new snapshot
+  S-->>P: Acknowledge the committed revision
+  R->>S: Bounded regular-file snapshot / image reads
+  S-->>R: Complete old or new document, verified image bytes
+```
+
+| Boundary | Candidate behavior |
+| --- | --- |
+| Artwork input | PNG/JPEG only, complete single image, at most 12 MiB, each dimension at most 12,000 and at most 40 million pixels before decoding. |
+| Artwork output | ImageIO applies orientation and downsamples to a maximum 600px edge; new PNG encoding removes original metadata. At most 2 MiB per owned image; filename is SHA-256 of the encoded bytes. |
+| Cache | At most 32 artwork files / 16 MiB. Preserve current/previous references and ten minutes of reader grace. Remove only expired unreferenced owned artwork. Reclaim a dead writer's temporaries while holding the exclusive writer lock. |
+| Publication | Positive revision greater than the committed revision; all referenced images must exist and verify before acknowledgement. No unreferenced or duplicate prepared image batch. |
+| Write failure | Complete current snapshot remains available. Partial asset staging is reusable verified cache, never a claimed new snapshot. |
+| Cache full | Return an explicit error. A metadata-only update retaining an existing verified cover remains possible; the future publisher must use that fallback rather than freeze title/state. |
+| Bad stored snapshot | Reject oversized/malformed/future-schema data explicitly; do not silently overwrite it. An explicit owned-cache repair action belongs in host integration. |
+| File protection | Device temporaries require protection class C (after first unlock). Simulator skips this kernel policy; signed-device/lock-screen verification remains open. |
+
+The new macOS executable exercises nineteen actual filesystem/image/process
+cases, including independent native child processes, descriptor/path replacement,
+symlinks, hard links, FIFOs, real permission denial, image decoding/metadata
+removal, incomplete assets, cache quotas and reference/grace retention. The
+workflow also type-checks the source with the actual iOS 16 device and simulator
+SDK targets. These gates pass in run `40450346881`, job `122011345223`, at
+source `e7ed8035126e1d645f17c1f23a6761ee05c5fb71`, tree
+`1be6c4c35decac65e9e16cf36fcddb98d09f43c5`. This is native storage evidence,
+not App Group entitlement or extension installation evidence.
+
+Atomic rename establishes reader visibility and failure behavior; physical
+power-loss durability, actual App Group sandbox access, protected-device reads,
+background execution and WidgetKit timelines still require their own acceptance.
+The existing Android publisher and playback/transport code are unchanged.
+
+
+The first storage workflow passes the unchanged 45-case Swift reader and Dart
+checks, then stops at the iOS device SDK check: the SDK does not expose the
+`PROTECTION_CLASS_C` alias. The correction uses Foundation's public
+`completeFileProtectionUntilFirstUserAuthentication` policy on a private probe,
+verifies the reported Foundation attribute, reads that descriptor's actual class
+and applies it to the held owned-file descriptor. No private keybag constant is
+guessed. Probe failure stays explicit and is retried on a later publication;
+simulator code does not claim device protection. The corrected device/simulator SDK checks and all nineteen storage cases
+pass in the hosted run above. Physical file-protection behavior remains pending.
+
+
+## Host publication policy candidate
+
+`Publication/LokalWidgetPublisher.swift` adds the synchronous native publication
+policy, intended for a host-owned utility queue. It does not construct an audio
+engine, resolve an implicit App Group, fetch artwork, reload timelines or attach
+the Flutter host yet. The bridge must first confirm the installed shared-container
+capability; base-app playback remains independent of that capability.
+
+The input is the bounded canonical metadata document plus image bytes keyed by
+its opaque current/recommendation aliases. At most thirteen images and 12 MiB
+in aggregate are accepted before image decoding. Unknown aliases and stale
+revisions fail explicitly. Snapshot normalization removes unrelated input fields;
+prepared artwork is content-addressed and deduplicated before committing.
+
+The returned acknowledgement contains the actual committed revision, owned
+filenames by alias, last-good background artwork and a degraded-artwork flag.
+An invalid image preserves a verified same-track cover when available. Artwork
+from a different track may remain the separate last-good background; it is never
+silently attached as the new track's cover. If the owned cache is full, retry
+with verified existing covers and no new images so title/pause/seek metadata can
+still advance. Other storage errors and stale writes never become success.
+Read the actual stored revision on startup; do not assume a restarted process
+can overwrite the previous writer with revision one.
+
+```mermaid
+sequenceDiagram
+  participant D as Future Flutter coordinator
+  participant H as Native publication policy / utility queue
+  participant I as Bounded ImageIO preparation
+  participant S as Atomic shared store
+  D->>H: Canonical metadata + bounded image bytes by opaque alias
+  H->>S: Read actual previous revision and verified artwork
+  H->>H: Reject stale/unreferenced/oversized input
+  H->>I: Prepare complete owned PNGs
+  I-->>H: Hash-named images or explicit image failure
+  H->>S: Commit metadata and referenced assets
+  alt Cache quota reached
+    H->>S: Commit metadata with verified old assets only
+  end
+  S-->>H: Actual committed revision
+  H-->>D: Revision + owned artwork names + degraded-art flag
+  Note over D: Only acknowledge the matching latest request
+```
+
+Fourteen new native cases exercise actual storage/images, restarted revision
+reads, duplicate covers, invalid images, distinct-track fallback, stale writers,
+unreferenced images, aggregate quotas, bad schema/documents, allowlist privacy,
+full-cache metadata fallback and concurrent publication. The hosted workflow
+compiles the same policy with Swift 6 warnings-as-errors and both iOS 16 SDK
+targets before running those cases. These policy checks subsequently passed in
+run 40472952795; the initial pending status is superseded by that native result. The preceding reader/store
+passes remain scoped to their original source; no app bridge, WidgetKit layout,
+App Group provisioning, timeline or physical-device acceptance is inferred.
+
+
+### Held-reader inode replacement correction
+
+The first publication workflow passes the unchanged 64 Flutter contracts, all
+45 Swift reader cases, and both actual iOS 16 SDK checks **including the new
+publisher**. Its storage concurrency case then fails; publication execution is
+skipped in that run. The reader previously required `st_nlink == 1` after
+`openat`. A writer can legitimately replace that exact pathname between open
+and fstat, reducing the held old descriptor's link count to zero even though
+its complete immutable bytes remain readable.
+
+Bounded reads now accept a regular held descriptor with zero or one link.
+`O_NOFOLLOW`, nonregular/FIFO rejection, hard-link rejection (`> 1`), and strict
+single-link writer/cleanup descriptors remain. A deterministic new storage case
+performs an actual independent-store commit immediately after the reader's open
+and before its fstat: the held read must return complete revision one, and the
+next read complete revision two. The test hook is absent by default. Native
+storage now has twenty cases and logs the actual concurrency errors if any
+recur. The publication suite runs independently after prior failures while the
+workflow retains every failing gate. Run 40472952795 subsequently passed all
+20 storage cases, 14 publication cases, 45 reader cases, 64 Flutter cases and
+both iOS 16 SDK checks for source `1cfc1ae59f47b95368afcda863c04fda5bc34b5b`.
+
+
+## Host channel and request coordinator candidate
+
+`LokalWidgetBridge` registers `lokal/widgets` in the actual Runner; its shared
+contract/store/publication sources are explicit Xcode target members. A serial
+utility queue owns image preparation and storage. Results and any requested
+WidgetKit reload return on the main queue, only after a real commit. A timeline
+reload request is not proof of rendering or guaranteed scheduling.
+
+The bridge resolves only the installed bundle's optional `LokalWidgetAppGroup`
+configuration. **Setting an identifier does not grant an entitlement.** The
+standalone IPA leaves that key absent. It returns `notConfigured` without opening
+any container; an inaccessible configured group is explicitly unavailable.
+Corrupt storage reports repair required. No private app-container fallback,
+caller-provided group identifier, source path or second audio owner is created.
+A native integration probe exercises this exact unconfigured bridge and its
+rejected publication, before continuing ordinary app/playback acceptance; that
+new native app probe still requires its first hosted execution. The focused
+macOS workflow also checks the real bridge against the downloaded Flutter
+framework for both iOS 16 SDK targets with Swift 6 warnings-as-errors. Its
+one-shot reply wrapper transfers typed sendable payloads across queues and
+invokes Flutter callbacks on the main queue; no mock Flutter API stands in for
+the actual framework during this check.
+
+`IosWidgetPublicationCoordinator` accepts already sampled canonical snapshots.
+It coalesces pending requests, serializes acknowledged writes, reads the stored
+revision on preflight, preserves the supplied source timestamp/position, and
+discards obsolete artwork results and receipts. Counters cannot wrap or reuse a
+failed operation's revision. A timed-out image future remains owned until its
+real completion, so another stuck image job cannot pile up. Fresh metadata can
+still be published without new images. Explicit retry rechecks availability;
+retained failed work does not create a retry/polling loop. A request submitted
+while a failure notification is being delivered is scheduled exactly once.
+
+The method-channel transport validates native wire types/revisions, allows
+image keys only for referenced opaque aliases, and bounds image count/aggregate
+bytes. The coordinator validates receipt identity and owned filenames before
+exposing them. Fourteen asynchronous coordinator cases plus seven actual-codec
+method-channel cases pass; the complete widget selection now passes **85 Flutter
+contracts** with strict analysis reporting no issues. The expanded app selection
+plus these cases passes **525 Flutter tests**. Host analysis has no errors.
+
+The runtime sampler still needs to bind canonical player/theme/Flow state,
+read materialized owned artwork, and budget state/seek/heartbeat updates. Do not
+submit every position tick or replace sampling timestamps with image completion
+time. Actual shared-profile publication, extension rendering/actions and the
+Windows install/upgrade/refresh path remain independent qualification gates.
+
+The first real-Flutter bridge SDK check caught Swift 6 rejecting Flutter's
+imported mutable Objective-C `FlutterMethodNotImplemented` global. The private
+channel now returns an explicit `UNSUPPORTED_WIDGET_METHOD` error through its
+existing typed, main-queue reply path. No concurrency checks were disabled.
+The revised bridge passes the actual Flutter framework check for both iOS 16
+SDK targets in [run 40481024530](https://github.com/lokal-music/lokal-mobile/actions/runs/40481024530),
+source `7fd28cf71417e7ea787b8df7e6cfcce4f26486c1`, tree
+`9bc8e5ba0eeff8610f7b7b1d47e527966002e5fc`. All 85 Flutter, 45 reader,
+20 storage and 14 publisher cases also pass. Full app channel execution,
+provisioned publication and extension rendering remain separate gates.
+
+
+## Native operation ownership after a deadline
+
+A Dart deadline bounds the caller's wait; it cannot cancel a native file write
+or a queued capability check. The coordinator retains those real futures until
+completion. Fresh states coalesce into one pending request while a timed-out
+write remains owned: no second native operation or artwork job is started.
+Capability retries share the existing in-flight check. Late replies/errors
+release ownership without exposing an obsolete receipt, notifying disposed
+listeners, or creating an automatic retry loop. A later explicit retry or
+meaningful state update can publish the latest retained sample with a new
+revision, after checking actual availability again when requested.
+
+```mermaid
+sequenceDiagram
+  participant P as Canonical player state
+  participant D as Dart coordinator
+  participant N as Native utility queue
+  D->>N: Publish revision 1
+  Note over D: Wait deadline expires; retain native operation
+  P->>D: Newer sampled state
+  Note over D: Coalesce latest; start no second native or artwork job
+  N-->>D: Late success or error
+  Note over D: Release ownership; discard late receipt; do not auto-retry
+  P->>D: Next meaningful update or explicit retry
+  D->>N: Publish latest sample at a new revision
+```
+
+Three asynchronous regressions cover hung publication with repeated new states
+and retries, a hung capability check, and late native failure. Actual in-flight
+publication concurrency stays at one; late completions never publish stale
+acknowledgements. The full widget/Android-widget selection passes **88 Flutter
+tests**. These checks extend the 583-test parity checkpoint; they do not claim a
+new combined full-app native pass or make the runtime sampler available.
+
+
+## Intermittent store failure — investigation open
+
+[Native run 8](https://github.com/lokal-music/lokal-mobile/actions/runs/40483084962)
+passes the actual Flutter bridge SDK checks, 85 Flutter cases, 45 reader cases
+and 14 publisher cases, then fails the store's independent-instance concurrent
+publication case with `posix(2)` (ENOENT). Earlier runs 5 and 7 pass the complete
+store suite, so they do not establish absence of this intermittent failure.
+
+The diagnostic continuation labels the exact failing POSIX operation and captures
+errno before constructing diagnostic values. The focused native workflow now runs
+50 independent 24-worker publication/read rounds, keeping highest-revision and
+untorn-read assertions. It preserves all failure gates and the existing strict
+file protections. No guessed locking change, ignored ENOENT, weakened assertions
+or fixed-race claim accompanies this investigation. Swift execution and both SDK
+checks for the diagnostic source remain pending; widget runtime wiring remains
+blocked on resolving the failure.
+
+Native run 9 also fails storage, this time at the separate-process case; its
+child wrapper previously discarded the underlying error. Diagnostics now retain
+the child's error, exit status and termination reason, and identify the fixed or
+opaque owned filename for failed regular-file opens. No private source path or
+credential is logged. The investigation remains open.
+
+The widget workflow now runs native Foundation/storage/image checks in an
+independent macOS job, alongside Dart and real-Flutter bridge checks. The failing
+filesystem probe no longer waits for Flutter setup/downloads. Both job outcomes
+remain required for overall workflow success; no storage or SDK gate is removed.
+
+Native run 12 localizes the thread-contention failure to `open_regular:writer.lock`
+with ENOENT at stress round six. The next source captures openat's result/errno
+inside the C-string lifetime and includes requested flags plus held-directory
+status/link count. A separate POSIX-only control uses stable directory descriptors
+and compares ordinary concurrent O_CREAT with O_EXCL/EEXIST fallback, without the
+publisher, pruning, snapshots or locks. This isolates syscall/creation behavior
+before choosing a production correction; no resolution is claimed yet.
+
+
+### Lock-file first-create correction candidate
+
+[Native run 13](https://github.com/lokal-music/lokal-mobile/actions/runs/40503741762)
+reproduces ENOENT in the independent POSIX-only plain O_CREAT control, at round
+nine, with the expected flags and a valid held directory (`fstat == 0`, three
+links). The failure does not require publication, pruning, snapshots or flock.
+The production lock now attempts O_CREAT|O_EXCL and opens the unchanged existing
+file only for EEXIST. Other failures propagate; strict regular/single-link and
+no-follow validation remains. No lock inode is replaced to obtain a fresh lock.
+
+The corrected POSIX control runs 50 fresh 24-worker rounds, alongside 50 actual
+store rounds. New native cases verify lock inode reuse and refusal of existing
+symlink/hard-link/FIFO/directory locks. The old plain-create control's failing
+source/run remains linked as reproduction evidence; the regression gate now
+exercises the chosen exclusive-create protocol. All 23 storage cases, native
+SDK checks and actual execution of this correction remain pending.
+
+
+## Live sampler and owned artwork candidate
+
+The existing canonical player listener now supplies an iOS-only runtime owner.
+It publishes track/state/duration/rate/queue-count/theme changes and detected
+seeks, with a 60-second metadata-only heartbeat driven by existing events.
+There is no new position ticker or per-tick disk write. Theme and completed-art
+updates retain the actual source sample timestamp and position; artwork completion
+never reanchors the clock. A backwards wall-clock change safely republishes the
+new observed sample. Only explicitly supplied recommendations are accepted; live
+Flow/Radio/recommendation ownership remains a later binding.
+
+```mermaid
+flowchart LR
+  P[Existing canonical player events] --> S[Meaningful state / seek / heartbeat sampler]
+  T[Actual theme accent] --> S
+  A[Completed owned cache event] --> S
+  S --> C[Single-operation publication coordinator]
+  C --> G{Installed shared capability}
+  G -->|Unavailable| U[Typed reason; zero artwork reads]
+  G -->|Available| O[Bounded owned or existing-cache file reads]
+  O --> N[Native ImageIO + atomic store]
+  N --> R[Actual committed revision]
+```
+
+The artwork loader resolves app support/documents/temporary roots, rejects paths
+and symlinks escaping them, limits each source/aggregate byte read, and considers
+only current plus twelve referenced aliases. A missing/evicted pointer may use an
+already materialized owned replacement. HTTP image references use cache lookup
+only; no fetch or decoder/extractor is started. Native ImageIO remains responsible
+for validating/downsampling accepted PNG/JPEG bytes before group persistence.
+The lifecycle flush never invents a pause. Disposing the app runtime removes the
+owned-art listener and stops pending requests; later native results remain owned
+until completion under the coordinator's previously tested policy.
+
+Both playback adapters expose loading/buffering separately from requested play.
+The shared optional `isBuffering` field defaults false for legacy records and is
+strictly boolean. Dart and Swift freeze projected position during buffering while
+retaining `isPlaying` for controls. The shared corpus grows to 48 cases; all new
+Swift execution and SDK gates still need acceptance for this new source. No Rust
+API or audio transport behavior is changed by the presentation flag.
+
+Build 53 separately proves the actual unconfigured native channel in both full
+simulator suites. The first-create correction subsequently passes focused native
+run 14. Provisioned group access, extension rendering/actions and physical iPhone
+or Windows installation remain independent gates.
+
+
+Validation of the live-sampling candidate: the exact expanded iPhone workflow
+selection plus all widget/Android-widget contracts passes **609 Flutter tests**.
+This includes actual filesystem ownership/quota/eviction checks, source-clock
+sampling and materialized-art events, unavailable-profile/no-I/O and retry/dispose
+cases, the expanded 48-case shared wire corpus, and both backend buffering events.
+Strict analysis of the new sampler/runtime/artwork code, shared Dart models,
+widget tests and recovery probe reports no issues. Whole app/integration analysis
+has no errors. Actionlint and diff checks pass. Actual Swift execution/SDK parity
+for the new buffering field, live-runtime app acceptance and the observed build-56
+retirement timeout remain separate hosted gates.
+
+
+## Standalone read-only WidgetKit candidate
+
+`ios/Widgets/LokalWidgets.xcodeproj`, shared scheme `LokalWidgets`, builds an
+independent extension containing exactly Now Playing, Flow / Radio and Cover
+Flow, each supporting small/medium/large. It is deliberately not a dependency or
+embedded product of Runner. Neither product acquires an entitlement or an App
+Group identifier from this change. The extension's absent `LokalWidgetAppGroup`
+key produces an explicit unavailable display; it never substitutes an app-private
+container, creates a store, writes a snapshot, fetches art or starts playback.
+A future optional package must configure the same real group in both products
+and prove the signed Windows workflow before embedding the extension.
+
+The native view uses the captured accent, system contrast surfaces and Dynamic
+Type. `ViewThatFits` prioritizes track/open content at accessibility sizes;
+VoiceOver retains complete recording metadata. Static artwork and layouts add no
+animation. Cover Flow displays up to three actual recommendation records; missing
+recommendations and inactive Flow retain an honest open-app state. Current art
+can fall back to the explicitly retained owned last-good filename. Reads use the
+existing descriptor-relative store and an eight-MiB aggregate display budget.
+Before UIKit decodes an image, ImageIO rechecks complete single PNG/JPEG content,
+compressed size and the host's 600px per-axis downsample bound. Damaged/evicted art
+falls back independently from valid metadata. Labels have all 11 app languages;
+widget language follows the extension's iOS localization selection for now.
+The app's explicit language preference still needs a shared-language binding.
+
+All entry values crossing WidgetKit completion are typed `Sendable` values.
+Timeline planning creates at most four entries: now, a valid future source start,
+recording end and strict freshness expiry when relevant. Progress uses the system
+`ProgressView(timerInterval:)`; scaling both endpoints respects playback rate.
+Paused, buffering, completed, invalid-clock and stale samples do not animate.
+There is no wall-clock elapsed label that could misstate audio time at another
+rate. At freshness expiry a static stale entry requests a reread; that request is
+at most once per 15-minute source window while playing, and never a recurring
+extension timer. WidgetKit may defer requests according to its budget. The stale
+fallback remains necessary; a system schedule is not a promise of continuous
+rendering. Paused/empty/unavailable snapshots rely on subsequent committed host
+reloads rather than repeated polling.
+
+The entire widget opens `konnekted://widget`, using the installed app scheme.
+This is an open-app entry only: there is no unvalidated play/toggle/seek URL, no
+track ID in a deep link and no claim of background control. AppIntent/inbox
+commands and Flow/recommendation owner binding remain separate implementation
+gates. A read-only extension is not full widget feature parity.
+
+The focused workflow now compiles the presentation/timeline executable against
+the shared 48-case corpus and additional native clock/rate/state/image cases,
+and separately links the actual extension for device and simulator at iOS 16
+with Swift 6 strict concurrency and warnings-as-errors. Local project-reference,
+scheme, resource completeness, actionlint and diff checks pass. Hosted compilation,
+rendered family/large-text snapshots, actual WidgetKit scheduling, signed group
+access and installed-device behavior remain pending for this new source.
+
+
+### Native linkage accepted; render harness continuation
+
+[Focused run 16](https://github.com/lokal-music/lokal-mobile/actions/runs/40516346438)
+accepts the first standalone source, tree `0eef6ff8246789cc3585e7e2b7ffd4bc5e81a906`,
+at PR head `a28426426ea3d2a1402bb992ef72abe19145f74b`: 18 additional native
+presentation/timeline/image cases plus the shared corpus pass, and the actual
+extension links for both iOS 16 device and simulator targets. Reader, real store
+with both 50×24-worker controls and publisher contracts also pass. The Flutter
+metadata/bridge job is tracked separately until it completes.
+
+The next continuation adds the independent `LokalWidgetPreview` app target and
+`tool/ios_widget_render.py`. It builds and launches a real native SwiftUI app,
+then renders the exact shared layout and surface at explicit family bounds.
+The harness supplies normal-app margins; it does not pretend to install a widget
+on SpringBoard or exercise WidgetKit container/background scheduling. Runner and
+the extension have no dependency on this simulator-only app.
+
+The requested matrix is **441 PNGs**: all three configurations/families, all 11
+locales, normal/accessibility-5 text, light/dark appearance, plus English paused,
+buffering, stale, empty and unavailable cases. Each locale launches a fresh
+process with its actual preferred bundle language and asserts that selection.
+Images and per-case JSON are exported from the owned app container; CI verifies
+case completeness and exact PNG pixel bounds. Captures remain available for
+visual inspection, rather than calling a linker pass a rendering pass. The
+smallest accessibility fallback keeps one visual title line and Open Lokal,
+while its combined VoiceOver label retains the complete recording metadata.
+No animation frames or automatic Home Screen placement are inferred from static
+rendered PNGs. This rendering continuation still needs its own hosted pass.
+
+
+Render run 17 (`40517573731`) passes all native/Flutter/bridge contracts and links
+both the extension and the isolated SwiftUI app. Its capture step stops before
+installation: CoreSimulator's first device inventory times out after 90 seconds.
+No rendered PNG or installed-widget pass is claimed. The startup correction
+allows one Simulator-service warm-up and a second bounded inventory only for
+that exact pre-device timeout. Both attempts retain separate evidence. Runtime
+selection/boot, app installation, rendering, matrix validation and second-attempt
+failures propagate normally; no app test is retried. Seven local gate-policy
+cases pass, including a real main-flow render-process error without another
+boot/launch. Hosted captures remain pending after this infrastructure correction.
+
+
+Run 18 (`40519562953`, source tree `48bfa0de0503e9c3c19013aa0480d9b8db3c75b0`)
+passes the seven startup-policy cases and all existing native/metadata/bridge/
+extension gates. The render app links; this time inventory and the full boot
+complete, but first installation times out at 90 seconds. No native image pass is
+inferred. The continuation uses the same 120-second installation allowance as
+the already validated main-app harness and records the exact failing phase,
+partial command output, installer/SpringBoard logs, device inventory and a
+failure screenshot. Installation/render failures still propagate without retry.
+This is a diagnostic/readiness correction, not proof of a packaging fix.
+
+
+Run 19 (`40521765024`, tree `e6e8a0e9e5c26888305f103fd67110baf092bba3`)
+passes the native/metadata/linkage gates and successfully installs the render
+app. Launch then times out before producing a report. The preserved SpringBoard
+log explicitly says the preview app does not support any valid orientations and
+cannot generate a launch snapshot; the failure screenshot remains on SpringBoard.
+The isolated target's generated manifest omitted orientations. The correction
+uses an explicit simulator-app manifest with portrait orientation, launch screen
+and SwiftUI scene metadata, and rejects missing/invalid built orientations before
+booting or installing. Eight local policy cases and actual project/plist parsing
+pass. Hosted launch/render acceptance is still required. This correction affects
+the CI-only app, not Runner or the separately linked extension.
+
+
+## Native render 20 accepted; visible-content correction
+
+[Run 20](https://github.com/lokal-music/lokal-mobile/actions/runs/40524454347)
+passes all four focused jobs at source `4e011ab2d8f9d712493c9374ab3b5dc9b80437b2`,
+tree `2acce62640442a531872d79dc683015e011ceffc`. The explicit manifest fixes the
+isolated app launch. **441 native PNGs** pass actual preferred-language, matrix
+and pixel-bound checks across all eleven locales/families/configurations, both
+appearances and normal/accessibility text, plus the five English state variants.
+All existing native/store/stress/publisher/Dart/real-SDK gates also pass. Artifact
+`12743706474` has verified archive SHA-256
+`5c9de16e4538e49e12dd67e9b929fd0bb09153da1ee3a555c042aa32f44a61cb`;
+the captures and source/checksum record are preserved with a filterable local
+review gallery. This remains shared-layout evidence from an actual iPhone
+simulator app, not signed Home Screen/App Group qualification.
+
+Visual review exposes a real issue that correct PNG dimensions cannot catch:
+medium Now Playing falls back too early, hiding art, artist and progress; medium
+Cover Flow similarly loses the three-cover strip. A gradient endpoint with alpha
+also leaves the light background dependent on the underlying compositor.
+
+The correction budgets normal-family spacing, metadata fonts and a four-point
+linear progress bar explicitly; medium recommendation art uses a bounded 56-point
+size. Large Cover Flow additionally shows two title lines and artist metadata.
+Flow status shares the footer instead of displacing the recording. The background
+has an opaque system surface beneath its accent wash. Combined VoiceOver retains
+complete metadata, Flow context and captured progress; accessibility-size layouts
+retain their existing prioritized fallback.
+
+The render matrix grows to **450** with nine independent pixel-content checks.
+Apple Vision OCR reads the actual English short-fixture PNGs: normal Now Playing
+and Flow require both recording and artist; medium/large Cover Flow require all
+three recommendation titles. The exported OCR observations are independently
+validated by Python. This deliberately fails the earlier title-only fallback;
+accessibility labels cannot substitute for text missing from rendered pixels.
+Partial images survive a failed capture for review. Eleven local Python startup/
+packaging/content-policy cases pass, with diff/actionlint checks. Swift linkage,
+the expanded native image/content gates and visual review of the corrected
+source remain pending until their own hosted run passes.
+
+
+## Native render 21: corrected visible content accepted
+
+[Run 21](https://github.com/lokal-music/lokal-mobile/actions/runs/40553935455)
+passes all four focused jobs at source
+`81385f95d49a4596f39f05bf5a9cb41b82724d9f`, tree
+`a5b0319364e5ee88236ce250e87dff103c8525aa`. The actual extension links for
+device/simulator; existing native/store/concurrency/publisher/Flutter/real-SDK
+contracts pass. All **450 native images**, actual bundle-language checks and
+**nine pixel OCR checks** pass. Exported OCR identifies recording and artist
+for each normal Now Playing/Flow family and all three Cover Flow recommendation
+titles in medium/large layouts. The complete matrix and OCR observations are
+independently reverified after archive extraction.
+
+Artifact `12756433357` verifies archive SHA-256
+`78c5117a9ba06ab026fb61a7c35df78b806bca5aa5d4603c5bf22a3cc860d0f0`.
+The actual images, a filterable review gallery and source/checksum record are
+preserved locally. Visual inspection confirms the medium content and opaque
+light-surface fixes. The live timer bar displays an ImageRenderer unsupported-view
+placeholder; the static capture path does not establish correct timer drawing
+or animation. Validate that separately in a hosted view and installed widget.
+Signed App Group access, Home Screen installation/scheduling, application-language
+binding and commands remain separate unfinished gates.
+
+## Displayed native progress follow-up
+
+The preview app now has an isolated foreground mode that hosts the same shared
+medium Now Playing layout in a real SwiftUI scene. After the 450-image matrix
+passes, the simulator captures two compositor screenshots three seconds apart
+in each appearance. A unique launch token, fixed preview bundle and native
+active-scene report gate each capture. The test preserves its primary failure
+if cleanup also fails, and does not retry an application failure.
+
+The four images and readiness records are exported under
+`native-screen-progress/`. Fifteen local Python policy/orchestration tests pass;
+their PNG headers are fixtures, not native rendering evidence. Hosted Swift 6
+compilation, compositor captures and visual timer review remain pending.
+`CAPTURED.json` explicitly leaves automatic progress-animation acceptance false.
+This exercises the displayed app-hosted layout; installed WidgetKit, Home Screen
+scheduling, App Group provisioning and actual playback remain separate gates.
+
+## Native render 22: displayed progress accepted in the preview app
+
+[Run 22](https://github.com/lokal-music/lokal-mobile/actions/runs/40573226374)
+passes all four jobs at PR head `851b9080c0c8fb3d22620246157fe24c69069ce1`,
+tree `29d3e01f50bf57ce09d31640e633e3c22e573b7a`. The standalone extension links
+for device/simulator and all real-SDK/data/storage/publication gates pass.
+Archive `12767106863` independently verifies SHA-256
+`e3bffe6024a9a3d781589ee5d4f8b94ca53933ab36b38b397c22821280c4a125`;
+the 450 static images and nine pixel OCR checks reverify after extraction.
+
+All four compositor images have the exact token/bundle/active-scene readiness
+record. Visual inspection confirms metadata/artwork and a rendered progress bar
+that advances between frames in both appearances. The native screen captures,
+readiness records and source/checksum review gallery are preserved separately
+from the static matrix. Automatic animation acceptance remains false in the
+capture report: this is an explicit visual review, not a quantitative animation
+test. Installed WidgetKit, application-language binding, signed shared access,
+command actions and Home Screen scheduling remain unfinished gates.
+
+
+### Parent stabilization validation — 28 October 2026
+
+[Widget run 23](https://github.com/lokal-music/lokal-mobile/actions/runs/40672723473)
+passes all four focused jobs again at the parent stabilization checkpoint:
+metadata/real host bridge, native storage/publication policies, extension
+linkage and render/capture orchestration. Run 22 retains its independently
+reviewed compositor captures. These successes do not embed or provision the
+extension in the engineering IPA and do not qualify installed WidgetKit behavior.

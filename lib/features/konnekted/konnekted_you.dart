@@ -4,6 +4,7 @@ import 'package:flick/core/utils/artist_credits.dart';
 import '../link/lokal_devices_card.dart';
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -49,15 +50,12 @@ final youRecapsProvider =
       // A single local play can update both the recent-history table and
       // the linked journal. Batch near-simultaneous notifications so the
       // year recap is not rebuilt twice on an entering screen.
-      final subscription = repository.watchHistory().listen(
-        (_) {
-          queuedReload?.cancel();
-          queuedReload = Timer(const Duration(milliseconds: 160), () {
-            if (!changes.isClosed) changes.add(null);
-          });
-        },
-        onError: changes.addError,
-      );
+      final subscription = repository.watchHistory().listen((_) {
+        queuedReload?.cancel();
+        queuedReload = Timer(const Duration(milliseconds: 160), () {
+          if (!changes.isClosed) changes.add(null);
+        });
+      }, onError: changes.addError);
       changes.add(null);
       ref.onDispose(() {
         queuedReload?.cancel();
@@ -259,8 +257,8 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
       final defaultName = profile?.displayName.trim().isNotEmpty == true
           ? profile!.displayName
           : profile?.username.trim().isNotEmpty == true
-              ? profile!.username
-              : ref.read(youAccountsProvider).name;
+          ? profile!.username
+          : ref.read(youAccountsProvider).name;
       final service = ref.read(youProfileServiceProvider);
       final saved = await showModalBottomSheet<bool>(
         context: context,
@@ -290,12 +288,13 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
     // Keep the first navigation frame light. Reduced-motion users receive
     // the entire page immediately; only the data subscription is deferred
     // for the animated entry, not the profile header or its actions.
-    final showRichContent = _richContentReady ||
+    final showRichContent =
+        _richContentReady ||
         MediaQuery.disableAnimationsOf(context) ||
         AppConstants.animationNormal == Duration.zero;
     final recaps = showRichContent
         ? (ref.watch(youRecapsProvider).value ??
-            const <ListeningRecapPeriod, ListeningRecap>{})
+              const <ListeningRecapPeriod, ListeningRecap>{})
         : const <ListeningRecapPeriod, ListeningRecap>{};
     final accounts = ref.watch(youAccountsProvider);
     final profile = ref.watch(linkedDesktopProfileProvider).value;
@@ -303,12 +302,10 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
     final defaultName = profile?.displayName.trim().isNotEmpty == true
         ? profile!.displayName
         : profile?.username.trim().isNotEmpty == true
-            ? profile!.username
-            : accounts.name;
+        ? profile!.username
+        : accounts.name;
     final name = local?.username ?? defaultName;
-    final streak = showRichContent
-        ? ref.watch(youStreakProvider).value
-        : null;
+    final streak = showRichContent ? ref.watch(youStreakProvider).value : null;
     final milestones = showRichContent
         ? (ref.watch(youMilestonesProvider).value ?? const <MilestoneRecord>[])
         : const <MilestoneRecord>[];
@@ -318,118 +315,125 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
       child: NotificationListener<ScrollNotification>(
         onNotification: _onPageScroll,
         child: ListView(
-        key: const PageStorageKey('konnekted-you'),
-        padding: EdgeInsets.only(
-          bottom: 28 + MediaQuery.paddingOf(context).bottom,
-        ),
-        children: [
-          _YouHeader(
-            name: name,
-            avatarPath: local?.avatarPath ?? profile?.avatarPath,
-            username: local?.username ?? profile?.username,
-            onEdit: _editProfile,
-            weekMinutes: recaps[ListeningRecapPeriod.weekly]
-                ?.totalListeningTime
-                .inMinutes,
-            streak: streak,
-            onSettings: () => navigate(KonnektedDestination.settings),
+          key: const PageStorageKey('konnekted-you'),
+          padding: EdgeInsets.only(
+            bottom: 28 + MediaQuery.paddingOf(context).bottom,
           ),
-          const LokalDevicesCard(),
-          _Label(lokalText('Recap')),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-            child: Text(
-              lokalText(
-                'Your week, month and year in music. Tap one for the story.',
+          children: [
+            _YouHeader(
+              name: name,
+              avatarPath: local?.avatarPath ?? profile?.avatarPath,
+              username: local?.username ?? profile?.username,
+              onEdit: _editProfile,
+              weekMinutes: recaps[ListeningRecapPeriod.weekly]
+                  ?.totalListeningTime
+                  .inMinutes,
+              streak: streak,
+              onSettings: () => navigate(KonnektedDestination.settings),
+            ),
+            const LokalDevicesCard(),
+            _Label(lokalText('Recap')),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(
+                lokalText(
+                  'Your week, month and year in music. Tap one for the story.',
+                ),
+                style: TextStyle(fontSize: 13, color: context.lokal.muted),
               ),
-              style: TextStyle(fontSize: 13, color: context.lokal.muted),
             ),
-          ),
-          SizedBox(
-            height: 136,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
+            SizedBox(
+              height: math.max(
+                136,
+                40 +
+                    MediaQuery.textScalerOf(context).scale(11) * 2 * 1.4 +
+                    MediaQuery.textScalerOf(context).scale(20) * 1.4 +
+                    MediaQuery.textScalerOf(context).scale(12) * 1.4,
+              ),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: youRecapPeriods.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final period = youRecapPeriods[i];
+                  return RepaintBoundary(
+                    child: _RecapCard(
+                      period: period,
+                      recap: recaps[period],
+                      onTap: () => _openRecap(period),
+                    ),
+                  );
+                },
+              ),
+            ),
+            _StatsSection(
+              period: _statsPeriod,
+              recap: recaps[_statsPeriod],
+              onPeriod: (period) => setState(() => _statsPeriod = period),
+              onHistory: () => navigate(KonnektedDestination.recentlyPlayed),
+            ),
+            _MilestonesSection(
+              milestones: milestones,
+              onOpen: () => _push(const MilestonesScreen()),
+            ),
+            _Label(lokalText('Accounts')),
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: youRecapPeriods.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (_, i) {
-                final period = youRecapPeriods[i];
-                return RepaintBoundary(
-                  child: _RecapCard(
-                    period: period,
-                    recap: recaps[period],
-                    onTap: () => _openRecap(period),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _AccountChip(
+                    label: lokalText('Last.fm'),
+                    connected: accounts.lastFm != null,
+                    onTap: () => navigate(_scrobblingSection),
                   ),
-                );
-              },
+                  _AccountChip(
+                    label: lokalText('ListenBrainz'),
+                    connected: accounts.listenBrainz != null,
+                    onTap: () => navigate(_scrobblingSection),
+                  ),
+                  _AccountChip(
+                    label: lokalText('YouTube'),
+                    connected: accounts.youtubeMusic,
+                    onTap: () => navigate(_accountsSection),
+                  ),
+                ],
+              ),
             ),
-          ),
-          _StatsSection(
-            period: _statsPeriod,
-            recap: recaps[_statsPeriod],
-            onPeriod: (period) => setState(() => _statsPeriod = period),
-            onHistory: () => navigate(KonnektedDestination.recentlyPlayed),
-          ),
-          _MilestonesSection(
-            milestones: milestones,
-            onOpen: () => _push(const MilestonesScreen()),
-          ),
-          _Label(lokalText('Accounts')),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            LokalSettingsSection(
+              title: lokalText('More'),
               children: [
-                _AccountChip(
-                  label: lokalText('Last.fm'),
-                  connected: accounts.lastFm != null,
-                  onTap: () => navigate(_scrobblingSection),
+                LokalSettingLink(
+                  label: lokalText('What’s new'),
+                  description: lokalText('What changed in this version.'),
+                  icon: Icons.auto_awesome_rounded,
+                  onTap: () =>
+                      unawaited(WhatsNewBottomSheet.show<void>(context)),
                 ),
-                _AccountChip(
-                  label: lokalText('ListenBrainz'),
-                  connected: accounts.listenBrainz != null,
-                  onTap: () => navigate(_scrobblingSection),
+                LokalSettingLink(
+                  label: lokalText('Help'),
+                  description: lokalText('Every control, explained.'),
+                  icon: Icons.help_outline_rounded,
+                  onTap: () => _push(const ManualScreen()),
                 ),
-                _AccountChip(
-                  label: lokalText('YouTube'),
-                  connected: accounts.youtubeMusic,
-                  onTap: () => navigate(_accountsSection),
+                LokalSettingLink(
+                  label: lokalText('About'),
+                  description: lokalText(
+                    'Version, updates, licences and privacy.',
+                  ),
+                  icon: Icons.info_outline_rounded,
+                  onTap: () => navigate(
+                    const KonnektedDestination.settingsAt(
+                      LokalSettingsGroup.about,
+                      section: 'About',
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
-          LokalSettingsSection(
-            title: lokalText('More'),
-            children: [
-              LokalSettingLink(
-                label: lokalText('What’s new'),
-                description: lokalText('What changed in this version.'),
-                icon: Icons.auto_awesome_rounded,
-                onTap: () => unawaited(WhatsNewBottomSheet.show<void>(context)),
-              ),
-              LokalSettingLink(
-                label: lokalText('Help'),
-                description: lokalText('Every control, explained.'),
-                icon: Icons.help_outline_rounded,
-                onTap: () => _push(const ManualScreen()),
-              ),
-              LokalSettingLink(
-                label: lokalText('About'),
-                description: lokalText(
-                  'Version, updates, licences and privacy.',
-                ),
-                icon: Icons.info_outline_rounded,
-                onTap: () => navigate(
-                  const KonnektedDestination.settingsAt(
-                    LokalSettingsGroup.about,
-                    section: 'About',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -446,20 +450,41 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(24, 22, 16, 10),
-    child: Row(
-      children: [
-        Expanded(
-          child: Semantics(
-            header: true,
-            child: Text(
-              text.toUpperCase(),
-              style: LokalTheme.label(context.lokal),
-            ),
+    child: MediaQuery.textScalerOf(context).scale(14) > 20
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  text.toUpperCase(),
+                  style: LokalTheme.label(context.lokal),
+                ),
+              ),
+              if (trailing != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: trailing,
+                  ),
+                ),
+            ],
+          )
+        : Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    text.toUpperCase(),
+                    style: LokalTheme.label(context.lokal),
+                  ),
+                ),
+              ),
+              ?trailing,
+            ],
           ),
-        ),
-        ?trailing,
-      ],
-    ),
   );
 }
 
@@ -525,10 +550,22 @@ class _YouHeader extends StatelessWidget {
                                   height: 44,
                                   // Never decode a multi-megapixel account
                                   // avatar for a 44px circle on cold entry.
-                                  cacheWidth: (44 * MediaQuery.devicePixelRatioOf(context))
-                                      .ceil().clamp(44, 192).toInt(),
-                                  cacheHeight: (44 * MediaQuery.devicePixelRatioOf(context))
-                                      .ceil().clamp(44, 192).toInt(),
+                                  cacheWidth:
+                                      (44 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .ceil()
+                                          .clamp(44, 192)
+                                          .toInt(),
+                                  cacheHeight:
+                                      (44 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .ceil()
+                                          .clamp(44, 192)
+                                          .toInt(),
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => Text(
                                     initial,
@@ -603,7 +640,6 @@ class _YouHeader extends StatelessWidget {
     );
   }
 }
-
 
 /// A small on-device editor. Photos are copied out of the gallery picker
 /// cache by YouProfileService; leaving the username empty restores the linked
@@ -709,16 +745,25 @@ class _YouProfileEditorState extends State<_YouProfileEditor> {
         ? widget.defaultName
         : _username.text.trim();
     final initial = initialName.isNotEmpty
-        ? initialName.characters.first.toUpperCase() : 'Y';
+        ? initialName.characters.first.toUpperCase()
+        : 'Y';
     final path = _removePhoto
         ? widget.linkedAvatarPath
         : widget.profile.avatarPath ?? widget.linkedAvatarPath;
     Widget photo;
     if (_pickedPhoto != null) {
-      photo = Image.memory(_pickedPhoto!, width: 86, height: 86, fit: BoxFit.cover);
+      photo = Image.memory(
+        _pickedPhoto!,
+        width: 86,
+        height: 86,
+        fit: BoxFit.cover,
+      );
     } else if (path != null) {
       photo = Image.file(
-        File(path), width: 86, height: 86, fit: BoxFit.cover,
+        File(path),
+        width: 86,
+        height: 86,
+        fit: BoxFit.cover,
         errorBuilder: (_, _, _) => Center(
           child: Text(initial, style: TextStyle(fontSize: 34, color: t.bg)),
         ),
@@ -738,17 +783,27 @@ class _YouProfileEditorState extends State<_YouProfileEditor> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Edit profile', style: TextStyle(
-                fontSize: 23, fontWeight: FontWeight.w700, color: t.text,
-              )),
+              Text(
+                'Edit profile',
+                style: TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.w700,
+                  color: t.text,
+                ),
+              ),
               const SizedBox(height: 6),
-              Text('This profile belongs to your phone. Linked accounts are not renamed.',
-                style: TextStyle(color: t.muted, fontSize: 13)),
+              Text(
+                'This profile belongs to your phone. Linked accounts are not renamed.',
+                style: TextStyle(color: t.muted, fontSize: 13),
+              ),
               const SizedBox(height: 18),
               Center(
                 child: ClipOval(
                   child: Container(
-                    color: t.accent, width: 86, height: 86, child: photo,
+                    color: t.accent,
+                    width: 86,
+                    height: 86,
+                    child: photo,
                   ),
                 ),
               ),
@@ -794,7 +849,9 @@ class _YouProfileEditorState extends State<_YouProfileEditor> {
                 runSpacing: 8,
                 children: [
                   TextButton(
-                    onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.of(context).pop(false),
                     child: const Text('Cancel'),
                   ),
                   FilledButton(
@@ -872,15 +929,17 @@ class _RecapCard extends StatelessWidget {
     final artistName = has ? primaryArtistCredit(recap?.topArtist?.artist) : '';
     final detail = has
         ? (artistName.isNotEmpty
-            ? artistName
-            : '${_count(recap!.totalPlays)} plays')
+              ? artistName
+              : '${_count(recap!.totalPlays)} plays')
         : 'Play a few songs';
     // Each period uses its own top artist, never the currently selected Stats
     // period. DiscoveryArtwork prefers cached/local artist portraits and can
     // resolve a verified remote image when there is no local picture.
     final hasPortrait = artistName.isNotEmpty;
     final foreground = hasPortrait ? Colors.white : t.text;
-    final secondary = hasPortrait ? Colors.white.withValues(alpha: .84) : t.muted;
+    final secondary = hasPortrait
+        ? Colors.white.withValues(alpha: .84)
+        : t.muted;
     final accent = hasPortrait ? Colors.white : t.accent;
 
     return Semantics(
@@ -1072,7 +1131,10 @@ class _StatsSection extends StatelessWidget {
                         title: lokalText('Top artists'),
                         rows: [
                           for (final a in recap.topArtists.take(3))
-                            (a.artist, '${_count(a.plays)} plays'),
+                            (
+                              primaryArtistCredit(a.artist),
+                              '${_count(a.plays)} plays',
+                            ),
                         ],
                       ),
                     if (recap.topSongs.isNotEmpty)
@@ -1327,14 +1389,15 @@ class _AccountChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.lokal;
-    final state = connected ? 'Connected' : 'Connect';
+    final state = lokalText(connected ? 'Connected' : 'Connect');
     return Semantics(
       button: true,
       label: lokalText(
         "{arg0}, {arg1}",
         args: {
           'arg0': label,
-          'arg1': connected ? 'connected' : 'not connected',
+          'arg1': lokalText(connected ? 'Connected' : 'Not connected')
+              .toLowerCase(),
         },
       ),
       excludeSemantics: true,
@@ -1346,8 +1409,10 @@ class _AccountChip extends StatelessWidget {
           thickness: LokalGlassThickness.thin,
           shadow: false,
           padding: const EdgeInsets.fromLTRB(12, 9, 14, 9),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Container(
                 width: 8,
@@ -1357,7 +1422,6 @@ class _AccountChip extends StatelessWidget {
                   color: connected ? t.accent : t.muted2,
                 ),
               ),
-              const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
@@ -1366,7 +1430,6 @@ class _AccountChip extends StatelessWidget {
                   color: t.text,
                 ),
               ),
-              const SizedBox(width: 8),
               Text(
                 state.toUpperCase(),
                 style: LokalTheme.label(

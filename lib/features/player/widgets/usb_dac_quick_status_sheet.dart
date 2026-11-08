@@ -48,6 +48,8 @@ String _friendlyDacName(Uac2DeviceInfo device) {
 }
 
 String _engineName(AudioEngineType mode) => switch (mode) {
+  AudioEngineType.iosSystem => 'iPhone / system output',
+  AudioEngineType.iosRust => 'Rust / iPhone system output',
   AudioEngineType.normalAndroid => 'Android / system output',
   AudioEngineType.rustOboe => 'Rust Oboe / Android output',
   AudioEngineType.usbDacExperimental => 'Direct USB / isochronous',

@@ -1,3 +1,4 @@
+import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
@@ -5,6 +6,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:flick/features/internet_radio/radio_providers.dart';
+import 'package:flick/providers/opt_in_source_provider.dart';
 import 'package:flick/features/internet_radio/internet_radio_page.dart';
 import 'package:flick/features/settings/screens/network_sources_screen.dart';
 import 'package:flick/features/settings/widgets/http_addons_settings_panel.dart';
@@ -28,9 +31,55 @@ List<LokalSettingsSection> onlineSourcesSettings(
   LokalSettingsSection(
     title: LokalOnlineSections.streaming,
     children: [
+      LokalSettingRow.toggle(
+        key: const ValueKey('monochrome-source-toggle'),
+        label: 'Monochrome',
+        description: lokalText('Search and stream FLAC from Monochrome.'),
+        value: ref.watch(monochromeEnabledProvider),
+        onChanged: (enabled) => unawaited(() async {
+          try {
+            await ref.read(monochromeEnabledProvider.notifier).set(enabled);
+          } catch (_) {
+            if (context.mounted) {
+              LokalToast.fromSnackBar(
+                context,
+                SnackBar(
+                  content: Text(
+                    lokalText('Could not save source settings. Try again.'),
+                  ),
+                ),
+              );
+            }
+          }
+        }()),
+      ),
+      LokalSettingRow.toggle(
+        key: const ValueKey('soundcloud-source-toggle'),
+        label: 'SoundCloud',
+        description: lokalText('Search and stream audio from SoundCloud.'),
+        value: ref.watch(soundCloudEnabledProvider),
+        onChanged: (enabled) => unawaited(() async {
+          try {
+            await ref.read(soundCloudEnabledProvider.notifier).set(enabled);
+          } catch (_) {
+            if (context.mounted) {
+              LokalToast.fromSnackBar(
+                context,
+                SnackBar(
+                  content: Text(
+                    lokalText('Could not save source settings. Try again.'),
+                  ),
+                ),
+              );
+            }
+          }
+        }()),
+      ),
       LokalSettingCustom(
         label: lokalText('Global search catalogue'),
-        description: lokalText('Choose the source of Global results; this does not affect playback source priority.'),
+        description: lokalText(
+          'Choose the source of Global results; this does not affect playback source priority.',
+        ),
         child: const GlobalCatalogueSelector(),
       ),
       LokalSettingCustom(
@@ -38,7 +87,12 @@ List<LokalSettingsSection> onlineSourcesSettings(
         description: lokalText(
           'Try sources from top to bottom when finding a song to play. Installed add-ons appear here too.',
         ),
-        child: const PlaybackSourcePriorityPanel(),
+        child: PlaybackSourcePriorityPanel(
+          key: ValueKey((
+            ref.watch(monochromeEnabledProvider),
+            ref.watch(soundCloudEnabledProvider),
+          )),
+        ),
       ),
       LokalSettingLink(
         label: lokalText('Network servers'),
@@ -77,4 +131,3 @@ List<LokalSettingsSection> onlineSourcesSettings(
     ],
   ),
 ];
-

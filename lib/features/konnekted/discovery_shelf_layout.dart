@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Stable shelf identifiers, kept independent of translated display names.
@@ -17,8 +19,15 @@ const discoveryShelfTitles = <String, String>{
 
 const discoveryShelfDefaults = <String, List<String>>{
   'youtube': [
-    'mixes', 'community', 'newReleases', 'trending', 'featuredPlaylists',
-    'dailyDiscover', 'fresh', 'quick', 'artists',
+    'mixes',
+    'community',
+    'newReleases',
+    'trending',
+    'featuredPlaylists',
+    'dailyDiscover',
+    'fresh',
+    'quick',
+    'artists',
   ],
   'lastfm': ['albums', 'fresh', 'artists'],
   'spotify': ['mixes', 'fresh', 'quick', 'history', 'albums', 'artists'],
@@ -26,9 +35,10 @@ const discoveryShelfDefaults = <String, List<String>>{
 
 class DiscoveryShelfLayout {
   DiscoveryShelfLayout({
-    required this.order,
-    required this.hidden,
-  });
+    required List<String> order,
+    required Set<String> hidden,
+  }) : order = List.unmodifiable(order),
+       hidden = Set.unmodifiable(hidden);
 
   final List<String> order;
   final Set<String> hidden;
@@ -41,7 +51,9 @@ class DiscoveryShelfLayout {
 
   /// Merges newly introduced shelves into an older preference record.
   factory DiscoveryShelfLayout.restore(
-    String provider, List<String>? savedOrder, List<String>? savedHidden,
+    String provider,
+    List<String>? savedOrder,
+    List<String>? savedHidden,
   ) {
     final defaults = discoveryShelfDefaults[provider] ?? const <String>[];
     final order = <String>{
@@ -62,7 +74,6 @@ class DiscoveryShelfLayout {
 
   DiscoveryShelfLayout moved(int oldIndex, int newIndex) {
     final updated = List<String>.of(order);
-    if (newIndex > oldIndex) newIndex--;
     final id = updated.removeAt(oldIndex);
     updated.insert(newIndex, id);
     return DiscoveryShelfLayout(order: updated, hidden: Set.of(hidden));
@@ -80,13 +91,31 @@ class DiscoveryShelfLayout {
 }
 
 class DiscoveryShelfLayoutStore {
-  const DiscoveryShelfLayoutStore();
+  const DiscoveryShelfLayoutStore({this.preferences});
+
+  final Future<SharedPreferences> Function()? preferences;
+
+  Future<SharedPreferences> _prefs() =>
+      (preferences ?? SharedPreferences.getInstance)();
 
   static const _prefix = 'lokal.discovery.shelves.v1.';
 
   Future<DiscoveryShelfLayout> read(String provider) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs();
+      final document = prefs.getString('$_prefix$provider.record');
+      if (document != null) {
+        final decoded = jsonDecode(document);
+        if (decoded is! Map || decoded['version'] != 1) {
+          return DiscoveryShelfLayout.defaults(provider);
+        }
+        return DiscoveryShelfLayout.restore(
+          provider,
+          (decoded['order'] as List).cast<String>(),
+          (decoded['hidden'] as List).cast<String>(),
+        );
+      }
+      // Read the earlier two-key shape, but all new saves commit one record.
       return DiscoveryShelfLayout.restore(
         provider,
         prefs.getStringList('$_prefix$provider.order'),
@@ -98,8 +127,34 @@ class DiscoveryShelfLayoutStore {
   }
 
   Future<void> write(String provider, DiscoveryShelfLayout layout) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('$_prefix$provider.order', layout.order);
-    await prefs.setStringList('$_prefix$provider.hidden', layout.hidden.toList());
+    final prefs = await _prefs();
+    final key = '$_prefix$provider.record';
+    final previous = prefs.getString(key);
+    final normalized = DiscoveryShelfLayout.restore(
+      provider,
+      layout.order,
+      layout.hidden.toList(),
+    );
+    try {
+      final saved = await prefs.setString(
+        key,
+        jsonEncode({
+          'version': 1,
+          'order': normalized.order,
+          'hidden': normalized.hidden.toList(),
+        }),
+      );
+      if (!saved) throw StateError('Discovery layout save rejected');
+    } catch (_) {
+      // Legacy SharedPreferences mutates its cache before disk acknowledges.
+      try {
+        if (previous == null) {
+          await prefs.remove(key);
+        } else {
+          await prefs.setString(key, previous);
+        }
+      } catch (_) {}
+      rethrow;
+    }
   }
 }

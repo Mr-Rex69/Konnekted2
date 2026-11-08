@@ -12,6 +12,7 @@ import 'package:flick/l10n/l10n.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/album_color_provider.dart';
 import 'package:flick/providers/favorites_provider.dart';
+import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,9 +60,9 @@ void main() {
           ..addFont(rootBundle.load('assets/fonts/GoogleSansFlex-Regular.ttf'))
           ..addFont(rootBundle.load('assets/fonts/GoogleSansFlex-Bold.ttf')))
         .load();
-    await (FontLoader('NotoSansSC')
-          ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Regular.ttf')))
-        .load();
+    await (FontLoader(
+      'NotoSansSC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Regular.ttf'))).load();
   });
 
   setUp(() async {
@@ -92,8 +93,6 @@ void main() {
     FilePickerPlatform.instance = originalPicker;
     AppLog.instance.clear();
     await temp.delete(recursive: true);
-    final card = File('${Directory.systemTemp.path}/flick_share_${_song.id}.png');
-    if (await card.exists()) await card.delete();
   });
 
   Future<void> tapAndShare(WidgetTester tester, Finder finder) async {
@@ -135,51 +134,59 @@ void main() {
     expect(shares, isEmpty);
   });
 
-  testWidgets('log share failure still shows the existing error', (tester) async {
-    shareError = PlatformException(code: 'share_failed', message: 'test failure');
+  testWidgets('log share failure still shows the existing error', (
+    tester,
+  ) async {
+    shareError = PlatformException(
+      code: 'share_failed',
+      message: 'test failure',
+    );
     await tester.pumpWidget(_host(const LogsScreen()));
     await tester.pumpAndSettle();
     await tapAndShare(tester, find.byTooltip(l10n.share));
     expect(find.text(l10n.shareFailed(shareError!)), findsOneWidget);
+    LokalToast.dismiss();
+    await tester.pumpAndSettle();
   });
 
   for (final contentUri in [false, true]) {
-    testWidgets('saved logs share from ${contentUri ? 'content' : 'file'} URI', (
-      tester,
-    ) async {
-      final destination = contentUri
-          ? Uri.parse('content://documents/document/42')
-          : Uri.file(p.join(temp.path, 'chosen logs.txt'));
-      final picker = _SavePicker(destination);
-      FilePickerPlatform.instance = picker;
-      await tester.pumpWidget(_host(const LogsScreen()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip(l10n.more));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(l10n.saveAsText));
-      await tester.pumpAndSettle();
-      expect(picker.mimeType, 'text/plain');
-      expect(picker.fileName, matches(r'^lokal_logs_.*\.txt$'));
-      await tapAndShare(tester, find.text(l10n.share));
+    testWidgets(
+      'saved logs re-share exact export for ${contentUri ? 'content' : 'file'} URI',
+      (tester) async {
+        final destination = contentUri
+            ? Uri.parse('content://documents/document/42')
+            : Uri.file(p.join(temp.path, 'chosen logs.txt'));
+        final picker = _SavePicker(destination);
+        FilePickerPlatform.instance = picker;
+        await tester.pumpWidget(_host(const LogsScreen()));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip(l10n.more));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(l10n.saveAsText));
+        await tester.pumpAndSettle();
+        expect(picker.mimeType, 'text/plain');
+        expect(picker.fileName, matches(r'^lokal_logs_.*\.txt$'));
+        await tapAndShare(tester, find.text(l10n.share));
 
-      final args = shares.single.arguments as Map;
-      final sharedPath = (args['paths'] as List).single as String;
-      expect(args['subject'], 'Lokal logs');
-      expect(args['mimeTypes'], ['text/plain']);
-      if (contentUri) {
+        final args = shares.single.arguments as Map;
+        final sharedPath = (args['paths'] as List).single as String;
+        expect(args['subject'], 'Lokal logs');
+        expect(args['mimeTypes'], ['text/plain']);
+        // Save destinations are platform document identifiers. Re-sharing uses
+        // the exact exported bytes/name for either kind of picker result (#260).
         expect(p.basename(sharedPath), picker.fileName);
         expect(
           await tester.runAsync(() => File(sharedPath).readAsBytes()),
           picker.bytes,
         );
-      } else {
-        expect(sharedPath, destination.toFilePath());
-      }
-      expect(utf8.decode(picker.bytes!), contains('keep 夜曲'));
-    });
+        expect(utf8.decode(picker.bytes!), contains('keep 夜曲'));
+      },
+    );
   }
 
-  testWidgets('cancelling save does not offer or invoke sharing', (tester) async {
+  testWidgets('cancelling save does not offer or invoke sharing', (
+    tester,
+  ) async {
     FilePickerPlatform.instance = _SavePicker(null);
     await tester.pumpWidget(_host(const LogsScreen()));
     await tester.pumpAndSettle();
@@ -196,23 +203,26 @@ void main() {
   ) async {
     const url = 'https://dpaste.com/TEST';
     final requests = <http.Request>[];
-    await http.runWithClient(() async {
-      await tester.pumpWidget(_host(const LogsScreen()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip(l10n.more));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(l10n.copyLink));
-      await tester.pumpAndSettle();
-      expect(requests, isEmpty);
-      await tester.tap(find.text(l10n.upload));
-      await drainUntil(tester, () => find.text(url).evaluate().isNotEmpty);
-      expect(requests, hasLength(1));
-      expect(find.text(url), findsOneWidget);
-      await tapAndShare(tester, find.text(l10n.share));
-    }, () => MockClient((request) async {
-      requests.add(request);
-      return http.Response('$url\n', 201);
-    }));
+    await http.runWithClient(
+      () async {
+        await tester.pumpWidget(_host(const LogsScreen()));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip(l10n.more));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(l10n.copyLink));
+        await tester.pumpAndSettle();
+        expect(requests, isEmpty);
+        await tester.tap(find.text(l10n.upload));
+        await drainUntil(tester, () => find.text(url).evaluate().isNotEmpty);
+        expect(requests, hasLength(1));
+        expect(find.text(url), findsOneWidget);
+        await tapAndShare(tester, find.text(l10n.share));
+      },
+      () => MockClient((request) async {
+        requests.add(request);
+        return http.Response('$url\n', 201);
+      }),
+    );
     expect(shares.single.arguments, {'text': url, 'subject': 'Lokal logs'});
   });
 
@@ -221,12 +231,16 @@ void main() {
   ) async {
     final path = p.join(temp.path, '夜曲.flac');
     final song = _song.copyWith(filePath: path);
-    await tester.pumpWidget(_host(Builder(
-      builder: (context) => TextButton(
-        onPressed: () => SongActionsBottomSheet.show(context, song),
-        child: const Text('Open actions'),
+    await tester.pumpWidget(
+      _host(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => SongActionsBottomSheet.show(context, song),
+            child: const Text('Open actions'),
+          ),
+        ),
       ),
-    )));
+    );
     await tester.tap(find.text('Open actions'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text(l10n.share));
@@ -239,37 +253,52 @@ void main() {
   });
 
   for (final fail in [false, true]) {
-    testWidgets('card share preserves PNG and caption${fail ? ' on retry' : ''}', (
-      tester,
-    ) async {
-      if (fail) shareError = PlatformException(code: 'share_failed');
-      await tester.pumpWidget(_host(
-        // Use an explicit line height for the fixed-size card fixture; these
-        // checks cover capture/sharing rather than inherited text layout.
-        DefaultTextStyle.merge(
-          style: const TextStyle(height: 1),
-          child: const ShareBottomSheet(song: _song),
-        ),
-      ));
-      await tester.pumpAndSettle();
-      expect(find.text('LOKAL'), findsOneWidget);
-      await tapAndShare(tester, find.text(l10n.share).last);
-      if (fail) {
-        expect(find.text(l10n.shareFailed(shareError!)), findsOneWidget);
-        shareError = null;
-        shared = Completer<void>();
+    testWidgets(
+      'card share preserves PNG and caption${fail ? ' on retry' : ''}',
+      (tester) async {
+        if (fail) shareError = PlatformException(code: 'share_failed');
+        await tester.pumpWidget(
+          _host(
+            // Use an explicit line height for the fixed-size card fixture; these
+            // checks cover capture/sharing rather than inherited text layout.
+            DefaultTextStyle.merge(
+              style: const TextStyle(height: 1),
+              child: const ShareBottomSheet(song: _song),
+            ),
+          ),
+        );
+        await drainUntil(
+          tester,
+          () => find.byType(LinearProgressIndicator).evaluate().isEmpty,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('LOKAL'), findsOneWidget);
         await tapAndShare(tester, find.text(l10n.share).last);
-        expect(shares, hasLength(2));
-      }
-      final args = shares.last.arguments as Map;
-      final path = (args['paths'] as List).single as String;
-      expect(p.basename(path), 'lokal-card.png');
-      expect(args['mimeTypes'], ['image/png']);
-      expect(args['text'], '${_song.title} — ${_song.artist}\nLokal');
-      final bytes = await tester.runAsync(() => File(path).readAsBytes());
-      expect(bytes!.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-    });
+        if (fail) {
+          expect(find.text(l10n.shareFailed(shareError!)), findsOneWidget);
+          shareError = null;
+          shared = Completer<void>();
+          await tapAndShare(tester, find.text(l10n.share).last);
+          expect(shares, hasLength(2));
+        }
+        final args = shares.last.arguments as Map;
+        final path = (args['paths'] as List).single as String;
+        expect(p.basename(path), 'lokal-card.png');
+        expect(args['mimeTypes'], ['image/png']);
+        expect(args['text'], '${_song.title} — ${_song.artist}\nLokal');
+        if (fail) {
+          final firstPath = (shares.first.arguments as Map)['paths'].single;
+          expect(
+            path,
+            isNot(firstPath),
+            reason: 'Retry must use a fresh export',
+          );
+        }
+        final bytes = await tester.runAsync(() => File(path).readAsBytes());
+        expect(bytes!.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+      },
+    );
   }
 }
 
@@ -283,7 +312,11 @@ Future<void> drainUntil(WidgetTester tester, bool Function() complete) async {
     );
     await tester.pump(const Duration(milliseconds: 20));
   }
-  expect(complete(), isTrue, reason: 'The asynchronous action did not complete');
+  expect(
+    complete(),
+    isTrue,
+    reason: 'The asynchronous action did not complete',
+  );
 }
 
 class _SavePicker extends FilePickerPlatform {

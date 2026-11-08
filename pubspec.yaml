@@ -132,6 +132,7 @@ flutter:
 
   assets:
     - assets/licenses/libsmb2.txt
+    - assets/licenses/soulseek-rs-lib.txt
     - assets/spotify/session_hook.js
     - assets/icons/flicklogo.png
     - assets/icons/flicklogo_svg.svg

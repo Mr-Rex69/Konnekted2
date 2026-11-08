@@ -1,0 +1,1518 @@
+# iPhone review of mobile PRs after #172
+
+Current review: **123 merged product PRs after #172 through #340**. The newest
+continuation includes on-demand large queues, provider resolution, subtitle
+alignment, smooth player expansion, per-minor release notes and direct Help
+navigation. Reviewed
+Android USB changes remain excluded. Each source checkpoint requires its own
+acceptance; review/inclusion does not qualify a physical iPhone release.
+
+iOS Home Screen widgets are excluded from release at the user's request
+(29 October 2026, Europe/Paris). Earlier WidgetKit plans/evidence below are
+historical; they are no longer implementation or release requirements.
+
+Initial pass: 26 October 2026 (Europe/Paris), through merged PR #196. Earlier
+checkpoints carried 53 reviewed PRs through #239, including merged source
+`4e9a627d91c7b9485d62588c6ed3e6842cb80a7b`. Build 34 passes both native suites
+through #217; preserved build 53 passes both through #246. Independently verified
+build 67 now passes both complete native suites through #261. Later source
+requires its own native acceptance.
+The initial iPhone merge below used main `b705c10e37ea606a5154253413f82b3ebf7f846a` directly
+(merge `b26d8b9e08a8acc4d60b8aa2e2b7e3c4b521fdb1`). All 20 PRs below are
+included by ancestry, including stacked #180/#181; none is copied as a divergent
+iPhone-only implementation. Rust, bridge dependencies and package locks are
+unchanged by this main integration.
+
+The shared Flutter screens are the iPhone screens. Android native widgets remain
+Android implementations; their revised product design feeds the WidgetKit work
+below. Inclusion in source is distinct from passing iPhone acceptance.
+
+| PR | Relevant behavior carried into iPhone | Validation / remaining platform work |
+| --- | --- | --- |
+| [173](https://github.com/lokal-music/lokal-mobile/pull/173) | Bounded metadata backfill and startup repair; responsive large libraries. | CPU budget and metadata warmup regressions; large physical-phone libraries still need profiling. |
+| [174](https://github.com/lokal-music/lokal-mobile/pull/174) | Artwork anchor recovery after queue/lyrics, full-art dismissal, compact queue design. | Artwork/morph and queue tests; native repeated panel visits and return screenshots added. |
+| [175](https://github.com/lokal-music/lokal-mobile/pull/175) | Profile editor above persistent dock; wrapping Save/Cancel footer. | Existing profile widget tests plus native editor hit-testing/screenshot added. |
+| [176](https://github.com/lokal-music/lokal-mobile/pull/176) | Autoplay preview and repeat-all without rebuilding active playback. | Autoplay/queue and failed-source regressions; preserve iOS system/Rust codec handoff. |
+| [177](https://github.com/lokal-music/lokal-mobile/pull/177) | Faster critically damped opening and stable quality-badge geometry. | Route spring and identity-row layout tests; native full-player screenshot. |
+| [179](https://github.com/lokal-music/lokal-mobile/pull/179) | Canvas chrome paint order, sharper YouTube art, source/size metadata. | Pixel assertions and artwork/metadata-sheet tests; real Canvas video still requires native acceptance. |
+| [180](https://github.com/lokal-music/lokal-mobile/pull/180) | Discovery recovery, Tidal/Amazon sources and artwork; early widget iteration. | Shared discovery/source tests. Android widget code supplies design history, not an iOS extension. |
+| [181](https://github.com/lokal-music/lokal-mobile/pull/181) | Large-library scheduling, compound artist/album lookup and search selection. | Warmup, album lookup, performance and search regressions. |
+| [184](https://github.com/lokal-music/lokal-mobile/pull/184) | Canonical Deezer enrichment and measured byte-progress streaming. | Morneye streaming tests; opaque progressive handles retain the iOS system-engine processing guard. Live accounts remain unqualified. |
+| [185](https://github.com/lokal-music/lokal-mobile/pull/185) | Online-first Flow/autoplay, global catalogue search, durable online playlist references. | Flow, radio, catalogue, playlist reference/import tests; preserve opt-in sources and manual-queue priority. |
+| [186](https://github.com/lokal-music/lokal-mobile/pull/186) | Themed Discord community link on Home/Library/You. | Shared button/localization tests; external URL launch is separate from Discord rich presence. |
+| [188](https://github.com/lokal-music/lokal-mobile/pull/188) | Songs filter restricts global results and corrects empty state. | Category/result filtering regressions. |
+| [189](https://github.com/lokal-music/lokal-mobile/pull/189) | Themed global catalogue selector and provider-choice sheet; Amazon artwork. | Catalogue selector, provider/category and artwork tests. |
+| [190](https://github.com/lokal-music/lokal-mobile/pull/190) | Live Now Playing, Flow/Radio and Cover Flow widget behavior. | Shared snapshot/recommendation contract carried forward; native WidgetKit still pending. |
+| [191](https://github.com/lokal-music/lokal-mobile/pull/191) | Consistent Online songs section heading and spacing. | Online result layout/localization tests. |
+| [192](https://github.com/lokal-music/lokal-mobile/pull/192) | Exactly Library/Online scopes, exclusive default-Songs categories, provider headings/artist portraits. | Narrow-phone filter tests and native scope/category interactions added. |
+| [193](https://github.com/lokal-music/lokal-mobile/pull/193) | Songs/Artists/Albums/Lyrics in both scopes; retired-filter migration; incremental saved/embedded lyrics scanning and online LRCLIB. | Search migration, lyrics review/scanning tests; native filter coverage does not claim a live LRCLIB account/network test. |
+| [194](https://github.com/lokal-music/lokal-mobile/pull/194) | Exactly three responsive artwork-led widgets; last-good cover while loading. | Adopt the three-family WidgetKit specification below; do not expose retired duplicate variants. |
+| [195](https://github.com/lokal-music/lokal-mobile/pull/195) | Common local/online lyrics card: title, credits, matching excerpt without LRC timestamps, accent Play. | Lyrics result layout and matching/excerpt tests. |
+| [196](https://github.com/lokal-music/lokal-mobile/pull/196) | Signed ARGB transport and compatible numeric preferences prevent Android widget fallback crashes. | Preserve upstream Kotlin and Dart regressions; use an explicit fixed-width color contract for future iOS snapshots. Android CI remains manually disabled. |
+
+## WidgetKit design and implementation gates
+
+Expose exactly three widget configurations, each responsive to the supported
+small, medium and large iPhone families. The family controls density, not which
+product it is. Album artwork remains visible at every size; reserve the sleeve
+when empty and retain the last verified cover during replacement. Use theme and
+album-derived surfaces, readable contrast and Dynamic Type; honor Reduce Motion.
+
+| Configuration | Small | Medium / large | Empty / offline behavior |
+| --- | --- | --- | --- |
+| Now Playing | Cover, title, artist and play/pause when supported. | Cover, transport and system-driven progress; queue entry opens the app. | Last valid cover or branded sleeve; Open Lokal when there is no track. |
+| Flow / Radio | Cover and active Flow/radio identity with primary action. | Current cover, station/context and supported transport. | Explain unavailable recommendations and open the app; no silent playback command. |
+| Cover Flow | Cover-led recommendation with title and open/play entry. | A bounded strip of verified covers and current selection. | Keep available local recommendations, otherwise offer Open Lokal. |
+
+```mermaid
+flowchart LR
+  Flutter[Shared player / Flow / recommendations] --> Snapshot[Versioned validated snapshot]
+  Snapshot --> Assets[Bounded local artwork + last-good cover]
+  Snapshot --> Group[App Group atomic persistence]
+  Assets --> Group
+  Group --> Timeline[WidgetKit timeline / system progress]
+  Timeline --> Views[Now Playing · Flow/Radio · Cover Flow]
+  Views --> Action[AppIntent on iOS 17+ / deep link on older OS]
+  Action --> Inbox[Validated durable command inbox]
+  Inbox --> Player[Existing app playback coordinator]
+```
+
+Implementation must validate IDs, bounded strings/arrays, finite nonnegative
+position/duration, timestamps and a signed Int32 ARGB value (decode color as its
+UInt32 bit pattern). Readers accept compatible legacy numeric widths without
+trapping; corrupt fields fall back independently rather than replacing every
+widget with one emergency layout. Never put credentials or transient stream URLs
+in the App Group. Extension code reads snapshots and owned artwork; it must not
+start a second Flutter/Rust audio engine or download arbitrary art at render time.
+
+Apple's current [supported-capabilities table](https://developer.apple.com/help/account/reference/supported-capabilities-ios)
+includes App Groups for the free Apple Developer account column as well as paid
+memberships (checked 26 October 2026; the HTML table uses checkmark figures).
+Do not assume a paid membership is necessary from older guidance. The actual
+provisioning profile, matching host/extension group and Windows re-signing behavior
+still require a signed-device test. [WidgetKit updates](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date)
+are scheduled by the system; use timeline entries and system progress rather
+than periodic app wakeups.
+
+The initial base app used iOS 15. The maintainer subsequently chose a single
+iOS 16+ app for current Chromecast SDK compatibility. Gate AppIntent interactive controls at iOS
+17 and later; older widgets use deep links. WidgetKit schedules updates; do not
+promise an unrestricted live refresh loop. Test stale timelines, artwork churn,
+missing data, signed colors, cold-start command replay, offline behavior and text
+scaling. Verify entitlements and extension re-signing with the Windows sideload
+path before enabling this optional extension. A free-account re-sign that cannot
+retain the App Group must still allow ordinary app playback, with a clear widget
+availability explanation. Native widgets are not yet implemented or accepted.
+
+## Validation record
+
+All 20 PR merge commits are reachable from the integrated iPhone branch.
+The pass enumerated 41 changed Dart test files. **All 248 cases in the 40
+completable files now pass**, including search, lyrics-card layouts, catalogue
+settings, Flow/autoplay, artwork/Canvas, profile editing, route motion, streaming,
+playlist references and Android widget contracts.
+
+The initial pass found seven failures. Two visual-test failures were resolved
+by the compositing/harness fixes below. The other five search/Cover Flow failures
+reproduced on untouched main `b705c10` before their fixtures were reconciled:
+UI tests now override the current global catalogue interface instead of the
+retired Apple-only provider; the narrow filter test scrolls and lays out Lyrics
+before tapping it; Cover Flow expects the intended middle initial item. Stale
+query protection, entity isolation, no library work in Online scope and the real
+queued recommendation order remain asserted. The three corrected fixture files
+also pass static analysis without findings.
+
+The failed-source file initially stalled/failed on both branches. Its five cases
+now pass after repairing fixture lifecycle: explicitly owned streams/disposal,
+draining both the fake deadline clock and real cancellation event loop, and
+stopping the deliberately paused crossfade ramp before widget-test invariants.
+Expected errors, source-load counts, fresh-player recovery and crossfade player
+identity assertions are retained. All 41 changed Dart files therefore have
+passing focused runs: 248 checks across 40 files, plus five decoder-recovery
+checks. This is not a green claim for the complete historical Flutter suite.
+
+A separate post-merge iPhone regression selection passes all 41 cases, including
+the actual host Rust metadata/QuickJS bridge (with `LOKAL_NATIVE_LIBRARY` set),
+iOS storage/document handling, processing selection, codec routing, ReplayGain
+and Desktop Link errors. These host checks do not replace the hosted iOS run.
+Build 19 compiled/packaged the updated release IPA, but attempt 1 failed the
+minimal Flutter control-app VM gate before Lokal could execute. Attempt 2 was superseded by the fixture/documentation commit. Build 20 then
+passes the actual Library/Online controls, all four exclusive filters in each
+scope, profile-editor hit testing above the dock, navigation and Keychain on
+iOS 18.6, with screenshots (source `0d283e361ac664b809fa8a3360e389f1e8f93612`).
+Its scanner assertion stops the remaining suite: the added artwork PNG is
+correctly counted alongside the WAV, while the test expected only one file.
+Create the artwork after the single-file scan to preserve the scanner assertion.
+Player panel transitions and subsequent checks require the next native run. The native Android widget regression passes all five cases (including the real
+SharedPreferences numeric boundary), and application/integration analysis finds
+no errors (555 existing warning/info findings). Six focused player tests pass.
+
+The Canvas pixel test now awaits raster work outside Flutter's fake clock,
+retaining its actual pixel assertions. This exposed a real rendering defect:
+chrome's OpacityLayer was positioned using a canvas-only transform when its child
+had no repaint boundary. The portal now declares its compositing requirement,
+so both boundary and non-boundary cases retain their transformed foreground
+position. The identity-layout test also disposes/drains its marquee pause timer.
+
+Build 17 passed the complete native suite on iOS 18.6 and 26.0, but its merge
+checkout only included upstream PRs through #186. Build 18 passed the native suite
+and real Bonjour/HTTP discovery on iOS 18.6 at source
+`d345edb3dae4b3a41c4524d163d44bdb83fd5309`, with main parent
+`63bba250dcfd67d97d3165cf61cecbe7fb6a8431` (through #194). Its iOS 26 simulator failed to boot,
+so that runtime did not execute the newer suite. Neither run establishes complete
+#196 UI coverage, physical iPhone acceptance or signed installation.
+
+
+Build 19 / attempt 1 package metadata identifies source
+`e66c0dfaf079f21954d67536643c080278258106`, tree
+`3bc937d41e6ed94e55e3aaf2d65b4718d0fee7d2`, and SHA-256
+`6092b2d934cc6f9d26f012aa5cdc8ae0bf2457b89639a086e28208a0c7c62550`.
+All 33 device binaries passed CI inspection; the downloaded IPA and checksum
+were verified locally. This package has the updated UI, but its new simulator
+acceptance remains pending, and it has no physical-device qualification.
+
+
+## Subsequent recovery and data-safety checks
+
+Build 21 packages the app but fails minimal-control VM readiness before Lokal
+execution. The control coordinator now permits exactly one fresh owned simulator
+and opens Simulator.app for that device. Original and recovery evidence have
+distinct names; the new UDID is published to following steps. Only the generated
+control bundle can use this path. Installation errors propagate directly, a
+second readiness failure fails the job, and Lokal tests receive no retry or
+weakened acceptance. Nine Python coordinator contracts pass; these are not Apple
+runtime tests. The recovery itself still requires a hosted result.
+
+The new host persistence integration runs real Rust tag editing/scanning, the
+production library indexer and real Isar. It checks unchanged rescans, retagging
+with stable song IDs, playlist references and saved folders after database
+close/reopen, Unicode paths, and an unchanged source-file copy. Only filesystem
+locations/preferences are isolated. This does not establish Apple's Files picker,
+a separate app process relaunch, signing or hardware behavior. The combined real
+persistence, decoder recovery and iOS DSP/codec selection pass 17 checks; both new
+Dart test files analyze without findings. Explicit library-path environment
+variables are required, otherwise the host persistence case reports a skip.
+
+
+## Further upstream pass: merged PRs 198–207
+
+Main advanced during implementation. The branch now includes main
+`a2e1e622983d7e871233653421cb42970e2d5063` through merges `24abfc0` and `dda337f`.
+All 29 merged PRs after #172 are confirmed reachable, including the original 20.
+No PR numbered #197 or #205 appeared in the mobile PR list for this audit.
+
+| PR | iPhone disposition |
+| --- | --- |
+| #198 | Concurrent fallback search and explicit per-rendition 16/44.1 metadata are carried into Discovery. Keep the existing opaque progressive-stream processing guard. |
+| #199 | The contextual Video action, full-player presentation and queue-preserving audio handoff are shared. Android's Media3 implementation remains Android-only; iPhone explicitly uses the official WKWebView embed fallback. Native AVPlayer presentation and live embed/audio-handoff qualification remain open. |
+| #200 | Synchronized-only Space immersive lyrics and romanized/translated sublines use the shared player clock. New native generated-LRC/seek/entry/exit screenshot checks are added, pending a hosted result. |
+| #201 | Turkish Flutter strings and runtime locale switching are included. All 11 supported Flutter languages are now declared in the iOS bundle. The port gates Android widget locale updates to Android; otherwise iPhone language selection invokes unavailable Android-provider operations. The readiness gate checks bundle/language parity. |
+| #202 | Remote notification art is asynchronously cached to a local file, also usable by Swift Now Playing. Its existing partial-update handler preserves playback rate, duration and elapsed position. New native HTTP-cache-UIImage-Now Playing assertions distinguish a 40px remote fixture from earlier local art; pending native execution. |
+| #203 | Add-to-playlist rows use real shared playlist artwork. Repair the upstream test's invalid constant-property expression, retaining its artwork assertions. |
+| #204 | Heart timestamps, newest-liked-first order and persistent Liked sort/direction/location/quality/query apply to iPhone. |
+| #206 | Preserve the Kotlin service-context fix and native localization regression guard; Android full-debug Kotlin compilation and five widget-preference tests pass after this merge. |
+| #207 | Spotify account/cookie/liked-sync controls now appear together first in Data → Accounts; remove the duplicate Appearance entry. Resolve the merge while retaining iPhone icon/native settings adaptations. Hide unimplemented Android refresh-mode/RemoteViews settings on iPhone. |
+
+Validation: all 43 cases in the nine affected files through #206 pass; the #207
+placement/profile selection passes eight checks. Android full-debug Kotlin and
+five native widget-preference cases pass; Android CI stays manually disabled.
+Application/integration analysis has no errors (existing warnings/info remain).
+The localization inventory passes with all languages present and fails explicitly
+when Turkish is removed in an isolated source fixture. HTTP image/probe/404 and
+shutdown behavior pass locally with a real server and stubbed Bonjour publisher;
+that is not an Apple discovery or Now Playing pass.
+
+See [the integration follow-up](IOS_FOLLOWUP_FEASIBILITY.md) for the verified
+media-reset contract, current Google Cast SDK minimum OS and official iOS Discord
+SDK path. Those remain implementation/qualification work, with explicit evidence
+boundaries.
+
+
+Additional port corrections from this pass: the dock's canonical enum labels
+previously bypassed localization. Its visible labels, tooltips and accessibility
+labels now resolve at build time (including localized Home and the existing ARB
+Search label), while navigation IDs remain unchanged. A real dock widget test
+switches Turkish/English and taps the same destination enums; the combined dock,
+locale and shell selection passes 23 cases. Turkish output is regenerated from
+the ARB with pinned Flutter and a repeated generation leaves no diff. Separate
+localization/morph selections pass 16 checks (overlap).
+
+Build 22 passes the simulator control gate and reaches the actual full player
+with generated art, scanner/QuickJS and system WAV playback. Its dismissal check
+fails after one timed pump. The native screenshot shows the normal full-player
+layout; the harness now waits for completed opening animation, targets footer
+InkWells instead of repeated panel/header text, and waits for dismissal over a
+bounded sequence of frames. The route-disappearance assertion remains intact.
+Reports now record each native stage immediately so later failures do not erase
+prior measurements. The expanded Space/Turkish/HTTP Now Playing checks still
+require a new hosted result; a debug-only native probe reports numeric metadata
+and artwork dimensions without names, file paths or credentials.
+
+
+Build 23 stops at static analysis because the newly added notification assertion
+used an `instance` getter instead of the service's factory constructor. The
+harness now calls `NotificationService()`, and full application/integration
+preflight has no errors (566 warning/info findings remain). No native runtime
+result is claimed for that attempt.
+
+The maintainer chose one full-featured iOS 16+ distribution. New runner and pod
+targets, native probe Clang triples, Cargokit's forwarded deployment target and
+package inspection follow that decision. Standalone native-environment helper
+contracts pass; a declared iOS 15 app is rejected by the package policy. Real
+Apple iOS 16 compilation/package/runtime acceptance requires the next run.
+
+
+### Build 24 native evidence (iOS 16 floor)
+
+[Build 24](https://github.com/lokal-music/lokal-mobile/actions/runs/40273185020)
+packages the new iOS 16 release and reaches the actual iOS 18.6 test app. Exact
+merge source: `0fda1f5e314475639cde9ef26dc1ae8737c01270`.
+Its incremental report passes post-172 search/profile UX, the corrected scanner,
+QuickJS, WAV transport, repeated Queue/Lyrics panels and return to mini player,
+**timed Space lyrics**, native EQ/pitch/positive ReplayGain, WavPack conversion,
+the complete MP3/AAC/ALAC/96 kHz FLAC/AIFF/Vorbis/Opus corpus, the system-to-Rust
+queue handoff, and Bonjour protocol filtering plus HTTP. Actual Space screenshots
+show the expected current and next generated lyric at the retained song clock.
+
+The run then fails at `nowPlayingMetadataState`: Runner Debug had C preprocessor
+`DEBUG=1` but no Swift `SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG`, so the new
+DEBUG-only metadata probe was excluded. Runner Debug now explicitly inherits and
+sets Swift DEBUG; Release/Profile remain unaffected. No metadata assertion is
+removed. Remote artwork and the subsequent Turkish switch still require the next
+native run; iOS 26 was not reached. This is partial native evidence, not a fully
+green run. The same logs expose repeated Android-only HomeWidget update calls on
+iPhone; the Android publisher is now gated on iOS until a real WidgetKit snapshot
+adapter exists, matching the already-gated settings UI.
+
+
+## Subsequent merged PRs 209–210
+
+The current port working branch merges main
+`4504f64177e0826acacd7d06ab080718b947c3a4`, including both additional PRs.
+There are now **31 merged mobile PRs after #172** in scope; #208 is the separate
+unmerged iPhone Cast implementation, not an upstream main feature.
+
+| PR | Shared behavior carried into iPhone | Adaptation / validation |
+| --- | --- | --- |
+| #209 | Liked rows remain mounted during heart updates; expired add-on sessions become fresh registered lookups at playback/queue time; stable liked IDs, source/Atmos identity, local files and configured network libraries are retained. Large queues use a separate resolver registry. | No Android-only bridge is required by this repair. Host tests cover restored streams, retained live handles/downloaded/local/Subsonic sources, 650-track queues, source-specific resolvers, provider stability and Atmos preservation. Actual live add-on availability remains separate. |
+| #210 | Space is a subtitle overlay over the existing artwork/full cover/Canvas/video, with chrome hidden and carousel gestures disabled; tap exits and long press shows options. Video occupies the artwork slot; its controls and subtitles use its own clock. Syllable layout is cached. | Fix the upstream missing `ValueListenable` foundation import. Add an accessible Space exit surface. Native harness now asserts the actual artwork elements survive entry and the current generated lyric follows the retained song clock. Build 27 passes the retained-artwork/clock assertions and preserves the current overlay screenshot on both runtimes. Official embedded video uses captions below the unobstructed provider player, with explicit Space exit. iPhone uses the official embed with a dedicated API clock/transport and serialized output ownership; live WebKit/video acceptance remains pending. |
+
+After the import correction, eight focused files pass **31 tests**, including
+both new PRs, timed subtitle eligibility/clock/rewind, artwork layout/morph and
+video route/embed contracts. The native fixture retains its queue/lyrics,
+paused playback, artwork identity, current line and dismissal assertions.
+No Android native source changes in these two PRs supersede the recorded
+post-#207 Kotlin compilation; current shared Dart behavior is checked separately.
+
+
+The video follow-up now drives the official iframe through its own clock and
+transport, with an external-output lease serialized by PlayerService. Video uses
+a generic localized Video badge, not the album's FLAC/Atmos quality claim; volume
+instructions replace inactive album-only software-volume/shuffle/repeat controls,
+and the heart addresses the displayed video's song. Space exit, video timing,
+volume guidance and Video labels are supplied in all ten non-English Lokal maps.
+The expanded player/ownership/Cast/Likes/locale selection passes **123 tests**;
+the focused transport selection passes **41** (overlap). Node executes the actual
+production iframe bridge against a controlled API contract. Native WebKit/live
+YouTube checks remain separate; see `IOS_VIDEO_TRANSPORT.md`.
+
+
+### Build 26: Cast-integrated application and pause acknowledgement
+
+[Build 26](https://github.com/lokal-music/lokal-mobile/actions/runs/40286173853)
+compiles the Cast-integrated iOS 16 app, inspects all **34** device binaries and
+requires Cast core resources, privacy metadata and notice bundles. Its preserved
+IPA SHA-256 is `10cbfbbe68a851cca91529c842d6bc0d6c3152f0a61b21ea3fa39612b7de138d`.
+Exact source is `9c230b90f80e9536dd08b6d794a6485b057c0c44`, tree
+`c61258b7559dc23008008883dfa7e08d8d5fb959`.
+
+**The complete iOS 18.6 native suite passes**, including the actual registered
+Cast bridge with no startup discovery, remote HTTP artwork into native Now
+Playing, live Turkish switching, the full playback/DSP/codec corpus, source
+handoff, updated search/profile/panels and Bonjour. This source still contains
+the older pre-#210 Space stage; the current overlay is a subsequent change.
+
+The iOS 26 run passes startup/search/profile/Keychain, scanner/QuickJS, Space,
+EQ/pitch/ReplayGain, WavPack, MP3/AAC/ALAC/96 kHz FLAC/AIFF/Vorbis, then fails its
+Opus Pause assertion (UI remains playing after awaited Pause). Later checks are
+not reached. This is an application transport race, not a simulator boot failure,
+and the test assertion is retained.
+
+The native pause API previously returned on command enqueue. The iPhone path now
+waits up to two seconds for the command worker to apply pause; it releases the
+global engine mutex before waiting so synchronous UI queries remain available.
+The worker reply is bounded/non-blocking, and a timeout does not claim cancellation.
+Android's existing Pause path and all PCM/DSD/USB rendering logic remain unchanged.
+The iPhone Rust adapter suppresses stale playing/buffering notifications until a
+new explicit Play; failed pause restores actual backend state. The native harness
+also checks Rust's actual paused state and repeats Opus resume/pause.
+
+All **307 Rust tests pass**, including real command-worker acknowledgement and
+paused render silence, no-source completion, delayed reply and timeout behavior.
+Three targeted Dart tests pass for stale events, explicit resume and failure.
+The latest affected Dart selection passes **90** checks; the earlier broader
+player/Likes/locale selection passes **123** (overlap). New iPhone-native results
+remain pending the next source build. Google Cast's real context initialization
+without automatic discovery is also added as a DEBUG-only acceptance check;
+receiver behavior remains unqualified.
+
+
+### Build 27: complete native checkpoint on both runtimes
+
+[Build 27](https://github.com/lokal-music/lokal-mobile/actions/runs/40305306973)
+passes the complete native suite on **iOS 18.6 and 26.0**, plus release/AOT
+compilation and inspection of all **34** iPhone binaries, iOS 16 minimum, Cast
+resources/privacy/notices, source and symbols. Exact tested merge source:
+`659140532c300887de408a362377f6a6779916bb`; tree:
+`ecaf093a021db35bf75bb66d521656f147dbb2bb`. The matching unsigned IPA SHA-256 is
+`61fd97565f0b64168e3b16e347c7496cf0e28b84c5d15e017eabd935776faaf8`.
+
+Both runtimes pass startup/Keychain, updated search/profile/panels, scanner/tag
+album-artist, QuickJS, AVPlayer transport, native EQ/pitch/ReplayGain, WavPack,
+MP3/AAC/ALAC/96 kHz FLAC/AIFF/Vorbis/Opus, system-to-Rust queue handoff, real
+Bonjour filtering/HTTP, remote artwork into Now Playing and live Turkish switching.
+The #210 Space screenshot and element-identity assertions confirm the existing
+artwork survives entry while generated captions follow the actual song clock.
+The suite also confirms an external-owner acknowledgement gates actual AVPlayer
+resume, a newer manual Pause defeats a stale video-exit resume, real Cast context
+initialization starts no discovery, and repeated Opus resume/pause reaches Rust's
+actual paused state. The original pause failure is resolved without weakening
+its assertion. Independent [Rust device/simulator probes](https://github.com/lokal-music/lokal-mobile/actions/runs/40305307004)
+and [Cast SDK probe 4](https://github.com/lokal-music/lokal-mobile/actions/runs/40305307048)
+also pass on this source.
+
+These are simulator and package results, not physical iPhone, iOS 16 runtime,
+actual Cast receiver or live YouTube acceptance. The subsequent unobstructed
+embedded-video Space layout and HTTP range fixes require their own source build.
+The preceding build-24/build-26 sections are historical checkpoints.
+
+
+## Further upstream review: #211–#216
+
+Reviewed 26 October 2026 (Europe/Paris), main
+`63280241a5216ef987111eb8cd17c93e0626f1e4`. This brings the integration to **37**
+merged mobile PRs after #172. #208 is the port's own companion and is not counted.
+
+| PR | Applied UI/behavior | iPhone adaptation and validation |
+| --- | --- | --- |
+| #211 | Fix `ValueListenable` import for Space release compilation. | Matches the correction already made in the port; preserve upstream `ValueNotifier` for the new smooth renderer. |
+| #212 | Show Cover only when an enabled source can supply actual motion art/Spotify Canvas; allow re-enabling a disabled song. | Share revision-keyed async lookup and failure-safe availability. The source-order/cache tests pass; a static cover never advertises motion. |
+| #213 | Prefer Last.fm albums and remove redundant provider discovery shelves. | Carry shared recommendation order, deduplication and shelf changes. Discovery tests pass; live account/catalogue availability remains separate. |
+| #214 | Smooth unshaded Space syllables and hide shell footer on video routes. | Keep the standard Lyrics painter, use the root navigator with Lokal's existing full-player route, preserve the keyed embedded player and display captions below it. Provider touches remain reserved for its own controls. |
+| #215 | Add concurrent/overlapping Space lines, Appearance video-quality preference, and separate album-artist targets. | Share concurrent renderer and artist links. Keep native Android height selection/generation guards; iPhone shows translated guidance for YouTube's quality control. A separate video advancing signal freezes Space during buffering. Build 29 passes two actual concurrent generated lines on iOS 18.6; iOS 26 does not execute because simulator boot fails. |
+| #216 | Recover Android USB DAC registration and protect transfer/feedback lifetime. | Preserve upstream Kotlin/Rust changes. The transport is Android-only, not an iPhone USB feature. Compile verification and actual DAC qualification are separate. |
+
+The current UI/transport/locale selection passes **114** tests; the focused video
+clock/Space subset passes **16** (overlap). No analysis errors are found; existing
+warning/info findings and the historical unused-ARB-key failure remain. Native
+build 27 does not cover these subsequent changes. An opt-in live WebKit fixture
+records observable readiness/playback/seek/Space and release, or a clearly
+inconclusive provider/network result. See the current port continuation for scope.
+
+### Screenshot-driven Library localization follow-up
+
+The build-27 Turkish screenshot exposed six still-English Library shortcuts and
+an English empty-library import action. The translations already existed for the
+shortcuts, but the tile builder did not call the presentation lookup. The follow-up
+now localizes those six labels and import/retry actions while preserving navigation
+IDs. The import phrase is translated in all ten non-English Lokal maps.
+
+The affected Library/components/dock/live-locale selection passes **24** tests,
+including all six Turkish navigation targets and import at 320×568 with 200% text,
+then a return to English. The native harness also adds explicit assertions for the
+six translated labels. This follow-up is later than build 29's source and does not
+borrow its native acceptance. The existing historical ARB unused-key failure is
+unaffected.
+
+The Android full-debug ARM64 APK also builds on the #216/iPhone-referrer source,
+with the upstream resolver, USB registration and native transfer changes intact.
+Its SHA-256 is `107b3f93afb65d308e6f082b58866f59ae6e30d3b4539fa3b97eec5919abb1f4`.
+This is compile/package evidence, not a DAC, payload-fidelity or phone test.
+
+
+### Build 29: current #216 source, real WebKit observations
+
+[Build 29](https://github.com/lokal-music/lokal-mobile/actions/runs/40315993836)
+packages the iOS 16+ app and passes the **complete iOS 18.6 native suite**, including
+#215's two concurrent generated Space lines and the previous codec/DSP/queue,
+Keychain, scanner, QuickJS, Cast initialization, external ownership, Bonjour,
+remote-artwork and live-locale checks. Its Space screenshot now shows the smooth
+unshaded concurrent presentation over the retained artwork.
+
+Exact source: `f71f7501c5679188dbc99ee9776ea6d0da70d83d`; tree:
+`fbab3adcabefc1806e4c9f2ed6ee777666ea9042`. The preserved unsigned IPA passes
+inspection of all 34 device binaries and Cast resources/notices; SHA-256:
+`d715ad0a46c4efebc82a5f946bd38004fdb966ff7e9ae64bfaa1cc5467294d07`.
+
+The opt-in production WebKit probe reads the actual installed `app.lokal.mobile`
+identity and observes real iframe API readiness. YouTube then returns error 150;
+the screenshot explicitly shows **"Sign in to confirm you're not a bot"**. Position
+advance is zero. The real native WebKit media-suspension acknowledgement succeeds.
+The report correctly marks playback **inconclusive**; neither successful live
+playback/seek nor a generic embedding prohibition is inferred from the error code.
+The challenge is not bypassed, and no account credentials are introduced into CI.
+
+The overall workflow fails because the **iOS 26 simulator does not boot**:
+`simctl bootstatus` times out after 300 seconds and even the simulator screenshot
+fails. Lokal never executes on that runtime. This is not a current iOS 26 app
+pass; build 27 remains the last complete dual-runtime checkpoint. A fresh hosted
+runner must retry the current source without weakening its native gate.
+
+The later Library-label/raw-video-sample follow-ups have their own host checks and
+await a new native source build. This checkpoint does not cover those later changes.
+
+
+## Further upstream review: #217
+
+Main `ba8c7f5b9e6ab4e004f106ec1c02231143fb1d5b`, reviewed 26 October 2026
+(Europe/Paris). The integration now contains **38** merged mobile PRs after #172.
+
+| PR | Applied UI/behavior | iPhone validation and limits |
+| --- | --- | --- |
+| #217 | Accept documented `.spotiflac-ext` imports alongside `.sflx`/`.morneye-ext`, with matching picker guidance and case-insensitive URL/file validation. Download workers have a host-controlled 256 MiB heap ceiling; browsing stays at 64 MiB. | The shared iPhone picker/installer benefits from the same change. Keep all archive/permission/hash validation. 42 package/panel tests and all 308 Rust tests pass, including eight real QuickJS tests. The Rust function/config field adds no bridge entrypoint. Current native evidence remains build 29 through #216; iOS compilation/execution and peak memory on the oldest supported phone still need the new source run/device acceptance. Metadata-only/lyrics-only providers are not working audio sources merely because their ZIP installs. |
+
+The changed #217 Rust library also compiles successfully for Android ARM64 with
+the real pinned NDK through Cargokit (`cargokitCargoBuildRust_lib_flick_playerDebug`).
+This complements the earlier complete #216 APK build; it does not label that
+older APK as containing #217 or establish physical extension/device acceptance.
+
+
+### Build 32 and isolated current-runtime acceptance
+
+[Build 32](https://github.com/lokal-music/lokal-mobile/actions/runs/40321960451)
+passes the complete iOS 18.6 suite on the current source through #217, including
+the six translated Library shortcut assertions and concurrent Space. Exact source:
+`c2ad2f0bbcc8bfda32cb0e650647b8cfd72a77f5`; tree:
+`aa72e2cbfcd0ee87020577637f93027365bdd44e`. The preserved iOS 16+ engineering IPA
+SHA-256 is `6dda95cf443741d9d147a940f92bb0de2b35aa77fd858ca483cc77eed3589f2d`.
+
+The raw-source video probe reaches the real iframe API and acknowledges native
+WebKit suspension, but the hosted network again receives YouTube's sign-in/bot
+challenge (150) with zero source-position advance. Playback remains inconclusive.
+The iOS 26 simulator again fails to boot before any app test; the run is not a
+complete dual-runtime pass.
+
+The following CI change runs iOS 26 on a **fresh hosted Mac**, using the exact
+already-compiled integration app from the iOS 18.6 build job. An archive preserves
+bundle symlinks and executable modes; the receiving job downloads its exact
+artifact ID and safely extracts it. Both OS gates stay required. A failing iOS
+18.6 assertion does not suppress the second runtime when the compiled app exists;
+cancelling a workflow does suppress extra jobs. Failed iOS 26 jobs can now be
+retried without recompiling the IPA or rerunning the completed iOS 18.6 job.
+
+The iOS 26 host also runs the minimal Flutter control before Lokal. Boot, control,
+actual playback, reports and logs are recorded independently. No app assertion,
+OS-version requirement or simulator boot check is relaxed. Driver timeouts now
+match the selected four-minute deterministic/six-minute optional-video test bounds.
+The updated workflow passes YAML/shell parsing and all nine existing simulator/
+control-coordinator tests; the changed Dart driver analyzes without issues.
+
+```mermaid
+flowchart LR
+  Build[Compile release and simulator app once] --> IPA[Unsigned IPA / source / symbols]
+  Build --> Old[Native suite on iOS 18.6]
+  Build --> Bundle[Compiled integration app archive]
+  Bundle --> Fresh[Fresh hosted Mac]
+  Fresh --> Boot[Required iOS 26 boot and minimal Flutter control]
+  Boot --> Current[Same app / same native acceptance suite]
+  Old --> Evidence[Separate reports / screenshots / outcomes]
+  Current --> Evidence
+```
+
+The compiled app's Bonjour fixture identity is also forwarded to the isolated
+host, so retrying only that job does not change the identity baked into the app.
+A screenshot-driven Library follow-up allows two-line shortcut labels and switches
+to one column as text grows. All six Turkish labels fit the bundled app font at
+200% on 320/393/430px screens; navigation/import and component/dock selection
+passes **18** host tests. The native harness now checks rendered labels for actual
+truncation; that added assertion still requires the next hosted run.
+
+Build 33 was rejected during workflow validation before any runner or app test:
+a runner-specific path was placed in job-level environment configuration. The
+path now uses the step runtime environment. Local `actionlint` supplements YAML
+and shell parsing to validate GitHub Actions expression context availability.
+
+### Build 34: current complete dual-runtime checkpoint
+
+[Build 34](https://github.com/lokal-music/lokal-mobile/actions/runs/40335805541)
+passes the **complete native suite on both iOS 18.6 and 26.0**. The fresh iOS 26
+host passes boot, minimal Flutter control and the same compiled integration app;
+its fixture identity is preserved from the build job. Source:
+`cf8bcfa4a8a2fe6b8f7224812e56af2ef9617c11`; tree:
+`2ec3f9721139a923d35cb3983dc8fa3fd9d36c23`. The preserved IPA SHA-256 is
+`fe0a5479a0e4ba364584438c408f90d6f48823747c40ada8cbd1058bd4446d21`.
+All 34 device binaries, Cast resources/privacy/notices, source and matching symbols
+are retained. The actual Turkish screenshot and native render assertions confirm
+all six shortcut labels fit. This is the complete checkpoint through #217; it
+does not cover the later reset foundation or lyrics continuation. The optional
+network-dependent live video probe was not selected in this run.
+
+### Lyrics continuation through #219
+
+The recovery candidate carries **40 reviewed merged mobile PRs after #172**,
+including the merged #218/#219 source at
+`c8f8f574fdd2812a5a0e7398c47fac17cb6731ed`. The current published port checkpoint
+above remains through #217 until this candidate's native gates pass.
+
+| PR | iPhone UI / behavior | Verification |
+| --- | --- | --- |
+| [218](https://github.com/lokal-music/lokal-mobile/pull/218) | Validate LyricsPlus timing; fall back to plain text for unusable timelines. Show actual per-song provider hits and timing quality, preserve lyrics while checking an explicit provider, and save portable lyrics plus enhanced-LRC sidecars with downloaded audio. | Preserve app-owned iPhone Music fallback and byte-identical Atmos copies. Localize picker status/guidance in all ten phrase maps while keeping provider identifiers unchanged. Native codecs are regenerated with the request-fence API retained. |
+| [219](https://github.com/lokal-music/lokal-mobile/pull/219) | Correct the native edit/read metadata model so downloaded lyrics can be written. | Keep the 11-field read result unchanged and put nullable lyrics in TagEditFields. Fix two new tests for the pinned Lofty API and add the field to the existing scanner fixture; the actual Rust suite passes. |
+
+The lyrics/download/provider/locale selection passes **26** Flutter tests, including
+Turkish at 200% on 320/393px screens with unchanged `lyricsplus` selection. All
+**315** Rust tests pass, including actual FLAC lyrics persistence and ID3 USLT
+mapping. Android ARM64 native compilation succeeds with the pinned NDK; its first
+retry exhausted local generated cache space, after which only owned intermediate
+outputs were removed and the real compilation rerun successfully. Whole app
+analysis reports no errors (existing warnings/information remain). No live-provider
+recording, iPhone download/background, or physical-device result is inferred.
+
+The recovery observer remains deferred: request fencing and system/radio output
+retirement are preparation, not enabled media-services reset recovery.
+
+The updated candidate passes the exact **217-test** contract command committed
+in the iPhone workflow, covering shared output ownership, Cast, video/Space,
+retirement, lyrics/provider/download localization and add-ons. This is host
+contract evidence; the revised bootstrap fence probe and latest source still
+require the next hosted native run.
+
+
+### Build 36 and recovery continuation
+
+Build 36 at `e549395101eb8a11ea98ac693402ba59ddaeb341` passes the complete
+ordinary iOS 18.6 suite and unsigned release packaging through #219. Its isolated
+iOS 26 job fails during initial simulator inventory, before the app can run;
+Build 34 remains the latest complete dual-runtime pass.
+
+The connected recovery continuation retains track/source identity, queue,
+position and video selection, preserves remote controls, and adds a localized
+notice beneath content. Host checks cover all eleven locales at 200% on a
+320px phone. The exact workflow contract selection passes 234 tests; native
+posted-reset and delayed-HTTP acceptance is added but pending. Production
+observation remains deferred; no physical reset or live-video pass is claimed.
+
+
+### New upstream review queue — 27 October 2026
+
+Four further merged PRs are confirmed, bringing the review scope to 44 merged
+mobile PRs after #172 through #225. The recovery checkpoint implements the earlier 40 through #219. The stacked
+parity continuation now carries these four, with the adaptations below.
+
+| PR | Relevant iPhone behavior | Adaptation / acceptance |
+| --- | --- | --- |
+| [221](https://github.com/lokal-music/lokal-mobile/pull/221) | Save displayed lyrics from full player, inline lyrics and Space; preserve LRC/ELRC/TTML or export plain UTF-8. | Use an acknowledged iOS Files export, retain timing and translations, silent cancellation, no mutation of selected source or original sidecars. |
+| [223](https://github.com/lokal-music/lokal-mobile/pull/223) | Native Monochrome FLAC discovery/playback/download source with bounded search and honest format labels. | Preserve source identity, opt-in source policy and iPhone progressive playback; actual stream format and hardware output remain measured separately. |
+| [224](https://github.com/lokal-music/lokal-mobile/pull/224) | Accept streaming-only HTTP add-ons when explicit downloading is prohibited. | Retain manifest validation and download prohibition; use the existing iPhone streaming route rather than staging a prohibited library copy. |
+| [225](https://github.com/lokal-music/lokal-mobile/pull/225) | Artist favorites filters/search, Spotify followed-artist import and remote-only rows. | Preserve legacy favorites, reuse secure configured credentials, additive read-only import with bounded pagination, no Spotify follows/unfollows or implicit login. |
+
+
+### Parity continuation through #225
+
+The four patches are ported onto `feat/ios-parity-through225`, stacked on the
+reset candidate so its ongoing native run can finish independently.
+
+- Lyrics export uses the pinned cross-platform byte-based Files picker API and
+  acknowledges Save/cancellation. It preserves original timed formats and plain
+  bytes; rendered desktop timing retains millisecond offsets. UTF-8 filenames
+  fit a 255-byte iPhone file component without splitting surrogate pairs. The
+  full-player/Space guard uses the actually displayed song after video yields.
+- Monochrome is a native source with stable `mono` identity, disabled until
+  explicitly enabled in Online sources. Source priority reloads after that
+  persisted choice. Playback uses the existing iPhone progressive route;
+  explicit downloads retain verification. No measured sample rate, bit depth,
+  bit-perfect status or live-service success is invented.
+- Streaming-only add-ons install while explicit library download remains
+  prohibited by the resolver. Manifest/settings tests wait for actual completed
+  persistence while driving both widget and HTTP-stream queues.
+- Artist favorites preserve legacy flags, known remote-only names and local
+  rows. Concurrent writes are serialized (the added race test fails before the
+  fix). Spotify import uses the existing secure session and read-only v1 GET
+  `libraryV3` transport; short/inconsistent/malformed pages and GraphQL partial
+  errors fail before import. Existing v2 transport stays intact.
+- New labels, status text and save feedback are localized in all ten non-English
+  phrase maps. Artist filters/import controls fit all eleven locales at 200%
+  on 320px using bundled fonts; source IDs and artist metadata remain unchanged.
+
+The exact expanded iPhone workflow selection passes **295 Flutter tests**.
+Whole lib/integration analysis has no errors (571 warnings/information).
+Native code, API 141 bindings and dependency locks are unchanged from the
+315-Rust-test checkpoint. Native/source-account/Files acceptance for this
+continuation is pending; the new provider is not contacted by default.
+
+
+## WidgetKit contract continuation — 27 October 2026
+
+The three-configuration specification above now has a [concrete versioned wire
+contract and implementation plan](IOS_WIDGETKIT.md). Canonical PlayerState feeds
+a metadata-only allowlist with stable hashed IDs and owned cover filenames;
+Swift/Foundation consumes the same 45-case corpus as Dart. The full new Dart
+selection passes 54 tests. Swift execution, atomic group persistence, native
+layouts/commands and Windows extension signing remain acceptance gates. The
+Android publisher is unchanged and the iPhone widget feature stays unavailable
+until the actual extension is installed and usable. No newly reviewed upstream
+PR is counted by this foundation; the parity audit remains 44 through #225.
+
+
+### Parity through #231 — 27 October 2026
+
+Three further merged product changes bring the review to **47** PRs. This
+continuation is stacked on the WebKit frame-observation candidate; source inclusion
+does not inherit native acceptance from an earlier build.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [222](https://github.com/lokal-music/lokal-mobile/pull/222) / `c4aa462a47141a092e6cb29818557e7e3c6fdb53` | Flow begins with three tracks, keeps four ahead, spaces recent artists, respects bans, and avoids duplicate recordings across local/online sources. Shared waveform/LUFS metadata may be reused without decoding on the playback thread. Keep the iOS epoch/retirement fences throughout early two-player crossfade preparation. Offline model-cue cuts and the experimental third-decoder Demucs option remain Android-only; the iPhone settings omit that toggle and its engine never calls either lookup. |
+| [226](https://github.com/lokal-music/lokal-mobile/pull/226) / `d09f0ec70aaf8011467240b6739e9cb20732131c` | Automatic Discovery honors HTTP-only source configuration. Search remembers explicit sources by immutable add-on configuration ID; rename-safe priority migration accepts only unambiguous legacy labels. Queued selections retain their validated add-on identity and disabled sources fail explicitly. Preserve the port's independent Monochrome opt-in. |
+| [231](https://github.com/lokal-music/lokal-mobile/pull/231) / `3484844e17d89b45d18d7f27d9a1d7371b3d4487` | Re-arm expired HTTP/Morneye/Qobuz handles at actual playback, including future queue entries. An explicit recording selection overrides equal-ID stale entries; shuffled canonical and original queues are repaired in place. A prepared iPhone reset selection retains the refreshed descriptors without reshuffling or renewing an obsolete output request. DNS lookup now shares the bounded network request deadline. |
+
+The upstream AutoMix-only workflow is not enabled: relevant host regressions are
+included in the existing iPhone workflow. Android CI stays manually disabled.
+No native PCM/DSD/USB transport, Rust API or dependency lock changes accompany this
+integration. Physical listening, real provider expiry, iPhone suspension and signed
+Windows installation remain separate release gates.
+
+
+The integration also normalizes nullable AutoMix lookup futures before attaching
+fallback deadlines: a provider returning a valid non-nullable `Future<Profile>`
+previously rejected an `onTimeout: () => null` callback at runtime and silently
+skipped its profile. Actual profile/stem engine regressions cover this path.
+Widget tests stop the prepared/active decoders before Flutter checks timer
+ownership; queue cache retention uses a real temporary file and verifies that a
+deleted cache file is no longer retained.
+
+
+Validation of this source: the exact expanded iPhone workflow selection plus
+64 widget/Android-widget contracts passes **465 Flutter tests**. Whole app and
+integration analysis has no errors (602 warning/information items remain), all
+16 dependency/simulator/control Python tests pass, and actionlint plus diff
+checks pass. The latest shared-engine/queue subset passes 35 cases, including
+actual cached profiles/stem transitions on the Android test engine and disabled
+advanced lookups on the iPhone engine. Native acceptance of this 47-PR source
+is still required; no physical device or live provider result is claimed.
+
+
+### Parity through #239 — 27 October 2026
+
+Six further merged product PRs bring the review to **53**. PR #234 was closed
+without merging and is excluded: this does not enable scanning arbitrary folder
+images as designated covers. The new continuation leaves [PR #240](https://github.com/lokal-music/lokal-mobile/pull/240)
+and its [Build 46](https://github.com/lokal-music/lokal-mobile/actions/runs/40468683255)
+source unchanged while the hosted native check runs.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [233](https://github.com/lokal-music/lokal-mobile/pull/233) / `958b216a1d85f8cc8cef4840c462c5bc7ea58aaf` | Native SoundCloud search/resolution, verified downloaded Monochrome artist/album tags and opt-in cellular Eco Data Mode. SoundCloud additionally has a persisted, default-off source switch, as required for new services in this branch. Its signed stream references remain in memory. iPhone HLS skips Ogg/Opus/Vorbis renditions and chooses compatible AAC/MP3; previews cannot be saved and retain an explicit preview label even when confirmed only during resolution. Real SoundCloud/HLS and cellular acceptance remain pending. |
+| [235](https://github.com/lokal-music/lokal-mobile/pull/235) / `2e415b8310178ad8f379ab4edb02b576b6c653c9` | Carry the direct resolved-audio import and the supported accessibility wrapper instead of the invalid Switch API; the later settings-row implementation supersedes that wrapper. |
+| [236](https://github.com/lokal-music/lokal-mobile/pull/236) / `2877fc40270f4281a003577e58a013211781274f` | A single distinct folder cover fills the tile; multiple covers keep the mosaic, and absent covers retain placeholders. Share the renderer between root and nested cards and request full tile resolution for a single image. Host file creation/writing runs outside Flutter's fake clock so the actual widget tests can complete. |
+| [237](https://github.com/lokal-music/lokal-mobile/pull/237) / `29b4b708f2a7bf7b3a7f33085aa1f7e8a2fe7722` | Project source vocal windows onto translated/romaji text in classic and Space lyrics. Preserve gaps and static untimed lines; no independent translation alignment is claimed. Cache projections when lyrics change. Use grapheme clusters so combining accents and joined emoji remain intact. Retain the port's independent native video clock. |
+| [238](https://github.com/lokal-music/lokal-mobile/pull/238) / `f1cddc8b51ee8f63f7dcc06b8a38ddfebcfc2e38` | Extend that projected animation to the actual main full-player flowing renderer. Active translated rows use the existing painter; inactive/stale/untimed rows remain static. iPhone subline colors derive from the supplied style/theme. |
+| [239](https://github.com/lokal-music/lokal-mobile/pull/239) / `4e9a627d91c7b9485d62588c6ed3e6842cb80a7b` | Put the visible, searchable, whole-row Eco Data control in Data → Mobile data. Keep Wi-Fi/manual source order and HTTP-only choices; enabled sources alone can be prioritized. Failed saves restore cached/UI state and show localized feedback. |
+
+All new source/data labels, help, status and preview text have translations in
+all ten non-English phrase maps. The real settings controls fit all eleven
+locales at 200% text on 320px using the bundled fonts. Source opt-in tests cover
+persisted enable/disable and rejected cache writes; actual playback selection
+rejects a disabled SoundCloud source without a network request. HLS codec
+selection and newly discovered preview labels are checked with bounded provider
+fixtures; these are not live provider or native HLS acceptance.
+
+The Android HLS dependency from #233 is retained for Android compatibility;
+Android CI remains manually disabled. Rust, native PCM/DSD/USB, package locks and
+iPhone provisioning are unchanged. Widget host publication/layouts/actions,
+suspension-safe transfers and physical iPhone/Windows acceptance remain open.
+
+
+Validation: the expanded iPhone workflow selection plus the 64 widget contracts
+passes **504 Flutter tests**. A further 23 focused lyric/Space tests pass after
+checking theme-derived subline colors. Whole app/integration analysis has no
+errors (616 warning/information items remain), and actionlint/diff checks pass.
+The new source and controls additionally pass actual enable/disable, preview,
+AAC-HLS selection and all-locale/large-text cases. Native acceptance of this
+53-PR source, live providers, actual cellular routing and physical listening
+are still pending.
+
+
+### Parity through #246 — 27 October 2026
+
+Four further merged product PRs bring the audit to **57**. PR #247 is open at
+this checkpoint and is not counted as a merged change. Native acceptance does
+not transfer between source revisions.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [243](https://github.com/lokal-music/lokal-mobile/pull/243) / `3ea3ba76678b37f323f14fb16f62ee6662ff730b` | Explicit footer Search taps focus or reopen the keyboard without resetting the query; ordinary Search respects its auto-focus preference. Both queue views retain per-section recording occurrence keys. Manual queue changes notify immediately and Up Next reordering updates the manual backing order. Flutter's normalized `onReorderItem` target is applied exactly once. Both grips have a fully hit-testable 44×48 area; merely enlarging a transparent, non-hit-testable child left only the icon draggable. |
+| [244](https://github.com/lokal-music/lokal-mobile/pull/244) / `9e9d0943184d1ac3b214ae8364f8ca01cd434faa` | Home includes Local / Discovery / Flow under its shared header; embedded Flow can scroll that header away at large text sizes. Discovery source controls sit below the greeting. Only actual provider Home song/playlist/album categories render; unknown/absent shelves are omitted. Long-press a source to reorder/hide its shelves using stable, per-provider IDs. Save order and visibility as one acknowledged record, migrate the older two-key shape, restore cached preferences on rejection, and keep the sheet open with localized feedback on failure. The sheet reserves bounded space with a scrolling flexible list at large text sizes. |
+| [245](https://github.com/lokal-music/lokal-mobile/pull/245) / `15de4347f05012fa3afec64df43e2898905f1840` | Cover Flow's full-width stage uses the active theme background. Live changes across all ten theme IDs preserve the mounted cover flow, its perspective and gestures. |
+| [246](https://github.com/lokal-music/lokal-mobile/pull/246) / `663c4d593db0f5cdd6a6704f2596ba5089818668` | Carry the direct `ValueListenable` import required for Search compilation; add the same missing import in the upstream regression test. Update new semantics checks to the SDK's `getSemanticsData()` API and dispose test handles before invariant checking. |
+
+New shelf instructions, category names, customization titles and save-failure
+feedback have all ten non-English translations. The Home/Discovery regression
+selection checks actual bundled-font layouts at 320px with 200% text. The native
+widget bridge checkpoint passes its real Flutter framework checks independently;
+no runtime sampler, WidgetKit UI, entitlement or physical iPhone result is
+inferred from that pass. Android CI stays manually disabled; native audio/Rust
+and dependency locks are unchanged.
+
+
+Validation of the through-#246 continuation: the exact expanded iPhone workflow
+selection plus 85 widget/Android-widget contracts passes **583 Flutter tests**.
+The 68 focused parity cases pass, as do five Flow screen cases including actual
+Home mode entry and large-text header scrolling. Focused new model/probe tests
+have no analysis issues; whole app/integration analysis has no errors (618
+warning/information items remain). Actionlint and diff checks pass. Latest-source
+native queue/video/channel acceptance and physical/device/provider qualification
+remain pending.
+
+
+### Parity through #250 — 27 October 2026
+
+Three further merged product PRs bring the reviewed total to **60**. The earlier
+through-#246 checkpoint above remains historical; #247 has since merged. Pin
+this continuation to the following exact sources, rather than assuming an older
+IPA includes them.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [247](https://github.com/lokal-music/lokal-mobile/pull/247) / `bd1bce960d3bed7a7b9c39c307e4d2cd6cfed1c1` | Local / Discovery / Flow share the header row between the logo and account/settings actions. Only the middle mode selector scrolls when needed; it reveals the current selection with coalesced post-frame updates and retains 44-point touch targets. Preserve the port's nested scrolling behavior for Flow. |
+| [249](https://github.com/lokal-music/lokal-mobile/pull/249) / `fcc454f3d99caa84e5789bab90bec3d545eacf8c` | Replace the duplicate manual/Up Next presentation from #243 with one authoritative playback-order sliver. Manual-only queues remain editable and autoplay stays separate. Dedicated 44×62 immediate grips avoid row/swipe gesture competition; drops show an optimistic order and reconcile with the actual player. Rejected moves restore actual rows, show localized feedback and permit retry. Adapt header actions and section labels to wrap at narrow widths/large text, retaining accessible tooltips and theme-derived colors. Retain the earlier normalized player-service updates and native queue probe. |
+| [250](https://github.com/lokal-music/lokal-mobile/pull/250) / `dd91ee774a1acf59ba503f64cda322c4df308b8d` | Remove the opaque Cover Flow stage added by #245 so the actual artwork/shell gradient remains visible. Live theme changes retain the same mounted flow and gestures. Shorten source/account/settings labels to YouTube without changing source IDs, endpoints or authentication. |
+
+The Android APK workflow introduced by #249 is deliberately excluded: Android
+CI remains manually disabled. Its queue regressions and the changed account/data
+labels join the existing iPhone workflow selection. No dependency lock or native
+audio interface changes are required. Full native acceptance of this continuation,
+physical iPhone listening and live providers remain separate gates.
+
+
+Validation of the through-#250 continuation: the exact expanded iPhone workflow
+selection plus all widget/Android-widget contracts passes **624 Flutter tests**.
+The queue cases cover standalone, embedded and sheet drag order, manual-only and
+autoplay queues, rejected-move recovery, and all 11 locales at 200% text on a
+320px layout in both ordinary and selection modes. Home mode geometry/semantics,
+actual source/account labels and unpainted Cover Flow behavior also pass.
+Whole app/integration analysis has no errors (620 warning/information items).
+Actionlint and diff checks pass. Hosted native acceptance of this new source
+remains pending; no physical installation or live-provider result is inferred.
+
+
+### Reviewed through #261 — 27 October 2026
+
+Seven further merged product PRs bring the reviewed total to **67**. The
+continuation carries the relevant queue/header/Flow/network changes below.
+Platform-only USB/anchor work is explicitly excluded; shared power optimization
+is retained as planned follow-up rather than claimed implemented. PR #263 is
+open at this checkpoint and is not counted or assumed present.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [254](https://github.com/lokal-music/lokal-mobile/pull/254) / `731d3640b2f44b3989f9be7a4734c387a7a72231` | Hold anywhere on a queue row to reorder; ordinary scrolling/taps remain available. Exactly one preference-aware selection haptic starts a drag. The More tooltip uses manual triggering so its own long-press recognizer cannot steal the row gesture. Use the current SDK's already-normalized `onReorderItem` once, with no second subtraction; preserve failure rollback and disable a second drag while a drop is pending. |
+| [255](https://github.com/lokal-music/lokal-mobile/pull/255) / `8f35891b91c8df07fb59efaa60a8b2ba73821c1d` | Home, Library and You share header height and trailing Discord/Settings coordinates. Keep 44-point appearance/avatar/edit actions, the full profile name in semantics and the existing reduced-motion-aware overflow title. Large-text recap rails grow; period controls and account chips wrap/scroll instead of overflowing after the shorter header exposes them. |
+| [256](https://github.com/lokal-music/lokal-mobile/pull/256) / `c7831b2768b88cd634b2d56f3ef4275528e398e6` | Android direct-USB audit, route-refresh ownership and UAC2 settings lifetime fixes have no iPhone USB counterpart. Do not import native USB/bit-perfect features or modify that transport in this port. |
+| [257](https://github.com/lokal-music/lokal-mobile/pull/257) / `f940a4f3889da285e8f8757d9043c1fce3b1366e` | Android Priority Anchor/default/service changes remain Android-only. Shared logging removes empty five-second wakeups and preserves lifecycle flush/clear ordering (nine persistence regressions). The later Dart Rust-observation continuation retains active foreground cadence, reduces background polling and stops steady paused progress timers, with bounded queued-command observation and final settled-seek sampling. Twelve timer/request-retirement regressions pass; the new real-engine paused-seek/budget probe still needs hosted acceptance. Native output/epoch fences remain intact. The next source continuation stops iPhone periodic saving only after confirmed Pause, persists actual paused seek cursors and replaces multi-key saves with one versioned preference snapshot, retaining legacy reads. Fifteen persistence regressions pass; the extended system/Rust native preference/timer gates and measured physical-device battery savings remain pending. |
+| [258](https://github.com/lokal-music/lokal-mobile/pull/258) / `dee5fb2dfcf6abbf08a31d756dbd50bd0bca17de` | Library title starts at the page margin; Add moves beside Discord without moving the shared trailing actions. Preserve its real music-folder/playlist import menu and Classipod title long-press. |
+| [260](https://github.com/lokal-music/lokal-mobile/pull/260) / `2d4edcc135d00ee2d8ab38cb0adcb66ffad07668` | Do not complete an abort trigger after consuming a successful Discovery/Spotify response, including a later cancellation signal; failed/blocked requests still abort. Use the existing graceful client in discovery artwork, source preparation/search and both Spotify transports. Preserve previously loaded search sources on refresh failure and explain a rejected refreshed Spotify session. Diagnostics classify errors without response bodies/stream URLs; additionally hash custom source IDs so credentials or control characters cannot enter log labels. Re-share exported log bytes with an explicit filename rather than guessing path semantics. Live-provider/iOS network qualification remains separate. |
+| [261](https://github.com/lokal-music/lokal-mobile/pull/261) / `c25d19979f30672afbd2feaa07245f61588fade7` | Carry the desktop-style themed Flow card/infinity orb while retaining the existing Flow controller/play/save/tune actions. Use shared `onAccent` contrast, localized controls/moods/status, reduced-motion and offstage ticker handling. Label the real local/online mixture as Your mix instead of implying every recommendation is a local file. |
+
+The focused integration pass checks all 11 locales at 200% text with actual
+bundled fonts for both the profile and Flow card. Existing queue failure recovery,
+whole-row long presses and one-start-haptic checks pass. Full combined/native
+validation of this continuation is still recorded separately after it runs.
+
+
+Validation of the through-#261 continuation: the expanded iPhone workflow
+selection plus all widget/Android-widget contracts passes **654 Flutter tests**.
+The 76 focused integration cases pass, including actual-font all-locale 200%
+profile/Flow layouts, whole-row drag/haptic behavior, shared header coordinates,
+reorder rollback/retry and HTTP success/cancellation. Source-label cases confirm
+custom URLs/credentials/control characters never enter diagnostic labels. The
+complete selection additionally executes 50 actual Node assertions in each
+ready/paused fixture mode for the inherited WebKit diagnostics. Whole app and
+integration analysis has no errors (621 warning/information items); actionlint
+and diff checks pass. Native, live-provider, installed-widget and physical-device
+acceptance remain separate gates for this source. Native audio interfaces,
+dependency locks and Android CI state are unchanged.
+
+
+### Reviewed through #272 — 27 October 2026
+
+Five newly merged product PRs bring the reviewed total to **72**. PR #263 was
+open at the previous checkpoint and is included now; #269 is still open and is
+not counted. The shared logging portion of #257 is implemented separately in
+the inherited continuation. Its real Rust cadence/paused-seek probe now passes on
+iOS 18.6 in build 73; the new ordered-save and paused-position persistence
+continuation has 15 service regressions and extended native probes awaiting
+their own hosted acceptance.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [263](https://github.com/lokal-music/lokal-mobile/pull/263) / `71d959d7555f4966ef013fff9a4a1696b8b0e849` | Select downloaded covers by decoded dimensions, preserve valid lower-resolution fallback, reject incomplete/oversized image data and normalize non-JPEG bytes when saving JPEG artwork. Carry opt-in exact-album cover repair, with all eleven UI languages, usable large text, explicit stop/error feedback and cancellation on leaving/backgrounding. Reload current metadata before replacement so an edit made during the lookup is preserved. Reuse bounded/cancellable transport and graceful HTTP ownership. |
+| [266](https://github.com/lokal-music/lokal-mobile/pull/266) / `5c291da1de836cdcb70d09f7bbf1d0b62f87cca9` | Preserve native scripts and Indic combining marks in local Library lyrics search, with full-width and punctuation folding. Keep the existing local-only incremental scan; no remote lyrics search or index migration is introduced. |
+| [267](https://github.com/lokal-music/lokal-mobile/pull/267) / `8c4a897c95107c9630cfb2174b0d83fa11363932` | Carry NFC normalization, emoji bases and CJK separator handling without joining Latin/Indic words or matching variation selectors alone. Add locked `unorm_dart` 0.3.2 and retain its MIT license through Flutter's license registry. |
+| [268](https://github.com/lokal-music/lokal-mobile/pull/268) / `4ffea34f7d40dfe816105ed6285db27cdf83fdf4` | Release muted artwork decoders and pending loads when hidden/paused/detached, preserve transient inactive state and recreate visuals on resume. Pause the last shared view during the brief decoder handoff. Correct an upstream acknowledgement race: `release()` awaits that queued Pause while a new view can retain/reuse the decoder. Audio playback ownership remains separate. |
+| [272](https://github.com/lokal-music/lokal-mobile/pull/272) / `3f56f19d0e03795a616be8a07f9e27eb7886c0fa` | Reuse the existing Desktop Copy row by server/original-track identity; repair legacy duplicate hearts to one canonical local favorite, preserving the earliest like rank and Link snapshot without deleting library/playlist/history rows. Both rows address the same heart. Exclude Android USB route, transport-failure and volume-handling changes. |
+
+The only Dart dependency changes are `image` 4.10.2 (the decoder correction
+required by #263) and `unorm_dart` 0.3.2. `flutter pub get --enforce-lockfile`
+accepts their exact upstream archive digests; native Rust/bridge/CocoaPods locks
+are unchanged. Image decoding remains off the UI isolate, with 5 MiB input and
+16-megapixel bounds. Artwork redirects are opt-in to the existing transport:
+same-host HTTPS or Cover Art Archive's Internet Archive storage, at most three
+hops, with credential headers stripped across origins. Existing audio/source
+redirect rejection remains the default.
+
+Integration tests cover actual exported image dimensions/content, manual-edit
+preservation, blocked-request cancellation, late cancellation after a consumed
+response, native-script/emoji negatives, duplicate-heart repair and acknowledged
+motion handoff. The new repair screen passes real-font layout/action checks in
+all eleven locales at 200% on a 320-point screen. Expanded host and latest-source
+native acceptance are recorded separately; no physical-phone battery, provider
+catalogue or metadata-writing qualification is inferred from these host cases.
+
+
+Validation of the through-#272 continuation: **803 Flutter tests pass** across
+the expanded iPhone selection plus all iOS/Android-widget contracts. This
+includes native-script matching, real image validation, cover repair orchestration/
+network cancellation, all-locale large-text controls, Link/copy/heart behavior,
+acknowledged motion handoff, logging, sharing and the inherited audio retirement
+regressions. Whole app/integration analysis has no errors (620 existing warning/
+information items). Eight new artwork/search/execution-test files pass analysis
+with fatal infos. Enforced lockfile resolution, readiness inventory, actionlint
+and diff checks pass. Native latest-source and physical-device gates remain
+separate. Native Rust, bridge/CocoaPods locks and Android CI state are unchanged.
+
+
+### Reviewed through #290 — 28 October 2026
+
+Fourteen newly merged product PRs bring the reviewed total to **86**. This
+includes formerly open #269. The source checkpoint is merged main
+`31b8901663bce1e67b272852546bbf8412c37a40`; 44 final source/test files and the
+base files needed for overlapping merges were fetched and checked against
+their Git blob hashes. Shared changes are adapted onto the iPhone implementation,
+preserving native request fences, Keychain ownership, localized controls and
+precise lyric/file handling. Android direct USB recovery remains excluded.
+
+| PR / exact merged source | iPhone behavior and adaptation |
+| --- | --- |
+| [269](https://github.com/lokal-music/lokal-mobile/pull/269) / `b8661d64ec15b1482ad4ee1fce4f6fe18bedf429` | Ported shared decoder memory-pressure release and bounded recovery; Android exit diagnostics excluded. |
+| [278](https://github.com/lokal-music/lokal-mobile/pull/278) / `a9cabcb719bc5d8f9c27209ddaf7f139b4ffa8d7` | Original save remains normal tap; explicit long-press selected translation/romaji export, root modal, localized large-text controls. |
+| [279](https://github.com/lokal-music/lokal-mobile/pull/279) / `9a0ff6f95d6dd20b65807aa136a44902598ff847` | Static Flow artwork and narrow playback subscriptions preserve actions and localization without a continuous decorative ticker. |
+| [280](https://github.com/lokal-music/lokal-mobile/pull/280) / `6693352e191ecc844cba73022b44f5098978102b` | Reject explicit and decoded-short HTTP add-on previews; retain iOS asynchronous request retirement fences. |
+| [281](https://github.com/lokal-music/lokal-mobile/pull/281) / `f292491b5c29d99aabe469260cb43719767ddc3d` | Library add menu uses root modal ownership, direct folder picker, playlist/link/M3U actions; fix name-dialog controller lifetime. |
+| [282](https://github.com/lokal-music/lokal-mobile/pull/282) / `adbe1ff1f193b09426813725161438b4b88009ef` | Both transport glyphs animate only on state change, reduced-motion respected; Previous restarts at ten seconds, swipes still navigate. |
+| [283](https://github.com/lokal-music/lokal-mobile/pull/283) / `983f365341b2ce9b88cb8e53c9fbac43d4780e64` | Persist an exact same-origin manifest.json URL in existing secure storage; preserve encoded segments, localized actionable errors. |
+| [284](https://github.com/lokal-music/lokal-mobile/pull/284) / `ef4fa0f0dca99a40d0bb0b6498f895594c198d43` | Excluded: Android direct USB format probing, libusb transport recovery, and DAC registration; no iPhone USB behavior imported. |
+| [285](https://github.com/lokal-music/lokal-mobile/pull/285) / `ac5418b3724acdfea2a6af1ee01bab4492c4fe6c` | Explicit bilingual saves use same-time paired LRC with simultaneous-vocal association tags; preserve original documents, UTF-8 filename limits and millisecond timing. |
+| [286](https://github.com/lokal-music/lokal-mobile/pull/286) / `074857d5bdfa37785b6fa1e284232465a3a48817` | Reserve selected-track resolution ahead of prefetch, cancel stale context lookahead using a context revision; retain native stop fences. |
+| [287](https://github.com/lokal-music/lokal-mobile/pull/287) / `6da7008e14945ee907271377cb3ceb46098e06a0` | Keep full ordered queue and absolute previous occurrences; carry tapped row index through reconstruction and iOS recovery, accessible localized history header and large-text title layout. |
+| [288](https://github.com/lokal-music/lokal-mobile/pull/288) / `8912272516480b481497ebaf3eeff798c6492ea3` | Use the final valid parser without the upstream duplicate tail; apply non-null cached-lines initialization while retaining Unicode local search and revision guards. |
+| [289](https://github.com/lokal-music/lokal-mobile/pull/289) / `136a3c4f2a8025f188ee1971a18323d30b22897e` | Excluded: Android exclusive USB route polling, stream preservation and manual engine restart. |
+| [290](https://github.com/lokal-music/lokal-mobile/pull/290) / `31b8901663bce1e67b272852546bbf8412c37a40` | Excluded: Android track-scoped direct USB format fallback/rearm and verified DAC restart UI. |
+
+The queue and resolver changes require a combined adaptation: selecting a middle
+track no longer rotates it to index zero. A revision identifies a newly replaced
+playback context so old lookahead cannot occupy its first foreground lookup;
+ordinary skips retain useful prefetch. Explicit selection indices also survive
+reconstruction of expired stream handles and aliases that reuse one Song object
+for several playlist rows. The native queue probe exercises a repeated middle
+occurrence, Previous swipe and absolute history selection with the real player.
+That extended native probe awaits this source's hosted build.
+
+The save menu and queue history use bundled-font layout/action checks across all
+eleven languages, dark/light appearances, 200% text and a 320-point width.
+Large-text queue rows put duration below the artist and allow two title lines.
+Host renders are layout evidence, not native iPhone captures. Ordinary saves
+retain the original lyric document; translation/romanization export is explicit.
+No dependencies, Rust/FFI or native audio paths are changed by this continuation.
+
+Build 74 now passes both complete native suites for the **parent stabilization
+source through #272**, including the actual stopped save timer, native paused
+cursor reloads and WebKit reset/replay. Its archive, IPA, 34 binaries, 26 matching
+symbol bundles, notices and 2,262 source files are independently verified.
+It does not include or qualify this newer through-#290 batch.
+
+Validation: **940 combined Flutter regressions pass** for the completed source,
+including both platforms' shared widget contracts, all new parity cases and the
+parent audio/reset/persistence suite. The eight new source/test files pass strict
+analysis. Whole app/integration analysis has no errors (630 warning/information
+items). Enforced lockfile resolution, readiness/localization inventory, actionlint,
+diff checks and 15 Python widget policies pass. The 44 bundled-font host captures
+cover both new menus in all eleven languages and both appearances at 200% text.
+Native acceptance for this batch and physical-device acceptance remain separate
+gates. Android CI remains manually disabled; native Rust/FFI, PCM/DSD/USB source,
+dependency locks and signing/provisioning are unchanged.
+
+
+The selection path preserves an occurrence before any asynchronous source work:
+
+```mermaid
+sequenceDiagram
+    participant Row as Library row
+    participant Provider as Player notifier
+    participant Service as Player service
+    participant Resolver as Source resolver
+    participant Native as iOS audio engine
+    Row->>Provider: Play(song, ordered list, tapped index)
+    Provider->>Service: Preserve occurrence index
+    Service->>Service: Capture iOS selection generation and index
+    Service->>Resolver: Resolve selected source before lookahead
+    Note over Service,Native: Native stop/load awaits remain fenced by request epoch
+    Resolver-->>Service: Playable recording or explicit failure
+    Service->>Native: Load complete ordered context at selected index
+    Native-->>Service: Confirm actual sequence index
+    Service-->>Row: Full history, current occurrence and Up Next
+```
+
+Expired-source reconstruction keeps the original index. A new playback-context
+revision cancels obsolete prefetch even when the selected index is in the middle.
+The separate desktop remote context does not display a previous phone playlist
+as its own history.
+
+
+### Reviewed through #296 — 28 October 2026
+
+The source review now covers **91 merged product PRs after #172**. This is source
+adaptation, not native acceptance of the resulting app.
+
+| Merged source | iPhone adaptation |
+| --- | --- |
+| [292](https://github.com/lokal-music/lokal-mobile/pull/292) / `381a85e6552014bb1cec14210db4fb718d197318` | Persist separate sort, direction, location, quality and search per library/list/playlist/genre context; preserve direction on criterion changes. Save album/artist search, favorite-artist filter and Search scope. Protect newer selections from late asynchronous preference reads and serialize writes. Retain iOS localization and exact queue occurrence selection. |
+| [293](https://github.com/lokal-music/lokal-mobile/pull/293) / `5b861f133595b61a9e80607be38cf2bfd43d3a00` | Excluded: Android microphone permission to avoid its USB capture warning. No iPhone microphone request is added. |
+| [294](https://github.com/lokal-music/lokal-mobile/pull/294) / `d3b8060fc4c7f1a3c62237ddd75adb2feac5f797` | Excluded: Android UsbManager physical inventory/hotplug/status. No direct USB or verified bit-perfect claim is introduced. |
+| [295](https://github.com/lokal-music/lokal-mobile/pull/295) / `bc397d1e3bb885ea56a606aa69e08fe03947f201` | Move Pitch after Speed and before EQ in modern/classic footers, including classic immersive. Now Playing menus follow the current recording; library menus keep their selected recording. Remove duplicate moving-cover/video rows from player overflow. Android direct-USB restart is excluded. Add localized Pitch semantics, scalable touch surfaces and theme-derived classic footer colors. |
+| [296](https://github.com/lokal-music/lokal-mobile/pull/296) / `5fc61fd6fd24d0f0302d716a8a9ce72c6ba74492` | Explicit Sync Now replays persisted desktop playlist operations to recover missing lists and apply deletions after consumed cursors. Preserve unmatched original-file members as metadata references. File preview uses a progress-aware idle timeout, including streamed fingerprinting, with immediate cancellation. Desktop companion and physical paired-PC acceptance remain necessary. |
+
+Build 75 / PR #297 built a package but **failed full native acceptance**: iOS
+18.6 expected two independent singers from an ambiguous plain same-time LRC pair
+that the new bilingual parser treats as original/translation; iOS 26 timed out
+booting the simulator before app acceptance. The full-queue occurrence, native
+reorder and paused-preferences probes passed on 18.6. Widget run 24 passed all
+four focused jobs. Build 74 remains the qualified package.
+
+The corrected native fixture uses explicit enhanced word timing for the two
+simultaneous singers. The native Space assertions are unchanged. A host parser
+regression reads the exact shared fixture and confirms four lines, two distinct
+voices at three seconds and no folded translations. The new fixture still needs
+another actual native run; the build-75 package is not promoted.
+
+Host UI checks exercise all eleven locales at 200% text in dark/light and open
+the actual Pitch sheet, preserving 44 bundled-font captures. Visual inspection
+found and corrected white-on-light classic footer labels. The paired-credential
+continuation stores one atomic origin/pairing/secret record, serializes mutation
+and fences delayed pairing replies after Forget. Shared Swift/Dart fixtures and
+real HTTP transfer contracts are described in [the transfer architecture](IOS_TRANSFERS.md).
+The new native transfer core is not connected to the app/product copy flow yet.
+
+
+Validation for this continuation: **975 combined Flutter regressions pass**
+(5m50s), including both widget contract suites and the new list, Pitch, menu,
+credential ordering and retired-pairing cases. Seven new/changed focused files
+pass fatal-info analysis; whole-workspace analysis reports no errors, with
+existing warning/information findings retained. Enforced dependency-lock
+resolution, scaffold/localization inventory, workflow actionlint and diff checks
+pass. Swift 6 warnings-as-errors contracts pass with the separate real HTTP WAV
+fixture, actual file hashes, 6×8 process writes, both transaction crash boundaries,
+active-original deduplication and runtime reconstruction. Apple SDK / iOS native
+acceptance for this source is pending; the transfer core remains unembedded.
+
+
+### Source continuation reviewed through #302
+
+The review now covers **96 merged product PRs after #172**. This continuation
+is separate from PR #304 / build 76, whose immutable source stops at #296.
+
+| Merged source | iPhone adaptation |
+| --- | --- |
+| [298](https://github.com/lokal-music/lokal-mobile/pull/298) / `d573d34f4d0aa885c536d222ccb155bffd71b2a2` | Promote output settings to the root after Playback and remove the nested duplicate. On iPhone the row is Audio output, uses a headphones icon and describes AirPlay/Bluetooth/volume/crossfeed. New presentation phrases cover all eleven languages; Android USB/bit-perfect wording is not shown as an iPhone capability. |
+| [299](https://github.com/lokal-music/lokal-mobile/pull/299) / `3f8ad60e2f148c06b96afee37306100e1a872ad0` | Selected word-timed translations/romanization export as paired ELRC, projected over the original vocal windows. Keep millisecond precision, whitespace, original-only source bytes and UTF-8 filename bounds. Enhanced translated rows use the existing ignored association tag so import preserves independent singers. Association indices account for earlier untagged plain translations; explicit end markers preserve gaps on reimport. |
+| [300](https://github.com/lokal-music/lokal-mobile/pull/300) / `08efc749bad45af585774182ab43bf31a690be81` | Excluded: Android direct-USB status popup and Android CI changes. Android workflow activation is not imported. |
+| [301](https://github.com/lokal-music/lokal-mobile/pull/301) / `011fdd071e7b0794936e6d1f0019e63a45363e88` | Long-press recommendation Cover Flow to see/play its matching local album in disc/track order. A face tap retains the recommended song and recommendation-only shelf queue. Separate featured-cover metadata preserves visible title/artwork and deduplicates local rows. Existing transparent surfaces, localization and gesture/semantics behavior remain. |
+| [302](https://github.com/lokal-music/lokal-mobile/pull/302) / `cb8c269bbefe22e9e8b283603d3f7fdbe6f1ff89` | Excluded: Android direct-USB clock-range probing/format fallback. Rust/FFI and direct USB are unchanged. |
+
+ELRC export cannot unambiguously distinguish a translated enhanced row from an
+independent singer using timestamps alone. This continuation retains round-trip
+assertions removed in upstream #299 and adds the actual mixed plain/enhanced
+native fixture. A translated save must retain its four original lines and both
+simultaneous voices. Ordinary line-only bilingual files remain paired LRC;
+unknown metadata tags are ignored by ordinary ELRC consumers. Translated timing
+is projected, rather than represented as source-authored timing.
+
+Targeted checks: 112 player/lyrics/Space/settings/Cover Flow regressions pass;
+subsequent expanded lyrics, explicit-gap and native-fixture round-trip selection
+passes 53 checks. The combined updated source and Apple runtime acceptance still
+need their next coherent validation batch. PR #303 remains open and under review
+for potential shared playback/desktop availability corrections; it is not counted
+as merged parity or imported wholesale over the iOS request/occurrence fences.
+
+
+### App transfer bridge and build 76 continuation
+
+Build 76 (PR #304 source through #296) compiles/packages the release iPhone app
+and passes the complete iOS 26 suite. Its iOS 18.6 run stops at the legacy
+Keychain migration assertion before playback. Build 74 remains the qualified
+package. These results do not qualify through-#302 source or the subsequently
+embedded native transfer bridge.
+
+Continuation source wires the app-owned background session through AppDelegate,
+with a bounded typed Swift/Dart channel and foreground-only observation.
+Capability keeps library import and upload disabled until their product adapters
+are implemented. Native checks now precede the expensive full application build
+and include the actual Flutter framework plus both iOS 16 SDK targets.
+The SQLite parent-alias and process-lock corrections have portable regression
+coverage; twelve stress rounds passed before bridge wiring, followed by three
+updated complete rounds. Keychain preparation now scopes coalescing and native
+migration by account, with four deterministic concurrency/retry tests. Actual
+native resolution of the build-76 Keychain failure is still pending.
+
+The main updated host selection passes 968 tests in 5m53s, including the new
+transfer protocol cases, through-#302 output/ELRC/Cover Flow adaptations, Android
+widget contract and native widget snapshot contract. Companion widget suites and
+four Keychain cases are recorded separately in the publication checkpoint.
+This continuation does not enable Android CI or alter native PCM/DSD/USB paths.
+
+
+### Source continuation reviewed through #306
+
+The rolling audit now covers **99 merged product PRs after #172 through #306**.
+The frozen build-78 package stops at #302 and remains independently verified.
+New source adaptations retain iOS queue occurrence identity, request retirement,
+source priority, explicit save validation and eleven-locale presentation.
+
+| PR | Exact merged commit | iPhone adaptation |
+| --- | --- | --- |
+| #303 | `46c72aaecdd9902b677e8f79cdaa41259643de3e` | Prepare only the selected just_audio source for queues over 64 entries, network and live handles. Collapse a previously restored native sequence without losing the active decoder/position. iOS operations retain checked waits and retirement handling. Desktop HTTP availability is independent of the remote-control WebSocket, shared per server and bounded. Bulk Play All/Shuffle can use local/cached fallbacks; explicit taps preserve the requested occurrence. Delayed preflight cannot overtake newer selection/pause or access a disposed page. Android CI changes are excluded. |
+| #305 | `3a2ffb4507495010b4af0dc4e204a9c39f8a7782` | Forward signed gateway retry/verification contracts to the add-on's camelCase API while keeping snake_case compatibility. Terminal ticket rejection does not retry every quality tier. Diagnostic logs exclude URLs, tickets, bodies and arbitrary contract text. |
+| #306 | `d49dc58a72b18ad42ca0900d15b8afce45bc34a4` | Hedge at most two alternate HTTP/native metadata searches within the selected provider; a verified match need not await a stalled primary. Morneye guest fallback stays serial and the hedge timer cancels after completion. Exact provider-owned search metadata can skip duplicate enrichment while availability/authorization remain mandatory; explicit saves retain validation. Phase status is localized in all eleven languages. |
+
+Build 78 passes both complete app suites plus the native transfer-channel probe
+and Keychain migration, all four widget jobs and the five-round focused native
+checks. Independent verification covers 2,298 exported source files, 34 iPhone
+binaries and 26 matching native symbol bundles. These results do not qualify
+this later continuation. The deterministic file-promotion foundation has three
+portable rounds plus a final guarded round; Isar import ownership/receipts and
+actual OS suspension/relaunch remain unfinished.
+
+
+Validation of the through-#306 continuation: **1,058 combined Flutter checks
+pass** (5m39s). The final queue-ownership follow-up passes **63 focused engine,
+crossfade, shuffle and lifecycle checks**, including restored-sequence handoff,
+concurrent collapse serialization, late selection/engine retirement and manual
+pause during fallback source resolution. Readable provider stage text passes
+all eleven locales. Six actual Library widget cases cover duplicate occurrence,
+offline bulk fallback, explicit unavailable taps, newer selection/pause priority
+and page disposal. New test/probe files pass fatal-info analysis; workspace
+analysis has no errors and retains existing warnings/information findings.
+
+Native acceptance adds a pending real AVFoundation-backed probe with 2,654
+logical generated-audio entries, explicit selection at 1,730, one actual native
+source, Previous and paused shuffle. This is not a scanner, distinct-file or
+physical performance claim. Deterministic library-file promotion remains outside
+Runner/product capability until import ownership and Isar receipts are ready.
+
+
+The frozen source `07d04a852c9b0ab2aa887cf450cb30e6c8c39644` passes
+**1,063 combined Flutter checks** (5m21s), including all final native queue
+ownership cases. The explicit desktop-retry follow-up passes **17 focused
+Library/availability/occurrence checks**. User playback refreshes one shared HTTP
+probe so a mounted offline result cannot survive the PC waking. Socket changes
+are refresh hints, never an authorization prerequisite. Recovery logs include
+controlled status/booleans or exception types, without arbitrary gateway/native
+error descriptions. The verified IPA remains build 78 until this continuation's
+new native app suite and large-queue probe pass.
+
+### Source continuation reviewed through #310
+
+| PR | Exact merged commit | iPhone adaptation |
+| --- | --- | --- |
+| #309 | `6076484af741ebc44328191e886a1f162c0506cf` | Anchor Space captions to the hidden seek row using a painted composited leader; preserve dynamic layout and enlarge the fullscreen-video inset. Retain the iPhone embedded player's separate caption band and timing-available notifier; do not place caption/tap overlays over its official controls. |
+| #310 | `b0c9eba114ab7ab361c0415f4e71309197901f9c` | Keep four-corner clipping continuous through the player spring's final frame. Move Help directly into You; remove duplicate About Help. Licences uses the same installed bundle metadata as About. Remove the nested-context Got it pop action. Track release notes once per minor, with legacy-key migration and asynchronous loading. iPhone notes use `ios-vX.Y.0` tags and their own 1.0 fallback, never Android USB notes. Android-only USB maintenance changes are excluded. |
+
+The release-note adaptation silently records a fresh installation's minor as its
+baseline, and reads persisted seen state independently of the asynchronously
+loaded preferences snapshot. Acknowledgement survives a late old snapshot.
+Controlled delayed-note/preferences tests pass, including a subsequent minor
+update and a patch that must not reopen notes. Native capabilities are unchanged.
+iPhone Help describes Files/AirPlay instead of the Android bit-perfect capsule
+and UAC2 page; About does not offer APK installation. Widget accent previews now
+use the active Lokal theme, resolving an existing settings-reskin regression.
+
+Build 79 successfully compiles/packages the app and captures its first launch.
+Its actual iOS 18.6 probe exposes an unscoped service await during paused
+large-queue shuffle: `Local audio mutation requires a captured request scope`.
+The continuation captures a local request for on-demand queue mutations and
+checks the selected engine/selection again before publishing sequence changes.
+The actual native probe retains its assertions and now also covers paused manual
+queue/tail insertion. Native acceptance of this correction is pending. No
+lifecycle fence, audio-progress threshold or retired-player check is removed.
+
+The exact CI Flutter selection passes **979 checks** on frozen commit
+`6cd1a6196bf1bfc64c9a1776eb67dcf0bc1c7531` (6m12s). A focused selection passes
+106 audio/lifecycle/UI checks; the Help back-button interaction also passes
+separately. New release-note/navigation/provider files pass strict analysis, and
+workspace analysis reports zero errors with existing warnings/information.
+
+The isolated iOS 26 build-79 job fails its unchanged 300-second `bootstatus`
+gate before app installation. CI now permits one fresh-device recovery only
+when that exact command times out on a device created by that same attempt.
+Existing-device, inventory, control and application failures cannot use this
+recovery. It shuts down only the failed owned device, retains both evidence
+directories, keeps the requested OS, and propagates a second failure. Nine boot,
+five control and eleven widget-render coordinator tests pass; these are mock
+orchestration tests, not proof that the hosted boot correction works. Application
+runtime gates and their timeouts are unchanged.
+
+### Local follow-up through #311
+
+Merged commit `4153904a613adb4f8dac0fea42359fb9ed481337` adds account-scoped
+Discovery snapshots, a compact Library overview, the normal-cover 20 px artwork
+endpoint and independent resolution-tag preferences. This follow-up is outside
+the frozen PR #312 / build-80 source and is being batched with later import work.
+
+The iPhone adaptation keeps metadata in Application Support, outside Files
+sharing, with 4 MiB entries and 20 MiB managed storage, including interrupted
+temporary files. A serialized cache writer prevents sign-out invalidation being
+overtaken by pending writes; Spotify captures session revision and request
+generation across every asynchronous boundary. Stale startup/refresh responses
+cannot repopulate another account. Failed or empty refreshes preserve usable
+same-account shelves. Raw provider error text is not persisted. Actual filesystem
+tests cover reopening, source/account isolation, malformed/future records,
+oversized entries, overlapping writers, invalidation and orphan-part pruning.
+
+Library's Videos tile replaces Downloads and duplicate Videos/Spotify rows are
+removed. Compact Songs and Downloads rows retain access to their existing routes
+without restoring the removed full song browser. The artwork endpoint matches
+20 px while retaining the iPhone embedded-video exclusions. Resolution toggles
+default off, persist independently, preserve list-tier colors and full-player
+text color, and use explicit source measurements without claiming output fidelity.
+All four new preference phrases are translated in the ten non-English locales.
+
+The focused follow-up passes **85 checks** for cache/ownership, presentation,
+preferences, source isolation, Space and artwork transitions; the eleven-locale
+quality/preference selection passes separately. New cache/probe files pass strict
+analysis and workspace analysis has zero errors. A new native path-provider/
+filesystem probe uses its own fresh test directory and never touches user cache
+data. It is compile-checked but awaiting the next native app batch; live-provider
+or iPhone process-suspension acceptance is not claimed.
+
+The full updated CI Flutter selection passes **1,011 checks** (6m17s) on the
+through-#311 application/test source, local commit
+`ee85631`. The native ownership continuation changes only Swift/tooling/docs
+after that checkpoint. This result still does not qualify a new IPA; build 80
+continues testing its frozen through-#310 source separately.
+
+## Follow-up: merged PRs #313–#320 and release-scope correction
+
+Review date: 29 October 2026 (Europe/Paris). Eight additional merged product
+PRs bring the audit to 110 after #172. Source changes below are a later
+continuation; build 82 tests the earlier through-#311 ownership source.
+
+| PR | Exact merged commit | iPhone adaptation |
+| --- | --- | --- |
+| #313 | `c90e6d026e9d1bdd79109ffec50d271831ddd1ae` | Library sliver comma already corrected in the through-#311 port and its passing full Flutter checks. |
+| #314 | `e55557622bef33537ee98182d943d949a6df303d` | Button-only artwork reveal in both modern player layouts; preserve swipe behavior, actual selected-song ownership and the iPhone embedded-video exclusion. |
+| #315 | `633abb1c20789a5013743acbf6c77252655ce31d` | Verified online-cover fallback, largest valid Spotify HTTPS artwork, Apple artist-ID releases across bounded storefronts and anonymous exact-channel YouTube artist releases. Keep source attribution and distinct Apple editions. |
+| #316 | `c3a1c08fd9660f691d8dfb82f6b268950691b9b8` | Use the actual `artworkUrl` property for song-associated YouTube releases; retain the regression case. |
+| #317 | `99fc250920940ba6e4ee6f83ef51761f7c47222a` | Precompiled cloud shader, feathered alpha union, final full-frame fade and blur-to-sharp handover. Startup prewarming and stable fallback remain separate from playback. |
+| #318 | `bb3e91c5eb6e3d1ee953e82dd51b50d218fdf2ab` | Remove double text scaling, adapt greeting typography and cap Cover Flow artwork by available height. Retain scrollable Home modes and 44-point targets so long translations and large system fonts stay readable. Exclude Android CI/debug identity changes and unrelated Rust test cleanup. |
+| #319 | `e54ab28cb0e0e571c5299cef116516acd6890bb9` | Pixel-space circular masks across portrait, landscape and square artwork. |
+| #320 | `3491b54b0870faabc24bbc0ff76d71f05697364f` | Continuous slider snapped to hundredths, accessible ±0.01× buttons and two-decimal labels, preserving the 0.50×–2.00× range and existing backend/session guards. |
+
+The compiled shader passes actual raster/pixel tests for three aspect ratios,
+transparent/opaque endpoints, overlapping alpha and the final fade. This is
+host renderer evidence; an added iOS app probe must qualify the same fragment
+program on the Apple runtime. It does not claim physical 60/120 Hz performance.
+The native queue probe also adds actual AVFoundation-backed fractional-speed
+acknowledgements, continued playback and paused adjustment without auto-resume.
+Those later native probes are outside build 82.
+
+The port fixes upstream test-fixture defects rather than bypassing assertions:
+a malformed named-parameter separator, UTF-8 JSON response headers, and exact
+animation endpoint scheduling. The mask must reach full opacity at 2.4 seconds;
+Flutter marks its interpolation complete on the following frame. Artist
+attribution tests retain primary-credit collaborations in Albums and separately
+verify guest-led releases in Features. Cover Flow geometry is checked against
+its measured artwork bounds after adaptive sizing. Enabling system Reduce
+Motion during a handover immediately settles the visual effect.
+
+PR #321 was still open at this review and is tracked separately; its provider
+acquisition rework is not included as merged parity.
+
+**Home Screen widgets are excluded from iOS at the user's request.** Automatic
+WidgetKit research jobs are disabled, and the app no longer starts the iOS
+publisher/sampler, widget-intent listener or publication channel. Existing
+Android widgets and iPhone lock-screen/Control Center playback remain separate.
+
+Validation for this continuation: **1,064 CI-selected Flutter checks pass**;
+27 final Help/settings/You checks pass after removing widget instructions from
+iPhone Help. All new Dart files and the changed widget runtime boundary pass
+strict analysis. Analysis of all changed Dart files has zero errors and three
+pre-existing warnings. Shader pixel, catalogue, typography, video separation and
+artwork geometry checks are included. Actionlint and diff checks pass. Apple
+acceptance of the later UI/shader/speed and no-widget source remains pending;
+local tests do not qualify a new IPA or live-provider/device behavior.
+
+
+## Follow-up: merged PRs #321–#331
+
+The frozen review uses merged main through `4afe9beb90e7039652edaeac70a25abb9f860220`.
+Eight additional merged product PRs bring the reviewed count to 118. PR #330
+closed without merging and contributes no release change; #322/#323 are the
+separate iPhone engineering continuation, not additional main product PRs.
+The earlier note that #321 was open describes the prior review only.
+
+| PR | Merged commit | iPhone disposition |
+| --- | --- | --- |
+| #321 | `edda6e2c9869d3a9fb78dc33afe39ac720d1702e` | Availability-first acquisition, one enrichment retry for every provider, Qobuz-only progressive eligibility, verified completed-file cache adoption and a 90-second inactive-download watchdog. Preserve translated stage labels, opaque progressive handles, source log labels, account verification and iOS playback ownership. Live provider timing remains separate. |
+| #324 | `fa089b70580319b8968b40bb040d40e425dc0ceb` | Recently played shelf below Library More, remove the duplicate history row and Home Fresh shelf, and use actual dock inset plus 12 points. Retain iPhone Songs/Downloads navigation. |
+| #325 | `6e2be274e76d870191ff54ab3927ac163e32614d` | Cleaner online category results, source-aware queue/Play next swipes, persistent reversed directions and accessible actions. |
+| #326 | `1f585c57a6c23964d440279742bf07f46405c632` | Reviewed as Android Oboe output precision. Do not expose an unsupported iPhone hardware/stream-precision selector; preserve the existing native PCM/DSD/USB source. |
+| #327 | `7d2271e40af9f25e54582540089da88900f8a477` | Wider Discovery lane and inset rounded selection lens; retain 44-point hit targets, measure translated/system-scaled labels, use intrinsic lane widths while scrolling and reveal selection on dependency changes. Preserve the iPhone embedded Flow layout. |
+| #328 | `a326ca4351e42c08c673e19773e12e3b23daa92b` | Fullscreen outgoing art uses the complementary cloud mask; incoming-only blur and complementary fallback opacity. Extend the actual compiled-shader pixel contract to cover inverse alpha, while preserving reduced motion and cached offscreen neighbours. |
+| #329 | `09a66671542fcabcbcf6ac32d2f3d6d97930797a` | Desktop genre taxonomy, genre search, No genre browsing, live song lists and placeholder exclusion. |
+| #331 | `4afe9beb90e7039652edaeac70a25abb9f860220` | Expanded exact aliases, visible known singletons, normalized repeated custom genres and one-off unknown fallback. Correct the imported grouping bug: normalized counting must also use normalized bucket keys. Keep the first display label and original music metadata. |
+
+The focused selection passes 138 checks before the additional complete-selection
+run. The original upstream fixtures required corrections: a known Baroque tag
+cannot test the unknown-tag fallback; an opaque live handle needs an actually
+ready file; iPhone More retains its two additional navigation rows; and outgoing
+art teardown must preserve the normal offscreen swipe neighbour. Pixel tests
+inspect the compiled production shader, not just the CPU reference. New swipe,
+genre and resolution-stage phrases have translations in all shipped locales.
+Apple acceptance of this newer source is pending; build 82 covers the earlier
+through-#311 source only. Widgets remain excluded from release.
+
+
+## Follow-up: PR #332 broad genre classification
+
+Merged `11ff89a8bcdedbfe4bf93c90381a542f6670b87e` supersedes #331's
+repeated-custom-label approach. The review now covers 119 merged product PRs
+after #172. The iPhone source uses the same 21 broad families, curated exact
+aliases and word-boundary family hints as the updated desktop taxonomy
+(reference blob `05aa4f0a3d786d2d1dcdf676f9786d67e408e571`). Exact aliases win;
+unambiguous styles such as Future Jazz and Future Soul map into Jazz and
+R&B / Soul. Generic Indie/Alternative modifiers yield to a specific family.
+Unrecognized or ambiguous tags remain Other even when repeated; no arbitrary
+custom cards are created. Stored music metadata, multi-tag deduplication,
+No genre, search, live browsing and playback remain unchanged.
+
+All 11 focused genre tests pass, covering boundary/ambiguity cases, ignored tags,
+known singletons, repeated unknown labels, metadata preservation and live page
+search. Strict analysis of the three changed genre files is clean. This is later
+source than build83; no Apple app acceptance is claimed for these changes yet.
+
+## Follow-up: PRs #336 and #337 genre sync and Soundtrack consolidation
+
+The rolling review includes merged main through
+`0ecd016b89de67310c62ebe929a775103c95ba9c` (121 product PRs). PR #335
+does not resolve as a pull request; #333/#334 are separate iPhone engineering
+continuations rather than merged main product changes.
+
+| PR | Merged commit | iPhone disposition |
+| --- | --- | --- |
+| #336 | `b8e36bbce8acc7b1345037a74642d75fc8778a4b` | Explicit Sync Now reconciles missing/placeholder genres from the existing authenticated desktop catalogue after journal replay. Stable remote identity wins; independently imported files need unique album/duration-compatible matches. Preserve populated phone genres, multiple real tags and ordinary background sync cost. |
+| #337 | `0ecd016b89de67310c62ebe929a775103c95ba9c` | Combine Video Game Music with Soundtrack into one card and one per-song count. Keep Anime separate and preserve raw tags. Retain compact videogame spellings from prior iPhone alias coverage; full known aliases such as VGM and Game OST also find the Soundtrack card through genre search. |
+
+The genre reconciliation rechecks the captured database, pairing credentials,
+server identity and original Song binding before writes; it skips recordings
+changed during the network snapshot. Disconnection or database replacement
+retires the operation. The port adds no endpoint, audio copy or file-tag write.
+All 55 focused Link/genre checks pass, including actual Genres page alias search;
+fatal-info analysis is clean. These changes are later than frozen PR338/build85
+and require the next batched Apple acceptance. Build84 remains qualified only
+through #332; this audit does not extend its source scope.
+
+## Follow-up: PRs #339–340 Amazon quality isolation
+
+Reviewed merged #339 `26b7553785cf0921f8706da913d5844ea7ca7570` and its
+corrective #340 `7160dfa450ce2ed447d711c0438a9550c02ead42`. The rolling audit
+now covers 123 merged product PRs through #340. Build86 remains frozen through
+#337; the additions below are later source with host acceptance only.
+
+| Area | iPhone disposition |
+| --- | --- |
+| Combined catalogue modes | Parse comma/semicolon/pipe-separated explicit modes, including Amazon responses. AC-4, plain E-AC-3 and multichannel metadata alone do not invent an Atmos badge. |
+| Normal provider playback | Exclude Amazon AC-4 and plain E-AC-3 spatial download defaults from ordinary stereo requests, including sparse manifests and spatial options with nonstandard IDs. Preserve explicit saving preferences and non-Amazon identifiers. Prefer offered BEST before HIGH when falling back from a spatial default; retain explicit HIGH requests. |
+| Catalogue tooltip | Describe an explicitly advertised edition independently of the provider and distinguish source availability from playback/spatial output. |
+| Android AC-4 decoder, direct routes, handoff, probe/cache codec diagnostics | Excluded native audio work under the user's scope exception. Do not add Try Amazon AC-4/AC-4 playback actions or claim an iPhone AC-4 decoder/presentation. Existing iPhone playback and Android native sources are preserved. |
+
+The malformed/duplicated Dart module in #339 is not copied; the port retains one
+compilable selector and adapts the relevant #340 isolation behavior. Decoder,
+source-verification and UI assertions require their own supported platform
+evidence; these shared changes do not qualify an authenticated Amazon stream or
+physical spatial output.
+
+
+## Post-build-87 product parity through merged PR #348
+
+This continuation carries the shared parts of merged mobile PRs #343, #344,
+#346, #347 and #348, including #342's relevant metadata context. #346's
+Morneye Dart syntax correction is already present in the iPhone code; there
+is no Android-native build work. The bundled Amazon (New) extension and its
+injected registry are **not** part of the iPhone source.
+
+- **#343/#344:** Atmos is catalogue evidence only if explicit on the
+  individual recording. Per-track `audioQualities` and known JOC/AC-4 Atmos
+  modes are parsed without treating codec strings, a provider manifest or
+  search-wide AC-4 options as a badge. Amazon repeated ASINs retain one
+  recording and can merge *explicit* later mode evidence without mixing
+  separate ASINs. A codec is not a claim that the iPhone can decode it.
+- **#347:** Manual LRCLIB lyrics search sends an identifiable User-Agent,
+  handles short bounded retries and gives separate rate-limit, invalid
+  response and network feedback. The upstream tests accompany it.
+- **#348:** The installed plugin's quality setting controls Play and Save,
+  with an explicit per-song override and only exact manifest tiers. An AC-4
+  request is checked against delivered source bytes, not guessed from tags.
+  Unsupported encoded spatial iPhone playback is refused without silently
+  replacing it with a different stereo rendition. The original compressed
+  file can be saved when verified, without claiming an Atmos presentation
+  from AC-4 alone. The quality picker explains the playback/download
+  relationship.
+
+This is source-level parity; neither authenticated live-provider acceptance
+nor iPhone JOC/AC-4 output is claimed. The branch is stacked above #345 and
+requires its **own** iOS 16 SDK, 18.6/26 simulator, independent IPA and
+physical-device gates. Native product transfer import/upload remain off.
+
+## Continuation: merged Android PR350 HTTP quality routing
+
+Ported shared behavior from PR350 head `4ab24776bffe00cab884e3d8c7abb7677de422ab` on top of PR353 `5111678fe192330bafde38d22c186fa2cce940fb`. Configured HTTP quality requests fresh `/stream` data instead of stale inline previews. Explicit spatial IDs and manifest labels request original verified encoded bytes; failed source verification does not substitute stereo. Ordinary progressive playback, opt-in sources, private URL handling and existing manifest download checks are preserved.
+
+iPhone adaptation: AC-4 playback remains unavailable; JOC playback requires native capability. Saving verified encoded bytes does not require a playback decoder. An AC-4 file is labeled AC-4 and never manufactures catalogue Atmos evidence. The same verified codec metadata is retained by staged Morneye saves. Native Android decoder/USB sources are untouched.
+
+This is later source than the existing qualified packages. Local focused contracts are recorded separately; no CI, simulator or physical acceptance is inferred for this continuation. CI waits remain skipped at the user's request. Native product background import/upload remain disabled.
+
+
+## Continuation: merged Android PR361–362
+
+Reviewed PR361 head `f908cfcaa03c8cf782255507a70450e83703e621`
+and PR362 head `336f0c78be56bc9c01c494fba7902470ecad212c`.
+Both were merged before this review; their relevant changes are integrated.
+
+| Change | iPhone integration |
+| --- | --- |
+| Live Autoplay/Gapless search toggles | Build filtered settings inside the listening Consumer; both toggles can be changed twice without stale values. |
+| Bounded successor preparation | Preserve exact logical queue occurrences and prune consumed native slots. The shared system-player adapter retains iPhone request scopes, checks after asynchronous source resolution, and waits for pending preparation before replacement/collapse. Disabling Gapless trims the speculative successor. |
+| Android PCM rate transitions | Carry upstream Rust queue/rate and WAVPack changes, preserving request-generation guards and raw/DSD exclusions. No bit-perfect claim for resampled PCM. |
+| SMB NAS diagnostics | Validate URL without double decoding; distinguish negotiation/login, share attachment and directory-list permission failures. Preserve the Rust bridge contract. |
+| WebDAV certificate approval | Show origin and SHA-256 for explicit approval; persist only after authenticated WebDAV verification. Pinned NAS playback uses verified local caching because system players do not share the Dart pin. No global certificate bypass. |
+| WebDAV traversal/download failures | Refuse unsafe redirects and malformed collection responses; incomplete sync cannot purge indexed tracks or advance its success timestamp. Download to a temporary file, check completeness, publish atomically. |
+| Local-network permission | Reuse the existing Android bridge prompt on Android. iPhone retains its OS local-network declaration and socket-triggered permission behavior. |
+
+Host verification includes settings double toggles, bounded queue/index behavior,
+iPhone-guarded late-preload refusal, explicit certificate/redirect checks, and
+actual Isar preservation after failed WebDAV walks. This does not establish
+physical NAS compatibility, TLS behavior on a specific NAS, measured gapless
+latency, or Apple simulator/device acceptance for this source.
+
+
+## Continuation: open Android PR363 source-priority UI
+
+Reviewed open PR363 head `f5df3092e6ed9af03693b7826c05ba7fc19e1aba`
+and incorporated its relevant shared changes into the same iPhone draft.
+New HTTP/Morneye installs move to the top of automatic playback priority;
+upgrades retain the saved order. The editor supports long-press row dragging,
+immediate handle dragging, haptics and a bounded scrolling viewport. Row moves
+retain hidden/disabled source positions. Explicit source picks remain exact.
+
+The iPhone continuation also treats a rejected preference write as an error and
+restores the preference cache, allowing the optimistic UI to roll back and retry.
+Regression checks exercise real handle/long-press gestures, persistent movement,
+new install versus upgrade, and rejected-write recovery. This source review does
+not assert that the upstream open PR has merged or has passed its own CI.
+
+## Continuation: merged Android PR365 NAS transport
+
+Integrated PR365 head `bcd22c94941245637d2f8b76bfc1edb6aa9e001f`:
+native libsmb2 SMB2/3 sessions, configured-folder login checks and WebDAV
+same-origin absolute/relative href compatibility. Saved NAS configuration is
+retained. SMB uses port445; custom ports receive an explicit error. Incomplete
+folder walks preserve existing tracks and the previous successful-sync time.
+The Rust SMB source remains available; the shared service now uses dart_smb2.
+
+The iPhone integration stages the checksum-pinned upstream r8 XCFramework before
+CocoaPods, validates device/simulator architectures, deployment floors, native
+dependencies and FFI exports, and retains its load reference in Release. The
+installed acceptance probe opens actual FFI contexts on main and worker isolates.
+Packaging requires the loaded framework and bundled LGPL notice; the independent
+IPA audit checks its pinned UUID and source-matching license. Apple execution of
+these additions remains pending.
+
+SMB and WebDAV scans now use the existing iPhone scan-generation barrier. An old
+listing cannot recreate tracks or stamp a successful sync after Clear Library or
+server removal. Tests exercise those races against actual Isar with the iPhone
+repository policy enabled; fresh scans remain valid and retain retired IDs.
+Downloads await each file write before reading another bounded native chunk.
+
+A separate authenticated loopback fixture exercises the actual Linux r8 native
+library with SMB2, Unicode paths, repeated sessions, cover reads, bounded download
+progress, exact output bytes and failed-download cleanup. It does not qualify an
+Apple binary, a particular NAS, SMB3 encryption or suspended execution. See
+[the NAS verification instructions](IOS_NAS.md). No native background-transfer
+capability is enabled by this parity update.
+
+## Continuation: merged Android PR367–368
+
+PR367 head `732b740751624abfc7dc6c3cf954d9985e2a9393` adds embedded
+artwork recovery from already cached NAS audio, preserving opaque percent-encoded
+remote IDs. SMB/WebDAV cover reads are capped at12MiB; WebDAV connection counts
+and timeouts are bounded. Playing-track artwork/format backfill is deduplicated
+and sequential; prefetched NAS tracks do not start parallel metadata reads.
+Android crash diagnostics are retained as Android-only behavior; the iPhone
+system-player adapter keeps its existing request/lifecycle checks.
+
+PR368 head `5659e36eafa158559bfa915e75f41b7aee8df5a4` makes full desktop
+library/metadata/likes/playlist sync manual through Sync now after initial merge.
+Connection, reconnect and timers only schedule listening-stat exchanges. Each
+stats cycle sends at most50 events and consumes one desktop page of at most250;
+it does not advance the full-sync success timestamp. Single-path and bounded
+title lookups avoid materializing the catalog for incremental work. Remote-only
+plays contribute to recap listening time without double-counting locally
+projected events. The iPhone coordinator retains its foreground-transfer drain
+around both full sync and these stats writes, including pause cancellation.
+
+Host verification includes actual Isar replay/deduplication and remote-only recap
+accounting, capped candidate lookup, manual-sync wiring, NAS byte limits,
+provider/pairing/drain and shared playback regressions. The real native SMB2
+fixture also rejects an oversized cover before allocation. These passes do not
+establish Apple package/lifecycle acceptance or physical Android behavior.
+
+## Review: open Android PR371 USB mixer output
+
+Reviewed head `536b3320f477fff0259ce7f68d4a2102e2696db0`, which was open
+at review time. This adds Android14+ AudioTrack/USB mixer negotiation and its
+settings, format gates and motion-art suppression. The shared Dart changes are
+specific to that opt-in Android hardware route; they add no ordinary iPhone
+feature. This falls within the user's explicit exclusion of complex direct
+and bit-perfect audio paths, so it is not ported or advertised in the iPhone UI.
+The iPhone system-player adapter and existing supported output routes remain the
+port's playback path. A future integration of the Android parent must retain
+those platform guards and filter unsupported engine choices on iPhone.
+
+The later PR371 head `bd69e7f2e5b458e3957703b0688e0aa90948e599` was also
+reviewed while open. Its additional direct-buffer JNI writes, PCM16/24 precision
+gates, Android mixer recreation, verified-route diagnostics, volume guidance and
+bit-perfect pitch lock remain specific to that excluded Android USB path. They
+introduce no ordinary iPhone feature to port.
+
+
+The final merged PR371 head `ec590772a356a7a072143b38af5ca2db10ea2153`
+was reviewed on 31 October 2026 (Europe/Paris). Its additional ReplayGain/volume
+locks, SDK34 capability gate and JNI lifetime correction remain Android USB
+specific. The shared AutoMix nullable-Future timeout correction already has an
+equivalent implementation in this iPhone branch (profile and stem preparation).
+No ordinary iPhone feature delta remains from that final revision. No Android
+mixer choice or hardware-protected volume claim is introduced on iPhone.
+
+
+## Source-freeze review: open mobile PR375
+
+Reviewed head `e06bce2cb71b33c41ddc665af39a606acfd347e6` on 31 October
+2026 (Europe/Paris). It proposes Spotify/YouTube Music library playlist screens
+and account-scoped caches. This is relevant ordinary parity, but the reviewed
+head is unmerged and its `youtube_music_account.dart` does not parse: a duplicated
+class/file tail appears inside `libraryPlaylistTracks` and leaves a stray
+`).hasMatch(id)` declaration (line1533). A standalone Dart parser check fails.
+It is recorded for review when a valid upstream version is available; this
+unfinished head is not imported or silently claimed as iPhone parity. The
+current merged baseline remains reviewed through PR371, whose USB changes are
+excluded and whose shared timeout correction is already equivalent here.

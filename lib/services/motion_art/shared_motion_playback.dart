@@ -81,8 +81,8 @@ class SharedMotionPlayback<T> {
             await pause.catchError((Object _) {});
             await _remove(id, entry);
           } else {
-            unawaited(pause.catchError((Object _) {}));
             entry.timer = Timer(handoff, () => unawaited(_remove(id, entry)));
+            await pause.catchError((Object _) {});
           }
         }
       },

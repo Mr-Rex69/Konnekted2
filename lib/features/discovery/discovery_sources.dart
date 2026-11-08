@@ -96,7 +96,10 @@ class YoutubeMusicCatalog {
   }
 
   /// Anonymous artist-channel browse using the existing guest catalogue client.
-  Future<Map<String, dynamic>> rawBrowse(String browseId, {String? params}) async {
+  Future<Map<String, dynamic>> rawBrowse(
+    String browseId, {
+    String? params,
+  }) async {
     final valid = RegExp(r'^(UC|MPRE|MPLA|MPLY|VL|FEmusic)[A-Za-z0-9_-]{4,}$');
     if (!valid.hasMatch(browseId)) {
       throw const DiscoveryException('Unsupported YouTube Music browse id.');
@@ -326,7 +329,10 @@ class YoutubeMusicCatalog {
   }
 }
 
-final _addonQualityKey = RegExp(r'quality|codec|format|audio', caseSensitive: false);
+final _addonQualityKey = RegExp(
+  r'quality|codec|format|audio',
+  caseSensitive: false,
+);
 
 bool _isAddonQualityKey(String key) => _addonQualityKey.hasMatch(key);
 
@@ -334,11 +340,13 @@ bool _isAddonQualityKey(String key) => _addonQualityKey.hasMatch(key);
 String? httpAddonRequestedSpatialCodec(Map<String, String> settings) {
   for (final entry in settings.entries) {
     if (!_isAddonQualityKey(entry.key)) continue;
-    final id = entry.value.trim().toUpperCase()
-        .replaceAll(RegExp(r'[ -]'), '_');
+    final id = entry.value.trim().toUpperCase().replaceAll(
+      RegExp(r'[ -]'),
+      '_',
+    );
     if (const {'AC4_ATMOS', 'AC_4_ATMOS'}.contains(id)) return 'ac4';
-    if (const {'ATMOS', 'DOLBY_ATMOS', 'EAC3_JOC', 'E_AC_3_JOC'}
-        .contains(id)) return 'eac3-joc';
+    if (const {'ATMOS', 'DOLBY_ATMOS', 'EAC3_JOC', 'E_AC_3_JOC'}.contains(id))
+      return 'eac3-joc';
   }
   return null;
 }
@@ -367,7 +375,8 @@ class AddonSetting {
       if (key == null ||
           !RegExp(r'^[A-Za-z][A-Za-z0-9_]*$').hasMatch(key) ||
           key == 'q' ||
-          !used.add(key)) continue;
+          !used.add(key))
+        continue;
       // Select controls declare an explicit finite set of values.
       final rawOptions = entry['options'];
       if (rawOptions is! List) continue;
@@ -378,30 +387,36 @@ class AddonSetting {
         final value = discoveryText(item['value'], maxLength: 120);
         if (value == null ||
             RegExp(r'[\x00-\x1f\x7f-\x9f]').hasMatch(value) ||
-            !values.add(value)) continue;
-        options.add(AddonSettingOption(
-          value,
-          discoveryText(item['label'], maxLength: 80) ?? value,
-        ));
+            !values.add(value))
+          continue;
+        options.add(
+          AddonSettingOption(
+            value,
+            discoveryText(item['label'], maxLength: 80) ?? value,
+          ),
+        );
       }
       if (options.isEmpty) continue;
       final requestedDefault = discoveryText(entry['default'], maxLength: 120);
       final defaultValue = values.contains(requestedDefault)
           ? requestedDefault!
           : options.first.value;
-      result.add(AddonSetting(
-        key,
-        discoveryText(entry['label'], maxLength: 80) ?? key,
-        defaultValue,
-        List.unmodifiable(options),
-      ));
+      result.add(
+        AddonSetting(
+          key,
+          discoveryText(entry['label'], maxLength: 80) ?? key,
+          defaultValue,
+          List.unmodifiable(options),
+        ),
+      );
     }
     return List.unmodifiable(result);
   }
 }
 
 class AddonHealth {
-  const AddonHealth(this.name, {
+  const AddonHealth(
+    this.name, {
     required this.cacheAllowed,
     this.settings = const [],
   });
@@ -420,22 +435,32 @@ class ResolvedDiscoveryAudio {
     this.quality,
     this.bitDepth,
     this.sampleRate,
+    this.isPreview = false,
     this.hybridPlan,
     this.dashMedia,
     this.requiresStaging = false,
   });
   final Uri url;
+
+  /// Confirmed limited preview rendition, never guessed from duration.
+  final bool isPreview;
+
   /// A DASH MPD is a transport descriptor, never a progressive audio URL.
   final AddonDashMedia? dashMedia;
+
   /// Unclassified signed media must pass the native file probe before playback.
   final bool requiresStaging;
+
   /// CENC content key and CDN range metadata are memory-only and never
   /// serialized into the playback queue or forwarded to an audio URL.
   final AddonHybridPlan? hybridPlan;
+
   /// Resolved stream metadata, never inferred from a catalogue maximum.
   final String? codec;
+
   /// Bits per second for the exact selected rendition, when the resolver knows it.
   final int? bitrate;
+
   /// Resolver-advertised details of the selected rendition (not native-probed).
   final String? quality;
   final int? bitDepth;
@@ -450,12 +475,19 @@ class ResolvedDiscoveryAudio {
 }
 
 /// Return only numerical sample rates explicitly supplied by a provider.
-int? providerAudioInteger(Map<String, dynamic> row, List<String> keys,
-    {int min = 1, int max = 768000}) {
+int? providerAudioInteger(
+  Map<String, dynamic> row,
+  List<String> keys, {
+  int min = 1,
+  int max = 768000,
+}) {
   for (final key in keys) {
     final raw = row[key];
-    final n = raw is num ? raw.toInt()
-        : raw is String ? int.tryParse(raw.trim()) : null;
+    final n = raw is num
+        ? raw.toInt()
+        : raw is String
+        ? int.tryParse(raw.trim())
+        : null;
     if (n != null && n >= min && n <= max) return n;
   }
   return null;
@@ -465,17 +497,28 @@ int? providerAudioInteger(Map<String, dynamic> row, List<String> keys,
 /// (44.1 / "44.1 kHz"). Integer-only parsing drops CD-rate metadata.
 int? providerAudioSampleRate(Map<String, dynamic> row) {
   const keys = [
-    'sampleRate', 'sample_rate', 'samplingRate', 'sampling_rate',
-    'audioSampleRate', 'audio_sample_rate',
+    'sampleRate',
+    'sample_rate',
+    'samplingRate',
+    'sampling_rate',
+    'audioSampleRate',
+    'audio_sample_rate',
   ];
   for (final key in keys) {
     final raw = row[key];
     if (raw == null) continue;
     final text = raw.toString().trim();
     final explicitKhz = RegExp(r'k\s*hz$', caseSensitive: false).hasMatch(text);
-    final number = raw is num ? raw.toDouble() : double.tryParse(
-      text.replaceFirst(RegExp(r'\s*(?:k\s*hz|hz)\s*$', caseSensitive: false), '').trim(),
-    );
+    final number = raw is num
+        ? raw.toDouble()
+        : double.tryParse(
+            text
+                .replaceFirst(
+                  RegExp(r'\s*(?:k\s*hz|hz)\s*$', caseSensitive: false),
+                  '',
+                )
+                .trim(),
+          );
     if (number == null || !number.isFinite || number <= 0) continue;
     final hz = (explicitKhz || number < 1000 ? number * 1000 : number).round();
     if (hz >= 8000 && hz <= 768000) return hz;
@@ -485,9 +528,16 @@ int? providerAudioSampleRate(Map<String, dynamic> row) {
 
 String? providerAudioCodec(Map<String, dynamic> row) {
   final value = discoveryText(
-      row['codec'] ?? row['audioCodec'] ?? row['audio_codec']
-          ?? row['audioFormat'] ?? row['fileType'] ?? row['format']
-          ?? row['mimeType'] ?? row['contentType'], maxLength: 80);
+    row['codec'] ??
+        row['audioCodec'] ??
+        row['audio_codec'] ??
+        row['audioFormat'] ??
+        row['fileType'] ??
+        row['format'] ??
+        row['mimeType'] ??
+        row['contentType'],
+    maxLength: 80,
+  );
   if (value == null) return null;
   final v = value.toLowerCase();
   if (v.contains('flac')) return 'FLAC';
@@ -503,7 +553,7 @@ String? providerAudioCodec(Map<String, dynamic> row) {
 /// A valid Qobuz sample CDN URL is not a full-length stream.
 class _PreviewOnlyAddonStream extends DiscoveryException {
   const _PreviewOnlyAddonStream()
-      : super('The HTTP addon returned a preview instead of full-length audio.');
+    : super('The HTTP addon returned a preview instead of full-length audio.');
 }
 
 bool _isAddonPreviewStream(
@@ -512,14 +562,20 @@ bool _isAddonPreviewStream(
   Duration? expectedDuration,
 ) {
   for (final key in const [
-    'preview', 'isPreview', 'is_preview',
-    'previewOnly', 'preview_only', 'sample', 'isSample',
+    'preview',
+    'isPreview',
+    'is_preview',
+    'previewOnly',
+    'preview_only',
+    'sample',
+    'isSample',
   ]) {
     if (response[key] == true || response[key] == 'true') return true;
   }
   if (response['fullTrack'] == false ||
       response['full_track'] == false ||
-      response['isFullTrack'] == false) return true;
+      response['isFullTrack'] == false)
+    return true;
 
   // Qobuz may respond with HTTP 200 and a 30-second sample URL when
   // full-track access is unavailable.
@@ -536,8 +592,11 @@ bool _isAddonPreviewStream(
   // later explicit 30-second sample duration.
   Duration? reported;
   for (final key in const [
-    'streamDuration', 'stream_duration',
-    'durationSeconds', 'duration_seconds', 'duration',
+    'streamDuration',
+    'stream_duration',
+    'durationSeconds',
+    'duration_seconds',
+    'duration',
   ]) {
     reported = discoveryDuration(response[key]);
     if (reported != null) break;
@@ -585,8 +644,9 @@ class DiscoveryAddon {
   Future<String?> requestedSpatialCodec({Future<void>? cancel}) async {
     final direct = httpAddonRequestedSpatialCodec(settings);
     if (direct != null) return direct;
-    final chosen = settings.entries.where((entry) =>
-        _isAddonQualityKey(entry.key)).toList();
+    final chosen = settings.entries
+        .where((entry) => _isAddonQualityKey(entry.key))
+        .toList();
     final knownStereo = RegExp(
       r'^(?:LOSSLESS|HI_RES(?:_LOSSLESS)?|HIGH|LOW|BEST|FLAC|AAC|OPUS)$',
       caseSensitive: false,
@@ -710,9 +770,11 @@ class DiscoveryAddon {
     );
     // HTTP add-on providers may nest their catalogue in "data".
     final nested = json['data'];
-    final rows = json['tracks'] ??
+    final rows =
+        json['tracks'] ??
         (nested is Map ? nested['tracks'] : null) ??
-        json['results'] ?? json['items'];
+        json['results'] ??
+        json['items'];
     if (rows is! List) {
       throw const DiscoveryException(
         'The addon search response must contain a tracks array.',
@@ -737,8 +799,12 @@ class DiscoveryAddon {
       // Invalid/unsafe URLs must not be fetched by the player.
       String? artwork;
       for (final key in [
-        'artworkURL', 'albumArtworkURL', 'artworkUrl',
-        'albumArtworkUrl', 'coverUrl', 'thumbnailUrl',
+        'artworkURL',
+        'albumArtworkURL',
+        'artworkUrl',
+        'albumArtworkUrl',
+        'coverUrl',
+        'thumbnailUrl',
       ]) {
         final candidate = discoveryText(row[key], maxLength: 8192);
         if (candidate == null) continue;
@@ -753,8 +819,13 @@ class DiscoveryAddon {
                 !host.contains('.') ||
                 host.endsWith('.') ||
                 const [
-                  '.localhost', '.local', '.internal', '.lan', '.home',
-                ].any(host.endsWith)) continue;
+                  '.localhost',
+                  '.local',
+                  '.internal',
+                  '.lan',
+                  '.home',
+                ].any(host.endsWith))
+              continue;
           }
           artwork = imageUrl.toString();
           break;
@@ -776,12 +847,17 @@ class DiscoveryAddon {
           sourceName: displayName,
           sourceUrl: sourceUrl,
           artwork: artwork,
-          catalogueQuality: discoveryText(row['audioQuality'] ??
-              row['audio_quality'] ?? row['quality'], maxLength: 40),
+          catalogueQuality: discoveryText(
+            row['audioQuality'] ?? row['audio_quality'] ?? row['quality'],
+            maxLength: 40,
+          ),
           catalogueCodec: providerAudioCodec(row),
           catalogueBitDepth: providerAudioInteger(
-              row, const ['bitDepth', 'bit_depth', 'bitsPerSample', 'bits_per_sample'],
-              min: 8, max: 64),
+            row,
+            const ['bitDepth', 'bit_depth', 'bitsPerSample', 'bits_per_sample'],
+            min: 8,
+            max: 64,
+          ),
           catalogueSampleRate: providerAudioSampleRate(row),
           // Retain security-relevant fields with inline URLs, not just the URL.
           inlineStream: row['streamURL'] == null
@@ -851,7 +927,8 @@ class DiscoveryAddon {
       // An upstream minting failure can be transient. Re-sign exactly one
       // fresh request, but never retry an authentication or quota failure.
       if (!error.message.contains('HTTP 502') &&
-          !error.message.contains('HTTP 503')) rethrow;
+          !error.message.contains('HTTP 503'))
+        rethrow;
       await Future<void>.delayed(const Duration(milliseconds: 150));
       response = await fetchStream();
     }
@@ -870,9 +947,12 @@ class DiscoveryAddon {
     final stream = json['stream'];
     final nested = stream is Map<String, dynamic>
         ? stream
-        : data is Map<String, dynamic> ? data : null;
+        : data is Map<String, dynamic>
+        ? data
+        : null;
     final hybridPlan = AddonHybridPlan.parse(
-      nested?['hybrid'] ?? json['hybrid'] ??
+      nested?['hybrid'] ??
+          json['hybrid'] ??
           (data is Map ? data['hybrid'] : null),
       addonBase: base,
     );
@@ -882,9 +962,12 @@ class DiscoveryAddon {
       if (stream is Map<String, dynamic>) stream,
     ]) {
       if (layer['error'] != null) {
-        throw const DiscoveryException('The addon could not resolve this recording.');
+        throw const DiscoveryException(
+          'The addon could not resolve this recording.',
+        );
       }
-      if ((layer['encrypted'] != null && layer['encrypted'] != false &&
+      if ((layer['encrypted'] != null &&
+              layer['encrypted'] != false &&
               hybridPlan?.encrypted != true) ||
           layer['drm'] != null && layer['drm'] != false) {
         throw const DiscoveryException(
@@ -893,7 +976,9 @@ class DiscoveryAddon {
       }
       if (layer['headers'] != null &&
           !(layer['headers'] is Map && (layer['headers'] as Map).isEmpty)) {
-        throw const DiscoveryException('Use a signed media URL; custom media headers are not supported.');
+        throw const DiscoveryException(
+          'Use a signed media URL; custom media headers are not supported.',
+        );
       }
     }
     if (nested != null) json = {...json, ...nested};
@@ -902,7 +987,8 @@ class DiscoveryAddon {
         'The addon could not resolve this recording.',
       );
     }
-    if (json['encrypted'] != null && json['encrypted'] != false &&
+    if (json['encrypted'] != null &&
+        json['encrypted'] != false &&
         hybridPlan?.encrypted != true) {
       throw const DiscoveryException(
         'Encrypted audio is not supported by this adapter.',
@@ -925,23 +1011,36 @@ class DiscoveryAddon {
     // then a signed hybrid plan, then an explicit inline/remote MPD.
     final urls = <Uri>[];
     for (final field in const [
-      'url', 'directUrl', 'streamUrl', 'downloadUrl', 'mediaUrl',
+      'url',
+      'directUrl',
+      'streamUrl',
+      'downloadUrl',
+      'mediaUrl',
     ]) {
       final raw = discoveryText(json[field], maxLength: 8192);
       if (raw == null || raw.startsWith('data:')) continue;
       final parsed = requireHttps(raw);
       urls.add(parsed);
     }
-    final direct = urls.where((candidate) => RegExp(
-      r'\.(?:flac|mp3|m4a|mp4|ogg|opus|wav|aac|webm)$',
-      caseSensitive: false,
-    ).hasMatch(candidate.path)).firstOrNull;
+    final direct = urls
+        .where(
+          (candidate) => RegExp(
+            r'\.(?:flac|mp3|m4a|mp4|ogg|opus|wav|aac|webm)$',
+            caseSensitive: false,
+          ).hasMatch(candidate.path),
+        )
+        .firstOrNull;
     final dash = hybridPlan == null && direct == null
         ? addonDashFromResponse(json, addonBase: base)
         : null;
-    final fallback = urls.where((candidate) => !RegExp(
-      r'\.(?:mpd|m3u8)$', caseSensitive: false,
-    ).hasMatch(candidate.path)).firstOrNull;
+    final fallback = urls
+        .where(
+          (candidate) => !RegExp(
+            r'\.(?:mpd|m3u8)$',
+            caseSensitive: false,
+          ).hasMatch(candidate.path),
+        )
+        .firstOrNull;
     final dashMedia = dash;
     final Uri uri;
     if (hybridPlan != null) {
@@ -959,17 +1058,29 @@ class DiscoveryAddon {
     // Match MIME and transport to the resolved object rather than to the
     // server's default labels. Explicit HLS still requires its own player.
     if (hybridPlan == null && dashMedia == null) {
-      if (urls.any((candidate) => candidate.path.toLowerCase().endsWith('.m3u8')) &&
-          direct == null && fallback == null) {
-        throw const DiscoveryException('This source uses HLS/DASH. A progressive audio file is required.');
+      if (urls.any(
+            (candidate) => candidate.path.toLowerCase().endsWith('.m3u8'),
+          ) &&
+          direct == null &&
+          fallback == null) {
+        throw const DiscoveryException(
+          'This source uses HLS/DASH. A progressive audio file is required.',
+        );
       }
       for (final key in const [
-        'manifest', 'mediaType', 'format', 'container', 'containerFormat', 'mimeType',
+        'manifest',
+        'mediaType',
+        'format',
+        'container',
+        'containerFormat',
+        'mimeType',
       ]) {
         final value = json[key];
         if (key == 'manifest' && value == false) continue;
         if (value != null && value is! String) {
-          throw const DiscoveryException('The addon returned invalid transport metadata.');
+          throw const DiscoveryException(
+            'The addon returned invalid transport metadata.',
+          );
         }
         if (value is String) {
           final lower = value.trim().toLowerCase();
@@ -986,8 +1097,8 @@ class DiscoveryAddon {
     }
     // An opaque signed URL might actually return a JSON error or MPD.
     // Stage and inspect its bytes rather than hand it to the audio engine.
-    final requiresStaging = hybridPlan == null &&
-        dashMedia == null && direct == null;
+    final requiresStaging =
+        hybridPlan == null && dashMedia == null && direct == null;
     // An explicitly configured LAN addon may serve its own media. An addon
     // cannot redirect the downloader to a different literal/private host.
     if (uri.origin != base.origin) {
@@ -1016,7 +1127,10 @@ class DiscoveryAddon {
       // sibling metadata object. More specific audio fields win, followed
       // by explicit non-null fields on the outer stream response.
       for (final key in const [
-        'metadata', 'audio_metadata', 'audioMetadata', 'audio',
+        'metadata',
+        'audio_metadata',
+        'audioMetadata',
+        'audio',
       ])
         if (json[key] is Map)
           for (final entry in (json[key] as Map).entries)
@@ -1025,8 +1139,11 @@ class DiscoveryAddon {
       for (final entry in json.entries)
         if (entry.value != null) entry.key: entry.value,
     };
-    final rawBitrate = details['bitrate'] ?? details['audioBitrate'] ??
-        details['audio_bitrate'] ?? details['bit_rate'];
+    final rawBitrate =
+        details['bitrate'] ??
+        details['audioBitrate'] ??
+        details['audio_bitrate'] ??
+        details['bit_rate'];
     final parsedBitrate = rawBitrate is num
         ? rawBitrate.toDouble()
         : double.tryParse(rawBitrate?.toString() ?? '');
@@ -1034,8 +1151,8 @@ class DiscoveryAddon {
     // infer any compressed quality from a missing or nonsensical value.
     final bitrate = parsedBitrate == null || !parsedBitrate.isFinite
         ? null
-        : (parsedBitrate <= 2000
-            ? parsedBitrate * 1000 : parsedBitrate).round();
+        : (parsedBitrate <= 2000 ? parsedBitrate * 1000 : parsedBitrate)
+              .round();
     return ResolvedDiscoveryAudio(
       uri,
       hybridPlan: hybridPlan,
@@ -1044,16 +1161,21 @@ class DiscoveryAddon {
       length: hybridPlan?.outputLength,
       codec: providerAudioCodec(details),
       quality: discoveryText(
-        details['audioQuality'] ?? details['audio_quality'] ??
-            details['streamQuality'] ?? details['stream_quality'] ??
+        details['audioQuality'] ??
+            details['audio_quality'] ??
+            details['streamQuality'] ??
+            details['stream_quality'] ??
             details['quality'],
         maxLength: 80,
       ),
       bitrate: bitrate != null && bitrate >= 16000 && bitrate <= 10000000
-          ? bitrate : null,
+          ? bitrate
+          : null,
       bitDepth: providerAudioInteger(
-        details, const ['bitDepth', 'bit_depth', 'bitsPerSample', 'bits_per_sample'],
-        min: 8, max: 64,
+        details,
+        const ['bitDepth', 'bit_depth', 'bitsPerSample', 'bits_per_sample'],
+        min: 8,
+        max: 64,
       ),
       sampleRate: providerAudioSampleRate(details),
     );

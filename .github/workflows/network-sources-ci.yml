@@ -69,6 +69,9 @@ jobs:
           test/services/album_art_service_test.dart
           test/services/smb_service_parse_test.dart
           test/services/smb_native_transport_test.dart
+          test/services/ios_nas_scan_retirement_test.dart
+          test/services/webdav_sync_integration_test.dart
+          test/data/repositories/link_history_projection_test.dart
           test/services/network_embedded_artwork_test.dart
           test/services/webdav_service_test.dart
           test/services/local_network_access_test.dart

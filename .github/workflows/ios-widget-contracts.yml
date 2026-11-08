@@ -1,0 +1,168 @@
+name: Archived iPhone widget research (manual only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-widget-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metadata:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Check the Dart writer against the shared corpus
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub --fatal-infos lib/models/ios_widget_snapshot.dart lib/services/ios_widget_snapshot_builder.dart lib/services/ios_widget_publication_coordinator.dart lib/services/ios_widget_method_channel_transport.dart lib/services/ios_widget_state_sampler.dart lib/services/ios_widget_owned_artwork.dart lib/services/ios_widget_runtime.dart test/widgets/ios
+          flutter test --no-pub test/widgets/ios test/services/android_widget_contract_test.dart
+      - name: Type-check the real Flutter host bridge on both iOS 16 SDK targets
+        run: |
+          flutter precache --ios
+          plutil -lint ios/Runner.xcodeproj/project.pbxproj ios/Runner/Info.plist
+          python3 - <<'PYTHON'
+          import os
+          import pathlib
+          import plistlib
+          import subprocess
+          engine = pathlib.Path(os.environ['FLUTTER_ROOT']) / 'bin/cache/artifacts/engine/ios/Flutter.xcframework'
+          with (engine / 'Info.plist').open('rb') as source:
+              libraries = plistlib.load(source)['AvailableLibraries']
+          files = [
+              'ios/Widgets/Contracts/LokalWidgetSnapshot.swift',
+              'ios/Widgets/Storage/LokalWidgetStore.swift',
+              'ios/Widgets/Publication/LokalWidgetPublisher.swift',
+              'ios/Runner/LokalWidgetBridge.swift',
+          ]
+          for variant, sdk, target in [
+              (None, 'iphoneos', 'arm64-apple-ios16.0'),
+              ('simulator', 'iphonesimulator', 'arm64-apple-ios16.0-simulator'),
+          ]:
+              item = next(row for row in libraries
+                          if row['SupportedPlatform'] == 'ios'
+                          and row.get('SupportedPlatformVariant') == variant
+                          and 'arm64' in row['SupportedArchitectures'])
+              framework = (engine / item['LibraryIdentifier']).resolve()
+              assert framework.is_relative_to(engine.resolve())
+              sdk_path = subprocess.check_output(['xcrun', '--sdk', sdk, '--show-sdk-path'], text=True).strip()
+              subprocess.run(['swiftc', '-swift-version', '6', '-warnings-as-errors',
+                              '-target', target, '-sdk', sdk_path, '-F', str(framework),
+                              '-typecheck', *files], check=True)
+          PYTHON
+
+  native:
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify render startup gate boundaries
+        run: |
+          python3 -m unittest discover -s tool -p test_ios_widget_render.py
+          python3 -m unittest discover -s tool -p test_ios_widget_live_capture.py
+      - name: Compile and exercise the actual Foundation reader
+        run: |
+          xcodebuild -version
+          swiftc -swift-version 6 -warnings-as-errors ios/Widgets/Contracts/LokalWidgetSnapshot.swift ios/Widgets/Tests/main.swift -o "$RUNNER_TEMP/lokal-widget-contracts"
+          "$RUNNER_TEMP/lokal-widget-contracts" test/fixtures/ios_widget/snapshot_contract.json
+      - name: Exercise native widget presentation and timeline policy
+        run: |
+          swiftc -swift-version 6 -warnings-as-errors ios/Widgets/Contracts/LokalWidgetSnapshot.swift ios/Widgets/Storage/LokalWidgetStore.swift ios/Widgets/Presentation/LokalWidgetPresentation.swift ios/Widgets/Presentation/LokalWidgetDisplayArtwork.swift ios/Widgets/PresentationTests/main.swift -o "$RUNNER_TEMP/lokal-widget-presentation-contracts"
+          "$RUNNER_TEMP/lokal-widget-presentation-contracts" test/fixtures/ios_widget/snapshot_contract.json
+      - name: Check iOS 16 device and simulator storage APIs
+        run: |
+          swiftc -swift-version 6 -warnings-as-errors -target arm64-apple-ios16.0 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -typecheck ios/Widgets/Contracts/LokalWidgetSnapshot.swift ios/Widgets/Storage/LokalWidgetStore.swift ios/Widgets/Publication/LokalWidgetPublisher.swift
+          swiftc -swift-version 6 -warnings-as-errors -target arm64-apple-ios16.0-simulator -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -typecheck ios/Widgets/Contracts/LokalWidgetSnapshot.swift ios/Widgets/Storage/LokalWidgetStore.swift ios/Widgets/Publication/LokalWidgetPublisher.swift
+      - name: Exercise actual atomic storage, images and concurrent processes
+        env:
+          LOKAL_WIDGET_CONCURRENCY_ROUNDS: '50'
+        run: |
+          swiftc -swift-version 6 -warnings-as-errors ios/Widgets/Contracts/LokalWidgetSnapshot.swift ios/Widgets/Storage/LokalWidgetStore.swift ios/Widgets/StorageTests/main.swift -o "$RUNNER_TEMP/lokal-widget-store-contracts"
+          "$RUNNER_TEMP/lokal-widget-store-contracts"
+      - name: Exercise actual host metadata and artwork publication
+        if: success() || failure()
+        run: |
+          swiftc -swift-version 6 -warnings-as-errors ios/Widgets/Contracts/LokalWidgetSnapshot.swift ios/Widgets/Storage/LokalWidgetStore.swift ios/Widgets/Publication/LokalWidgetPublisher.swift ios/Widgets/PublicationTests/main.swift -o "$RUNNER_TEMP/lokal-widget-publication-contracts"
+          "$RUNNER_TEMP/lokal-widget-publication-contracts"
+
+
+  extension:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify the optional standalone target and localized resources
+        run: |
+          xcodebuild -version
+          plutil -lint ios/Widgets/LokalWidgets.xcodeproj/project.pbxproj ios/Widgets/Extension/Info.plist ios/Widgets/RenderHarness/Info.plist
+          find ios/Widgets/Resources -name Localizable.strings -exec plutil -lint {} +
+      - name: Link the real WidgetKit extension for iOS 16 devices
+        run: |
+          xcodebuild -project ios/Widgets/LokalWidgets.xcodeproj -scheme LokalWidgets -configuration Release -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/lokal-widgets-device" IPHONEOS_DEPLOYMENT_TARGET=16.0 CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/lokal-widgets-device.log" 2>&1
+      - name: Link the real WidgetKit extension for iOS 16 simulators
+        if: success() || failure()
+        run: |
+          xcodebuild -project ios/Widgets/LokalWidgets.xcodeproj -scheme LokalWidgets -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/lokal-widgets-simulator" IPHONEOS_DEPLOYMENT_TARGET=16.0 CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/lokal-widgets-simulator.log" 2>&1
+      - name: Preserve extension linkage diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-widget-extension-linkage
+          path: |
+            ${{ runner.temp }}/lokal-widgets-device.log
+            ${{ runner.temp }}/lokal-widgets-simulator.log
+          retention-days: 14
+
+
+  render:
+    needs: extension
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+      IOS_SIMULATOR_RUNTIME_VERSION: '18.6'
+      IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-16
+      IOS_SIMULATOR_SESSION_SUFFIX: widget-render
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Link the isolated native SwiftUI render app
+        run: |
+          xcodebuild -project ios/Widgets/LokalWidgets.xcodeproj -scheme LokalWidgetPreview -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/lokal-widget-preview" CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/lokal-widget-preview.log" 2>&1
+      - name: Render layout matrix and capture displayed native progress
+        run: |
+          python3 tool/ios_widget_render.py "$RUNNER_TEMP/lokal-widget-preview/Build/Products/Release-iphonesimulator/LokalWidgetPreview.app" --output "$RUNNER_TEMP/lokal-widget-renders"
+      - name: Preserve native rendered images and failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-widget-native-render-proof
+          path: |
+            ${{ runner.temp }}/lokal-widget-preview.log
+            ${{ runner.temp }}/lokal-widget-renders
+            ${{ runner.temp }}/ios-simulator-boot-18.6-widget-render*
+          retention-days: 14

@@ -11,6 +11,7 @@ import 'spotify_http.dart';
 import 'spotify_models.dart';
 import 'spotify_oauth.dart';
 import 'spotify_storage.dart';
+
 import 'package:flick/services/graceful_http_client.dart';
 
 /// Cookie sessions use the same Pathfinder operations as desktop, rather than
@@ -31,13 +32,15 @@ class SpotifyWebApi implements SpotifyLibraryApi {
   final DateTime? likesSince;
   void close() => _http.client.close();
   static const hashes = {
-    'searchTracks': 'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428',
+    'searchTracks':
+        'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428',
     'home': '5fb7da7a03ee2776c0670856609cb85a189a3cecc36cc160b91cde79063b9cf1',
     'fetchPlaylist':
         '21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf',
     'fetchLibraryTracks':
         '087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240',
-    'libraryV3': '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455',
+    'libraryV3':
+        '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455',
   };
   Future<Map<String, dynamic>> query(
     String operation,
@@ -73,11 +76,13 @@ class SpotifyWebApi implements SpotifyLibraryApi {
                 'extensions': jsonEncode(extensions),
               })
             : Uri.https('api-partner.spotify.com', '/pathfinder/v2/query'),
-        jsonBody: artistsLibrary ? null : jsonEncode({
-          'operationName': operation,
-          'variables': variables,
-          'extensions': extensions,
-        }),
+        jsonBody: artistsLibrary
+            ? null
+            : jsonEncode({
+                'operationName': operation,
+                'variables': variables,
+                'extensions': extensions,
+              }),
         headers: {
           'Authorization': 'Bearer ${tokens.accessToken}',
           'Accept': 'application/json',
@@ -122,6 +127,13 @@ class SpotifyWebApi implements SpotifyLibraryApi {
         await oauth.refresh();
         continue;
       }
+      if (artistsLibrary &&
+          body['errors'] is List &&
+          (body['errors'] as List).isNotEmpty) {
+        throw const SpotifyApiException(
+          'Spotify could not read the complete artist library. Retry later.',
+        );
+      }
       if (body['data'] is Map<String, dynamic>)
         return body['data'] as Map<String, dynamic>;
       throw const SpotifyApiException(
@@ -140,18 +152,27 @@ class SpotifyWebApi implements SpotifyLibraryApi {
     int pageSize = 50,
     int maxArtists = 2000,
   }) async {
-    final size = pageSize.clamp(1, 50).toInt();
-    final limit = maxArtists.clamp(size, 2000).toInt();
+    final limit = maxArtists.clamp(1, 2000).toInt();
+    final size = pageSize.clamp(1, limit < 50 ? limit : 50).toInt();
     final names = <String, String>{};
+    int? expectedTotal;
     for (var offset = 0; offset < limit; offset += size) {
       cancellation?.check();
       final data = await query('libraryV3', {
         'filters': ['Artists'],
         'order': null,
         'textFilter': null,
-        'features': ['LIKED_SONGS', 'YOUR_EPISODES_V2', 'PRERELEASES', 'EVENTS'],
-        'limit': size, 'offset': offset, 'flatten': false,
-        'folderUri': null, 'includeFoldersWhenFlattening': true,
+        'features': [
+          'LIKED_SONGS',
+          'YOUR_EPISODES_V2',
+          'PRERELEASES',
+          'EVENTS',
+        ],
+        'limit': size,
+        'offset': offset,
+        'flatten': false,
+        'folderUri': null,
+        'includeFoldersWhenFlattening': true,
       }, cancellation: cancellation);
       final me = data['me'];
       final library = me is Map ? me['libraryV3'] : null;
@@ -161,6 +182,27 @@ class SpotifyWebApi implements SpotifyLibraryApi {
         );
       }
       final items = library['items'] as List;
+      final total = library['totalCount'];
+      if (total is! int ||
+          total < 0 ||
+          items.length > size ||
+          (expectedTotal != null && total != expectedTotal)) {
+        throw const SpotifyApiException(
+          'Spotify returned an incomplete artist list. Retry later.',
+        );
+      }
+      expectedTotal = total;
+      if (total > limit) {
+        throw const SpotifyApiException(
+          'Spotify artist list exceeds the 2000-artist import limit.',
+        );
+      }
+      final received = offset + items.length;
+      if (received > total || (received < total && items.length < size)) {
+        throw const SpotifyApiException(
+          'Spotify artist list was incomplete. Retry later.',
+        );
+      }
       for (final row in items.whereType<Map>()) {
         final wrapper = row['item'];
         final artist = wrapper is Map ? wrapper['data'] : null;
@@ -173,14 +215,11 @@ class SpotifyWebApi implements SpotifyLibraryApi {
         }
       }
       onProgress?.call(names.length);
-      final total = (library['totalCount'] as num?)?.toInt();
-      if (total != null && total > limit) {
-        throw const SpotifyApiException('Spotify artist list exceeds the 2000-artist import limit.');
-      }
-      if (items.isEmpty || items.length < size ||
-          (total != null && offset + size >= total)) break;
+      if (received == total) break;
       if (offset + size >= limit) {
-        throw const SpotifyApiException('Spotify artist list was incomplete. Retry later.');
+        throw const SpotifyApiException(
+          'Spotify artist list was incomplete. Retry later.',
+        );
       }
     }
     return names.values.toList(growable: false);
@@ -261,7 +300,12 @@ class SpotifyWebApi implements SpotifyLibraryApi {
         'filters': ['Playlists'],
         'order': null,
         'textFilter': '',
-        'features': ['LIKED_SONGS', 'YOUR_EPISODES_V2', 'PRERELEASES', 'EVENTS'],
+        'features': [
+          'LIKED_SONGS',
+          'YOUR_EPISODES_V2',
+          'PRERELEASES',
+          'EVENTS',
+        ],
         'limit': pageSize,
         'offset': offset,
         'flatten': true,
@@ -282,7 +326,8 @@ class SpotifyWebApi implements SpotifyLibraryApi {
       }
       onProgress?.call(playlists.length);
       final total = (library['totalCount'] as num?)?.toInt();
-      if (items.isEmpty || items.length < pageSize ||
+      if (items.isEmpty ||
+          items.length < pageSize ||
           (total != null && offset + pageSize >= total)) {
         return playlists.values.toList(growable: false);
       }
@@ -301,27 +346,35 @@ class SpotifyWebApi implements SpotifyLibraryApi {
     for (final entry in raw.whereType<Map>()) {
       final wrapper = entry['item'];
       if (wrapper is! Map ||
-          !'${wrapper['__typename'] ?? ''}'.contains('Playlist')) continue;
+          !'${wrapper['__typename'] ?? ''}'.contains('Playlist'))
+        continue;
       final playlist = wrapper['data'];
       if (playlist is! Map) continue;
       final uri = '${wrapper['_uri'] ?? playlist['uri'] ?? ''}';
-      if (!RegExp(r'^spotify:playlist:[A-Za-z0-9]{22}$').hasMatch(uri)) continue;
+      if (!RegExp(r'^spotify:playlist:[A-Za-z0-9]{22}$').hasMatch(uri))
+        continue;
       final name = playlist['name']?.toString() ?? '';
       if (name.isEmpty) continue;
       final images = playlist['images'];
       final entries = images is Map ? images['items'] : null;
-      final first = entries is List && entries.isNotEmpty ? entries.first : null;
+      final first = entries is List && entries.isNotEmpty
+          ? entries.first
+          : null;
       final sources = first is Map ? first['sources'] : null;
       final ownerV2 = playlist['ownerV2'];
       final ownerData = ownerV2 is Map ? ownerV2['data'] : null;
       final content = playlist['content'];
-      playlists.add(SpotifyPlaylist(
-        id: uri.split(':').last,
-        name: name,
-        owner: ownerData is Map ? ownerData['name']?.toString() : null,
-        imageUrl: biggestImage(sources),
-        tracksTotal: content is Map ? ((content['totalCount'] as num?)?.toInt() ?? 0) : 0,
-      ));
+      playlists.add(
+        SpotifyPlaylist(
+          id: uri.split(':').last,
+          name: name,
+          owner: ownerData is Map ? ownerData['name']?.toString() : null,
+          imageUrl: biggestImage(sources),
+          tracksTotal: content is Map
+              ? ((content['totalCount'] as num?)?.toInt() ?? 0)
+              : 0,
+        ),
+      );
     }
     return playlists;
   }

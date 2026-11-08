@@ -24,6 +24,8 @@ No Lokal account is needed to play local files. Your library and listening histo
 
 **1.0.0 is the next stable mobile release.** Until it is published, preview APKs are available on the Releases page. Stable releases and nightlies have separate, manually triggered build flows; merging a pull request does not publish another beta.
 
+The iPhone unsigned beta is available for signing and physical-device acceptance. See the [Windows IPA signing guide](docs/IOS_SIDELOADING.md), [port architecture](docs/IOS_PORT.md), and [main integration notes](docs/IOS_MAIN_INTEGRATION.md).
+
 ---
 
 ## A collection that feels like yours

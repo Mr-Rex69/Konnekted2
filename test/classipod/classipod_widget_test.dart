@@ -91,7 +91,7 @@ void main() {
       await pumpApp(tester, library: true);
       // No visible entry: a long press on Library's title opens it.
       expect(find.text('Classipod'), findsNothing);
-      await tester.longPress(find.text('Library'));
+      await tester.longPress(find.descendant(of: find.byType(KonnektedLibrary), matching: find.text('Library')).first);
       await tester.pumpAndSettle();
       expect(find.byType(ClassipodScreen), findsOneWidget);
       expect(

@@ -1,3 +1,12 @@
+/// Playback capability checks must not block a file-only Save operation.
+/// A valid encoded source may be preserved on disk even on an iPhone which
+/// cannot decode it for native playback.
+bool morneyeNeedsSpatialPlaybackOutput({
+  required bool spatialRequested,
+  required bool forDownload,
+  required bool atmosDownload,
+}) => spatialRequested && !forDownload && !atmosDownload;
+
 /// A codec/quality identifier is not catalogue evidence of Dolby Atmos.
 /// Selecting an encoded Atmos tier in an add-on's settings is a playback
 /// preference, not evidence that a particular song has an Atmos edition.
@@ -120,7 +129,8 @@ String? amazonRequestedPlaybackQualityLabel({
   for (final option in options) {
     if (option is! Map ||
         option['id']?.toString().toLowerCase() != selected.toLowerCase() ||
-        morneyeSpatialOption(option, provider: 'amazon')) continue;
+        morneyeSpatialOption(option, provider: 'amazon'))
+      continue;
     final label = option['label']?.toString().trim() ?? '';
     if (selected.toLowerCase() == 'best') return 'FLAC best (requested)';
     if (label.isNotEmpty) return '$label (requested)';

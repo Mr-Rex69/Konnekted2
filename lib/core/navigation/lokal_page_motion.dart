@@ -115,22 +115,46 @@ class _ContinuousForegroundSlideState
   void initState() {
     super.initState();
     _initialize();
+    widget.animation.addStatusListener(_onStatus);
   }
 
   void _initialize() {
     _phase = widget.animation.status;
-    _startValue = _phase == AnimationStatus.reverse ||
-            _phase == AnimationStatus.completed
-        ? 1.0 : 0.0;
-    _startOffset = _phase == AnimationStatus.reverse ||
-            _phase == AnimationStatus.completed
-        ? 0.0 : LokalPageMotion.enterOffset;
+    _startValue =
+        _phase == AnimationStatus.reverse || _phase == AnimationStatus.completed
+        ? 1.0
+        : 0.0;
+    _startOffset =
+        _phase == AnimationStatus.reverse || _phase == AnimationStatus.completed
+        ? 0.0
+        : LokalPageMotion.enterOffset;
   }
 
   @override
   void didUpdateWidget(covariant _ContinuousForegroundSlide oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(widget.animation, oldWidget.animation)) _initialize();
+    if (!identical(widget.animation, oldWidget.animation)) {
+      oldWidget.animation.removeStatusListener(_onStatus);
+      _initialize();
+      widget.animation.addStatusListener(_onStatus);
+    }
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status == _phase) return;
+    // Capture at the actual reversal, even if no frame is built before the
+    // animation advances. Sampling in build alone loses that starting point.
+    final value = widget.animation.value;
+    final position = _offsetAt(value);
+    _phase = status;
+    _startValue = value;
+    _startOffset = status == AnimationStatus.completed ? 0 : position;
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeStatusListener(_onStatus);
+    super.dispose();
   }
 
   double _offsetAt(double value) {
@@ -139,15 +163,16 @@ class _ContinuousForegroundSlideState
     if (_phase == AnimationStatus.dismissed) return _startOffset;
     if (_phase == AnimationStatus.reverse) {
       final fraction = _startValue <= 0
-          ? 1.0 : ((_startValue - p) / _startValue).clamp(0.0, 1.0);
+          ? 1.0
+          : ((_startValue - p) / _startValue).clamp(0.0, 1.0);
       return _startOffset +
           (LokalPageMotion.exitOffset - _startOffset) *
               LokalPageMotion.backCurve.transform(fraction);
     }
     final fraction = _startValue >= 1
-        ? 1.0 : ((p - _startValue) / (1 - _startValue)).clamp(0.0, 1.0);
-    return _startOffset *
-        (1 - LokalPageMotion.enterCurve.transform(fraction));
+        ? 1.0
+        : ((p - _startValue) / (1 - _startValue)).clamp(0.0, 1.0);
+    return _startOffset * (1 - LokalPageMotion.enterCurve.transform(fraction));
   }
 
   @override
@@ -188,12 +213,12 @@ class LokalPageRoute<T> extends MaterialPageRoute<T> {
   @override
   Duration get transitionDuration =>
       AppConstants.animationNormal == Duration.zero
-          ? Duration.zero
-          : LokalPageMotion.duration;
+      ? Duration.zero
+      : LokalPageMotion.duration;
 
   @override
   Duration get reverseTransitionDuration =>
       AppConstants.animationNormal == Duration.zero
-          ? Duration.zero
-          : LokalPageMotion.reverseDuration;
+      ? Duration.zero
+      : LokalPageMotion.reverseDuration;
 }

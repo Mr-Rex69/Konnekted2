@@ -5,7 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 AppleMusicAlbumMatch release(
-  String id, String title, String artist, String date,
+  String id,
+  String title,
+  String artist,
+  String date,
 ) => AppleMusicAlbumMatch(
   collectionId: id,
   name: title,
@@ -30,7 +33,9 @@ class _ArtistApple extends Fake implements AppleMusicMetadataService {
   }) async => AppleMusicArtistData(
     artist: AppleMusicArtist(artistId: 'artist-id', name: name),
     info: AppleMusicArtistInfo(
-      artistId: 'artist-id', name: name, storefront: 'ng',
+      artistId: 'artist-id',
+      name: name,
+      storefront: 'ng',
       url: 'https://music.apple.com/ng/artist/-/artist-id',
       imageUrl: 'https://example.test/artist.jpg',
     ),
@@ -75,6 +80,7 @@ class _ArtistApple extends Fake implements AppleMusicMetadataService {
     return [
       release('2', 'Album Two', name, '2023-01-01'),
       release('7', 'Credited Collaboration', '$name & Guest', '2025-05-01'),
+      release('9', 'Guest-led collaboration', 'Guest & $name', '2025-06-01'),
       release('8', 'Wrong artist album', 'Another $name Fan', '2025-01-01'),
     ];
   }
@@ -84,37 +90,57 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   for (final artist in ['Asake', 'Davido']) {
-    test('$artist artist page merges verified releases, collaborations, and song albums', () async {
-      final api = _ArtistApple(artist);
-      final catalogue = LokalOnlineCatalogue(
-        apple: api,
-        sources: (http.Client _) async => [],
-        youtubeReleases: (_) async => [],
-      );
-      final page = await catalogue.artist(artist);
-      final names = page.albums.map((album) => album.title).toList();
-      expect(page.albums, hasLength(8));
-      expect(names, containsAll([
-        'Album One', 'Album Two', 'Album Three', 'Album Four',
-        'Joint EP', 'Credited Collaboration', 'Popular song release',
-      ]));
-      expect(names, isNot(contains('Wrong artist album')));
-      expect(names.where((name) => name == 'Album Four'), hasLength(2));
-      expect(page.albums.where((album) => album.id == '2'), hasLength(1));
-      expect(
-        page.albums.firstWhere((album) => album.title == 'Joint EP').kind,
-        LokalReleaseKind.feature,
-      );
-      expect(
-        page.albums.firstWhere((album) => album.title == 'Credited Collaboration').kind,
-        LokalReleaseKind.feature,
-      );
-      expect(api.verifiedCalls, 1);
-      expect(api.searchedCalls, 1);
-      expect(page.tracks, hasLength(1));
-      // A saved page should reuse its merged results, not re-fetch everything.
-      await catalogue.artist(artist);
-      expect(api.verifiedCalls, 1);
-    });
+    test(
+      '$artist artist page merges verified releases, collaborations, and song albums',
+      () async {
+        final api = _ArtistApple(artist);
+        final catalogue = LokalOnlineCatalogue(
+          apple: api,
+          sources: (http.Client _) async => [],
+          youtubeReleases: (_) async => [],
+        );
+        final page = await catalogue.artist(artist);
+        final names = page.albums.map((album) => album.title).toList();
+        expect(page.albums, hasLength(9));
+        expect(
+          names,
+          containsAll([
+            'Album One',
+            'Album Two',
+            'Album Three',
+            'Album Four',
+            'Joint EP',
+            'Credited Collaboration',
+            'Popular song release',
+          ]),
+        );
+        expect(names, isNot(contains('Wrong artist album')));
+        expect(names.where((name) => name == 'Album Four'), hasLength(2));
+        expect(page.albums.where((album) => album.id == '2'), hasLength(1));
+        expect(
+          page.albums.firstWhere((album) => album.title == 'Joint EP').kind,
+          LokalReleaseKind.feature,
+        );
+        expect(
+          page.albums
+              .firstWhere((album) => album.title == 'Credited Collaboration')
+              .kind,
+          LokalReleaseKind.album,
+          reason: 'The requested artist is the primary credit on their own release.',
+        );
+        expect(
+          page.albums
+              .firstWhere((album) => album.title == 'Guest-led collaboration')
+              .kind,
+          LokalReleaseKind.feature,
+        );
+        expect(api.verifiedCalls, 1);
+        expect(api.searchedCalls, 1);
+        expect(page.tracks, hasLength(1));
+        // A saved page should reuse its merged results, not re-fetch everything.
+        await catalogue.artist(artist);
+        expect(api.verifiedCalls, 1);
+      },
+    );
   }
 }

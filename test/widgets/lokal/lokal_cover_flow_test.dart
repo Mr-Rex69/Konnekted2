@@ -5,6 +5,7 @@ import 'package:flick/features/konnekted/konnekted_data.dart';
 import 'package:flick/features/konnekted/lokal_mixes.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/widgets/lokal/lokal_cover_flow.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -57,158 +58,216 @@ void main() {
     _album('Third', [_track('3a', 'Third')]),
   ];
 
-  testWidgets('Cover Flow leaves the continuous Home gradient visible on every theme', (
-    tester,
-  ) async {
-    final flow = LokalCoverFlow(
-      albums: albums,
-      initialIndex: 1,
-      cover: (_) => const ColoredBox(color: Colors.blueGrey),
-      onPlay: (_, _) {},
-    );
-    Element? originalElement;
-    for (final themeId in LokalThemeId.values) {
-      final tokens = LokalTokens.resolve(themeId);
-      // Reproduce the actual shell gradient rather than just its scaffold
-      // color: a flat tokens.bg stage covered up this gradient on Home.
-      final tint = Color.lerp(tokens.bg, tokens.accent, .13)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: LokalTheme.build(tokens),
-          home: Scaffold(
-            body: DecoratedBox(
-              key: const ValueKey('test-home-gradient'),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                  colors: [tint, tokens.bg],
-                  stops: const [0, .55],
+  testWidgets(
+    'Cover Flow leaves the continuous Home gradient visible on every theme',
+    (tester) async {
+      final flow = LokalCoverFlow(
+        albums: albums,
+        initialIndex: 1,
+        cover: (_) => const ColoredBox(color: Colors.blueGrey),
+        onPlay: (_, _) {},
+      );
+      Element? originalElement;
+      for (final themeId in LokalThemeId.values) {
+        final tokens = LokalTokens.resolve(themeId);
+        // Reproduce the actual shell gradient rather than just its scaffold
+        // color: a flat tokens.bg stage covered up this gradient on Home.
+        final tint = Color.lerp(tokens.bg, tokens.accent, .13)!;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: LokalTheme.build(tokens),
+            home: Scaffold(
+              body: DecoratedBox(
+                key: const ValueKey('test-home-gradient'),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                    colors: [tint, tokens.bg],
+                    stops: const [0, .55],
+                  ),
                 ),
+                child: Center(child: flow),
               ),
-              child: Center(child: flow),
             ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final flowElement = tester.element(find.byType(LokalCoverFlow));
+        originalElement ??= flowElement;
+        expect(
+          identical(flowElement, originalElement),
+          isTrue,
+          reason: 'Theme changes must not remount Cover Flow',
+        );
+
+        // A paint layer here, even one using tokens.bg, creates a visible
+        // horizontal stripe when the shell gradient is artwork tinted.
+        expect(
+          _flowStage(),
+          findsOneWidget,
+          reason: '${themeId.name} must have no opaque Cover Flow stage',
+        );
+        final stage = tester.widget<SizedBox>(_flowStage());
+        expect(stage.child, isA<AnimatedBuilder>());
+        final backdrop = tester.widget<DecoratedBox>(
+          find.byKey(const ValueKey('test-home-gradient')),
+        );
+        final gradient =
+            (backdrop.decoration as BoxDecoration).gradient! as LinearGradient;
+        expect(gradient.colors, [tint, tokens.bg]);
+        expect(Theme.of(flowElement).scaffoldBackgroundColor, tokens.bg);
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
+  testWidgets(
+    'iTunes reference triangles match four projected corners on both sides',
+    (tester) async {
+      final five = [
+        ...albums,
+        _album('Fourth', [_track('4a', 'Fourth')]),
+        _album('Fifth', [_track('5a', 'Fifth')]),
+      ];
+      await tester.pumpWidget(
+        _app(
+          LokalCoverFlow(
+            albums: five,
+            initialIndex: 2,
+            cover: (_) => const ColoredBox(color: Colors.blueGrey),
+            onPlay: (_, _) {},
           ),
         ),
       );
-      await tester.pumpAndSettle();
-
-      final flowElement = tester.element(find.byType(LokalCoverFlow));
-      originalElement ??= flowElement;
-      expect(identical(flowElement, originalElement), isTrue,
-          reason: 'Theme changes must not remount Cover Flow');
-
-      // A paint layer here, even one using tokens.bg, creates a visible
-      // horizontal stripe when the shell gradient is artwork tinted.
-      expect(_flowStage(), findsOneWidget,
-          reason: '${themeId.name} must have no opaque Cover Flow stage');
-      final stage = tester.widget<SizedBox>(_flowStage());
-      expect(stage.child, isA<AnimatedBuilder>());
-      final backdrop = tester.widget<DecoratedBox>(
-        find.byKey(const ValueKey('test-home-gradient')),
+      Transform panel(String key) => tester.widget<Transform>(
+        find
+            .descendant(
+              of: find.byKey(ValueKey(key)),
+              matching: find.byType(Transform),
+            )
+            .first,
       );
-      final gradient = (backdrop.decoration as BoxDecoration).gradient!
-          as LinearGradient;
-      expect(gradient.colors, [tint, tokens.bg]);
-      expect(Theme.of(flowElement).scaffoldBackgroundColor, tokens.bg);
-      expect(tester.takeException(), isNull);
-    }
-  });
+      final left = panel('Second');
+      final right = panel('Fourth');
+      final selected = panel('Third');
+      final size = tester.getSize(find.byWidget(selected.child!)).width;
 
-  testWidgets('iTunes reference triangles match four projected corners on both sides', (tester) async {
-    final five = [
-      ...albums,
-      _album('Fourth', [_track('4a', 'Fourth')]),
-      _album('Fifth', [_track('5a', 'Fifth')]),
-    ];
-    await tester.pumpWidget(_app(LokalCoverFlow(
-      albums: five,
-      initialIndex: 2,
-      cover: (_) => const ColoredBox(color: Colors.blueGrey),
-      onPlay: (_, _) {},
-    )));
-    final size = math.min(250.0, tester.getSize(find.byType(LokalCoverFlow)).width * .60);
+      // The first Transform in each Positioned cover applies the real
+      // Matrix4 perspective. Project the actual local cover corners, including
+      // its transform origin and homogeneous perspective division.
+      Offset project(Transform panel, double x, double y) {
+        final origin = panel.origin!;
+        return MatrixUtils.transformPoint(
+              panel.transform,
+              Offset(x - origin.dx, y - origin.dy),
+            ) +
+            origin -
+            Offset(size / 2, size / 2);
+      }
 
-    Transform panel(String key) => tester.widget<Transform>(
-      find.descendant(
-        of: find.byKey(ValueKey(key)),
-        matching: find.byType(Transform),
-      ).first,
-    );
-    final left = panel('Second');
-    final right = panel('Fourth');
-    final selected = panel('Third');
+      for (final panel in [left, right, selected]) {
+        expect(
+          panel.origin!.dx,
+          closeTo(size / 2, .0001),
+          reason: '3D pivot must be at artwork center',
+        );
+        expect(panel.origin!.dy, closeTo(size / 2, .0001));
+      }
+      // Normalized coordinates measured on the iTunes reference. The outer
+      // edges are ~92% of artwork height; the inner edges only ~65% and
+      // drop toward the lower vanishing point. BOTH triangle slopes matter.
+      final loTop = project(left, 0, 0);
+      final loBottom = project(left, 0, size);
+      final liTop = project(left, size, 0);
+      final liBottom = project(left, size, size);
+      final riTop = project(right, 0, 0);
+      final riBottom = project(right, 0, size);
+      final roTop = project(right, size, 0);
+      final roBottom = project(right, size, size);
+      void near(String label, double actual, double normalized) =>
+          expect(actual / size, closeTo(normalized, .007), reason: label);
 
-    // The first Transform in each Positioned cover applies the real
-    // Matrix4 perspective. Project the actual local cover corners, including
-    // its transform origin and homogeneous perspective division.
-    Offset project(Transform panel, double x, double y) {
-      final origin = panel.origin!;
-      return MatrixUtils.transformPoint(
-        panel.transform,
-        Offset(x - origin.dx, y - origin.dy),
-      ) + origin - Offset(size / 2, size / 2);
-    }
-    for (final panel in [left, right, selected]) {
-      expect(panel.origin!.dx, closeTo(size / 2, .0001),
-          reason: '3D pivot must be at artwork center');
-      expect(panel.origin!.dy, closeTo(size / 2, .0001));
-    }
-    // Normalized coordinates measured on the iTunes reference. The outer
-    // edges are ~92% of artwork height; the inner edges only ~65% and
-    // drop toward the lower vanishing point. BOTH triangle slopes matter.
-    final loTop = project(left, 0, 0);
-    final loBottom = project(left, 0, size);
-    final liTop = project(left, size, 0);
-    final liBottom = project(left, size, size);
-    final riTop = project(right, 0, 0);
-    final riBottom = project(right, 0, size);
-    final roTop = project(right, size, 0);
-    final roBottom = project(right, size, size);
-    void near(String label, double actual, double normalized) =>
-        expect(actual / size, closeTo(normalized, .007), reason: label);
+      near('left outside upper x', loTop.dx, -1.067);
+      near('left outside upper y', loTop.dy, -.447);
+      near('left outside lower y', loBottom.dy, .473);
+      near('left inside upper x', liTop.dx, -.429);
+      near('left inside upper y', liTop.dy, -.269);
+      near('left inside lower y', liBottom.dy, .381);
+      near('right inside upper x', riTop.dx, .429);
+      near('right outside upper x', roTop.dx, 1.067);
+      near('right outside upper y', roTop.dy, -.447);
+      near('right outside lower y', roBottom.dy, .473);
+      near('right inside upper y', riTop.dy, -.269);
+      near('right inside lower y', riBottom.dy, .381);
 
-    near('left outside upper x', loTop.dx, -1.067);
-    near('left outside upper y', loTop.dy, -.447);
-    near('left outside lower y', loBottom.dy, .473);
-    near('left inside upper x', liTop.dx, -.429);
-    near('left inside upper y', liTop.dy, -.269);
-    near('left inside lower y', liBottom.dy, .381);
-    near('right inside upper x', riTop.dx, .429);
-    near('right outside upper x', roTop.dx, 1.067);
-    near('right outside upper y', roTop.dy, -.447);
-    near('right outside lower y', roBottom.dy, .473);
-    near('right inside upper y', riTop.dy, -.269);
-    near('right inside lower y', riBottom.dy, .381);
+      expect(
+        liTop.dx,
+        greaterThan(-size * .5),
+        reason: 'center cover masks left inner edge',
+      );
+      expect(
+        riTop.dx,
+        lessThan(size * .5),
+        reason: 'center cover masks right inner edge',
+      );
+      expect(
+        loTop.dy,
+        lessThan(liTop.dy),
+        reason: 'top triangular gap slopes down to center',
+      );
+      expect(
+        loBottom.dy,
+        greaterThan(liBottom.dy),
+        reason: 'lower triangle slopes up to center',
+      );
+      expect(roTop.dy, lessThan(riTop.dy));
+      expect(roBottom.dy, greaterThan(riBottom.dy));
+      expect(
+        left.transform.entry(2, 0),
+        lessThan(0),
+        reason: 'left outer edge projects toward the viewer',
+      );
+      expect(
+        right.transform.entry(2, 0),
+        greaterThan(0),
+        reason: 'right outer edge projects toward the viewer',
+      );
+      expect(
+        left.transform.entry(3, 2),
+        lessThan(0),
+        reason: 'rearward depth must SHRINK the covers',
+      );
+      expect(right.transform.entry(3, 2), lessThan(0));
 
-    expect(liTop.dx, greaterThan(-size * .5),
-        reason: 'center cover masks left inner edge');
-    expect(riTop.dx, lessThan(size * .5),
-        reason: 'center cover masks right inner edge');
-    expect(loTop.dy, lessThan(liTop.dy),
-        reason: 'top triangular gap slopes down to center');
-    expect(loBottom.dy, greaterThan(liBottom.dy),
-        reason: 'lower triangle slopes up to center');
-    expect(roTop.dy, lessThan(riTop.dy));
-    expect(roBottom.dy, greaterThan(riBottom.dy));
-    expect(left.transform.entry(2, 0), lessThan(0),
-        reason: 'left outer edge projects toward the viewer');
-    expect(right.transform.entry(2, 0), greaterThan(0),
-        reason: 'right outer edge projects toward the viewer');
-    expect(left.transform.entry(3, 2), lessThan(0),
-        reason: 'rearward depth must SHRINK the covers');
-    expect(right.transform.entry(3, 2), lessThan(0));
-
-    final coverStack = tester.widgetList<Stack>(
-      find.descendant(of: find.byType(LokalCoverFlow), matching: find.byType(Stack)),
-    ).firstWhere((stack) => stack.children.whereType<Positioned>().length == 5);
-    expect(coverStack.children.last.key, const ValueKey('Third'),
-        reason: 'center album paints above all four adjacent angled covers');
-    expect(find.byType(ShaderMask), findsNothing,
-        reason: 'mobile reflection shader must be completely removed');
-    expect(find.byType(OverflowBox), findsNothing,
-        reason: 'no mirrored second artwork subtree');
-  });
+      final coverStack = tester
+          .widgetList<Stack>(
+            find.descendant(
+              of: find.byType(LokalCoverFlow),
+              matching: find.byType(Stack),
+            ),
+          )
+          .firstWhere(
+            (stack) => stack.children.whereType<Positioned>().length == 5,
+          );
+      expect(
+        coverStack.children.last.key,
+        const ValueKey('Third'),
+        reason: 'center album paints above all four adjacent angled covers',
+      );
+      expect(
+        find.byType(ShaderMask),
+        findsNothing,
+        reason: 'mobile reflection shader must be completely removed',
+      );
+      expect(
+        find.byType(OverflowBox),
+        findsNothing,
+        reason: 'no mirrored second artwork subtree',
+      );
+    },
+  );
 
   test('production center/depth translation is C1-smooth across near/far covers', () {
     // Exercise production code; copied formulas could pass after a regression.
@@ -219,13 +278,19 @@ void main() {
     expect(pos(1), closeTo(.91, 1e-9));
     expect(pos(2) - pos(1), closeTo(.18, 1e-9));
     expect((pos(1) - pos(1 - e)) / e, closeTo((pos(1 + e) - pos(1)) / e, .001));
-    expect((LokalCoverFlow.projectedCenterDistance(e) -
-            LokalCoverFlow.projectedCenterDistance(0)) / e,
-        closeTo(.70, .001), reason: 'the projected rail starts with controlled horizontal velocity');
+    expect(
+      (LokalCoverFlow.projectedCenterDistance(e) -
+              LokalCoverFlow.projectedCenterDistance(0)) /
+          e,
+      closeTo(.70, .001),
+      reason: 'the projected rail starts with controlled horizontal velocity',
+    );
     expect(depth(0), 0);
     expect(depth(1), closeTo(.60, 1e-9));
-    expect((depth(1) - depth(1 - e)) / e,
-        closeTo((depth(1 + e) - depth(1)) / e, .001));
+    expect(
+      (depth(1) - depth(1 - e)) / e,
+      closeTo((depth(1 + e) - depth(1)) / e, .001),
+    );
   });
 
   test('screen-space centers form a flat horizontal rail with smooth near/far transitions', () {
@@ -238,39 +303,56 @@ void main() {
     expect(projected(0), 0);
     expect(projected(1), closeTo(first, 1e-9));
     expect(projected(2) - projected(1), closeTo(step, 1e-9));
-    expect(world(1), closeTo(.91, 1e-9),
-        reason: 'do not disturb the iTunes reference triangles');
+    expect(
+      world(1),
+      closeTo(.91, 1e-9),
+      reason: 'do not disturb the iTunes reference triangles',
+    );
     expect(world(2) - world(1), closeTo(.18, 1e-9));
     expect(depth(1), closeTo(.60, 1e-9));
 
     // Perspective cancellation: the apparent X position must equal the
     // intended horizontal rail, even during the depth/rotation transition.
-    for (final d in [.1, .2, .35, .5, .65, .8, .9, 1, 1.5, 2, 4]) {
-      expect(world(d) / (1 + depth(d) / 1.92),
-          closeTo(projected(d), 1e-9));
-      expect(projected(d), greaterThan(projected(d - .001)),
-          reason: 'a cover never reverses horizontal direction');
+    for (final d in <double>[.1, .2, .35, .5, .65, .8, .9, 1, 1.5, 2, 4]) {
+      expect(world(d) / (1 + depth(d) / 1.92), closeTo(projected(d), 1e-9));
+      expect(
+        projected(d),
+        greaterThan(projected(d - .001)),
+        reason: 'a cover never reverses horizontal direction',
+      );
     }
     final near = (projected(1) - projected(1 - epsilon)) / epsilon;
     final far = (projected(1 + epsilon) - projected(1)) / epsilon;
-    expect(near, closeTo(far, .001),
-        reason: 'no abrupt speed change when entering the angled side stack');
-    expect(projected(.5), lessThan(.44),
-        reason: 'reduce the old arc-like horizontal lurch near center');
+    expect(
+      near,
+      closeTo(far, .001),
+      reason: 'no abrupt speed change when entering the angled side stack',
+    );
+    expect(
+      projected(.5),
+      lessThan(.44),
+      reason: 'reduce the old arc-like horizontal lurch near center',
+    );
   });
 
-  testWidgets('fast fling never teleports or reverses a visible side cover', (tester) async {
+  testWidgets('fast fling never teleports or reverses a visible side cover', (
+    tester,
+  ) async {
     final ten = [
       ...albums,
       for (var i = 3; i < 10; i++)
         _album('Glide $i', [_track('g$i', 'Glide $i')]),
     ];
-    await tester.pumpWidget(_app(LokalCoverFlow(
-      albums: ten,
-      initialIndex: 2,
-      cover: (_) => const ColoredBox(color: Colors.blueGrey),
-      onPlay: (_, _) {},
-    )));
+    await tester.pumpWidget(
+      _app(
+        LokalCoverFlow(
+          albums: ten,
+          initialIndex: 2,
+          cover: (_) => const ColoredBox(color: Colors.blueGrey),
+          onPlay: (_, _) {},
+        ),
+      ),
+    );
     final flow = find.byType(LokalCoverFlow);
     final size = math.min(250.0, tester.getSize(flow).width * .60);
     // A hard flick previously passed its unbounded velocity straight into
@@ -286,52 +368,74 @@ void main() {
       final m = panel.transform;
       final x = m.entry(0, 3) / m.entry(3, 3);
       if (previous != null) {
-        expect(x, lessThanOrEqualTo(previous! + 1.0),
-            reason: 'a right-side cover must only glide left during a leftward fling');
-        expect((x - previous!).abs(), lessThan(size * .45),
-            reason: 'one rendered frame must not skip a visible cover');
+        expect(
+          x,
+          lessThanOrEqualTo(previous! + 1.0),
+          reason:
+              'a right-side cover must only glide left during a leftward fling',
+        );
+        expect(
+          (x - previous!).abs(),
+          lessThan(size * .45),
+          reason: 'one rendered frame must not skip a visible cover',
+        );
       }
       previous = x;
     }
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('second neighbor receives visible strip taps beyond first neighbor quad', (tester) async {
-    final five = [
-      ...albums,
-      _album('Fourth', [_track('4a', 'Fourth')]),
-      _album('Fifth', [_track('5a', 'Fifth')]),
-    ];
-    final selected = <int>[];
-    await tester.pumpWidget(_app(LokalCoverFlow(
-      albums: five,
-      initialIndex: 2,
-      cover: (_) => const ColoredBox(color: Colors.blueGrey),
-      onPlay: (_, _) {},
-      onSelect: selected.add,
-    )));
-    final flow = find.byType(LokalCoverFlow);
-    final size = math.min(250.0, tester.getSize(flow).width * .60);
-    final stage = _flowStage();
-    expect(stage, findsOneWidget);
-    final topLeft = tester.getTopLeft(stage);
-    final stageWidth = tester.getSize(stage).width;
+  testWidgets(
+    'second neighbor receives visible strip taps beyond first neighbor quad',
+    (tester) async {
+      final five = [
+        ...albums,
+        _album('Fourth', [_track('4a', 'Fourth')]),
+        _album('Fifth', [_track('5a', 'Fifth')]),
+      ];
+      final selected = <int>[];
+      await tester.pumpWidget(
+        _app(
+          LokalCoverFlow(
+            albums: five,
+            initialIndex: 2,
+            cover: (_) => const ColoredBox(color: Colors.blueGrey),
+            onPlay: (_, _) {},
+            onSelect: selected.add,
+          ),
+        ),
+      );
+      final flow = find.byType(LokalCoverFlow);
+      final size = math.min(250.0, tester.getSize(flow).width * .60);
+      final stage = _flowStage();
+      expect(stage, findsOneWidget);
+      final topLeft = tester.getTopLeft(stage);
+      final stageWidth = tester.getSize(stage).width;
 
-    // At x=1.13 cover widths, the first neighbor's actual painted edge
-    // ends around x=1.067, but Flutter's affine hit rectangle extends to
-    // x≈1.16. The second neighbor is visibly painted here and must win.
-    await tester.tapAt(topLeft + Offset(stageWidth / 2 + size * 1.13, size * .56));
-    await tester.pump();
-    expect(selected, [4], reason:
-        'tap in visible second-neighbor strip must not be stolen by hidden first-neighbor bounds');
-    expect(tester.takeException(), isNull);
-  });
+      // At x=1.13 cover widths, the first neighbor's actual painted edge
+      // ends around x=1.067, but Flutter's affine hit rectangle extends to
+      // x≈1.16. The second neighbor is visibly painted here and must win.
+      await tester.tapAt(
+        topLeft + Offset(stageWidth / 2 + size * 1.13, size * .56),
+      );
+      await tester.pump();
+      expect(
+        selected,
+        [4],
+        reason: 'tap in visible second-neighbor strip must not be stolen by hidden first-neighbor bounds',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('Home Cover Flow starts centered for odd and even shelves', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    final four = [...albums, _album('Fourth', [_track('4a', 'Fourth')])];
+    final four = [
+      ...albums,
+      _album('Fourth', [_track('4a', 'Fourth')]),
+    ];
 
     Widget shelf(List<AlbumGroup> entries) => _app(
       LokalCoverFlow(
@@ -503,34 +607,45 @@ void main() {
     expect(covers.first.songs.map((s) => s.id), ['a']);
   });
 
-  test('Cover Flow back finds complete local album, in disc and track order', () {
-    final selected = _track('picked', ' Evening Album ', trackNumber: 3);
-    final local = [
-      selected,
-      _track('track-2', 'Evening Album', trackNumber: 2),
-      _track('track-1', 'evening album', trackNumber: 1),
-      _track('track-4', 'Evening Album', trackNumber: 1, discNumber: 2),
-      _track('wrong', 'Another Album', trackNumber: 1),
-      _track('other-artist', 'Evening Album', albumArtist: 'Different Artist'),
-    ];
-    const mix = LokalMix(
-      id: 'm',
-      name: 'Daily Mix',
-      type: LokalMixType.daily,
-      tracks: [],
-    );
-    final covers = konnektedCoversWithLocalAlbums([
-      LokalMadeForYouPick(song: selected, mix: mix),
-      LokalMadeForYouPick(song: selected, mix: mix),
-    ], local);
-    expect(covers, hasLength(1), reason: 'one cover per recommended song');
-    final card = covers.single;
-    expect(card.key, 'song:picked');
-    expect(card.coverSong, same(selected));
-    expect(card.albumName, 'Evening Album');
-    expect(card.songs.map((s) => s.id),
-        ['track-1', 'track-2', 'picked', 'track-4']);
-  });
+  test(
+    'Cover Flow back finds complete local album, in disc and track order',
+    () {
+      final selected = _track('picked', ' Evening Album ', trackNumber: 3);
+      final local = [
+        selected,
+        _track('track-2', 'Evening Album', trackNumber: 2),
+        _track('track-1', 'evening album', trackNumber: 1),
+        _track('track-4', 'Evening Album', trackNumber: 1, discNumber: 2),
+        _track('wrong', 'Another Album', trackNumber: 1),
+        _track(
+          'other-artist',
+          'Evening Album',
+          albumArtist: 'Different Artist',
+        ),
+      ];
+      const mix = LokalMix(
+        id: 'm',
+        name: 'Daily Mix',
+        type: LokalMixType.daily,
+        tracks: [],
+      );
+      final covers = konnektedCoversWithLocalAlbums([
+        LokalMadeForYouPick(song: selected, mix: mix),
+        LokalMadeForYouPick(song: selected, mix: mix),
+      ], local);
+      expect(covers, hasLength(1), reason: 'one cover per recommended song');
+      final card = covers.single;
+      expect(card.key, 'song:picked');
+      expect(card.coverSong, same(selected));
+      expect(card.albumName, 'Evening Album');
+      expect(card.songs.map((s) => s.id), [
+        'track-1',
+        'track-2',
+        'picked',
+        'track-4',
+      ]);
+    },
+  );
 
   test('unknown album never expands into unrelated untagged tracks', () {
     const mix = LokalMix(

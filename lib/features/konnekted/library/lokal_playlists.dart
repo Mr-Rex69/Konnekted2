@@ -23,29 +23,33 @@ import 'lokal_playlist_order.dart';
 import 'playlist_hero_header.dart';
 import 'lokal_song_browser.dart';
 
-
 /// A server playlist's cover is independent of its constituent tracks.
 /// Fetch through authenticated getCoverArt rather than exposing auth in URLs.
 final _subsonicPlaylistCoverProvider = FutureProvider.autoDispose
     .family<Uint8List?, ({int serverId, String coverId})>((ref, key) async {
-  final cacheKey = key.serverId.toString() + '|' + key.coverId;
-  final cached = _playlistCoverCache.remove(cacheKey);
-  if (cached != null) {
-    _playlistCoverCache[cacheKey] = cached;
-    return cached;
-  }
-  final servers = await ref.watch(networkServersProvider.future);
-  final server = servers.where((item) => item.id == key.serverId).firstOrNull;
-  if (server == null || server.protocol != 'subsonic') return null;
-  final bytes = await SubsonicService.instance.getCoverArt(server, key.coverId);
-  if (bytes.isEmpty || bytes.length > 4 * 1024 * 1024) return null;
-  final image = Uint8List.fromList(bytes);
-  _playlistCoverCache[cacheKey] = image;
-  while (_playlistCoverCache.length > 16) {
-    _playlistCoverCache.remove(_playlistCoverCache.keys.first);
-  }
-  return image;
-});
+      final cacheKey = key.serverId.toString() + '|' + key.coverId;
+      final cached = _playlistCoverCache.remove(cacheKey);
+      if (cached != null) {
+        _playlistCoverCache[cacheKey] = cached;
+        return cached;
+      }
+      final servers = await ref.watch(networkServersProvider.future);
+      final server = servers
+          .where((item) => item.id == key.serverId)
+          .firstOrNull;
+      if (server == null || server.protocol != 'subsonic') return null;
+      final bytes = await SubsonicService.instance.getCoverArt(
+        server,
+        key.coverId,
+      );
+      if (bytes.isEmpty || bytes.length > 4 * 1024 * 1024) return null;
+      final image = Uint8List.fromList(bytes);
+      _playlistCoverCache[cacheKey] = image;
+      while (_playlistCoverCache.length > 16) {
+        _playlistCoverCache.remove(_playlistCoverCache.keys.first);
+      }
+      return image;
+    });
 
 final Map<String, Uint8List> _playlistCoverCache = {};
 
@@ -69,9 +73,14 @@ class LokalPlaylistArtwork extends ConsumerWidget {
     if (serverId == null || coverId == null || coverId.isEmpty) {
       return fallback;
     }
-    final cover = ref.watch(_subsonicPlaylistCoverProvider(
-      (serverId: serverId, coverId: coverId),
-    )).value;
+    final cover = ref
+        .watch(
+          _subsonicPlaylistCoverProvider((
+            serverId: serverId,
+            coverId: coverId,
+          )),
+        )
+        .value;
     if (cover == null) return fallback;
     return Image.memory(
       cover,
@@ -85,7 +94,11 @@ class LokalPlaylistArtwork extends ConsumerWidget {
 /// Preserve stored playlist order. The shared library index aliases hidden
 /// desktop tracks to their preferred phone copies. Online entries added before
 /// a library scan use their saved metadata instead of disappearing.
-Song? lokalPlaylistSong(Playlist playlist, String id, Map<String, Song> libraryById) {
+Song? lokalPlaylistSong(
+  Playlist playlist,
+  String id,
+  Map<String, Song> libraryById,
+) {
   final local = libraryById[id];
   if (local != null) return local;
   final snapshot = playlist.songSnapshots[id];
@@ -115,7 +128,8 @@ List<Song> lokalPlaylistCoverSongs(
   for (final id in playlist.songIds.take(64)) {
     final song = lokalPlaylistSong(playlist, id, libraryById);
     if (song == null) continue;
-    final key = song.albumArt ??
+    final key =
+        song.albumArt ??
         '${song.album ?? song.title}|${song.albumArtist ?? song.artist}';
     if (!covers.add(key)) continue;
     result.add(song);
@@ -126,15 +140,15 @@ List<Song> lokalPlaylistCoverSongs(
 
 /// Keep the fully resolved playlist stable across rebuilds so searching and
 /// changing menus do not repeat large metadata lookups.
-final lokalResolvedPlaylistSongsProvider =
-    Provider.autoDispose.family<List<Song>, String>((ref, playlistId) {
-  final playlist = ref.watch(playlistProvider(playlistId));
-  if (playlist == null) return const <Song>[];
-  final byId =
-      ref.watch(konnektedLibraryIndexProvider).value?.byId ??
-      const <String, Song>{};
-  return lokalPlaylistSongs(playlist, byId);
-});
+final lokalResolvedPlaylistSongsProvider = Provider.autoDispose
+    .family<List<Song>, String>((ref, playlistId) {
+      final playlist = ref.watch(playlistProvider(playlistId));
+      if (playlist == null) return const <Song>[];
+      final byId =
+          ref.watch(konnektedLibraryIndexProvider).value?.byId ??
+          const <String, Song>{};
+      return lokalPlaylistSongs(playlist, byId);
+    });
 
 /// Prepare the local playlist's generated or custom hero image before the
 /// new route begins animating, including authenticated server artwork.
@@ -155,9 +169,12 @@ Future<void> precacheLocalPlaylistHero(
     if (coverBytes == null) {
       try {
         coverBytes = await container
-            .read(_subsonicPlaylistCoverProvider(
-              (serverId: serverId, coverId: coverId),
-            ).future)
+            .read(
+              _subsonicPlaylistCoverProvider((
+                serverId: serverId,
+                coverId: coverId,
+              )).future,
+            )
             .timeout(const Duration(milliseconds: 450));
       } catch (_) {
         // Offline servers can use the locally cached collage.
@@ -186,31 +203,56 @@ Future<String?> _askName(
   required String action,
   String initial = '',
 }) {
-  final controller = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: context.lokal.surface2,
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(hintText: lokalText('Playlist name')),
-        onSubmitted: (value) => Navigator.pop(context, value),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(lokalText('Cancel')),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, controller.text),
-          child: Text(action),
-        ),
-      ],
+    builder: (_) =>
+        _PlaylistNameDialog(title: title, action: action, initial: initial),
+  );
+}
+
+class _PlaylistNameDialog extends StatefulWidget {
+  const _PlaylistNameDialog({
+    required this.title,
+    required this.action,
+    required this.initial,
+  });
+  final String title, action, initial;
+
+  @override
+  State<_PlaylistNameDialog> createState() => _PlaylistNameDialogState();
+}
+
+class _PlaylistNameDialogState extends State<_PlaylistNameDialog> {
+  late final controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    backgroundColor: context.lokal.surface2,
+    title: Text(widget.title),
+    content: TextField(
+      controller: controller,
+      autofocus: true,
+      textCapitalization: TextCapitalization.sentences,
+      decoration: InputDecoration(hintText: lokalText('Playlist name')),
+      onSubmitted: (value) => Navigator.pop(context, value),
     ),
-  ).whenComplete(controller.dispose);
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(lokalText('Cancel')),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context, controller.text),
+        child: Text(widget.action),
+      ),
+    ],
+  );
 }
 
 void _say(BuildContext context, String message) {
@@ -286,10 +328,22 @@ class LokalPlaylistsPage extends ConsumerWidget {
       context: context,
       title: 'Playlists',
       choices: [
-        LokalChoice(value: 'new', label: lokalText('New playlist'), icon: Icons.add_rounded),
-        LokalChoice(value: 'import', label: lokalText('Import M3U'), icon: Icons.file_upload_outlined),
+        LokalChoice(
+          value: 'new',
+          label: lokalText('New playlist'),
+          icon: Icons.add_rounded,
+        ),
+        LokalChoice(
+          value: 'import',
+          label: lokalText('Import M3U'),
+          icon: Icons.file_upload_outlined,
+        ),
         if (hasServers)
-          LokalChoice(value: 'sync', label: lokalText('Sync server playlists'), icon: Icons.sync_rounded),
+          LokalChoice(
+            value: 'sync',
+            label: lokalText('Sync server playlists'),
+            icon: Icons.sync_rounded,
+          ),
       ],
     );
     if (!context.mounted) return;
@@ -321,7 +375,8 @@ class LokalPlaylistsPage extends ConsumerWidget {
         LokalRoundAction(
           icon: Icons.add_rounded,
           label: lokalText('Add'),
-          onPressed: () => unawaited(_showPlaylistActions(context, ref, hasServers)),
+          onPressed: () =>
+              unawaited(_showPlaylistActions(context, ref, hasServers)),
         ),
       ],
       slivers: [
@@ -521,14 +576,34 @@ class LokalPlaylistPage extends ConsumerWidget {
       context: context,
       title: playlist.name,
       choices: [
-        LokalChoice(value: 'queue', label: lokalText('Add to queue'), icon: Icons.queue_music_rounded),
+        LokalChoice(
+          value: 'queue',
+          label: lokalText('Add to queue'),
+          icon: Icons.queue_music_rounded,
+        ),
         if (!playlist.isNetworkSource && playlist.songIds.length > 1)
-          LokalChoice(value: 'reorder', label: lokalText('Reorder songs'), icon: Icons.sort_rounded),
+          LokalChoice(
+            value: 'reorder',
+            label: lokalText('Reorder songs'),
+            icon: Icons.sort_rounded,
+          ),
         if (!playlist.isNetworkSource)
-          LokalChoice(value: 'rename', label: lokalText('Rename'), icon: Icons.edit_rounded),
-        LokalChoice(value: 'export', label: lokalText('Export as M3U8'), icon: Icons.file_download_outlined),
-        LokalChoice(value: 'delete', label: lokalText('Delete playlist'),
-          icon: Icons.delete_outline_rounded, destructive: true),
+          LokalChoice(
+            value: 'rename',
+            label: lokalText('Rename'),
+            icon: Icons.edit_rounded,
+          ),
+        LokalChoice(
+          value: 'export',
+          label: lokalText('Export as M3U8'),
+          icon: Icons.file_download_outlined,
+        ),
+        LokalChoice(
+          value: 'delete',
+          label: lokalText('Delete playlist'),
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+        ),
       ],
     );
     if (!context.mounted) return;
@@ -569,12 +644,15 @@ class LokalPlaylistPage extends ConsumerWidget {
     final serverId = playlist.networkServerId;
     // Network playlist covers require the authenticated server artwork API.
     // No cover (or an offline server) falls back to the static collage.
-    final coverBytes = serverId != null &&
-            coverId != null &&
-            coverId.isNotEmpty
-        ? ref.watch(_subsonicPlaylistCoverProvider(
-            (serverId: serverId, coverId: coverId),
-          )).value
+    final coverBytes = serverId != null && coverId != null && coverId.isNotEmpty
+        ? ref
+              .watch(
+                _subsonicPlaylistCoverProvider((
+                  serverId: serverId,
+                  coverId: coverId,
+                )),
+              )
+              .value
         : null;
     return LokalLibraryPage(
       title: playlist.name,
@@ -583,13 +661,15 @@ class LokalPlaylistPage extends ConsumerWidget {
         LokalRoundAction(
           icon: Icons.more_horiz_rounded,
           label: lokalText('More'),
-          onPressed: () => unawaited(_showActions(context, ref, playlist, songs)),
+          onPressed: () =>
+              unawaited(_showActions(context, ref, playlist, songs)),
         ),
       ],
       header: PlaylistHeroHeader(
         playlistId: 'local:${playlist.id}',
         title: playlist.name,
-        metadata: '${lokalSongCount(songs.length)} · ${lokalRunningTime(songs)}',
+        metadata:
+            '${lokalSongCount(songs.length)} · ${lokalRunningTime(songs)}',
         coverBytes: coverBytes,
         coverPath: serverId == null ? coverId : null,
         covers: [
@@ -624,12 +704,16 @@ class LokalPlaylistPage extends ConsumerWidget {
                     // Aliased desktop entries display their phone copy, but
                     // removing must target the ID stored in this playlist.
                     final originalId = playlist.songIds.firstWhere(
-                      (id) => lokalPlaylistSong(playlist, id, libraryById)?.id == song.id,
+                      (id) =>
+                          lokalPlaylistSong(playlist, id, libraryById)?.id ==
+                          song.id,
                       orElse: () => song.id,
                     );
-                    unawaited(ref
-                        .read(playlistsProvider.notifier)
-                        .removeSongFromPlaylist(playlist.id, originalId));
+                    unawaited(
+                      ref
+                          .read(playlistsProvider.notifier)
+                          .removeSongFromPlaylist(playlist.id, originalId),
+                    );
                   },
           ),
       ],
@@ -652,31 +736,54 @@ class _ReorderPage extends ConsumerWidget {
       context: context,
       title: 'Sort playlist',
       choices: const [
-        LokalChoice(value: LokalPlaylistOrder.titleAscending,
-          label: 'Title · A–Z', icon: Icons.sort_by_alpha_rounded),
-        LokalChoice(value: LokalPlaylistOrder.titleDescending,
-          label: 'Title · Z–A', icon: Icons.sort_by_alpha_rounded),
-        LokalChoice(value: LokalPlaylistOrder.artistAscending,
-          label: 'Artist · A–Z', icon: Icons.person_outline_rounded),
-        LokalChoice(value: LokalPlaylistOrder.artistDescending,
-          label: 'Artist · Z–A', icon: Icons.person_outline_rounded),
-        LokalChoice(value: LokalPlaylistOrder.dateAscending,
-          label: 'Date added · Oldest first', icon: Icons.event_rounded),
-        LokalChoice(value: LokalPlaylistOrder.dateDescending,
-          label: 'Date added · Newest first', icon: Icons.event_rounded),
-        LokalChoice(value: LokalPlaylistOrder.reverse,
-          label: 'Reverse current order', icon: Icons.swap_vert_rounded),
+        LokalChoice(
+          value: LokalPlaylistOrder.titleAscending,
+          label: 'Title · A–Z',
+          icon: Icons.sort_by_alpha_rounded,
+        ),
+        LokalChoice(
+          value: LokalPlaylistOrder.titleDescending,
+          label: 'Title · Z–A',
+          icon: Icons.sort_by_alpha_rounded,
+        ),
+        LokalChoice(
+          value: LokalPlaylistOrder.artistAscending,
+          label: 'Artist · A–Z',
+          icon: Icons.person_outline_rounded,
+        ),
+        LokalChoice(
+          value: LokalPlaylistOrder.artistDescending,
+          label: 'Artist · Z–A',
+          icon: Icons.person_outline_rounded,
+        ),
+        LokalChoice(
+          value: LokalPlaylistOrder.dateAscending,
+          label: 'Date added · Oldest first',
+          icon: Icons.event_rounded,
+        ),
+        LokalChoice(
+          value: LokalPlaylistOrder.dateDescending,
+          label: 'Date added · Newest first',
+          icon: Icons.event_rounded,
+        ),
+        LokalChoice(
+          value: LokalPlaylistOrder.reverse,
+          label: 'Reverse current order',
+          icon: Icons.swap_vert_rounded,
+        ),
       ],
     );
     if (choice == null || !context.mounted) return;
     final ordered = lokalOrderedPlaylistIds(playlist, byId, choice);
-    final ok = await ref.read(playlistsProvider.notifier)
+    final ok = await ref
+        .read(playlistsProvider.notifier)
         .setSongOrder(playlistId, ordered);
     if (context.mounted) {
       _say(
         context,
-        ok ? lokalText('Playlist order saved')
-           : lokalText('Couldn’t reorder this playlist.'),
+        ok
+            ? lokalText('Playlist order saved')
+            : lokalText('Couldn’t reorder this playlist.'),
       );
     }
   }
@@ -706,7 +813,9 @@ class _ReorderPage extends ConsumerWidget {
           children: [
             LokalPageBar(
               actions: [
-                if (playlist != null && !playlist.isNetworkSource && ids.length > 1)
+                if (playlist != null &&
+                    !playlist.isNetworkSource &&
+                    ids.length > 1)
                   LokalRoundAction(
                     icon: Icons.sort_by_alpha_rounded,
                     label: lokalText('Sort playlist'),
@@ -739,8 +848,8 @@ class _ReorderPage extends ConsumerWidget {
                     .reorderSongs(playlistId, from, from < to ? to + 1 : to),
                 itemBuilder: (context, index) {
                   final song = playlist == null
-                       ? null
-                       : lokalPlaylistSong(playlist, ids[index], byId);
+                      ? null
+                      : lokalPlaylistSong(playlist, ids[index], byId);
                   return ListTile(
                     key: rowKeys[index],
                     leading: song == null

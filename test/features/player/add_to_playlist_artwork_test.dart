@@ -20,7 +20,7 @@ const _track = Song(
 final _owned = Playlist(
   id: 'owned',
   name: 'My playlist',
-  songIds: const [_track.id],
+  songIds: [_track.id],
   createdAt: DateTime(2026),
 );
 
@@ -37,35 +37,37 @@ class _FixturePlaylistsNotifier extends PlaylistsNotifier {
 }
 
 void main() {
-  testWidgets('Add to playlist uses actual Library artwork and empty fallback',
-      (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          playlistsProvider.overrideWith(_FixturePlaylistsNotifier.new),
-          konnektedLibraryIndexProvider.overrideWith(
-            (ref) => AsyncData(preferredLibrarySongIndex([_track])),
+  testWidgets(
+    'Add to playlist uses actual Library artwork and empty fallback',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            playlistsProvider.overrideWith(_FixturePlaylistsNotifier.new),
+            konnektedLibraryIndexProvider.overrideWith(
+              (ref) => AsyncData(preferredLibrarySongIndex([_track])),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: AddToPlaylistSheet(songs: [_track])),
           ),
-        ],
-        child: const MaterialApp(
-          home: Scaffold(body: AddToPlaylistSheet(songs: [_track])),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final artwork = tester
-        .widgetList<LokalPlaylistArtwork>(find.byType(LokalPlaylistArtwork))
-        .toList();
-    expect(artwork, hasLength(2));
-    // This song was already in a playlist; the existing checked/disabled
-    // selection state does not suppress the playlist's artwork.
-    expect(artwork.first.playlist.id, 'owned');
-    expect(artwork.first.songs.map((song) => song.id), ['track-1']);
-    expect(artwork.last.playlist.id, 'empty');
-    expect(artwork.last.songs, isEmpty);
+      final artwork = tester
+          .widgetList<LokalPlaylistArtwork>(find.byType(LokalPlaylistArtwork))
+          .toList();
+      expect(artwork, hasLength(2));
+      // This song was already in a playlist; the existing checked/disabled
+      // selection state does not suppress the playlist's artwork.
+      expect(artwork.first.playlist.id, 'owned');
+      expect(artwork.first.songs.map((song) => song.id), ['track-1']);
+      expect(artwork.last.playlist.id, 'empty');
+      expect(artwork.last.songs, isEmpty);
 
-    expect(find.text('My playlist'), findsOneWidget);
-    expect(find.text('Empty playlist'), findsOneWidget);
-  });
+      expect(find.text('My playlist'), findsOneWidget);
+      expect(find.text('Empty playlist'), findsOneWidget);
+    },
+  );
 }

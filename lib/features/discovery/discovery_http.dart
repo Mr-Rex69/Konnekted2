@@ -51,7 +51,8 @@ class DiscoveryHttp {
       } on DiscoveryException catch (error) {
         if (attempt == 0 &&
             body == null &&
-            error.message == 'The source returned an empty or incomplete response.') {
+            error.message ==
+                'The source returned an empty or incomplete response.') {
           continue;
         }
         rethrow;
@@ -81,6 +82,7 @@ class DiscoveryHttp {
     Future<void>? cancel,
     bool allowPartial = false,
     bool followMediaRedirects = false,
+    bool followArtworkRedirects = false,
     int? rangeStart,
   }) async {
     requireHttps(url.toString());
@@ -132,7 +134,7 @@ class DiscoveryHttp {
             throw const DiscoveryException('Request cancelled.');
           }
           final location = response.headers['location'];
-          if (!followMediaRedirects ||
+          if (!(followMediaRedirects || followArtworkRedirects) ||
               location == null ||
               !{301, 302, 303, 307, 308}.contains(response.statusCode))
             return response;
@@ -142,14 +144,24 @@ class DiscoveryHttp {
           // do not forward bearer headers to a different site or private IP.
           final googleVideo = url.host.endsWith('.googlevideo.com');
           final soundCloudCdn = url.host.endsWith('.sndcdn.com');
-          final sameTrustedCdn = (googleVideo &&
-                  target.host.endsWith('.googlevideo.com')) ||
+          final sameTrustedCdn =
+              (googleVideo && target.host.endsWith('.googlevideo.com')) ||
               (soundCloudCdn && target.host.endsWith('.sndcdn.com'));
+          // Catalogue artwork can redirect on its own host, or from Cover Art
+          // Archive to its Internet Archive storage. No general cross-site
+          // redirect permission is added to audio/source requests.
+          final archiveStorage =
+              url.host == 'coverartarchive.org' &&
+              (target.host == 'archive.org' ||
+                  target.host.endsWith('.archive.org'));
+          final artworkRedirect =
+              followArtworkRedirects &&
+              (target.host == url.host || archiveStorage);
           if (redirects >= 3 ||
               body != null ||
               target.scheme != 'https' ||
               target.userInfo.isNotEmpty ||
-              !sameTrustedCdn) {
+              !((followMediaRedirects && sameTrustedCdn) || artworkRedirect)) {
             throw const DiscoveryException(
               'The source returned an unsupported media redirect.',
             );
@@ -157,7 +169,17 @@ class DiscoveryHttp {
           next =
               http.AbortableRequest('GET', target, abortTrigger: abort.future)
                 ..followRedirects = false
-                ..headers.addAll(headers);
+                ..headers.addAll({
+                  for (final entry in headers.entries)
+                    if (!followArtworkRedirects ||
+                        target.origin == url.origin ||
+                        !{
+                          'authorization',
+                          'cookie',
+                          'proxy-authorization',
+                        }.contains(entry.key.toLowerCase()))
+                      entry.key: entry.value,
+                });
         }
       }
 

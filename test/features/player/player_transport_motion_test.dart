@@ -16,31 +16,32 @@ void main() {
         ProviderScope(
           overrides: [
             lokalInitialAppearanceProvider.overrideWithValue(
-              const LokalAppearance()),
+              const LokalAppearance(),
+            ),
           ],
           child: MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: 360,
-                child: StatefulBuilder(
-                  builder: (context, setState) {
-                    change = setState;
-                    return PlayerTransportControls(
-                      playing: playing,
-                      compact: false,
-                      lyricsProgress: l,
-                      accent: Colors.lime,
-                      onAccent: Colors.black,
-                      onPrevious: () {},
-                      onNext: () {},
-                      onPlayPause: () => setState(() => playing = !playing),
-                    );
-                  },
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 360,
+                  child: StatefulBuilder(
+                    builder: (context, setState) {
+                      change = setState;
+                      return PlayerTransportControls(
+                        playing: playing,
+                        compact: false,
+                        lyricsProgress: l,
+                        accent: Colors.lime,
+                        onAccent: Colors.black,
+                        onPrevious: () {},
+                        onNext: () {},
+                        onPlayPause: () => setState(() => playing = !playing),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
           ),
         ),
       );
@@ -66,80 +67,114 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-  testWidgets('unboxed play/pause animates both ways without restoring a box',
-      (tester) async {
+  testWidgets('unboxed play/pause animates both ways without restoring a box', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     var playing = false;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        lokalInitialAppearanceProvider.overrideWithValue(
-          const LokalAppearance(unboxedPlayerControls: true)),
-      ],
-      child: MaterialApp(home: Scaffold(body: Center(child: SizedBox(
-        width: 360,
-        child: StatefulBuilder(builder: (context, setState) =>
-            PlayerTransportControls(
-          playing: playing, compact: false, lyricsProgress: 0,
-          accent: Colors.white, onAccent: Colors.black,
-          onPrevious: () {}, onNext: () {},
-          onPlayPause: () => setState(() => playing = !playing),
-        )),
-      )))),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          lokalInitialAppearanceProvider.overrideWithValue(
+            const LokalAppearance(unboxedPlayerControls: true),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 360,
+                child: StatefulBuilder(
+                  builder: (context, setState) => PlayerTransportControls(
+                    playing: playing,
+                    compact: false,
+                    lyricsProgress: 0,
+                    accent: Colors.white,
+                    onAccent: Colors.black,
+                    onPrevious: () {},
+                    onNext: () {},
+                    onPlayPause: () => setState(() => playing = !playing),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('apple-play')), findsOneWidget);
-    expect(find.byKey(const ValueKey('apple-pause')), findsNothing);
-    expect(find.byType(AnimatedIcon), findsNothing);
-    expect(find.byType(AnimatedSwitcher), findsOneWidget);
+    double progress() =>
+        tester.widget<AnimatedIcon>(find.byType(AnimatedIcon)).progress.value;
+    final glyph = find.byKey(const ValueKey('apple-play-pause'));
+    expect(tester.getSize(glyph), const Size(62, 62));
+    expect(progress(), 0);
 
     await tester.tap(find.byKey(const ValueKey('player-play-button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const ValueKey('apple-play')), findsOneWidget,
-        reason: 'old play glyph remains visible during transition');
-    expect(find.byKey(const ValueKey('apple-pause')), findsOneWidget);
+    expect(progress(), greaterThan(0));
+    expect(progress(), lessThan(1));
+    expect(tester.getSize(glyph), const Size(62, 62));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('apple-play')), findsNothing);
-    expect(find.byKey(const ValueKey('apple-pause')), findsOneWidget);
+    expect(progress(), 1);
 
     await tester.tap(find.byKey(const ValueKey('player-play-button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const ValueKey('apple-play')), findsOneWidget);
-    expect(find.byKey(const ValueKey('apple-pause')), findsOneWidget);
+    expect(progress(), greaterThan(0));
+    expect(progress(), lessThan(1));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('apple-pause')), findsNothing);
-    expect(find.byKey(const ValueKey('apple-play')), findsOneWidget);
+    expect(progress(), 0);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Apple glyph centers follow the screenshot quarter-width layout',
+  testWidgets(
+    'Apple glyph centers follow the screenshot quarter-width layout',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
-      await tester.pumpWidget(ProviderScope(
-        overrides: [
-          lokalInitialAppearanceProvider.overrideWithValue(
-            const LokalAppearance(unboxedPlayerControls: true)),
-        ],
-        child: MaterialApp(home: Scaffold(body: Center(child: SizedBox(
-          width: 360,
-          child: PlayerTransportControls(
-            playing: false, compact: false, lyricsProgress: 0,
-            accent: Colors.white, onAccent: Colors.black,
-            onPrevious: () {}, onNext: () {}, onPlayPause: () {},
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            lokalInitialAppearanceProvider.overrideWithValue(
+              const LokalAppearance(unboxedPlayerControls: true),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 360,
+                  child: PlayerTransportControls(
+                    playing: false,
+                    compact: false,
+                    lyricsProgress: 0,
+                    accent: Colors.white,
+                    onAccent: Colors.black,
+                    onPrevious: () {},
+                    onNext: () {},
+                    onPlayPause: () {},
+                  ),
+                ),
+              ),
+            ),
           ),
-        )))),
-      ));
+        ),
+      );
       await tester.pump();
       final bounds = tester.getRect(find.byType(PlayerTransportControls));
-      final prev = tester.getCenter(find.byKey(const ValueKey('apple-skip-previous'))).dx;
-      final play = tester.getCenter(find.byKey(const ValueKey('apple-play-pause'))).dx;
-      final next = tester.getCenter(find.byKey(const ValueKey('apple-skip-next'))).dx;
+      final prev = tester
+          .getCenter(find.byKey(const ValueKey('apple-skip-previous')))
+          .dx;
+      final play = tester
+          .getCenter(find.byKey(const ValueKey('apple-play-pause')))
+          .dx;
+      final next = tester
+          .getCenter(find.byKey(const ValueKey('apple-skip-next')))
+          .dx;
       expect(prev, closeTo(bounds.left + bounds.width * .25, .1));
       expect(play, closeTo(bounds.left + bounds.width * .50, .1));
       expect(next, closeTo(bounds.left + bounds.width * .75, .1));
-      expect(find.byType(AnimatedIcon), findsNothing);
+      expect(find.byType(AnimatedIcon), findsOneWidget);
     },
   );
-
 }

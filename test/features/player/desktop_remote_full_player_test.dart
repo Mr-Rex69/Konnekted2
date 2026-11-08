@@ -86,12 +86,22 @@ class _RemoteController extends LokalRemoteController {
       updatedAt: 123,
       currentIndex: 1,
       queue: const [
-        LokalRemoteTrack(id: 'desktop-previous', title: 'Previous',
-          artist: 'Performer'),
-        LokalRemoteTrack(id: 'desktop-id-123', title: 'Desktop Recording',
-          artist: 'Desktop Performer', album: 'Desktop Album'),
-        LokalRemoteTrack(id: 'desktop-next', title: 'Next',
-          artist: 'Performer'),
+        LokalRemoteTrack(
+          id: 'desktop-previous',
+          title: 'Previous',
+          artist: 'Performer',
+        ),
+        LokalRemoteTrack(
+          id: 'desktop-id-123',
+          title: 'Desktop Recording',
+          artist: 'Desktop Performer',
+          album: 'Desktop Album',
+        ),
+        LokalRemoteTrack(
+          id: 'desktop-next',
+          title: 'Next',
+          artist: 'Performer',
+        ),
       ],
     ),
   );
@@ -131,65 +141,82 @@ void main() {
     const initial = LokalRemoteControllerState();
     final cover = initial.copyWith(remoteArtworkPath: '/app/cache/cover.webp');
     expect(cover.remoteArtworkPath, '/app/cache/cover.webp');
-    expect(cover.copyWith(status: LokalRemoteConnectionStatus.connected).remoteArtworkPath,
-        '/app/cache/cover.webp');
+    expect(
+      cover
+          .copyWith(status: LokalRemoteConnectionStatus.connected)
+          .remoteArtworkPath,
+      '/app/cache/cover.webp',
+    );
     expect(cover.copyWith(clearRemoteArtwork: true).remoteArtworkPath, isNull);
   });
 
-  test('desktop now-playing conversion uses the cached cover, never a PC path', () {
-    const track = LokalRemoteTrack(
-      id: 'recording-123',
-      title: 'From PC',
-      artist: 'Producer',
-      album: 'Album',
-      artworkPath: r'C:\\Users\\Desktop\\cover.jpg',
-      duration: 201,
-    );
-    final noCover = songFromDesktopRemoteTrack(track);
-    expect(noCover.albumArt, isNull);
-    expect(noCover.id, 'desktop:recording-123');
-    expect(noCover.remoteId, 'recording-123');
-    expect(noCover.duration, const Duration(seconds: 201));
-    final cached = songFromDesktopRemoteTrack(
-      track, artworkPath: '/data/user/0/lokal/cache/art.webp',
-    );
-    expect(cached.albumArt, '/data/user/0/lokal/cache/art.webp');
-    expect(cached.albumArt, isNot(track.artworkPath));
-  });
+  test(
+    'desktop now-playing conversion uses the cached cover, never a PC path',
+    () {
+      const track = LokalRemoteTrack(
+        id: 'recording-123',
+        title: 'From PC',
+        artist: 'Producer',
+        album: 'Album',
+        artworkPath: r'C:\\Users\\Desktop\\cover.jpg',
+        duration: 201,
+      );
+      final noCover = songFromDesktopRemoteTrack(track);
+      expect(noCover.albumArt, isNull);
+      expect(noCover.id, 'desktop:recording-123');
+      expect(noCover.remoteId, 'recording-123');
+      expect(noCover.duration, const Duration(seconds: 201));
+      final cached = songFromDesktopRemoteTrack(
+        track,
+        artworkPath: '/data/user/0/lokal/cache/art.webp',
+      );
+      expect(cached.albumArt, '/data/user/0/lokal/cache/art.webp');
+      expect(cached.albumArt, isNot(track.artworkPath));
+    },
+  );
 
-  test('every desktop queue item keeps its own authenticated artwork marker', () {
-    const first = LokalRemoteTrack(
-      id: 'recording-a',
-      title: 'First', artist: 'Artist', duration: 180,
-    );
-    const second = LokalRemoteTrack(
-      id: 'recording-b',
-      title: 'Second', artist: 'Artist', duration: 185,
-    );
-    final current = songFromDesktopRemoteTrack(
-      first, artworkServerId: 42,
-      artworkPath: '/data/user/0/lokal/cache/current.webp',
-    );
-    final queued = songFromDesktopRemoteTrack(
-      second, artworkServerId: 42,
-    );
-    expect(current.albumArt, '/data/user/0/lokal/cache/current.webp');
-    expect(current.filePath, 'lokal://42/recording-a');
-    expect(queued.albumArt, 'lokal-cover://recording-b');
-    expect(queued.filePath, 'lokal://42/recording-b');
-    expect(queued.remoteServerId, 42);
-    expect(queued.remoteId, 'recording-b');
-    expect(queued.albumArt, isNot(current.albumArt));
-    final beforePairing = songFromDesktopRemoteTrack(second);
-    expect(beforePairing.albumArt, isNull);
-    expect(beforePairing.filePath, isNull);
-  });
+  test(
+    'every desktop queue item keeps its own authenticated artwork marker',
+    () {
+      const first = LokalRemoteTrack(
+        id: 'recording-a',
+        title: 'First',
+        artist: 'Artist',
+        duration: 180,
+      );
+      const second = LokalRemoteTrack(
+        id: 'recording-b',
+        title: 'Second',
+        artist: 'Artist',
+        duration: 185,
+      );
+      final current = songFromDesktopRemoteTrack(
+        first,
+        artworkServerId: 42,
+        artworkPath: '/data/user/0/lokal/cache/current.webp',
+      );
+      final queued = songFromDesktopRemoteTrack(second, artworkServerId: 42);
+      expect(current.albumArt, '/data/user/0/lokal/cache/current.webp');
+      expect(current.filePath, 'lokal://42/recording-a');
+      expect(queued.albumArt, 'lokal-cover://recording-b');
+      expect(queued.filePath, 'lokal://42/recording-b');
+      expect(queued.remoteServerId, 42);
+      expect(queued.remoteId, 'recording-b');
+      expect(queued.albumArt, isNot(current.albumArt));
+      final beforePairing = songFromDesktopRemoteTrack(second);
+      expect(beforePairing.albumArt, isNull);
+      expect(beforePairing.filePath, isNull);
+    },
+  );
 
   test('paired artwork server is invalidated on remote target changes', () {
     const initial = LokalRemoteControllerState();
     final paired = initial.copyWith(artworkServerId: 19);
     expect(paired.artworkServerId, 19);
-    expect(paired.copyWith(remoteArtworkPath: '/cache/current.webp').artworkServerId, 19);
+    expect(
+      paired.copyWith(remoteArtworkPath: '/cache/current.webp').artworkServerId,
+      19,
+    );
     expect(paired.copyWith(clearArtworkServer: true).artworkServerId, isNull);
   });
 
@@ -213,9 +240,8 @@ void main() {
         theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
         home: Builder(
           builder: (context) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(scale),
-            ),
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(scale)),
             child: DesktopRemoteFullPlayer(onClose: () {}),
           ),
         ),
@@ -228,79 +254,99 @@ void main() {
 
     await tester.pumpWidget(app(1));
     await tester.pumpAndSettle();
-    expect(scrollView().controller!.position.maxScrollExtent, lessThanOrEqualTo(1));
-    expect(scrollView().physics, isA<NeverScrollableScrollPhysics>());
+    final normalExtent = scrollView().controller!.position.maxScrollExtent;
+    expect(normalExtent, greaterThanOrEqualTo(0));
 
     await tester.pumpWidget(app(2.8));
     await tester.pumpAndSettle();
-    expect(scrollView().controller!.position.maxScrollExtent, greaterThan(1));
+    expect(
+      scrollView().controller!.position.maxScrollExtent,
+      greaterThan(normalExtent),
+    );
     expect(scrollView().physics, isA<ClampingScrollPhysics>());
 
     await tester.pumpWidget(app(1));
     await tester.pumpAndSettle();
-    expect(scrollView().controller!.position.maxScrollExtent, lessThanOrEqualTo(1));
-    expect(scrollView().physics, isA<NeverScrollableScrollPhysics>());
+    expect(
+      scrollView().controller!.position.maxScrollExtent,
+      closeTo(normalExtent, 1),
+    );
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -600),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.volume_up_rounded).hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('horizontal cover swipes issue remote next, not phone playback',
-      (tester) async {
+  testWidgets('horizontal cover swipes issue remote next, not phone playback', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final player = _RemotePlayer();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(() => player),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(() => player),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     expect(find.byType(SongStageCarousel), findsOneWidget);
     await tester.drag(
       find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
       const Offset(-300, 0),
     );
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    await tester.pumpAndSettle();
     expect(player.actions, contains('next'));
   });
 
   testWidgets('desktop queue enters with an in-place animated reveal', (
-      tester) async {
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(_RemotePlayer.new),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(_RemotePlayer.new),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.tap(find.byTooltip('Queue'));
     await tester.pump();
     expect(find.byType(QueueScreen), findsNothing);
     expect(find.byType(QueueList), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 100));
-    final opacity = tester.widgetList<Opacity>(find.byType(Opacity))
+    final opacity = tester
+        .widgetList<Opacity>(find.byType(Opacity))
         .map((w) => w.opacity);
     expect(opacity.any((v) => v > 0 && v < 1), isTrue);
     await tester.pump(const Duration(milliseconds: 650));
     expect(find.text('UP NEXT'), findsOneWidget);
     await tester.tap(find.byTooltip('Back to player').first);
-    await tester.pump(const Duration(milliseconds: 650));
+    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byType(QueueList), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -311,16 +357,18 @@ void main() {
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(_RemotePlayer.new),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(_RemotePlayer.new),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.tap(find.byTooltip('Lyrics'));
     await tester.pump();
@@ -338,16 +386,18 @@ void main() {
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(_RemotePlayer.new),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(_RemotePlayer.new),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     final cover = find.byKey(
       const ValueKey('desktop-cover:desktop:desktop-id-123'),
@@ -369,105 +419,125 @@ void main() {
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(_RemotePlayer.new),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-        lokalInitialAppearanceProvider.overrideWithValue(
-          const LokalAppearance(fullscreenCover: true),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(_RemotePlayer.new),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+          lokalInitialAppearanceProvider.overrideWithValue(
+            const LokalAppearance(fullscreenCover: true),
+          ),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
         ),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(find.byType(FullBleedArtworkFrame), findsWidgets);
     final coverFrame = tester.widget<FullBleedArtworkFrame>(
-        find.byType(FullBleedArtworkFrame).first);
+      find.byType(FullBleedArtworkFrame).first,
+    );
     expect(coverFrame.dimOnExpand, isFalse);
     expect(coverFrame.fadeOutCompletely, isTrue);
     expect(find.byType(ArtworkGradientBackdrop), findsOneWidget);
     expect(find.byType(ArtworkMeshBlurBackdrop), findsOneWidget);
-    expect(find.byKey(const ValueKey('remote-full-cover-spacer')), findsOneWidget);
-    expect(find.byKey(
-      const ValueKey('remote-full-cover:desktop:desktop-id-123'),
-    ), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('remote-full-cover-spacer')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('remote-full-cover:desktop:desktop-id-123')),
+      findsOneWidget,
+    );
     // Fullcover replaces the square sleeve, it doesn't render two covers.
-    expect(find.byKey(
-      const ValueKey('desktop-cover:desktop:desktop-id-123'),
-    ), findsNothing);
+    expect(
+      find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
+      findsNothing,
+    );
     expect(find.text('Desktop Recording'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('fullscreen-cover swipe forwards through chrome to desktop',
-      (tester) async {
+  testWidgets('fullscreen-cover swipe forwards through chrome to desktop', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final player = _RemotePlayer();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(() => player),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-        lokalInitialAppearanceProvider.overrideWithValue(
-          const LokalAppearance(fullscreenCover: true),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(() => player),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+          lokalInitialAppearanceProvider.overrideWithValue(
+            const LokalAppearance(fullscreenCover: true),
+          ),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
         ),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
       ),
-    ));
-    await tester.pump();
-    final swipeZone = find.byKey(
-      const ValueKey('remote-full-cover-spacer'),
     );
+    await tester.pump();
+    final swipeZone = find.byKey(const ValueKey('remote-full-cover-spacer'));
     expect(swipeZone, findsOneWidget);
-    expect(tester.widget<SongStageCarousel>(
-      find.byType(SongStageCarousel).first).allowUnresolvedSwipe, isTrue);
+    expect(
+      tester
+          .widget<SongStageCarousel>(find.byType(SongStageCarousel).first)
+          .allowUnresolvedSwipe,
+      isTrue,
+    );
     await tester.drag(swipeZone, const Offset(-280, 0));
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    await tester.pumpAndSettle();
     expect(player.actions, contains('next'));
     await tester.drag(swipeZone, const Offset(280, 0));
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    await tester.pumpAndSettle();
     expect(player.actions, contains('previous-swipe'));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('full-cover swipes work even before desktop queue arrives',
-      (tester) async {
+  testWidgets('full-cover swipes work even before desktop queue arrives', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final player = _RemotePlayer();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(() => player),
-        lokalRemoteControllerProvider.overrideWith(_RemoteWithoutQueue.new),
-        lokalInitialAppearanceProvider.overrideWithValue(
-          const LokalAppearance(fullscreenCover: true),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(() => player),
+          lokalRemoteControllerProvider.overrideWith(_RemoteWithoutQueue.new),
+          lokalInitialAppearanceProvider.overrideWithValue(
+            const LokalAppearance(fullscreenCover: true),
+          ),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () {}),
         ),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
       ),
-    ));
+    );
     await tester.pump();
     final cover = find.byKey(const ValueKey('remote-full-cover-spacer'));
     expect(cover, findsOneWidget);
     await tester.drag(cover, const Offset(-300, 0));
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    await tester.pumpAndSettle();
     expect(player.actions, contains('next'));
     await tester.drag(cover, const Offset(300, 0));
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    await tester.pumpAndSettle();
     expect(player.actions, contains('previous-swipe'));
     expect(tester.takeException(), isNull);
   });
@@ -481,16 +551,18 @@ void main() {
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     var closes = 0;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(_RemotePlayer.new),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () => closes++),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(_RemotePlayer.new),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () => closes++),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.drag(
       find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
@@ -510,16 +582,18 @@ void main() {
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     var closes = 0;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(_RemotePlayer.new),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () => closes++),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playerProvider.overrideWith(_RemotePlayer.new),
+          lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+        ],
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+          home: DesktopRemoteFullPlayer(onClose: () => closes++),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.drag(
       find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
@@ -530,47 +604,52 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('desktop full player displays remote track rather than the last mobile song',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    tester.view
-      ..physicalSize = const Size(390, 844)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final player = _RemotePlayer();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playerProvider.overrideWith(() => player),
-        lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
-      ],
-      child: MaterialApp(
-        theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
-        home: DesktopRemoteFullPlayer(onClose: () {}),
-      ),
-    ));
-    await tester.pump();
+  testWidgets(
+    'desktop full player displays remote track rather than the last mobile song',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view
+        ..physicalSize = const Size(390, 844)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final player = _RemotePlayer();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            playerProvider.overrideWith(() => player),
+            lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+          ],
+          child: MaterialApp(
+            theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+            home: DesktopRemoteFullPlayer(onClose: () {}),
+          ),
+        ),
+      );
+      await tester.pump();
 
-    expect(find.text('Desktop Recording'), findsOneWidget);
-    expect(find.text('Desktop Performer'), findsOneWidget);
-    expect(find.text('ExpertBook'), findsOneWidget);
-    expect(find.text('Last Mobile Song'), findsNothing);
-    expect(find.byType(PlayerTransportControls), findsOneWidget);
-    final controls = tester.widget<PlayerTransportControls>(
-        find.byType(PlayerTransportControls));
-    controls.onNext();
-    await tester.pump();
-    controls.onPrevious();
-    await tester.pump();
-    controls.onPlayPause();
-    await tester.pump();
-    expect(player.actions, ['next', 'previous', 'toggle']);
+      expect(find.text('Desktop Recording'), findsOneWidget);
+      expect(find.text('Desktop Performer'), findsOneWidget);
+      expect(find.text('ExpertBook'), findsOneWidget);
+      expect(find.text('Last Mobile Song'), findsNothing);
+      expect(find.byType(PlayerTransportControls), findsOneWidget);
+      final controls = tester.widget<PlayerTransportControls>(
+        find.byType(PlayerTransportControls),
+      );
+      controls.onNext();
+      await tester.pump();
+      controls.onPrevious();
+      await tester.pump();
+      controls.onPlayPause();
+      await tester.pump();
+      expect(player.actions, ['next', 'previous', 'toggle']);
 
-    final seek = tester.widgetList<Slider>(find.byType(Slider)).first;
-    seek.onChangeStart?.call(.5);
-    seek.onChanged?.call(.5);
-    seek.onChangeEnd?.call(.5);
-    await tester.pump();
-    expect(player.actions, contains('seek:120'));
-    expect(tester.takeException(), isNull);
-  });
+      final seek = tester.widgetList<Slider>(find.byType(Slider)).first;
+      seek.onChangeStart?.call(.5);
+      seek.onChanged?.call(.5);
+      seek.onChangeEnd?.call(.5);
+      await tester.pump();
+      expect(player.actions, contains('seek:120'));
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

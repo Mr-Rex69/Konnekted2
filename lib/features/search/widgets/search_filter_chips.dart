@@ -27,7 +27,12 @@ class SearchFilterChips extends StatelessWidget {
   final String query;
   @override
   Widget build(BuildContext context) {
+    final effectiveScope =
+        scope == SearchScope.soulseek && !soulseekScopeAvailable
+        ? SearchScope.all
+        : scope;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
@@ -41,10 +46,7 @@ class SearchFilterChips extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             ),
             segments: [
-              ButtonSegment(
-                value: SearchScope.all,
-                label: Text(l10n.all),
-              ),
+              ButtonSegment(value: SearchScope.all, label: Text(l10n.all)),
               ButtonSegment(
                 value: SearchScope.library,
                 label: Text(lokalText('Local')),
@@ -53,19 +55,20 @@ class SearchFilterChips extends StatelessWidget {
                 value: SearchScope.online,
                 label: Text(lokalText('Online')),
               ),
-              ButtonSegment(
-                value: SearchScope.soulseek,
-                label: Text('Soulseek'),
-              ),
+              if (soulseekScopeAvailable)
+                ButtonSegment(
+                  value: SearchScope.soulseek,
+                  label: Text('Soulseek'),
+                ),
             ],
-            selected: {scope},
+            selected: {effectiveScope},
             onSelectionChanged: (value) {
               AppHaptics.tap();
               onScopeChanged(value.single);
             },
           ),
         ),
-        if (scope != SearchScope.soulseek) ...[
+        if (effectiveScope != SearchScope.soulseek) ...[
           const SizedBox(height: 8),
           SizedBox(
             height: 44,
@@ -79,7 +82,9 @@ class SearchFilterChips extends StatelessWidget {
                     category.label,
                     enabled.contains(category),
                     () => onToggle(category),
-                    count: scope != SearchScope.online && query.trim().isNotEmpty
+                    count:
+                        effectiveScope != SearchScope.online &&
+                            query.trim().isNotEmpty
                         ? (counts ?? const <SearchCategory, int>{})[category]
                         : null,
                   ),

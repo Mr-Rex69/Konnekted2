@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flick/services/playback_secure_storage.dart';
 
 import 'discovery_models.dart';
 
@@ -19,6 +20,7 @@ class DiscoveryAddonConfig {
 
   final String id;
   final String endpoint;
+
   /// Exact optional manifest URI. Kept in secure storage with the endpoint:
   /// path encodings can be significant to credential-bearing addon servers.
   final String? manifestUrl;
@@ -47,7 +49,8 @@ class DiscoveryAddonConfig {
         'The bearer token contains invalid characters or is too long.',
       );
     }
-    if (signingKey.length > 1024 || RegExp(r'[\x00-\x1f\x7f]').hasMatch(signingKey)) {
+    if (signingKey.length > 1024 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(signingKey)) {
       throw const DiscoveryException('Invalid HMAC signing key.');
     }
     final String normalizedEndpoint;
@@ -76,13 +79,15 @@ class DiscoveryAddonConfig {
       }
     }
     if (settings.length > 16 ||
-        settings.entries.any((entry) =>
-          entry.key.length > 40 ||
-          !RegExp(r'^[A-Za-z][A-Za-z0-9_]*$').hasMatch(entry.key) ||
-          entry.key == 'q' ||
-          entry.value.isEmpty ||
-          entry.value.length > 120 ||
-          RegExp(r'[\x00-\x1f\x7f]').hasMatch(entry.value))) {
+        settings.entries.any(
+          (entry) =>
+              entry.key.length > 40 ||
+              !RegExp(r'^[A-Za-z][A-Za-z0-9_]*$').hasMatch(entry.key) ||
+              entry.key == 'q' ||
+              entry.value.isEmpty ||
+              entry.value.length > 120 ||
+              RegExp(r'[\x00-\x1f\x7f]').hasMatch(entry.value),
+        )) {
       throw const DiscoveryException('The addon settings are invalid.');
     }
     return DiscoveryAddonConfig(
@@ -148,7 +153,7 @@ class DiscoverySettings {
 /// No shared-preferences copy, logs, account cookies or provider credentials.
 class DiscoverySettingsStore {
   DiscoverySettingsStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const PlaybackSecureStorage();
   final FlutterSecureStorage _storage;
   // The secure slot stays stable across schema versions.
   static const _key = 'konnekted.discovery.sources.v1';
@@ -218,11 +223,15 @@ class DiscoverySettingsStore {
       manifestUrl: value['manifestUrl'] == null
           ? null
           : value['manifestUrl'] is String
-              ? value['manifestUrl'] as String
-              : throw const FormatException(),
+          ? value['manifestUrl'] as String
+          : throw const FormatException(),
       label: value['label'] as String,
       token: value['token'] as String,
-      signingKey: value['signingKey'] == null ? '' : value['signingKey'] is String ? value['signingKey'] as String : throw const FormatException(),
+      signingKey: value['signingKey'] == null
+          ? ''
+          : value['signingKey'] is String
+          ? value['signingKey'] as String
+          : throw const FormatException(),
       enabled: value['enabled'] as bool,
       settings: value['settings'] == null
           ? const {}
@@ -231,7 +240,8 @@ class DiscoverySettingsStore {
   }
 
   static Map<String, String> _decodeSettings(Object? raw) {
-    if (raw is! Map || raw.length > 16 ||
+    if (raw is! Map ||
+        raw.length > 16 ||
         raw.keys.any((key) => key is! String) ||
         raw.values.any((value) => value is! String)) {
       throw const FormatException();

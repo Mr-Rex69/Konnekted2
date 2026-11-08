@@ -1,3 +1,4 @@
+import 'package:flick/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -21,15 +22,17 @@ class LyricsSaveButton extends StatelessWidget {
     if (saving) return;
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: ListView(
+            shrinkWrap: true,
             children: [
               ListTile(
                 leading: const Icon(LucideIcons.download),
-                title: const Text('Save original lyrics'),
+                title: Text(lokalText('Save original lyrics')),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   onSaveOriginal();
@@ -37,9 +40,9 @@ class LyricsSaveButton extends StatelessWidget {
               ),
               ListTile(
                 leading: const Icon(Icons.translate_rounded),
-                title: const Text('Save with selected translation'),
-                subtitle: const Text(
-                  'Includes the active translation or romanization.',
+                title: Text(lokalText('Save with selected translation')),
+                subtitle: Text(
+                  lokalText('Includes the active translation or romanization.'),
                 ),
                 enabled: onSaveWithTranslation != null,
                 onTap: onSaveWithTranslation == null
@@ -58,7 +61,7 @@ class LyricsSaveButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Tooltip(
-    message: 'Save lyrics to file (hold for options)',
+    message: lokalText('Save lyrics to file (hold for options)'),
     // IconButton's default long-press Tooltip competes in the gesture
     // arena and can swallow the long-press that should open this menu.
     // Manual mode retains hover/semantics without a touch recognizer.
@@ -66,7 +69,8 @@ class LyricsSaveButton extends StatelessWidget {
     child: GestureDetector(
       onLongPress: saving ? null : () => _showOptions(context),
       child: IconButton(
-        visualDensity: VisualDensity.compact,
+        visualDensity: VisualDensity.standard,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         icon: saving
             ? const SizedBox.square(
                 dimension: 18,

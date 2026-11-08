@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
 import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -61,7 +64,8 @@ void main() {
     upsert: (entity) async => upserts.add(entity),
     tag: (path, song, lyrics) async {
       tags.add(path);
-      if (lyrics != null) savedLyrics.add(LibraryDownloader.portableLyrics(lyrics));
+      if (lyrics != null)
+        savedLyrics.add(LibraryDownloader.portableLyrics(lyrics));
       return tagged;
     },
     lyricsLookup: (_) async => downloadLyrics,
@@ -70,104 +74,159 @@ void main() {
     now: () => DateTime(2026, 10, 20),
   );
 
-  test('download embeds portable line lyrics without fabricating word stamps', () async {
-    downloadLyrics = const LyricsData(
-      lines: [
-        LyricsLine(timestamp: Duration(seconds: 8), text: 'First verse'),
-        LyricsLine(timestamp: Duration(seconds: 12), text: 'Second verse'),
-      ],
-      isSynchronized: true,
-      source: 'LyricsPlus',
-      rawContent: '',
+  test('iPhone download fallback uses persistent app-owned Music', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      expect(call.method, 'getApplicationDocumentsDirectory');
+      return p.join(root.path, 'Documents');
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(channel, null);
+      debugDefaultTargetPlatformOverride = null;
+    });
+    final saved = await LibraryDownloader(
+      folders: () async => [],
+      registerFolder: (path, _) async => registered.add(path),
+      upsert: (entity) async => upserts.add(entity),
+      tag: (_, _, _) async => false,
+      lyricsLookup: (_) async => null,
+      indexMedia: (_) async {},
+    ).save(prepared());
+    final expectedRoot = p.join(
+      root.path,
+      'Documents',
+      'Music',
+      'Lokal Downloads',
     );
-    final music = Directory(p.join(root.path, 'Library'))..createSync();
-    await downloader([
-      LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
-    ]).save(prepared());
-    expect(savedLyrics.single, contains('[00:08.00]First verse'));
-    expect(savedLyrics.single, contains('[00:12.00]Second verse'));
-    expect(savedLyrics.single, isNot(contains('<00:08.00>')));
+    expect(p.isWithin(expectedRoot, saved.path), true);
+    expect(registered, [expectedRoot]);
+    expect(File(saved.path).readAsBytesSync(), cached.readAsBytesSync());
+    expect(upserts.single.folderUri, expectedRoot);
   });
 
-  test('a syllable-timed download keeps enhanced timing beside portable tags', () async {
-    downloadLyrics = const LyricsData(
-      lines: [
-        LyricsLine(
-          timestamp: Duration(seconds: 10),
-          text: 'Hello world',
-          words: [
-            LyricsWord(
-              start: Duration(seconds: 10),
-              end: Duration(milliseconds: 10500),
-              text: 'Hello ',
-            ),
-            LyricsWord(
-              start: Duration(milliseconds: 10500),
-              end: Duration(seconds: 11),
-              text: 'world',
-            ),
-          ],
+  test(
+    'download embeds portable line lyrics without fabricating word stamps',
+    () async {
+      downloadLyrics = const LyricsData(
+        lines: [
+          LyricsLine(timestamp: Duration(seconds: 8), text: 'First verse'),
+          LyricsLine(timestamp: Duration(seconds: 12), text: 'Second verse'),
+        ],
+        isSynchronized: true,
+        source: 'LyricsPlus',
+        rawContent: '',
+      );
+      final music = Directory(p.join(root.path, 'Library'))..createSync();
+      await downloader([
+        LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
+      ]).save(prepared());
+      expect(savedLyrics.single, contains('[00:08.00]First verse'));
+      expect(savedLyrics.single, contains('[00:12.00]Second verse'));
+      expect(savedLyrics.single, isNot(contains('<00:08.00>')));
+    },
+  );
+
+  test(
+    'a syllable-timed download keeps enhanced timing beside portable tags',
+    () async {
+      downloadLyrics = const LyricsData(
+        lines: [
+          LyricsLine(
+            timestamp: Duration(seconds: 10),
+            text: 'Hello world',
+            words: [
+              LyricsWord(
+                start: Duration(seconds: 10),
+                end: Duration(milliseconds: 10500),
+                text: 'Hello ',
+              ),
+              LyricsWord(
+                start: Duration(milliseconds: 10500),
+                end: Duration(seconds: 11),
+                text: 'world',
+              ),
+            ],
+          ),
+        ],
+        isSynchronized: true,
+        rawContent: '',
+      );
+      final music = Directory(p.join(root.path, 'Library'))..createSync();
+      final result = await downloader([
+        LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
+      ]).save(prepared());
+      expect(savedLyrics.single, contains('[00:10.00]Hello world'));
+      expect(savedLyrics.single, isNot(contains('<00:10.00>')));
+      final enhanced = File(p.setExtension(result.path, '.elrc'));
+      expect(await enhanced.exists(), isTrue);
+      expect(await enhanced.readAsString(), contains('<00:10.00>Hello '));
+      expect(await enhanced.readAsString(), contains('<00:10.50>world'));
+    },
+  );
+
+  test(
+    'plain lyrics are embedded without fake synchronization timestamps',
+    () async {
+      downloadLyrics = const LyricsData(
+        lines: [
+          LyricsLine(timestamp: Duration.zero, text: 'Verse'),
+          LyricsLine(timestamp: Duration.zero, text: 'Chorus'),
+        ],
+        isSynchronized: false,
+        rawContent: '',
+      );
+      final music = Directory(p.join(root.path, 'Library'))..createSync();
+      await downloader([
+        LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
+      ]).save(prepared());
+      expect(savedLyrics.single, 'Verse\nChorus');
+    },
+  );
+
+  test(
+    'a lyrics lookup miss does not prevent downloaded audio from being saved',
+    () async {
+      final music = Directory(p.join(root.path, 'Library'))..createSync();
+      final result = await downloader([
+        LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
+      ]).save(prepared());
+      expect(File(result.path).existsSync(), isTrue);
+      expect(savedLyrics, isEmpty);
+    },
+  );
+
+  test(
+    'Atmos download remains byte-identical and retains codec identity',
+    () async {
+      final music = Directory(p.join(root.path, 'Library'))..createSync();
+      final original = await cached.readAsBytes();
+      final joc = prepared().copyWith(
+        fileType: 'E-AC-3 JOC',
+        atmosAvailable: true,
+        atmosEncoded: true,
+      );
+      final saved = await downloader([
+        LibraryDownloadFolder(
+          uri: 'content://music',
+          name: 'Music',
+          path: music.path,
         ),
-      ],
-      isSynchronized: true,
-      rawContent: '',
-    );
-    final music = Directory(p.join(root.path, 'Library'))..createSync();
-    final result = await downloader([
-      LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
-    ]).save(prepared());
-    expect(savedLyrics.single, contains('[00:10.00]Hello world'));
-    expect(savedLyrics.single, isNot(contains('<00:10.00>')));
-    final enhanced = File(p.setExtension(result.path, '.elrc'));
-    expect(await enhanced.exists(), isTrue);
-    expect(await enhanced.readAsString(), contains('<00:10.00>Hello '));
-    expect(await enhanced.readAsString(), contains('<00:10.50>world'));
-  });
-
-  test('plain lyrics are embedded without fake synchronization timestamps', () async {
-    downloadLyrics = const LyricsData(
-      lines: [
-        LyricsLine(timestamp: Duration.zero, text: 'Verse'),
-        LyricsLine(timestamp: Duration.zero, text: 'Chorus'),
-      ],
-      isSynchronized: false,
-      rawContent: '',
-    );
-    final music = Directory(p.join(root.path, 'Library'))..createSync();
-    await downloader([
-      LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
-    ]).save(prepared());
-    expect(savedLyrics.single, 'Verse\nChorus');
-  });
-
-  test('a lyrics lookup miss does not prevent downloaded audio from being saved', () async {
-    final music = Directory(p.join(root.path, 'Library'))..createSync();
-    final result = await downloader([
-      LibraryDownloadFolder(uri: 'u', name: 'Music', path: music.path),
-    ]).save(prepared());
-    expect(File(result.path).existsSync(), isTrue);
-    expect(savedLyrics, isEmpty);
-  });
-
-  test('Atmos download remains byte-identical and retains codec identity', () async {
-    final music = Directory(p.join(root.path, 'Library'))..createSync();
-    final original = await cached.readAsBytes();
-    final joc = prepared().copyWith(
-      fileType: 'E-AC-3 JOC',
-      atmosAvailable: true,
-      atmosEncoded: true,
-    );
-    final saved = await downloader([
-      LibraryDownloadFolder(uri: 'content://music', name: 'Music',
-        path: music.path),
-    ]).save(joc, artwork: 'https://example.com/cover.jpg');
-    expect(saved.path, endsWith('.atmos.m4a'));
-    expect(await File(saved.path).readAsBytes(), original);
-    expect(upserts.single.fileType, 'E-AC-3 JOC');
-    expect(upserts.single.hasLocalEdits, isTrue);
-    expect(tags, isEmpty, reason: 'Tagging must not rewrite JOC MP4 boxes');
-    expect(covers, isEmpty, reason: 'Do not embed artwork into the Atmos container');
-  });
+      ]).save(joc, artwork: 'https://example.com/cover.jpg');
+      expect(saved.path, endsWith('.atmos.m4a'));
+      expect(await File(saved.path).readAsBytes(), original);
+      expect(upserts.single.fileType, 'E-AC-3 JOC');
+      expect(upserts.single.hasLocalEdits, isTrue);
+      expect(tags, isEmpty, reason: 'Tagging must not rewrite JOC MP4 boxes');
+      expect(
+        covers,
+        isEmpty,
+        reason: 'Do not embed artwork into the Atmos container',
+      );
+    },
+  );
 
   test('AC-4 saves preserve bytes and a rescan-safe codec suffix', () async {
     cached = await cached.rename(p.setExtension(cached.path, '.mp4'));
@@ -292,32 +351,41 @@ void main() {
     );
   });
 
-  test('a Monochrome FLAC download keeps catalogue title, artist, album and cover', () async {
-    final flac = File(p.join(root.path, 'cache', '155142501534011392.flac'));
-    await flac.writeAsBytes(List.filled(64, 7));
-    final song = Song(
-      id: 'discovery:mono',
-      title: 'Get Lucky',
-      artist: 'Daft Punk',
-      album: 'Random Access Memories',
-      duration: const Duration(seconds: 370),
-      fileType: 'FLAC',
-      filePath: flac.path,
-      sourceDisplayName: 'Monochrome',
-      isExternal: true,
-    );
-    final music = Directory(p.join(root.path, 'Library'))..createSync();
-    final saved = await downloader([
-      LibraryDownloadFolder(uri: 'test-library', name: 'Music', path: music.path),
-    ]).save(song, artwork: 'https://tracks.monochrome.st/cover.jpg');
+  test(
+    'a Monochrome FLAC download keeps catalogue title, artist, album and cover',
+    () async {
+      final flac = File(p.join(root.path, 'cache', '155142501534011392.flac'));
+      await flac.writeAsBytes(List.filled(64, 7));
+      final song = Song(
+        id: 'discovery:mono',
+        title: 'Get Lucky',
+        artist: 'Daft Punk',
+        album: 'Random Access Memories',
+        duration: const Duration(seconds: 370),
+        fileType: 'FLAC',
+        filePath: flac.path,
+        sourceDisplayName: 'Monochrome',
+        isExternal: true,
+      );
+      final music = Directory(p.join(root.path, 'Library'))..createSync();
+      final saved = await downloader([
+        LibraryDownloadFolder(
+          uri: 'test-library',
+          name: 'Music',
+          path: music.path,
+        ),
+      ]).save(song, artwork: 'https://tracks.monochrome.st/cover.jpg');
 
-    expect(p.basename(saved.path), 'Daft Punk - Get Lucky.flac');
-    expect(upserts.single.title, 'Get Lucky');
-    expect(upserts.single.artist, 'Daft Punk');
-    expect(upserts.single.album, 'Random Access Memories');
-    expect(upserts.single.fileType, 'FLAC');
-    expect(upserts.single.hasLocalEdits, isFalse);
-    expect(tags, [saved.path], reason: 'FLAC tags must be written into the file');
-    expect(covers, ['https://tracks.monochrome.st/cover.jpg']);
-  });
+      expect(p.basename(saved.path), 'Daft Punk - Get Lucky.flac');
+      expect(upserts.single.title, 'Get Lucky');
+      expect(upserts.single.artist, 'Daft Punk');
+      expect(upserts.single.album, 'Random Access Memories');
+      expect(upserts.single.fileType, 'FLAC');
+      expect(upserts.single.hasLocalEdits, isFalse);
+      expect(tags, [
+        saved.path,
+      ], reason: 'FLAC tags must be written into the file');
+      expect(covers, ['https://tracks.monochrome.st/cover.jpg']);
+    },
+  );
 }

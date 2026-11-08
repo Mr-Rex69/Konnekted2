@@ -32,17 +32,20 @@ class SongStageCarousel extends StatefulWidget {
   final Widget Function(Song song) stageBuilder;
   final Future<void> Function() onNext, onPrevious;
   final bool enabled;
+
   /// Transport buttons dissolve; horizontal drags keep the original slide.
   final bool buttonDissolve;
+
   /// Disabling animations makes buttons switch immediately, not slide.
   final bool animateButtonDissolve;
-  /// The fullscreen still-art banner has a transparent lower edge. Mask its
-  /// outgoing artwork with the inverse cloud so no rectangular remnant hangs
-  /// around underneath the incoming banner until the animation completes.
+
+  /// Complementary outgoing mask for the translucent fullscreen sleeve.
   final bool maskOutgoingOnDissolve;
+
   /// A remote transport can skip even when the paired desktop has not yet
   /// published its adjacent queue thumbnails. Local playback stays strict.
   final bool allowUnresolvedSwipe;
+
   /// Empty space between adjacent covers during a horizontal swipe.
   /// Set to zero for full-bleed posters; boxed artwork can use a visible gap.
   final double coverGap;
@@ -55,15 +58,16 @@ class SongStageCarousel extends StatefulWidget {
 class SongStageCarouselState extends State<SongStageCarousel>
     with TickerProviderStateMixin {
   late final _controller = AnimationController(vsync: this);
-  late final _dissolve = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2400),
-    value: 1,
-  )..addStatusListener((status) {
-    if (status == AnimationStatus.completed && mounted) {
-      setState(() => _dissolveFrom = null);
-    }
-  });
+  late final _dissolve =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2400),
+        value: 1,
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _dissolveFrom = null);
+        }
+      });
   Song? _dissolveFrom;
   bool _buttonChangePending = false;
   late Animation<double> _animation;
@@ -88,10 +92,25 @@ class SongStageCarouselState extends State<SongStageCarousel>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _buttonChangePending = false;
+      if (_dissolveFrom != null) {
+        _dissolve.stop();
+        _dissolveFrom = null;
+        _dissolve.value = 1;
+      }
+    }
+  }
+
+  @override
   void didUpdateWidget(SongStageCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentSong.id != widget.currentSong.id) {
-      final reveal = _buttonChangePending && widget.buttonDissolve &&
+      final reveal =
+          _buttonChangePending &&
+          widget.buttonDissolve &&
           widget.animateButtonDissolve;
       _buttonChangePending = false;
       _controller.stop();
@@ -153,11 +172,9 @@ class SongStageCarouselState extends State<SongStageCarousel>
     }
   }
 
-  Future<void> animateToNext() =>
-      _buttonChange(true);
+  Future<void> animateToNext() => _buttonChange(true);
 
-  Future<void> animateToPrevious() =>
-      _buttonChange(false);
+  Future<void> animateToPrevious() => _buttonChange(false);
 
   Future<void> _buttonChange(bool next) async {
     if (_committing || _animating || _dragging || _buttonChangePending) return;
@@ -172,7 +189,9 @@ class SongStageCarouselState extends State<SongStageCarousel>
       return;
     }
 
-    final animate = widget.enabled && widget.animateButtonDissolve &&
+    final animate =
+        widget.enabled &&
+        widget.animateButtonDissolve &&
         !MediaQuery.disableAnimationsOf(context);
     if (animate) {
       _buttonChangePending = true;
@@ -230,7 +249,10 @@ class SongStageCarouselState extends State<SongStageCarousel>
       if (mounted) {
         await _moveTo(0);
         if (mounted)
-          LokalToast.fromSnackBar(context, SnackBar(content: Text(error.toString())));
+          LokalToast.fromSnackBar(
+            context,
+            SnackBar(content: Text(error.toString())),
+          );
       }
     } finally {
       _committing = false;
@@ -251,8 +273,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
     widget.onDragStateChanged?.call(true);
   }
 
-  void _update(DragUpdateDetails details) =>
-      _updateDelta(details.delta.dx);
+  void _update(DragUpdateDetails details) => _updateDelta(details.delta.dx);
 
   // Both the inline cover gesture and the full-bleed chrome gesture use the
   // same horizontal delta. Do not fabricate DragUpdateDetails: newer Flutter
@@ -320,8 +341,7 @@ class SongStageCarouselState extends State<SongStageCarousel>
     builder: (context, constraints) {
       final width = constraints.maxWidth;
       if (width <= 0) return const SizedBox.shrink();
-      final stride =
-          width + widget.coverGap.clamp(0.0, width * .16).toDouble();
+      final stride = width + widget.coverGap.clamp(0.0, width * .16).toDouble();
       Widget stage(Song song, double offset, String slot) {
         final repeated =
             [

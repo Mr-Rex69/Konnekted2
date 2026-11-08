@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' show StringCharacters;
 import 'package:flick/services/lyrics_service.dart';
 
 /// One fragment of a translated or romanized line is confined to one actual
@@ -9,9 +10,13 @@ LyricsLine projectLyricsSubline(LyricsLine source, String text) {
     return LyricsLine(timestamp: source.timestamp, text: text);
   }
 
-  final units = original.where((word) =>
-      word.text.trim().isNotEmpty && word.end >= word.start).toList();
-  final totalSource = units.fold<int>(0, (sum, word) => sum + word.text.runes.length);
+  final units = original
+      .where((word) => word.text.trim().isNotEmpty && word.end >= word.start)
+      .toList();
+  final totalSource = units.fold<int>(
+    0,
+    (sum, word) => sum + word.text.characters.length,
+  );
   if (totalSource == 0) {
     return LyricsLine(timestamp: source.timestamp, text: text);
   }
@@ -19,9 +24,13 @@ LyricsLine projectLyricsSubline(LyricsLine source, String text) {
   final spans = <({LyricsWord word, int start, int end, int length})>[];
   var sourceOffset = 0;
   for (final word in units) {
-    final length = word.text.runes.length;
-    spans.add((word: word, start: sourceOffset,
-        end: sourceOffset + length, length: length));
+    final length = word.text.characters.length;
+    spans.add((
+      word: word,
+      start: sourceOffset,
+      end: sourceOffset + length,
+      length: length,
+    ));
     sourceOffset += length;
   }
 
@@ -30,21 +39,30 @@ LyricsLine projectLyricsSubline(LyricsLine source, String text) {
   // characters are each their own segment.
   final tokens = RegExp(r'\s').hasMatch(display)
       ? RegExp(r'\S+').allMatches(display).map((m) => m.group(0)!).toList()
-      : display.runes.map(String.fromCharCode).toList();
-  final totalTarget = tokens.fold<int>(0, (sum, token) => sum + token.runes.length);
+      : display.characters.toList();
+  final totalTarget = tokens.fold<int>(
+    0,
+    (sum, token) => sum + token.characters.length,
+  );
   if (totalTarget == 0) {
     return LyricsLine(timestamp: source.timestamp, text: display);
   }
 
-  Duration timestampAt(({LyricsWord word, int start, int end, int length}) span,
-      int index) {
+  Duration timestampAt(
+    ({LyricsWord word, int start, int end, int length}) span,
+    int index,
+  ) {
     final position = (index * totalSource / totalTarget).clamp(
-        span.start.toDouble(), span.end.toDouble());
-    final fraction = (position - span.start) / span.length;
-    return span.word.start + Duration(
-      microseconds: ((span.word.end - span.word.start).inMicroseconds *
-          fraction).round(),
+      span.start.toDouble(),
+      span.end.toDouble(),
     );
+    final fraction = (position - span.start) / span.length;
+    return span.word.start +
+        Duration(
+          microseconds:
+              ((span.word.end - span.word.start).inMicroseconds * fraction)
+                  .round(),
+        );
   }
 
   final words = <LyricsWord>[];
@@ -60,18 +78,19 @@ LyricsLine projectLyricsSubline(LyricsLine source, String text) {
       final span = spans[fragmentSpan];
       final start = timestampAt(span, fragmentStart);
       final finish = timestampAt(span, end);
-      words.add(LyricsWord(
-        start: start,
-        end: finish < start ? start : finish,
-        text: fragment,
-      ));
+      words.add(
+        LyricsWord(
+          start: start,
+          end: finish < start ? start : finish,
+          text: fragment,
+        ),
+      );
       fragment = '';
     }
 
-    for (final char in token.runes.map(String.fromCharCode)) {
+    for (final char in token.characters) {
       final middle = (offset + .5) / totalTarget * totalSource;
-      while (spanIndex < spans.length - 1 &&
-          middle >= spans[spanIndex].end) {
+      while (spanIndex < spans.length - 1 && middle >= spans[spanIndex].end) {
         spanIndex++;
       }
       if (fragment.isNotEmpty && fragmentSpan != spanIndex) emit(offset);
@@ -85,9 +104,5 @@ LyricsLine projectLyricsSubline(LyricsLine source, String text) {
     emit(offset);
   }
 
-  return LyricsLine(
-    timestamp: source.timestamp,
-    text: display,
-    words: words,
-  );
+  return LyricsLine(timestamp: source.timestamp, text: display, words: words);
 }

@@ -25,12 +25,40 @@ final _whitespace = RegExp(r'\s+');
 /// Dart has no built-in NFKD normalizer. Fold precomposed Latin marks before
 /// stripping Unicode combining marks, matching desktop's taxonomy identity.
 const _latinFolds = <String, String>{
-  'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a',
-  'æ': 'ae', 'ç': 'c', 'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
-  'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i', 'ð': 'd', 'ñ': 'n',
-  'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o', 'ø': 'o',
-  'œ': 'oe', 'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
-  'ý': 'y', 'ÿ': 'y', 'þ': 'th', 'ß': 'ss', 'ł': 'l',
+  'à': 'a',
+  'á': 'a',
+  'â': 'a',
+  'ã': 'a',
+  'ä': 'a',
+  'å': 'a',
+  'æ': 'ae',
+  'ç': 'c',
+  'è': 'e',
+  'é': 'e',
+  'ê': 'e',
+  'ë': 'e',
+  'ì': 'i',
+  'í': 'i',
+  'î': 'i',
+  'ï': 'i',
+  'ð': 'd',
+  'ñ': 'n',
+  'ò': 'o',
+  'ó': 'o',
+  'ô': 'o',
+  'õ': 'o',
+  'ö': 'o',
+  'ø': 'o',
+  'œ': 'oe',
+  'ù': 'u',
+  'ú': 'u',
+  'û': 'u',
+  'ü': 'u',
+  'ý': 'y',
+  'ÿ': 'y',
+  'þ': 'th',
+  'ß': 'ss',
+  'ł': 'l',
 };
 
 String _taxonomyKey(String value) {
@@ -67,10 +95,7 @@ String _genreWords(String value) {
 
 final _normalizedFamilyHints = [
   for (final family in lokalDesktopGenreHints)
-    (
-      family.$1,
-      [for (final hint in family.$2) _genreWords(hint)],
-    ),
+    (family.$1, [for (final hint in family.$2) _genreWords(hint)]),
 ];
 
 String? _inferGenreFamily(String raw) {
@@ -101,7 +126,8 @@ String lokalGenreKey(String name) => _taxonomyKey(name);
 String? lokalNormalizeGenreName(String? value) {
   final raw = (value ?? '').replaceAll(_whitespace, ' ').trim();
   final key = _taxonomyKey(raw);
-  if (key.isEmpty || _allNumbers.hasMatch(key) ||
+  if (key.isEmpty ||
+      _allNumbers.hasMatch(key) ||
       lokalDesktopGenreNoise.contains(key)) {
     return null;
   }
@@ -165,7 +191,8 @@ List<String> _visibleGenres(List<String> genres, Set<String> rare) {
   ];
   if (common.isNotEmpty) return common;
   return genres.isNotEmpty && !rare.contains(lokalGenreKey(_other))
-      ? const [_other] : const [];
+      ? const [_other]
+      : const [];
 }
 
 /// Mirrors desktop electron/genreList.js genreSummary:
@@ -210,11 +237,12 @@ LokalGenreSummary lokalGenreSummary(Iterable<Song> library) {
     for (final entry in counts.entries)
       if (entry.key != lokalGenreKey(_other) &&
           !_knownGenreKeys.contains(entry.key) &&
-          entry.value < _minimumGenreTracks) entry.key,
+          entry.value < _minimumGenreTracks)
+        entry.key,
   };
-  final otherCount = categorized.where(
-    (genres) => _visibleGenres(genres, rare).contains(_other),
-  ).length;
+  final otherCount = categorized
+      .where((genres) => _visibleGenres(genres, rare).contains(_other))
+      .length;
   if (otherCount < _minimumGenreTracks) rare.add(lokalGenreKey(_other));
 
   final grouped = <String, List<Song>>{};
@@ -229,15 +257,16 @@ LokalGenreSummary lokalGenreSummary(Iterable<Song> library) {
       (grouped[name] ??= []).add(tracks[i]);
     }
   }
-  final genres = [
-    for (final entry in grouped.entries)
-      LokalGenre(entry.key, List<Song>.unmodifiable(entry.value)),
-  ]..sort((a, b) {
-    final byCount = b.songs.length.compareTo(a.songs.length);
-    return byCount != 0
-        ? byCount
-        : a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  });
+  final genres =
+      [
+        for (final entry in grouped.entries)
+          LokalGenre(entry.key, List<Song>.unmodifiable(entry.value)),
+      ]..sort((a, b) {
+        final byCount = b.songs.length.compareTo(a.songs.length);
+        return byCount != 0
+            ? byCount
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
   return LokalGenreSummary(
     List<LokalGenre>.unmodifiable(genres),
     List<Song>.unmodifiable(noGenre),
@@ -256,7 +285,7 @@ final lokalGenresProvider = Provider<AsyncValue<List<LokalGenre>>>(
 );
 
 /// Library › Genres: desktop's canonical broad categories (no custom genre
-/// cards), plus Other, No genre, and search over visible family labels.
+/// cards), plus Other, No genre, and search over family labels/known aliases.
 class LokalGenresPage extends ConsumerStatefulWidget {
   const LokalGenresPage({super.key});
 
@@ -278,12 +307,19 @@ class _LokalGenresPageState extends ConsumerState<LokalGenresPage> {
   Widget build(BuildContext context) {
     final summary = ref.watch(lokalGenreSummaryProvider).value;
     final query = _query.trim().toLowerCase();
-    final shown = summary == null ? const <LokalGenre>[] : [
-      for (final group in summary.genres)
-        if (query.isEmpty || group.name.toLowerCase().contains(query)) group,
-    ];
+    final queryFamily = query.isEmpty ? null : lokalNormalizeGenreName(query);
+    final shown = summary == null
+        ? const <LokalGenre>[]
+        : [
+            for (final group in summary.genres)
+              if (query.isEmpty ||
+                  group.name.toLowerCase().contains(query) ||
+                  (queryFamily != _other && queryFamily == group.name))
+                group,
+          ];
     final noGenreLabel = lokalText('No genre');
-    final showNoGenre = summary != null &&
+    final showNoGenre =
+        summary != null &&
         summary.noGenre.isNotEmpty &&
         (query.isEmpty || noGenreLabel.toLowerCase().contains(query));
     final count = shown.length + (showNoGenre ? 1 : 0);
@@ -316,9 +352,11 @@ class _LokalGenresPageState extends ConsumerState<LokalGenresPage> {
           SliverToBoxAdapter(
             child: LokalEmptyState(
               icon: Icons.category_rounded,
-              title: lokalText(query.isNotEmpty
-                  ? 'No genres match your search.'
-                  : 'No genres yet'),
+              title: lokalText(
+                query.isNotEmpty
+                    ? 'No genres match your search.'
+                    : 'No genres yet',
+              ),
               message: query.isNotEmpty
                   ? ''
                   : lokalText(
@@ -360,10 +398,10 @@ class LokalGenreGrid extends StatelessWidget {
           final cell = (width - (columns - 1) * 14) / columns;
           final scaler = MediaQuery.textScalerOf(context);
           // Scale the actual font sizes: system text scaling may be nonlinear.
-          final scale = math.max(1.0, math.max(
-            scaler.scale(22) / 22,
-            scaler.scale(11) / 11,
-          ));
+          final scale = math.max(
+            1.0,
+            math.max(scaler.scale(22) / 22, scaler.scale(11) / 11),
+          );
           return SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
@@ -371,30 +409,27 @@ class LokalGenreGrid extends StatelessWidget {
               mainAxisSpacing: 14,
               mainAxisExtent: (cell * .91).clamp(150.0, 222.0) * scale,
             ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                if (index == genres.length) {
-                  return _LokalGenreCard(
-                    name: noGenreLabel,
-                    count: noGenreSongs.length,
-                    onTap: () => pushLokal(
-                      context,
-                      LokalGenrePage(
-                        genre: LokalGenre(noGenreLabel, noGenreSongs),
-                        isUnclassified: true,
-                      ),
-                    ),
-                  );
-                }
-                final genre = genres[index];
+            delegate: SliverChildBuilderDelegate((context, index) {
+              if (index == genres.length) {
                 return _LokalGenreCard(
-                  name: genre.name,
-                  count: genre.songs.length,
-                  onTap: () => pushLokal(context, LokalGenrePage(genre: genre)),
+                  name: noGenreLabel,
+                  count: noGenreSongs.length,
+                  onTap: () => pushLokal(
+                    context,
+                    LokalGenrePage(
+                      genre: LokalGenre(noGenreLabel, noGenreSongs),
+                      isUnclassified: true,
+                    ),
+                  ),
                 );
-              },
-              childCount: count,
-            ),
+              }
+              final genre = genres[index];
+              return _LokalGenreCard(
+                name: genre.name,
+                count: genre.songs.length,
+                onTap: () => pushLokal(context, LokalGenrePage(genre: genre)),
+              );
+            }, childCount: count),
           );
         },
       ),
@@ -449,7 +484,9 @@ class _LokalGenreCard extends StatelessWidget {
                   ),
                 ),
                 Positioned(
-                  top: 1, left: 1, right: 1,
+                  top: 1,
+                  left: 1,
+                  right: 1,
                   child: Container(
                     height: 1,
                     color: Colors.white.withValues(alpha: .21),
@@ -469,7 +506,9 @@ class _LokalGenreCard extends StatelessWidget {
                           fontSize: 22,
                           height: 1.06,
                           letterSpacing: -.65,
-                          fontStyle: tone.italic ? FontStyle.italic : FontStyle.normal,
+                          fontStyle: tone.italic
+                              ? FontStyle.italic
+                              : FontStyle.normal,
                           fontWeight: FontWeight.w800,
                           color: LokalGenrePalette.foreground,
                         ),
@@ -478,11 +517,16 @@ class _LokalGenreCard extends StatelessWidget {
                       DecoratedBox(
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: .13),
-                          border: Border.all(color: Colors.white.withValues(alpha: .22)),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: .22),
+                          ),
                           borderRadius: BorderRadius.circular(30),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           child: Text(
                             lokalSongCount(count),
                             maxLines: 1,
@@ -531,6 +575,7 @@ class LokalGenrePage extends ConsumerWidget {
       return const <Song>[];
     }),
     initialSort: LokalSongSort.recentlyAdded,
-    preferencesKey: 'lokal.genre.${isUnclassified ? '__none__' : lokalGenreKey(genre.name)}.song_browser_view.v1',
+    preferencesKey:
+        'lokal.genre.${isUnclassified ? '__none__' : lokalGenreKey(genre.name)}.song_browser_view.v1',
   );
 }

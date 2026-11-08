@@ -1,6 +1,7 @@
 import 'package:flick/features/appearance/lokal_performance_selector.dart';
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
 import 'package:flick/features/music_videos/video_quality_settings.dart';
@@ -21,7 +22,8 @@ void _push(BuildContext context, Widget page) => unawaited(
   Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page)),
 );
 
-/// Home's quick appearance page intentionally contains only these two controls.
+/// Theme/accent controls, plus explicit iPhone icon selection. iOS icon changes
+/// are user initiated because the system presents its own confirmation alert.
 List<LokalSettingsSection> themeAccentSettings(
   BuildContext context,
   WidgetRef ref,
@@ -47,9 +49,11 @@ List<LokalSettingsSection> themeAccentSettings(
         ),
         LokalSettingRow(
           label: lokalText('Accent'),
-          description: lokalText(
-            'The app icon follows your accent after you leave Lokal with playback idle. Some launchers restart the app when updating its icon.',
-          ),
+          description: Platform.isIOS
+              ? 'Colors inside Lokal. Choose the Home Screen icon separately below.'
+              : lokalText(
+                  'The app icon follows your accent after you leave Lokal with playback idle. Some launchers restart the app when updating its icon.',
+                ),
           stacked: true,
           trailing: LokalAccentRow(
             padding: EdgeInsets.zero,
@@ -60,6 +64,15 @@ List<LokalSettingsSection> themeAccentSettings(
             },
           ),
         ),
+        if (Platform.isIOS)
+          LokalSettingLink(
+            label: 'App icon',
+            description: 'Choose a Lokal icon for your iPhone Home Screen.',
+            onTap: () => unawaited(
+              const MethodChannel('lokal/ios')
+                  .invokeMethod<bool>('showIconPicker'),
+            ),
+          ),
       ],
     ),
   ];
@@ -107,7 +120,9 @@ List<LokalSettingsSection> appearanceSettings(
         ),
         LokalSettingRow.toggle(
           label: lokalText('Unboxed player controls'),
-          description: lokalText('Remove button backgrounds while keeping the same icons and layout.'),
+          description: lokalText(
+            'Remove button backgrounds while keeping the same icons and layout.',
+          ),
           value: appearance.unboxedPlayerControls,
           onChanged: look.setUnboxedPlayerControls,
         ),
@@ -119,30 +134,40 @@ List<LokalSettingsSection> appearanceSettings(
           value: appearance.fullscreenCover,
           onChanged: look.setFullscreenCover,
         ),
-        LokalSettingRow(
-          label: lokalText('Video quality'),
-          description: lokalText(
-            'Maximum resolution for music videos. Higher quality uses more data; the nearest available stream is selected.',
+        if (Platform.isIOS)
+          LokalSettingRow(
+            label: lokalText('Video quality'),
+            description: lokalText(
+              'Adjust video quality in the YouTube player.',
+            ),
+          )
+        else
+          LokalSettingRow(
+            label: lokalText('Video quality'),
+            description: lokalText(
+              'Maximum resolution for music videos. Higher quality uses more data; the nearest available stream is selected.',
+            ),
+            stacked: true,
+            trailing: DropdownButtonFormField<int>(
+              key: ValueKey(ref.watch(videoQualityProvider)),
+              initialValue: ref.watch(videoQualityProvider),
+              isExpanded: true,
+              items: [
+                for (final height in videoQualityHeights)
+                  DropdownMenuItem(
+                    value: height,
+                    child: Text(lokalText(videoQualityLabel(height))),
+                  ),
+              ],
+              onChanged: (height) {
+                if (height != null) {
+                  unawaited(
+                    ref.read(videoQualityProvider.notifier).select(height),
+                  );
+                }
+              },
+            ),
           ),
-          stacked: true,
-          trailing: DropdownButtonFormField<int>(
-            key: ValueKey(ref.watch(videoQualityProvider)),
-            initialValue: ref.watch(videoQualityProvider),
-            isExpanded: true,
-            items: [
-              for (final height in videoQualityHeights)
-                DropdownMenuItem(
-                  value: height,
-                  child: Text(lokalText(videoQualityLabel(height))),
-                ),
-            ],
-            onChanged: (height) {
-              if (height != null) {
-                unawaited(ref.read(videoQualityProvider.notifier).select(height));
-              }
-            },
-          ),
-        ),
         LokalSettingRow.toggle(
           label: lokalText('Moving covers'),
           description: lokalText(
@@ -280,34 +305,38 @@ List<LokalSettingsSection> appearanceSettings(
             AppHaptics.setEnabled(value);
           },
         ),
-        LokalSettingRow(
-          label: lokalText('Refresh rate'),
-          description: lokalText(
-            'Adaptive lets the phone decide. 120 Hz is smoothest and uses more battery.',
+        if (Platform.isAndroid)
+          LokalSettingRow(
+            label: lokalText('Refresh rate'),
+            description: lokalText(
+              'Adaptive lets the phone decide. 120 Hz is smoothest and uses more battery.',
+            ),
+            stacked: true,
+            trailing: LokalSegmented<String>(
+              expand: true,
+              segments: [
+                LokalSegment('adaptive', lokalText('Adaptive')),
+                LokalSegment('standard', lokalText('60 Hz')),
+                LokalSegment('high', lokalText('120 Hz')),
+              ],
+              value: prefs.refreshRateMode,
+              onChanged: notifier.setRefreshRateMode,
+            ),
           ),
-          stacked: true,
-          trailing: LokalSegmented<String>(
-            expand: true,
-            segments: [
-              LokalSegment('adaptive', lokalText('Adaptive')),
-              LokalSegment('standard', lokalText('60 Hz')),
-              LokalSegment('high', lokalText('120 Hz')),
-            ],
-            value: prefs.refreshRateMode,
-            onChanged: notifier.setRefreshRateMode,
-          ),
-        ),
       ],
     ),
-    LokalSettingsSection(
-      title: lokalText('Home-screen widget'),
-      children: [
-        LokalSettingLink(
-          label: lokalText('Home-screen widget'),
-          description: lokalText('What the widget on your home screen shows.'),
-          onTap: () => _push(context, const WidgetSettingsScreen()),
-        ),
-      ],
-    ),
+    if (Platform.isAndroid)
+      LokalSettingsSection(
+        title: lokalText('Home-screen widget'),
+        children: [
+          LokalSettingLink(
+            label: lokalText('Home-screen widget'),
+            description: lokalText(
+              'What the widget on your home screen shows.',
+            ),
+            onTap: () => _push(context, const WidgetSettingsScreen()),
+          ),
+        ],
+      ),
   ];
 }

@@ -7,12 +7,7 @@ import 'package:synchronized/synchronized.dart';
 /// One native libsmb2 connection for a NAS operation. Mornye uses the same
 /// native transport, including SMB 2/3 dialect, signing and encryption support.
 /// Connections are always closed, including on failed scans and downloads.
-typedef NativeSmbEntry = ({
-  String name,
-  String path,
-  int size,
-  bool isDir,
-});
+typedef NativeSmbEntry = ({String name, String path, int size, bool isDir});
 
 abstract class NativeSmbSession {
   Future<List<NativeSmbEntry>> list(String directory);
@@ -67,23 +62,27 @@ class Libsmb2Transport implements NativeSmbSession {
       );
     }
     final address = host;
-    final pool = await _native.synchronized(() => Smb2Pool.connect(
-      host: address,
-      share: share,
-      user: user,
-      password: password,
-      domain: domain,
-      workers: 1,
-      timeoutSeconds: 20,
-      signing: true,
-      version: Smb2Version.any,
-    ));
+    final pool = await _native.synchronized(
+      () => Smb2Pool.connect(
+        host: address,
+        share: share,
+        user: user,
+        password: password,
+        domain: domain,
+        workers: 1,
+        timeoutSeconds: 20,
+        signing: true,
+        version: Smb2Version.any,
+      ),
+    );
     return Libsmb2Transport._(pool);
   }
 
   @override
   Future<List<NativeSmbEntry>> list(String directory) async {
-    final rows = await _native.synchronized(() => _pool.listDirectory(directory));
+    final rows = await _native.synchronized(
+      () => _pool.listDirectory(directory),
+    );
     return [
       for (final row in rows)
         if (row.name != '.' && row.name != '..')
@@ -102,8 +101,9 @@ class Libsmb2Transport implements NativeSmbSession {
 
   @override
   Future<List<int>> read(String path) async {
-    final (handle, size) =
-        await _native.synchronized(() => _pool.openFileWithSize(path));
+    final (handle, size) = await _native.synchronized(
+      () => _pool.openFileWithSize(path),
+    );
     try {
       if (size < 0 || size > maxArtworkBytes) {
         throw const FileSystemException('NAS cover exceeds 12 MiB');
@@ -111,12 +111,15 @@ class Libsmb2Transport implements NativeSmbSession {
       final result = BytesBuilder(copy: false);
       var offset = 0;
       while (offset < size) {
-        final chunk = await _native.synchronized(() => _pool.readFromHandle(
-          handle,
-          offset: offset,
-          length: (size - offset).clamp(1, 256 * 1024).toInt(),
-        ));
-        if (chunk.isEmpty) throw const FileSystemException('NAS cover truncated');
+        final chunk = await _native.synchronized(
+          () => _pool.readFromHandle(
+            handle,
+            offset: offset,
+            length: (size - offset).clamp(1, 256 * 1024).toInt(),
+          ),
+        );
+        if (chunk.isEmpty)
+          throw const FileSystemException('NAS cover truncated');
         result.add(chunk);
         offset += chunk.length;
       }
@@ -129,19 +132,22 @@ class Libsmb2Transport implements NativeSmbSession {
   /// Read at most a small media prefix for embedded album art. Even a
   /// multi-gigabyte FLAC must never be buffered merely to paint its cover.
   Future<List<int>> _readPrefixNative(String path, int maxBytes) async {
-    final (handle, size) =
-        await _native.synchronized(() => _pool.openFileWithSize(path));
+    final (handle, size) = await _native.synchronized(
+      () => _pool.openFileWithSize(path),
+    );
     try {
       if (size < 0) throw const FileSystemException('Invalid NAS file size');
       final target = size < maxBytes ? size : maxBytes;
       final result = BytesBuilder(copy: false);
       var offset = 0;
       while (offset < target) {
-        final chunk = await _native.synchronized(() => _pool.readFromHandle(
-          handle,
-          offset: offset,
-          length: (target - offset).clamp(1, 256 * 1024).toInt(),
-        ));
+        final chunk = await _native.synchronized(
+          () => _pool.readFromHandle(
+            handle,
+            offset: offset,
+            length: (target - offset).clamp(1, 256 * 1024).toInt(),
+          ),
+        );
         if (chunk.isEmpty) {
           throw const FileSystemException('NAS artwork prefix truncated');
         }
@@ -163,23 +169,26 @@ class Libsmb2Transport implements NativeSmbSession {
     final partial = File(
       '$destination.smb-part-${DateTime.now().microsecondsSinceEpoch}',
     );
-    final file = partial.openWrite();
+    final file = await partial.open(mode: FileMode.write);
     var completed = false;
     try {
-      final (handle, size) =
-          await _native.synchronized(() => _pool.openFileWithSize(path));
+      final (handle, size) = await _native.synchronized(
+        () => _pool.openFileWithSize(path),
+      );
       try {
         var offset = 0;
         while (offset < size) {
-          final chunk = await _native.synchronized(() => _pool.readFromHandle(
-            handle,
-            offset: offset,
-            length: (size - offset).clamp(1, 256 * 1024).toInt(),
-          ));
+          final chunk = await _native.synchronized(
+            () => _pool.readFromHandle(
+              handle,
+              offset: offset,
+              length: (size - offset).clamp(1, 256 * 1024).toInt(),
+            ),
+          );
           if (chunk.isEmpty) {
             throw const FileSystemException('SMB download truncated');
           }
-          file.add(chunk);
+          await file.writeFrom(chunk);
           offset += chunk.length;
           onProgress?.call(offset, size);
         }
@@ -192,8 +201,12 @@ class Libsmb2Transport implements NativeSmbSession {
       completed = true;
     } finally {
       if (!completed) {
-        try { await file.close(); } catch (_) {}
-        try { await partial.delete(); } catch (_) {}
+        try {
+          await file.close();
+        } catch (_) {}
+        try {
+          await partial.delete();
+        } catch (_) {}
       }
     }
   }

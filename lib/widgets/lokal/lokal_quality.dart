@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
+import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/services/catalogue_quality.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/models/song.dart';
@@ -119,12 +120,21 @@ String? lokalSongResolutionLabel(Song song) {
 
   final codec = song.fileType.trim().toUpperCase();
   const lossless = {
-    'FLAC', 'WAV', 'WAVE', 'ALAC', 'AIFF', 'AIF', 'APE', 'WV', 'WAVPACK',
+    'FLAC',
+    'WAV',
+    'WAVE',
+    'ALAC',
+    'AIFF',
+    'AIF',
+    'APE',
+    'WV',
+    'WAVPACK',
   };
   final raw = song.resolution ?? '';
   final pair = compactAudioResolution(raw);
   final bitMatch = RegExp(
-    r'(?<!\d)(\d{1,2})\s*-?\s*bits?\b', caseSensitive: false,
+    r'(?<!\d)(\d{1,2})\s*-?\s*bits?\b',
+    caseSensitive: false,
   ).firstMatch(raw);
   final rateMatch = RegExp(
     r'(?<![\d.])(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?\b',
@@ -136,13 +146,19 @@ String? lokalSongResolutionLabel(Song song) {
   ).firstMatch(raw);
 
   final depth = lossless.contains(codec)
-      ? (song.bitDepth ?? pair?.bitDepth ?? int.tryParse(bitMatch?.group(1) ?? ''))
+      ? (song.bitDepth ??
+            pair?.bitDepth ??
+            int.tryParse(bitMatch?.group(1) ?? ''))
       : null;
-  final rate = song.sampleRate ?? pair?.sampleRate ??
+  final rate =
+      song.sampleRate ??
+      pair?.sampleRate ??
       ((double.tryParse(rateMatch?.group(1) ?? '') ?? 0) * 1000).round();
   final parts = <String>[];
   // Lossy decoded PCM precision is not the source's encoded bit depth.
-  if (depth != null && depth >= 8 && depth <= 64 &&
+  if (depth != null &&
+      depth >= 8 &&
+      depth <= 64 &&
       (lossless.contains(codec) || bitMatch != null || pair != null)) {
     parts.add('$depth-bit');
   }
@@ -180,14 +196,18 @@ class LokalQualityPill extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final showResolution = ref.watch(lokalAppearanceProvider.select(
-      (look) => fullPlayer
-          ? look.resolutionTagsInFullPlayer
-          : look.resolutionTagsInLists,
-    ));
+    final showResolution = ref.watch(
+      lokalAppearanceProvider.select(
+        (look) => fullPlayer
+            ? look.resolutionTagsInFullPlayer
+            : look.resolutionTagsInLists,
+      ),
+    );
     final resolution = showResolution && song != null
-        ? lokalSongResolutionLabel(song!) : null;
+        ? lokalSongResolutionLabel(song!)
+        : null;
     final display = resolution ?? tier.label;
+    final textColor = fullPlayer ? FullPlayerVisuals.primaryText : tier.text;
     return Semantics(
       label: resolution == null
           ? lokalText(
@@ -207,13 +227,14 @@ class LokalQualityPill extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 10, color: tier.text),
+              Icon(icon, size: 10, color: textColor),
               const SizedBox(width: 3),
             ],
             ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: (MediaQuery.sizeOf(context).width * .48)
-                    .clamp(100.0, 240.0).toDouble(),
+                    .clamp(100.0, 240.0)
+                    .toDouble(),
               ),
               child: Text(
                 display,
@@ -222,7 +243,7 @@ class LokalQualityPill extends ConsumerWidget {
                 style: LokalTheme.label(
                   context.lokal,
                   size: 10,
-                  color: tier.text,
+                  color: textColor,
                 ).copyWith(letterSpacing: .4),
               ),
             ),
@@ -233,14 +254,14 @@ class LokalQualityPill extends ConsumerWidget {
   }
 }
 
-
 /// Dolby Atmos is a catalogue mode, NOT a PCM quality tier.
 /// In particular, this never asserts that the current output is Atmos.
 class LokalAtmosPill extends StatelessWidget {
   const LokalAtmosPill({super.key});
 
   static const String description =
-      "An original Dolby encoded source may be available. Tidal uses E-AC-3 JOC; Amazon offers AC-4. Availability and spatial output depend on the source and native decoder.";
+      'The catalogue lists a Dolby Atmos edition. This describes the source; '
+      'playback and spatial output depend on a supported decoder and connected device.';
 
   @override
   Widget build(BuildContext context) => Tooltip(
@@ -252,7 +273,9 @@ class LokalAtmosPill extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF8E51FF).withValues(alpha: .15),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: const Color(0xFFA684FF).withValues(alpha: .25)),
+          border: Border.all(
+            color: const Color(0xFFA684FF).withValues(alpha: .25),
+          ),
         ),
         child: Text(
           'ATMOS',
@@ -266,7 +289,6 @@ class LokalAtmosPill extends StatelessWidget {
     ),
   );
 }
-
 
 /// Shown only when Android MediaExtractor verified the downloaded source as
 /// E-AC-3 JOC and it was routed to the native Android audio engine.
@@ -289,8 +311,11 @@ class LokalAtmosStreamPill extends StatelessWidget {
         ),
         child: Text(
           codec == 'AC-4' ? 'AC-4' : 'DOLBY ATMOS',
-          style: LokalTheme.label(context.lokal,
-            size: 10, color: const Color(0xFFC4B4FF)),
+          style: LokalTheme.label(
+            context.lokal,
+            size: 10,
+            color: const Color(0xFFC4B4FF),
+          ),
         ),
       ),
     ),

@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/online_source_log_label.dart';
 import 'package:flick/core/utils/artist_credits.dart';
 import 'package:flick/core/utils/app_log.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'discovery_snapshot_cache.dart';
+
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -22,6 +24,8 @@ import 'package:flick/features/discovery/discovery_settings.dart';
 import 'package:flick/features/discovery/discovery_sources.dart';
 import 'package:flick/features/discovery/monochrome_source.dart';
 import 'package:flick/features/discovery/soundcloud_source.dart';
+import 'package:flick/providers/opt_in_source_provider.dart';
+import 'package:flick/l10n/l10n.dart';
 import 'package:flick/features/discovery/lastfm_discovery.dart';
 import 'package:flick/features/discovery/recommendation_match.dart';
 import 'package:flick/features/discovery/spotify_discovery.dart';
@@ -76,106 +80,147 @@ final konnektedDiscoverySnapshotCacheProvider =
 /// Spotify retains previous shelves during network failures and refreshes
 /// expired snapshots without blocking first paint.
 final konnektedSpotifyDiscoveryProvider =
-    AsyncNotifierProvider<KonnektedSpotifyDiscoveryNotifier,
-        SpotifyDiscoverySnapshot>(KonnektedSpotifyDiscoveryNotifier.new);
+    AsyncNotifierProvider<
+      KonnektedSpotifyDiscoveryNotifier,
+      SpotifyDiscoverySnapshot
+    >(KonnektedSpotifyDiscoveryNotifier.new);
+
+final konnektedSpotifySettingsProvider = Provider<SpotifySettingsStore>(
+  (ref) => SpotifySettingsStore(),
+);
+final konnektedSpotifySnapshotFetchProvider =
+    Provider<Future<SpotifyDiscoverySnapshot> Function(SpotifySettingsStore)>(
+      (ref) => (settings) {
+        final oauth = SpotifyOAuthService(tokenStore: settings.tokenStore);
+        return loadSpotifyDiscoverySnapshot(
+          settings: settings,
+          oauth: oauth,
+          api: SpotifyApi(tokenStore: settings.tokenStore, oauth: oauth),
+        );
+      },
+    );
 
 class KonnektedSpotifyDiscoveryNotifier
     extends AsyncNotifier<SpotifyDiscoverySnapshot> {
   String? _accountKey;
   int _generation = 0;
+  static const _retired = SpotifyDiscoverySnapshot(
+    enabled: false,
+    connected: false,
+  );
+
+  bool _current(int generation, int revision) =>
+      ref.mounted &&
+      generation == _generation &&
+      revision == SecureSpotifyTokenStore.sessionRevision.value;
 
   @override
   Future<SpotifyDiscoverySnapshot> build() async {
+    final generation = ++_generation;
+    final revision = SecureSpotifyTokenStore.sessionRevision.value;
     _accountKey = null;
+    final settings = ref.watch(konnektedSpotifySettingsProvider);
+    final cache = ref.read(konnektedDiscoverySnapshotCacheProvider);
     void onSessionChanged() {
+      if (!ref.mounted) return;
+      ++_generation;
       final previous = _accountKey;
-      if (previous != null) {
-        unawaited(ref.read(konnektedDiscoverySnapshotCacheProvider)
-            .invalidate('spotify', previous));
-      }
+      _accountKey = null;
+      if (previous != null) unawaited(cache.invalidate('spotify', previous));
       ref.invalidateSelf();
     }
+
     SecureSpotifyTokenStore.sessionRevision.addListener(onSessionChanged);
-    ref.onDispose(() =>
-        SecureSpotifyTokenStore.sessionRevision.removeListener(onSessionChanged));
-    final settings = SpotifySettingsStore();
-    if (!await settings.loadDiscoveryEnabled()) {
-      return const SpotifyDiscoverySnapshot(enabled: false, connected: false);
-    }
+    ref.onDispose(() {
+      ++_generation;
+      SecureSpotifyTokenStore.sessionRevision.removeListener(onSessionChanged);
+    });
+    final enabled = await settings.loadDiscoveryEnabled();
+    if (!_current(generation, revision)) return _retired;
+    if (!enabled) return _retired;
     final tokens = await settings.tokenStore.readTokens();
+    if (!_current(generation, revision)) return _retired;
     final cookie = tokens?.sessionCookie;
     if (cookie == null || cookie.isEmpty) {
       return const SpotifyDiscoverySnapshot(enabled: true, connected: false);
     }
-    // Authentication material is never persisted in filenames or cache JSON.
     final key = sha256.convert(utf8.encode(cookie)).toString();
     _accountKey = key;
-    final cache = ref.read(konnektedDiscoverySnapshotCacheProvider);
     final saved = await cache.readSpotify(key);
+    if (!_current(generation, revision)) return _retired;
     if (saved != null) {
       if (!saved.isFresh(DiscoverySnapshotCache.spotifyTtl)) {
-        // The first frame uses the disk copy; only expired data triggers I/O.
-        Future<void>.delayed(Duration.zero, () => refresh());
+        unawaited(
+          Future<void>.delayed(Duration.zero, () async {
+            if (_current(generation, revision)) await refresh();
+          }),
+        );
       }
       return SpotifyDiscoverySnapshot(
-        enabled: true, connected: true, data: saved.data);
+        enabled: true,
+        connected: true,
+        data: saved.data,
+      );
     }
-    final SpotifyDiscoverySnapshot result;
+    SpotifyDiscoverySnapshot result;
     try {
       result = await _fetch(settings);
     } catch (_) {
-      return const SpotifyDiscoverySnapshot(
-        enabled: true, connected: true,
-        error: 'Spotify Discovery could not be loaded. Try again later.');
+      result = const SpotifyDiscoverySnapshot(
+        enabled: true,
+        connected: true,
+        error: 'Spotify Discovery could not be loaded. Try again later.',
+      );
     }
+    if (!_current(generation, revision)) return _retired;
     if (result.data case final data? when !data.isEmpty) {
       await cache.writeSpotify(key, data);
     }
-    return result;
+    return _current(generation, revision) ? result : _retired;
   }
 
-  Future<SpotifyDiscoverySnapshot> _fetch(SpotifySettingsStore settings) {
-    final oauth = SpotifyOAuthService(tokenStore: settings.tokenStore);
-    return loadSpotifyDiscoverySnapshot(
-      settings: settings,
-      oauth: oauth,
-      api: SpotifyApi(tokenStore: settings.tokenStore, oauth: oauth),
-    );
-  }
+  Future<SpotifyDiscoverySnapshot> _fetch(SpotifySettingsStore settings) =>
+      ref.read(konnektedSpotifySnapshotFetchProvider)(settings);
 
   Future<void> refresh() async {
+    if (state.isLoading) return;
     final key = _accountKey;
     if (key == null) {
       ref.invalidateSelf();
       return;
     }
     final generation = ++_generation;
+    final revision = SecureSpotifyTokenStore.sessionRevision.value;
     final previous = state.value;
+    final settings = ref.read(konnektedSpotifySettingsProvider);
+    final cache = ref.read(konnektedDiscoverySnapshotCacheProvider);
     SpotifyDiscoverySnapshot result;
     try {
-      result = await _fetch(SpotifySettingsStore());
+      result = await _fetch(settings);
     } catch (_) {
       result = const SpotifyDiscoverySnapshot(
-        enabled: true, connected: true,
-        error: 'Spotify Discovery could not be loaded. Try again later.');
-    }
-    if (!ref.mounted || generation != _generation ||
-        key != _accountKey) return;
-    if (result.data case final data? when !data.isEmpty) {
-      state = AsyncData(result);
-      await ref.read(konnektedDiscoverySnapshotCacheProvider)
-          .writeSpotify(key, data);
-    } else if (!result.enabled || !result.connected) {
-      state = AsyncData(result);
-      await ref.read(konnektedDiscoverySnapshotCacheProvider)
-          .invalidate('spotify', key);
-    } else {
-      state = AsyncData(SpotifyDiscoverySnapshot(
         enabled: true,
         connected: true,
-        data: previous?.data,
-        error: result.error,
-      ));
+        error: 'Spotify Discovery could not be loaded. Try again later.',
+      );
+    }
+    if (!_current(generation, revision) || key != _accountKey) return;
+    if (result.data case final data? when !data.isEmpty) {
+      state = AsyncData(result);
+      if (_current(generation, revision)) await cache.writeSpotify(key, data);
+    } else if (!result.enabled || !result.connected) {
+      state = AsyncData(result);
+      if (_current(generation, revision))
+        await cache.invalidate('spotify', key);
+    } else {
+      state = AsyncData(
+        SpotifyDiscoverySnapshot(
+          enabled: true,
+          connected: true,
+          data: previous?.data,
+          error: result.error,
+        ),
+      );
     }
   }
 }
@@ -344,8 +389,11 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
     if (state.source != KonnektedDiscoverySource.youtube) return;
     final previousAccount = _account;
     if (previousAccount != null) {
-      unawaited(ref.read(konnektedDiscoverySnapshotCacheProvider)
-          .invalidate('youtube', previousAccount));
+      unawaited(
+        ref
+            .read(konnektedDiscoverySnapshotCacheProvider)
+            .invalidate('youtube', previousAccount),
+      );
     }
     ++_generation;
     _page = 0;
@@ -380,7 +428,7 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
       } catch (_) {
         session = null;
       }
-      if (generation != _generation) return;
+      if (!ref.mounted || generation != _generation) return;
       if (session == null || !session.signedIn) {
         _account = null;
         _page = 0;
@@ -402,22 +450,31 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
       final cache = ref.read(konnektedDiscoverySnapshotCacheProvider);
       final existing = accountKey == _account ? state.data : null;
       final saved = existing == null
-          ? await cache.readLokal('youtube', accountKey) : null;
-      if (generation != _generation) return;
+          ? await cache.readLokal('youtube', accountKey)
+          : null;
+      if (!ref.mounted || generation != _generation) return;
       final previous = existing ?? saved?.data;
       if (accountKey != _account) _page = previous?.page ?? 0;
       _account = accountKey;
       if (previous != null) {
         state = KonnektedDiscoveryState(
-          data: previous, source: source, loading: false);
+          data: previous,
+          source: source,
+          loading: false,
+        );
       }
-      if (!refresh && previous != null &&
+      if (!refresh &&
+          previous != null &&
           (existing != null ||
-           saved?.isFresh(DiscoverySnapshotCache.youtubeTtl) == true)) return;
+              saved?.isFresh(DiscoverySnapshotCache.youtubeTtl) == true))
+        return;
       if (refresh && previous != null) _page++;
       if (previous != null) {
         state = KonnektedDiscoveryState(
-          data: previous, source: source, loading: true);
+          data: previous,
+          source: source,
+          loading: true,
+        );
       }
       try {
         final result = await loadYoutubeMusicDiscovery(
@@ -425,12 +482,12 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
           page: _page,
           force: refresh,
         );
-        if (generation != _generation) return;
+        if (!ref.mounted || generation != _generation) return;
         final merged = result.keeping(previous);
         state = KonnektedDiscoveryState(data: merged, source: source);
         unawaited(cache.writeLokal('youtube', accountKey, merged));
       } on YoutubeMusicSignedOut catch (error) {
-        if (generation != _generation) return;
+        if (!ref.mounted || generation != _generation) return;
         await ref.read(konnektedYoutubeMusicSessionProvider.notifier).signOut();
         unawaited(cache.invalidate('youtube', accountKey));
         state = KonnektedDiscoveryState(
@@ -439,7 +496,7 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
           source: source,
         );
       } catch (error) {
-        if (generation != _generation) return;
+        if (!ref.mounted || generation != _generation) return;
         state = KonnektedDiscoveryState(
           data: previous,
           error: error is LokalDiscoveryFailure ? error.message : 'YouTube Music couldn’t be reached. Check your connection and try again.',
@@ -466,7 +523,7 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
     } catch (_) {
       account = null;
     }
-    if (generation != _generation) return;
+    if (!ref.mounted || generation != _generation) return;
     if (account == null) {
       _account = null;
       _page = 0;
@@ -480,22 +537,31 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
     final cache = ref.read(konnektedDiscoverySnapshotCacheProvider);
     final existing = accountKey == _account ? state.data : null;
     final saved = existing == null
-        ? await cache.readLokal('lastfm', accountKey) : null;
-    if (generation != _generation) return;
+        ? await cache.readLokal('lastfm', accountKey)
+        : null;
+    if (!ref.mounted || generation != _generation) return;
     final previous = existing ?? saved?.data;
     if (accountKey != _account) _page = previous?.page ?? 0;
     _account = accountKey;
     if (previous != null) {
       state = KonnektedDiscoveryState(
-        data: previous, source: source, loading: false);
+        data: previous,
+        source: source,
+        loading: false,
+      );
     }
-    if (!refresh && previous != null &&
+    if (!refresh &&
+        previous != null &&
         (existing != null ||
-         saved?.isFresh(DiscoverySnapshotCache.lastfmTtl) == true)) return;
+            saved?.isFresh(DiscoverySnapshotCache.lastfmTtl) == true))
+      return;
     if (refresh && previous != null) _page++;
     if (previous != null) {
       state = KonnektedDiscoveryState(
-        data: previous, source: source, loading: true);
+        data: previous,
+        source: source,
+        loading: true,
+      );
     }
     try {
       final result = await loadLastfmDiscovery(
@@ -503,13 +569,15 @@ class KonnektedDiscoveryNotifier extends Notifier<KonnektedDiscoveryState> {
         call: ref.read(konnektedLastfmCallProvider),
         page: _page,
       );
-      if (generation != _generation) return;
+      if (!ref.mounted || generation != _generation) return;
       final merged = result.keeping(previous);
       state = KonnektedDiscoveryState(
-        data: merged, source: KonnektedDiscoverySource.lastfm);
+        data: merged,
+        source: KonnektedDiscoverySource.lastfm,
+      );
       unawaited(cache.writeLokal('lastfm', accountKey, merged));
     } catch (error) {
-      if (generation != _generation) return;
+      if (!ref.mounted || generation != _generation) return;
       state = KonnektedDiscoveryState(
         data: previous,
         error: error is LokalDiscoveryFailure ? error.message : 'Last.fm couldn’t be reached. Check your connection and try again.',
@@ -706,10 +774,7 @@ Future<void> onOnlineAddonSettingsChanged(String addonKey) async {
   final savedPosition = player.positionNotifier.value;
   final wasPlaying = player.isPlayingNotifier.value;
   try {
-    final replacement = await playOnlineTrack(
-      'a-$addonKey',
-      origin.track,
-    );
+    final replacement = await playOnlineTrack('a-$addonKey', origin.track);
     // Avoid resurrecting a superseded track while another selection plays.
     if (player.currentSongNotifier.value?.id != previous.id) return;
     await player.play(replacement);
@@ -720,6 +785,7 @@ Future<void> onOnlineAddonSettingsChanged(String addonKey) async {
     rethrow;
   }
 }
+
 const _maxMorneyeReadyPlayback = 32;
 
 String morneyePlaybackCacheKey({
@@ -728,9 +794,19 @@ String morneyePlaybackCacheKey({
   required String trackId,
   required String settingsFingerprint,
   required String requestedTier,
-}) => sha256.convert(utf8.encode(jsonEncode([
-  addonKey, addonDigest, trackId, settingsFingerprint, requestedTier,
-]))).toString();
+}) => sha256
+    .convert(
+      utf8.encode(
+        jsonEncode([
+          addonKey,
+          addonDigest,
+          trackId,
+          settingsFingerprint,
+          requestedTier,
+        ]),
+      ),
+    )
+    .toString();
 
 void _rememberMorneyePlayback(String key, Song song) {
   _morneyeReadyPlayback.remove(key);
@@ -761,25 +837,49 @@ String? morneyeAdvertisedQuality(String? advertised) {
 }) {
   final fileType = verifiedPlayback?.fileType.toUpperCase();
   const known = {
-    'FLAC', 'ALAC', 'AAC', 'MP3', 'OPUS', 'VORBIS', 'WAV', 'AIFF',
-    'OGG', 'APE', 'WAVPACK', 'WV',
+    'FLAC',
+    'ALAC',
+    'AAC',
+    'MP3',
+    'OPUS',
+    'VORBIS',
+    'WAV',
+    'AIFF',
+    'OGG',
+    'APE',
+    'WAVPACK',
+    'WV',
   };
   final cachedCodec = known.contains(fileType) ? fileType : null;
   final advertisedCodec = codec?.trim().toUpperCase();
   // Do not combine a previously cached FLAC's 24-bit PCM metadata with a
   // newly advertised AAC/Opus edition of the same catalogue recording.
-  final sameCodec = advertisedCodec == null ||
+  final sameCodec =
+      advertisedCodec == null ||
       advertisedCodec.isEmpty ||
       advertisedCodec == cachedCodec;
   return (
     codec: codec ?? cachedCodec,
     bitDepth: bitDepth ?? (sameCodec ? verifiedPlayback?.bitDepth : null),
-    sampleRate: sampleRate ??
-        (sameCodec ? verifiedPlayback?.sampleRate : null),
+    sampleRate: sampleRate ?? (sameCodec ? verifiedPlayback?.sampleRate : null),
   );
 }
 
 /// Your Morneye add-ons that can play songs right now, as playback sources.
+/// Fixed phase text is localized; the selected provider name is unchanged.
+String morneyeResolutionStageLabel(String stage, String source) {
+  final phrase = switch (stage) {
+    'initializing' => 'Starting {source}…',
+    'metadata' => 'Checking metadata on {source}…',
+    'availability' => 'Verifying recording on {source}…',
+    'cross_provider_enrichment' => 'Matching recording on {source}…',
+    'availability_retry' => 'Checking matched recording on {source}…',
+    'preparing_media' => 'Fetching audio from {source}…',
+    _ => 'Preparing {source}…',
+  };
+  return lokalText(phrase, args: {'source': source});
+}
+
 Future<List<_PlaybackSource>> _morneyeSources(
   MorneyeService service,
   DiscoveryPlaybackCache Function() cache,
@@ -799,521 +899,589 @@ Future<List<_PlaybackSource>> _morneyeSources(
   return [
     for (final addon in addons)
       if (selectedSourceId == null || selectedSourceId == 'a-${addon.key}')
-      OnlineSource(
-        id: 'a-${addon.key}',
-        name: addon.displayName,
-        addon: true,
-        needsVerification: () => !packages.access(addon).ready,
-        verify: (context) async {
-          if (packages.access(addon).ready) return true;
-          final url = await packages.verify(addon.key);
-          if (url == null) return packages.access(addon).ready;
-          if (!context.mounted) return false;
-          final verified = await MorneyeAuthSheet.show(
-            context,
-            packages: packages,
-            addon: addon,
-            url: url,
-          );
-          if (verified) service.changed();
-          return verified;
-        },
-        results: (query) async {
-          final found = await packages.search(addon.key, query);
-          final settings = packages.settings(addon);
-          // A chosen lower tier must override catalogue MAX-quality claims in
-          // Search, but must be labelled as requested until the audio was
-          // actually probed. Deezer's current add-on has one FLAC-only tier.
-          final configured = settings['downloadQuality'] as String?;
-          final tidal = addon.name.toLowerCase().contains('tidal') ||
-              addon.key.toLowerCase().contains('tidal');
-          final amazon = addon.name.toLowerCase().startsWith('amazon');
-          // Search should show actual per-track formats, not the addon's
-          // preferred FLAC request. The latter belongs in playback settings.
-          final requestedQuality = tidal
-              ? tidalRequestedQualityLabel(
-                  configured: configured, options: addon.qualityOptions)
-              : null;
-          // A configured tier is not proof of the rendered stream's quality.
-          // Retain Tidal's *per-track catalogue availability* regardless of
-          // the selected quality; Search labels it as catalogue data, not
-          // verified playback. Suppressing these fields broke first-search
-          // Tidal tags until a song had been played.
-          // This fingerprint is the same one used for the verified playback
-          // cache. Another account, requested tier or add-on version cannot
-          // borrow a different recording's quality badge.
-          final fingerprint = sha256
-              .convert(utf8.encode(jsonEncode(settings)))
-              .toString();
-          final results = <OnlineResult>[];
-          for (final song in found) {
-            final key = morneyePlaybackCacheKey(
+        OnlineSource(
+          id: 'a-${addon.key}',
+          name: addon.displayName,
+          addon: true,
+          needsVerification: () => !packages.access(addon).ready,
+          verify: (context) async {
+            if (packages.access(addon).ready) return true;
+            final url = await packages.verify(addon.key);
+            if (url == null) return packages.access(addon).ready;
+            if (!context.mounted) return false;
+            final verified = await MorneyeAuthSheet.show(
+              context,
+              packages: packages,
+              addon: addon,
+              url: url,
+            );
+            if (verified) service.changed();
+            return verified;
+          },
+          results: (query) async {
+            final found = await packages.search(addon.key, query);
+            final settings = packages.settings(addon);
+            // A chosen lower tier must override catalogue MAX-quality claims in
+            // Search, but must be labelled as requested until the audio was
+            // actually probed. Deezer's current add-on has one FLAC-only tier.
+            final configured = settings['downloadQuality'] as String?;
+            final tidal =
+                addon.name.toLowerCase().contains('tidal') ||
+                addon.key.toLowerCase().contains('tidal');
+            final amazon = addon.name.toLowerCase().startsWith('amazon');
+            final requestedQuality = tidal
+                ? tidalRequestedQualityLabel(
+                    configured: configured,
+                    options: addon.qualityOptions,
+                  )
+                : null;
+            // A configured tier is not proof of the rendered stream's quality.
+            // Retain Tidal's *per-track catalogue availability* regardless of
+            // the selected quality; Search labels it as catalogue data, not
+            // verified playback. Suppressing these fields broke first-search
+            // Tidal tags until a song had been played.
+            // This fingerprint is the same one used for the verified playback
+            // cache. Another account, requested tier or add-on version cannot
+            // borrow a different recording's quality badge.
+            final fingerprint = sha256
+                .convert(utf8.encode(jsonEncode(settings)))
+                .toString();
+            final results = <OnlineResult>[];
+            for (final song in found) {
+              final key = morneyePlaybackCacheKey(
+                addonKey: addon.key,
+                addonDigest: addon.digest,
+                trackId: song.id,
+                settingsFingerprint: fingerprint,
+                requestedTier: '',
+              );
+              final cached = _morneyeReadyPlayback[key];
+              final verified =
+                  cached != null &&
+                      cached.filePath != null &&
+                      File(cached.filePath!).existsSync()
+                  ? cached
+                  : null;
+              final details = morneyeSearchAudioDetails(
+                // Previously probed audio takes precedence over catalogue
+                // maximums. Otherwise preserve provider-advertised measurements
+                // even when the requested rendition may be lower.
+                codec: verified != null ? null : song.codec,
+                bitDepth: verified != null ? null : song.bitDepth,
+                sampleRate: verified != null ? null : song.sampleRate,
+                verifiedPlayback: verified,
+              );
+              results.add(
+                OnlineResult(
+                  DiscoveryTrack(
+                    id: song.id,
+                    title: song.title,
+                    artist: song.artist,
+                    album: song.album,
+                    duration: song.duration,
+                    source: DiscoverySource.morneye,
+                    addonId: addon.key,
+                    sourceName: addon.displayName,
+                    artwork: song.thumbnail,
+                    atmosAvailable: song.atmosAvailable,
+                    atmosCodec: song.atmosCodec,
+                    // Manifest AC-4 is merely requestable, never a catalogue tag.
+                    atmosRequestable:
+                        amazon &&
+                        addon.qualityOptions.any(
+                          (option) =>
+                              option is Map &&
+                              option['id']?.toString().toLowerCase() == 'ac4',
+                        ),
+                    // Tidal's search metadata describes catalogue availability,
+                    // while requestedQuality describes the user's download option.
+                    // Both must survive to the badge formatter so it can distinguish
+                    // them without pretending to have probed the audio file.
+                    catalogueQuality: verified != null
+                        ? verified.resolution
+                        : morneyeAdvertisedQuality(song.quality),
+                    requestedQuality: verified == null && !amazon
+                        ? requestedQuality
+                        : null,
+                    catalogueCodec: details.codec,
+                    catalogueBitDepth: details.bitDepth,
+                    catalogueSampleRate: details.sampleRate,
+                  ),
+                ),
+              );
+            }
+            return results;
+          },
+          play: (found) async {
+            final progress = MorneyeProgressText(
+              found.title,
+              addon.displayName,
+            );
+            final qobuz = addon.name.toLowerCase().contains('qobuz');
+            final tidal = addon.name.toLowerCase().contains('tidal');
+            final deezer = addon.name.toLowerCase().startsWith('deezer');
+            final byteProgressSource = qobuz || tidal || deezer;
+            double? actualTransferPercent;
+            var segmentedProgress = false;
+            var finished = false;
+            MorneyeDownload download;
+            // Play and Save follow the saved add-on tier. A catalogue badge
+            // never follows from that preference; only delivered bytes can
+            // establish the codec and the iPhone must support its output.
+            final settings = packages.settings(addon);
+            final configured = settings['downloadQuality']?.toString();
+            final provider = addon.name.replaceFirst(RegExp(r'-web$'), '');
+            final configuredAmazonJoc =
+                (provider == 'amazon' || provider == 'amazon-new') &&
+                configured?.trim().toLowerCase() == 'eac3';
+            final configuredAtmos =
+                configured != null &&
+                (isMorneyeAtmosQuality(configured) || configuredAmazonJoc) &&
+                addon.qualityOptions.any(
+                  (option) => option is Map && option['id'] == configured,
+                );
+            if (found.atmosAvailable ||
+                found.atmosRequested ||
+                configuredAtmos) {
+              AtmosDiagnostics.record('request', {
+                'source': 'morneye',
+                'requested': found.atmosRequested,
+                'downloadOnly': found.atmosDownload,
+                'available': found.atmosAvailable,
+                'mode': found.atmosRequested ? 'atmos' : 'configured',
+              });
+            }
+            if (found.atmosRequested &&
+                !found.atmosAvailable &&
+                !found.atmosRequestable) {
+              AtmosDiagnostics.record('request_rejected', {
+                'reason': 'catalogue_not_atmos',
+              });
+              throw const DiscoveryException(
+                'This track has no advertised Atmos version.',
+              );
+            }
+            final tryAtmos = found.atmosRequested || configuredAtmos;
+            final explicitTier = found.atmosRequested
+                ? explicitMorneyePlaybackTier(
+                    atmosRequested: true,
+                    provider: addon.name,
+                    atmosCodec: found.atmosCodec,
+                  )
+                : configuredAtmos
+                ? configured
+                : null;
+            final requestedTier = explicitTier ?? '';
+            final cacheKey = morneyePlaybackCacheKey(
               addonKey: addon.key,
               addonDigest: addon.digest,
-              trackId: song.id,
-              settingsFingerprint: fingerprint,
-              requestedTier: '',
+              trackId: found.id,
+              settingsFingerprint: sha256
+                  .convert(utf8.encode(jsonEncode(packages.settings(addon))))
+                  .toString(),
+              requestedTier: requestedTier,
             );
-            final cached = _morneyeReadyPlayback[key];
-            final verified = cached != null &&
-                cached.filePath != null &&
-                File(cached.filePath!).existsSync()
-                ? cached : null;
-            final details = morneyeSearchAudioDetails(
-              // Previously probed audio takes precedence over catalogue
-              // maximums. Otherwise preserve provider-advertised measurements
-              // even when the requested rendition may be lower.
-              codec: verified != null ? null : song.codec,
-              bitDepth: verified != null ? null : song.bitDepth,
-              sampleRate: verified != null ? null : song.sampleRate,
-              verifiedPlayback: verified,
-            );
-            results.add(OnlineResult(DiscoveryTrack(
-              id: song.id,
-              title: song.title,
-              artist: song.artist,
-              album: song.album,
-              duration: song.duration,
-              source: DiscoverySource.morneye,
-              addonId: addon.key,
-              sourceName: addon.displayName,
-              artwork: song.thumbnail,
-              atmosAvailable: song.atmosAvailable,
-              atmosCodec: song.atmosCodec,
-              // This flag denotes only that the installed *Amazon addon*
-              // offers an optional AC-4 request. It does NOT certify that
-              // this specific search result has an AC-4 or Atmos edition.
-              // Keep it out of the quality/Atmos badges; UI exposes a
-              // separate clearly labelled "Try AC-4" playback action.
-              atmosRequestable: amazon &&
-                  addon.qualityOptions.any((q) => q is Map &&
-                      q['id']?.toString().toLowerCase() == 'ac4'),
-              // Tidal's search metadata describes catalogue availability,
-              // while requestedQuality describes the user's download option.
-              // Both must survive to the badge formatter so it can distinguish
-              // them without pretending to have probed the audio file.
-              catalogueQuality: verified != null
-                  ? verified.resolution
-                  : morneyeAdvertisedQuality(song.quality),
-              requestedQuality: verified == null && !amazon ? requestedQuality : null,
-              catalogueCodec: details.codec,
-              catalogueBitDepth: details.bitDepth,
-              catalogueSampleRate: details.sampleRate,
-            )));
-          }
-          return results;
-        },
-        play: (found) async {
-          final progress = MorneyeProgressText(found.title, addon.displayName);
-          final qobuz = addon.name.toLowerCase().contains('qobuz');
-          final tidal = addon.name.toLowerCase().contains('tidal');
-          final deezer = addon.name.toLowerCase().startsWith('deezer');
-          final byteProgressSource = qobuz || tidal || deezer;
-          double? actualTransferPercent;
-          var segmentedProgress = false;
-          var finished = false;
-          MorneyeDownload download;
-          // Playback follows this add-on's saved quality tier. When Atmos
-          // is selected in add-on settings, attempt that encoded rendition
-          // without requiring any speculative catalogue/search badge.
-          if (found.atmosAvailable || found.atmosRequested) {
-            AtmosDiagnostics.record('request', {
-              'source': 'morneye',
-              'requested': found.atmosRequested,
-              'downloadOnly': found.atmosDownload,
-              'available': found.atmosAvailable,
-              'mode': found.atmosRequested ? 'atmos' : 'configured',
-            });
-          }
-          if (found.atmosRequested && !found.atmosAvailable && !found.atmosRequestable) {
-            AtmosDiagnostics.record('request_rejected', {'reason': 'catalogue_not_atmos'});
-            throw const DiscoveryException('This track has no advertised Atmos version.');
-          }
-          final settings = packages.settings(addon);
-          final configured = settings['downloadQuality']?.toString();
-          final provider = addon.name.replaceFirst(RegExp(r'-web$'), '');
-          final configuredAmazonJoc =
-              (provider == 'amazon' || provider == 'amazon-new') &&
-              configured?.trim().toLowerCase() == 'eac3';
-          final configuredAtmos = configured != null &&
-              (isMorneyeAtmosQuality(configured) || configuredAmazonJoc) &&
-              addon.qualityOptions.any((option) =>
-                  option is Map && option['id'] == configured);
-          final tryAtmos = found.atmosRequested || configuredAtmos;
-          final explicitTier = found.atmosRequested
-              ? explicitMorneyePlaybackTier(
-                  atmosRequested: true, provider: addon.name,
-                  atmosCodec: found.atmosCodec)
-              : configuredAtmos ? configured : null;
-          final requestedTier = explicitTier ?? '';
-          final cacheKey = morneyePlaybackCacheKey(
-            addonKey: addon.key,
-            addonDigest: addon.digest,
-            trackId: found.id,
-            settingsFingerprint:
-                sha256.convert(utf8.encode(jsonEncode(packages.settings(addon)))).toString(),
-            requestedTier: requestedTier,
-          );
-          if (!forDownload && !found.atmosDownload) {
-            final cached = _morneyeReadyPlayback[cacheKey];
-            if (cached != null) {
-              final path = cached.filePath;
-              if (path != null &&
-                  File(path).existsSync() &&
-                  File(path).lengthSync() > 0) {
-                return cached;
+            if (!forDownload && !found.atmosDownload) {
+              final cached = _morneyeReadyPlayback[cacheKey];
+              if (cached != null) {
+                final path = cached.filePath;
+                if (path != null &&
+                    File(path).existsSync() &&
+                    File(path).lengthSync() > 0) {
+                  return cached;
+                }
               }
+              _morneyeReadyPlayback.remove(cacheKey);
             }
-            _morneyeReadyPlayback.remove(cacheKey);
-          }
-          // Direct, verified FLAC (including Tidal and Amazon), or a
-          // complete-header, unencrypted fast-start M4A may start from the
-          // host's growing media file. DASH segments, encrypted Amazon
-          // containers and conversions are not exposed as live sources.
-          // Explicit Save/Atmos still require full-file validation.
-          final live = !forDownload && !tryAtmos &&
-                  !found.atmosDownload &&
-                  morneyeCanPlayWhileDownloading(addon.name)
-              ? MorneyeLiveSession()
-              : null;
-          if (tryAtmos && !found.atmosDownload &&
-              !await AtmosPlaybackSupport.availableFor(
-                explicitTier?.trim().toLowerCase().replaceAll('-', '') == 'ac4'
-                    ? 'ac4' : 'eac3-joc')) {
-            AtmosDiagnostics.record('request_rejected', {'reason': 'decoder_unavailable'});
-            throw const DiscoveryException(
-              'This Android device does not support the requested native spatial-audio codec or direct output. No stereo track was substituted.',
-            );
-          }
-          try {
-            Future<MorneyeDownload> fetch({String? quality}) =>
-                packages.download(
-                  addon.key,
-                  found.id,
-                  quality: quality,
-                  forPlayback: !forDownload && !found.atmosDownload,
-                  trackHint: morneyeSelectedTrackHint(
-                    id: found.id,
-                    title: found.title,
-                    artist: found.artist,
-                    durationMs: found.duration?.inMilliseconds,
-                  ),
-                  onResolutionStage: (stage) {
-                    if (finished) return;
-                    final detail = switch (stage) {
-                      'initializing' => 'Starting',
-                      'metadata' => 'Checking metadata on',
-                      'availability' => 'Verifying recording on',
-                      'cross_provider_enrichment' => 'Matching recording on',
-                      'availability_retry' => 'Checking matched recording on',
-                      'preparing_media' => 'Fetching audio from',
-                      _ => 'Preparing',
-                    };
-                    onStatus?.call('${detail} ${addon.displayName}…');
-                  },
-                  // Even an explicit Qobuz Save (live == null) needs the
-                  // host's measured byte progress. The guest's initial 5%
-                  // only means its download ticket is being resolved.
-                  onTransfer: live == null && !byteProgressSource ? null : (transfer) {
-                    live?.observe(transfer);
-                    // Qobuz's extension emits 5% during URL/ticket
-                    // resolution. Only host-observed bytes are transfer
-                    // progress; they must supersede guest progress numbers.
-                    if (byteProgressSource && !finished && !segmentedProgress &&
-                        transfer.total > 0 &&
-                        transfer.written > 0) {
-                      actualTransferPercent =
-                          (transfer.written * 100 / transfer.total)
-                              .clamp(0.0, 100.0).toDouble();
+            // Direct, verified FLAC (including Tidal and Amazon), or a
+            // complete-header, unencrypted fast-start M4A may start from the
+            // host's growing media file. DASH segments, encrypted Amazon
+            // containers and conversions are not exposed as live sources.
+            // Explicit Save/Atmos still require full-file validation.
+            final live =
+                !forDownload &&
+                    !tryAtmos &&
+                    !found.atmosDownload &&
+                    morneyeCanPlayWhileDownloading(addon.name)
+                ? MorneyeLiveSession()
+                : null;
+            if (morneyeNeedsSpatialPlaybackOutput(
+                  spatialRequested: tryAtmos,
+                  forDownload: forDownload,
+                  atmosDownload: found.atmosDownload,
+                ) &&
+                !await AtmosPlaybackSupport.availableFor(explicitTier?.trim().toLowerCase().replaceAll('-', '') == 'ac4' ? 'ac4' : 'eac3-joc')) {
+              AtmosDiagnostics.record('request_rejected', {
+                'reason': 'decoder_unavailable',
+              });
+              throw const DiscoveryException(
+                'This device does not support the selected encoded spatial-audio output on its current native route. No stereo track was substituted; change the addon quality or download the original file.',
+              );
+            }
+            try {
+              Future<MorneyeDownload> fetch({
+                String? quality,
+              }) => packages.download(
+                addon.key,
+                found.id,
+                quality: quality,
+                forPlayback: !forDownload && !found.atmosDownload,
+                trackHint: morneyeSelectedTrackHint(
+                  id: found.id,
+                  title: found.title,
+                  artist: found.artist,
+                  durationMs: found.duration?.inMilliseconds,
+                ),
+                onResolutionStage: (stage) {
+                  if (finished) return;
+                  onStatus?.call(
+                    morneyeResolutionStageLabel(stage, addon.displayName),
+                  );
+                },
+                // Even an explicit Qobuz Save (live == null) needs the
+                // host's measured byte progress. The guest's initial 5%
+                // only means its download ticket is being resolved.
+                onTransfer: live == null && !byteProgressSource
+                    ? null
+                    : (transfer) {
+                        live?.observe(transfer);
+                        // Qobuz's extension emits 5% during URL/ticket
+                        // resolution. Only host-observed bytes are transfer
+                        // progress; they must supersede guest progress numbers.
+                        if (byteProgressSource &&
+                            !finished &&
+                            !segmentedProgress &&
+                            transfer.total > 0 &&
+                            transfer.written > 0) {
+                          actualTransferPercent =
+                              (transfer.written * 100 / transfer.total)
+                                  .clamp(0.0, 100.0)
+                                  .toDouble();
+                          final text = progress.update(
+                            percent: actualTransferPercent,
+                            message: forDownload
+                                ? 'Downloading audio…'
+                                : 'Receiving audio…',
+                          );
+                          if (text != null) onStatus?.call(text);
+                        }
+                      },
+                onProgress: ({percent, message}) {
+                  if (finished) return;
+                  if (byteProgressSource) {
+                    if (message == 'Downloading audio segments…') {
+                      segmentedProgress = true;
+                      // Host-observed completed segments, not a guess.
                       final text = progress.update(
-                        percent: actualTransferPercent,
-                        message: forDownload ? 'Downloading audio…' : 'Receiving audio…',
+                        percent: percent,
+                        message: message,
+                      );
+                      if (text != null) onStatus?.call(text);
+                    } else if (actualTransferPercent == null &&
+                        !segmentedProgress) {
+                      // The extension's initial 5% is a resolver stage.
+                      // Once real segments start, ignore guest status/%
+                      // callbacks so there is only one stable toast.
+                      final text = progress.update(
+                        message: qobuz
+                            ? 'Connecting to Qobuz audio…'
+                            : tidal
+                            ? 'Downloading Tidal audio…'
+                            : 'Downloading Deezer audio…',
                       );
                       if (text != null) onStatus?.call(text);
                     }
-                  },
-                  onProgress: ({percent, message}) {
-                    if (finished) return;
-                    if (byteProgressSource) {
-                      if (message == 'Downloading audio segments…') {
-                        segmentedProgress = true;
-                        // Host-observed completed segments, not a guess.
-                        final text = progress.update(
-                          percent: percent, message: message,
-                        );
-                        if (text != null) onStatus?.call(text);
-                      } else if (actualTransferPercent == null &&
-                                 !segmentedProgress) {
-                        // The extension's initial 5% is a resolver stage.
-                        // Once real segments start, ignore guest status/%
-                        // callbacks so there is only one stable toast.
-                        final text = progress.update(
-                          message: qobuz
-                              ? 'Connecting to Qobuz audio…'
-                              : tidal
-                                  ? 'Downloading Tidal audio…'
-                                  : 'Downloading Deezer audio…',
-                        );
-                        if (text != null) onStatus?.call(text);
-                      }
-                      return;
-                    }
-                    final text = progress.update(
-                      percent: percent, message: message,
-                    );
-                    if (text != null) onStatus?.call(text);
-                  },
-              cancel: cancel,
-            );
-            try {
-              if (tryAtmos) AtmosDiagnostics.record('download_start', {
-                'quality': explicitTier,
-                'downloadOnly': found.atmosDownload,
-              });
-              final transfer = fetch(
-                quality: explicitTier,
+                    return;
+                  }
+                  final text = progress.update(
+                    percent: percent,
+                    message: message,
+                  );
+                  if (text != null) onStatus?.call(text);
+                },
+                cancel: cancel,
               );
-              // Race verified progressive readability against completed
-              // playback preparation; preserve early playback for direct
-              // Tidal/Amazon sources without risking the MPD/decrypt paths.
-              final canStream = live != null && await Future.any<bool>([
-                live.playable.then((_) => true),
-                transfer.then((_) => false),
-              ]);
-              if (canStream) {
-                final session = live!;
-                final handle = MorneyeLiveRegistry.instance.register(session);
-                // Retain the transfer after Now Playing starts. Adoption,
-                // validation and staging cleanup stay asynchronous, while
-                // late failures propagate to the ranged audio reader.
-                unawaited(
-                  transfer.then((completed) async {
-                    try {
-                      // A CDN can report a misleading HEAD length for
-                      // segments. Never promote a decoder that was given a
-                      // different sourceLength than the actual assembled file.
-                      final actualLength = await completed.file.length();
-                      final lengthMatches = actualLength == session.total;
-                      // Always validate and adopt the *complete* rendition.
-                      // A misleading CDN total must not lose a playable,
-                      // correctly probed download when the early reader fails.
-                      final cached = await cache().adopt(
-                        found, completed.file, sourceInfo: completed.info,
-                        fastPlayback: true,
-                      );
-                      final path = cached.filePath;
-                      if (path == null) {
-                        throw StateError('Completed audio has no cache path');
-                      }
-                      _rememberMorneyePlayback(cacheKey, cached);
-                      QueuePreResolver.shared.schedule();
-                      if (lengthMatches) {
-                        session.promote(path);
-                      } else {
-                        // Media3 already knows the original length, so the
-                        // growing reader cannot safely change its response
-                        // size. Stop using it, then hand the verified complete
-                        // cache to the same logical queue entry. Keep both the
-                        // position and the current playback/pause preference.
-                        session.fail(StateError('Live media size changed during transfer'));
-                        final player = PlayerService();
-                        final liveSongId =
-                            'discovery:${found.key.hashCode}:morneye-live';
-                        if (player.currentSongNotifier.value?.id == liveSongId) {
-                          final position = player.positionNotifier.value;
-                          final wasPlaying = player.isPlayingNotifier.value;
-                          final replacement = cached.copyWith(
-                            id: liveSongId,
-                            sourceDisplayName: addon.displayName,
-                            fileSizeBytes: actualLength,
-                          );
-                          // Same song id => play() replaces its audio source
-                          // in the existing playlist, without dropping Up Next.
-                          await player.play(replacement);
-                          if (player.currentSongNotifier.value?.id == liveSongId) {
-                            if (position > Duration.zero) {
-                              await player.seek(position);
+              try {
+                if (tryAtmos)
+                  AtmosDiagnostics.record('download_start', {
+                    'quality': explicitTier,
+                    'downloadOnly': found.atmosDownload,
+                  });
+                final transfer = fetch(quality: explicitTier);
+                // Race verified progressive readability against completed
+                // playback preparation; preserve early playback for direct
+                // Tidal/Amazon sources without risking the MPD/decrypt paths.
+                final canStream =
+                    live != null &&
+                    await Future.any<bool>([
+                      live.playable.then((_) => true),
+                      transfer.then((_) => false),
+                    ]);
+                if (canStream) {
+                  final session = live!;
+                  final handle = MorneyeLiveRegistry.instance.register(session);
+                  // Retain the transfer after Now Playing starts. Adoption,
+                  // validation and staging cleanup stay asynchronous, while
+                  // late failures propagate to the ranged audio reader.
+                  unawaited(
+                    transfer
+                        .then((completed) async {
+                          try {
+                            // A CDN can report a misleading HEAD length for
+                            // segments. Never promote a decoder that was given a
+                            // different sourceLength than the actual assembled file.
+                            final actualLength = await completed.file.length();
+                            final lengthMatches = actualLength == session.total;
+                            // Always validate and adopt the *complete* rendition.
+                            // A misleading CDN total must not lose a playable,
+                            // correctly probed download when the early reader fails.
+                            final cached = await cache().adopt(
+                              found,
+                              completed.file,
+                              sourceInfo: completed.info,
+                              fastPlayback: true,
+                            );
+                            final path = cached.filePath;
+                            if (path == null) {
+                              throw StateError(
+                                'Completed audio has no cache path',
+                              );
                             }
-                            if (!wasPlaying) await player.pause();
+                            _rememberMorneyePlayback(cacheKey, cached);
+                            QueuePreResolver.shared.schedule();
+                            if (lengthMatches) {
+                              session.promote(path);
+                            } else {
+                              // Media3 already knows the original length, so the
+                              // growing reader cannot safely change its response
+                              // size. Stop using it, then hand the verified complete
+                              // cache to the same logical queue entry. Keep both the
+                              // position and the current playback/pause preference.
+                              session.fail(
+                                StateError(
+                                  'Live media size changed during transfer',
+                                ),
+                              );
+                              final player = PlayerService();
+                              final liveSongId =
+                                  'discovery:${found.key.hashCode}:morneye-live';
+                              if (player.currentSongNotifier.value?.id ==
+                                  liveSongId) {
+                                final position = player.positionNotifier.value;
+                                final wasPlaying =
+                                    player.isPlayingNotifier.value;
+                                final replacement = cached.copyWith(
+                                  id: liveSongId,
+                                  sourceDisplayName: addon.displayName,
+                                  fileSizeBytes: actualLength,
+                                );
+                                // Same song id => play() replaces its audio source
+                                // in the existing playlist, without dropping Up Next.
+                                await player.play(replacement);
+                                if (player.currentSongNotifier.value?.id ==
+                                    liveSongId) {
+                                  if (position > Duration.zero) {
+                                    await player.seek(position);
+                                  }
+                                  if (!wasPlaying) await player.pause();
+                                }
+                              }
+                              onStatus?.call(
+                                'Stream metadata changed; switched to complete audio',
+                              );
+                            }
+                          } catch (error) {
+                            session.fail(error);
+                            QueuePreResolver.shared.schedule();
+                          } finally {
+                            await completed.cleanup();
                           }
-                        }
-                        onStatus?.call('Stream metadata changed; switched to complete audio');
-                      }
-                    } catch (error) {
-                      session.fail(error);
-                      QueuePreResolver.shared.schedule();
-                    } finally {
-                      await completed.cleanup();
-                    }
-                  }).catchError((Object error, StackTrace stack) {
-                    session.fail(error);
-                    QueuePreResolver.shared.schedule();
-                  }),
-                );
-                onStatus?.call('Streaming ${found.title} from ${addon.displayName}…');
-                return Song(
-                  id: 'discovery:${found.key.hashCode}:morneye-live',
-                  title: found.title,
-                  artist: found.artist,
-                  album: found.album,
-                  albumArt: found.artwork,
-                  duration: found.duration ?? Duration.zero,
-                  fileType: session.fileType ?? 'ONLINE',
-                  // Verified FLAC or fast-start MP4; show bit depth/rate only
-                  // when they were measured from the actual FLAC header. Use
-                  // STREAMINFO measurements; the provider's catalogue maximum
-                  // can be 24-bit even when LOW/LOSSLESS was selected.
-                  bitDepth: session.bitDepth,
-                  sampleRate: session.sampleRate,
-                  filePath: handle,
-                  sourcePackage: 'konnekted.morneye-live',
-                  sourceDisplayName: addon.displayName,
-                  fileSizeBytes: session.total > 0 ? session.total : null,
-                  remoteId: found.id,
-                  isExternal: true,
-                );
+                        })
+                        .catchError((Object error, StackTrace stack) {
+                          session.fail(error);
+                          QueuePreResolver.shared.schedule();
+                        }),
+                  );
+                  onStatus?.call(
+                    'Streaming ${found.title} from ${addon.displayName}…',
+                  );
+                  return Song(
+                    id: 'discovery:${found.key.hashCode}:morneye-live',
+                    title: found.title,
+                    artist: found.artist,
+                    album: found.album,
+                    albumArt: found.artwork,
+                    duration: found.duration ?? Duration.zero,
+                    fileType: session.fileType ?? 'ONLINE',
+                    // Verified FLAC or fast-start MP4; show bit depth/rate only
+                    // when they were measured from the actual FLAC header. Use
+                    // STREAMINFO measurements; the provider's catalogue maximum
+                    // can be 24-bit even when LOW/LOSSLESS was selected.
+                    bitDepth: session.bitDepth,
+                    sampleRate: session.sampleRate,
+                    filePath: handle,
+                    sourcePackage: 'konnekted.morneye-live',
+                    sourceDisplayName: addon.displayName,
+                    fileSizeBytes: session.total > 0 ? session.total : null,
+                    remoteId: found.id,
+                    isExternal: true,
+                  );
+                }
+                download = await transfer;
+                if (tryAtmos) {
+                  AtmosDiagnostics.record('download_complete', {
+                    'quality': 'DOLBY_ATMOS',
+                    'encoded': download.atmosEncoded,
+                    'outcome': download.atmosEncoded
+                        ? 'joc_confirmed'
+                        : 'not_joc',
+                  });
+                }
+                if (tryAtmos && !download.atmosEncoded) {
+                  // The provider returned an ordinary recording. Discard the
+                  // staged copy before rejecting the explicitly requested tier.
+                  await download.cleanup();
+                  throw const DiscoveryException(
+                    'Lokal could not verify the downloaded source as E-AC-3 JOC Dolby Atmos. No stereo track was substituted. Check Atmos diagnostics.',
+                  );
+                }
+              } catch (error) {
+                final reason = error.toString();
+                if (tryAtmos || found.atmosAvailable) {
+                  AtmosDiagnostics.record('download_error', {
+                    'errorClass': error.runtimeType.toString(),
+                    'reason': tidalAtmosTransportFailure(reason)
+                        ? 'network_failure'
+                        : tidalAtmosTierUnavailable(reason)
+                        ? 'tier_unavailable'
+                        : 'download_or_probe_failure',
+                  });
+                }
+                // An addon can request Atmos from its own settings even when
+                // this device did not enable the native JOC path. Do not rely
+                // on tryAtmos alone to classify a failed Atmos API request.
+                if (tidalAtmosTransportFailure(reason) &&
+                    (tryAtmos || tidalAtmosErrorMentionsMode(reason))) {
+                  throw DiscoveryException(tidalAtmosTransportMessage(reason));
+                }
+                if (tryAtmos) {
+                  if (error is DiscoveryException) rethrow;
+                  final rejectedProbe = error is MorneyeSourceVerificationError;
+                  throw DiscoveryException(
+                    rejectedProbe
+                        ? 'The requested Dolby Atmos stream was not verified as E-AC-3 JOC. Check Atmos diagnostics for the actual codec and probe result. No stereo track was substituted.'
+                        : tidalAtmosTierUnavailable(reason)
+                        ? 'This source has no downloadable Atmos stream for this track. No stereo track was substituted.'
+                        : 'Atmos download failed. No stereo track was substituted.',
+                  );
+                }
+                rethrow;
               }
-              download = await transfer;
-              if (tryAtmos) {
-                AtmosDiagnostics.record('download_complete', {
-                  'quality': explicitTier,
-                  'encoded': download.atmosEncoded,
-                  'outcome': download.atmosEncoded ? 'encoded_source_confirmed' : 'not_verified',
-                });
-              }
-              if (tryAtmos && !download.atmosEncoded) {
-                // The provider returned an ordinary recording. Discard the
-                // staged copy before rejecting the explicitly requested tier.
-                await download.cleanup();
-                throw const DiscoveryException(
-                  'Lokal could not verify the requested spatial audio codec in the downloaded source. No stereo track was substituted. Check Atmos diagnostics.',
-                );
-              }
-            } catch (error) {
-              final reason = error.toString();
-              if (tryAtmos || found.atmosAvailable) {
-                AtmosDiagnostics.record('download_error', {
-                  'errorClass': error.runtimeType.toString(),
-                  'reason': tidalAtmosTransportFailure(reason)
-                      ? 'network_failure'
-                      : tidalAtmosTierUnavailable(reason)
-                          ? 'tier_unavailable'
-                          : 'download_or_probe_failure',
-                });
-              }
-              // An addon can request Atmos from its own settings even when
-              // this device did not enable the native JOC path. Do not rely
-              // on tryAtmos alone to classify a failed Atmos API request.
-              if (tidalAtmosTransportFailure(reason) &&
-                  (tryAtmos || tidalAtmosErrorMentionsMode(reason))) {
-                throw DiscoveryException(tidalAtmosTransportMessage(reason));
-              }
-              if (tryAtmos) {
-                if (error is DiscoveryException) rethrow;
-                final rejectedProbe = error is MorneyeSourceVerificationError;
-                throw DiscoveryException(
-                  rejectedProbe
-                      ? 'The requested spatial stream was not verified. Check Atmos diagnostics. No stereo track was substituted.'
-                      : tidalAtmosTierUnavailable(reason)
-                          ? 'This source has no downloadable Atmos stream for this track. No stereo track was substituted.'
-                          : 'Atmos download failed. No stereo track was substituted.',
-                );
-              }
+            } on MorneyePackageError catch (error) {
+              final detail = error.message;
+              throw DiscoveryException(
+                tidalAtmosTransportFailure(detail) &&
+                        tidalAtmosErrorMentionsMode(detail)
+                    ? tidalAtmosTransportMessage(detail)
+                    : detail,
+              );
+            } on MorneyeRuntimeError catch (error) {
+              final detail = error.toString();
+              throw DiscoveryException(
+                tidalAtmosTransportFailure(detail) &&
+                        tidalAtmosErrorMentionsMode(detail)
+                    ? tidalAtmosTransportMessage(detail)
+                    : detail,
+              );
+            } on DiscoveryException {
               rethrow;
+            } catch (_) {
+              // Network drops, stalls and file errors: this source failed, so
+              // the next one can be tried.
+              throw DiscoveryException(
+                '${addon.displayName} couldn’t download ${found.title}. '
+                'Check your connection and try again.',
+              );
+            } finally {
+              finished = true;
             }
-          } on MorneyePackageError catch (error) {
-            final detail = error.message;
-            throw DiscoveryException(
-              tidalAtmosTransportFailure(detail) &&
-                      tidalAtmosErrorMentionsMode(detail)
-                  ? tidalAtmosTransportMessage(detail)
-                  : detail,
-            );
-          } on MorneyeRuntimeError catch (error) {
-            final detail = error.toString();
-            throw DiscoveryException(
-              tidalAtmosTransportFailure(detail) &&
-                      tidalAtmosErrorMentionsMode(detail)
-                  ? tidalAtmosTransportMessage(detail)
-                  : detail,
-            );
-          } on DiscoveryException {
-            rethrow;
-          } catch (_) {
-            // Network drops, stalls and file errors: this source failed, so
-            // the next one can be tried.
-            throw DiscoveryException(
-              '${addon.displayName} couldn’t download ${found.title}. '
-              'Check your connection and try again.',
-            );
-          } finally {
-            finished = true;
-          }
-          try {
-            if (tryAtmos) AtmosDiagnostics.record('cache_adopt_start', {
-              'encoded': download.atmosEncoded,
-              'mode': found.atmosDownload ? 'download' : 'playback',
-            });
-            final adoptionTimer = Stopwatch()..start();
-            final adopted = await cache().adopt(
-              found,
-              download.file,
-              atmosEncoded: download.atmosEncoded,
-              sourceInfo: download.info,
-              fastPlayback: !forDownload && !found.atmosDownload && !tryAtmos,
-            );
-            AppLog.instance.add('[Mornye] cache adoption elapsedMs='
+            try {
+              if (tryAtmos)
+                AtmosDiagnostics.record('cache_adopt_start', {
+                  'encoded': download.atmosEncoded,
+                  'mode': found.atmosDownload ? 'download' : 'playback',
+                });
+              final adoptionTimer = Stopwatch()..start();
+              final adopted = await cache().adopt(
+                found,
+                download.file,
+                atmosEncoded: download.atmosEncoded,
+                sourceInfo: download.info,
+                fastPlayback: !forDownload && !found.atmosDownload && !tryAtmos,
+              );
+              AppLog.instance.add(
+                '[Mornye] cache adoption elapsedMs='
                 '${adoptionTimer.elapsedMilliseconds} '
-                'mode=${forDownload ? 'save' : 'playback'}');
-            if (tryAtmos) AtmosDiagnostics.record('cache_adopt_done', {
-              'encoded': adopted.atmosEncoded,
-              'outcome': 'ready',
-            });
-            if (!forDownload && !found.atmosDownload) {
-              _rememberMorneyePlayback(cacheKey, adopted);
+                'mode=${forDownload ? 'save' : 'playback'}',
+              );
+              if (tryAtmos)
+                AtmosDiagnostics.record('cache_adopt_done', {
+                  'encoded': adopted.atmosEncoded,
+                  'outcome': 'ready',
+                });
+              if (!forDownload && !found.atmosDownload) {
+                _rememberMorneyePlayback(cacheKey, adopted);
+              }
+              return adopted;
+            } catch (error) {
+              if (tryAtmos)
+                AtmosDiagnostics.record('cache_adopt_error', {
+                  'errorClass': error.runtimeType.toString(),
+                  'reason': 'cache_failure',
+                });
+              rethrow;
+            } finally {
+              await download.cleanup();
             }
-            return adopted;
-          } catch (error) {
-            if (tryAtmos) AtmosDiagnostics.record('cache_adopt_error', {
-              'errorClass': error.runtimeType.toString(),
-              'reason': 'cache_failure',
-            });
-            rethrow;
-          } finally {
-            await download.cleanup();
-          }
-        },
-      ),
+          },
+        ),
   ];
 }
 
 /// Detects explicit Atmos requests even if no local native JOC decoder
 /// was selected (e.g. user-configured download quality in an addon).
-bool tidalAtmosErrorMentionsMode(String message) =>
-    RegExp(r'DOLBY[_ -]?ATMOS|EAC3[_ -]?JOC|Tidal Atmos',
-      caseSensitive: false).hasMatch(message);
+bool tidalAtmosErrorMentionsMode(String message) => RegExp(
+  r'DOLBY[_ -]?ATMOS|EAC3[_ -]?JOC|Tidal Atmos',
+  caseSensitive: false,
+).hasMatch(message);
 
 /// A remote network fault is not proof that the catalogue's Atmos edition is
 /// missing. All error paths must use the same concise, non-sensitive message.
-bool tidalAtmosTransportFailure(String message) =>
-    RegExp(r'HTTP\s*5\d\d|TimeoutException|timed?\s*out|SocketException|without confirmation',
-      caseSensitive: false).hasMatch(message);
+bool tidalAtmosTransportFailure(String message) => RegExp(
+  r'HTTP\s*5\d\d|TimeoutException|timed?\s*out|SocketException|without confirmation',
+  caseSensitive: false,
+).hasMatch(message);
 
 /// Only a deterministic response permits a stereo fallback. Unknown errors,
 /// repeated 502s, expired tickets and verification failures remain errors.
-bool tidalAtmosTierUnavailable(String message) =>
-    RegExp(r'QUALITY_UNAVAILABLE|QUALITY_NOT_AVAILABLE|CODEC_UNAVAILABLE|TIDAL API did not report EAC3_JOC|returned lower tier than requested',
-      caseSensitive: false).hasMatch(message);
+bool tidalAtmosTierUnavailable(String message) => RegExp(
+  r'QUALITY_UNAVAILABLE|QUALITY_NOT_AVAILABLE|CODEC_UNAVAILABLE|TIDAL API did not report EAC3_JOC|returned lower tier than requested',
+  caseSensitive: false,
+).hasMatch(message);
 
 String tidalAtmosTransportMessage(String message) {
-  final status = RegExp(r'HTTP\s*(5\d\d)', caseSensitive: false)
-      .firstMatch(message)?.group(1);
+  final status = RegExp(
+    r'HTTP\s*(5\d\d)',
+    caseSensitive: false,
+  ).firstMatch(message)?.group(1);
   if (status != null) {
     return 'Tidal Atmos unavailable: download service HTTP $status. '
         'No Atmos stream was received. Retry later.';
   }
-  if (RegExp(r'TimeoutException|timed?\s*out',
-          caseSensitive: false).hasMatch(message)) {
+  if (RegExp(
+    r'TimeoutException|timed?\s*out',
+    caseSensitive: false,
+  ).hasMatch(message)) {
     return 'Tidal Atmos unavailable: download service timed out. '
         'No Atmos stream was received. Retry later.';
   }
@@ -1346,7 +1514,8 @@ class MorneyeProgressText {
     // An add-on may keep emitting its initial 5% even after host transfer
     // bytes/segments advance. Prefer the highest measured progress instead
     // of letting a stale guest message jump the toast backwards.
-    final normalizedWords = _percent == null ? words
+    final normalizedWords = _percent == null
+        ? words
         : words.replaceAllMapped(numbered, (_) => '${_percent!}%');
     final text = words.isEmpty
         ? (_percent == null ? prefix : '$prefix$percentText')
@@ -1387,36 +1556,48 @@ Song progressiveAddonSong(DiscoveryTrack track, ResolvedDiscoveryAudio audio) {
   final handle = DiscoveryProgressiveStreams.instance.register(audio.url);
   final artwork = track.artwork;
   final ext = audio.url.pathSegments.isEmpty
-      ? '' : audio.url.pathSegments.last.split('.').last.toLowerCase();
+      ? ''
+      : audio.url.pathSegments.last.split('.').last.toLowerCase();
   final extension = const {
-    'flac': 'FLAC', 'mp3': 'MP3', 'm4a': 'ALAC',
-    'aac': 'AAC', 'ogg': 'OGG', 'opus': 'OPUS',
-    'wav': 'WAV', 'webm': 'OPUS',
+    'flac': 'FLAC',
+    'mp3': 'MP3',
+    'm4a': 'ALAC',
+    'aac': 'AAC',
+    'ogg': 'OGG',
+    'opus': 'OPUS',
+    'wav': 'WAV',
+    'webm': 'OPUS',
   }[ext];
   // Never combine a selected low-quality stream's few metadata fields with
   // a 24/96 catalogue maximum from a different rendition. When the resolver
   // reports any rendition detail, its missing fields must remain unknown.
-  final hasRenditionDetails = audio.codec != null ||
+  final hasRenditionDetails =
+      audio.codec != null ||
       audio.quality != null ||
       audio.bitDepth != null ||
       audio.sampleRate != null ||
       audio.bitrate != null;
   final selectedCodec = hasRenditionDetails
-      ? audio.codec : track.catalogueCodec;
+      ? audio.codec
+      : track.catalogueCodec;
   // Exact selected-stream bitrate can fill the quality tag for a lossy
   // rendition (for example Tidal HIGH AAC) without copying a different
   // catalogue tier. A codec or a URL extension alone proves no bitrate.
-  final selectedQuality = audio.quality ??
+  final selectedQuality =
+      audio.quality ??
       measuredLossyBitrate(codec: audio.codec, bitsPerSecond: audio.bitrate);
   final audioInfo = advertisedOnlineAudio(
     codec: selectedCodec,
     quality: hasRenditionDetails ? selectedQuality : track.catalogueQuality,
     bitDepth: hasRenditionDetails ? audio.bitDepth : track.catalogueBitDepth,
-    sampleRate: hasRenditionDetails ? audio.sampleRate : track.catalogueSampleRate,
+    sampleRate: hasRenditionDetails
+        ? audio.sampleRate
+        : track.catalogueSampleRate,
     // A filename suffix is only a container hint; M4A and WebM may hold
     // different codecs, so do not invent ALAC/OPUS from those extensions.
     fallbackFileType: (ext == 'm4a' || ext == 'webm')
-        ? 'ONLINE' : (extension ?? 'ONLINE'),
+        ? 'ONLINE'
+        : (extension ?? 'ONLINE'),
   );
   return Song(
     id: 'discovery:${track.key.hashCode}:progressive',
@@ -1469,168 +1650,220 @@ Future<List<OnlineSource>> _playbackSources(
   Future<void>? addonCancel(String sourceId) {
     if (automaticAddonAborts == null) return cancel;
     final local = automaticAddonAborts
-        .putIfAbsent(sourceId, () => Completer<void>()).future;
+        .putIfAbsent(sourceId, () => Completer<void>())
+        .future;
     if (cancel == null) return local;
     return Future.any([local, cancel]);
   }
+
   final registry = DiscoverySourceRegistry(addonWeb, settings);
   final youtube = YoutubeAudio(web);
   // Automatic Discovery should not resurrect native sources behind the
   // listener's back when their only enabled source is an HTTP add-on.
   // Explicit online Search selections still have access to native sources.
-  final httpOnly = respectEnabledDiscoverySources &&
-      settings.activeAddons.isNotEmpty && !settings.youtubeEnabled;
+  final httpOnly =
+      respectEnabledDiscoverySources &&
+      settings.activeAddons.isNotEmpty &&
+      !settings.youtubeEnabled;
   final legacyLabels = <String, String>{};
   for (final addon in registry.addons) {
-    if (registry.addons.where((other) =>
-        other.displayName == addon.displayName).length == 1) {
+    if (registry.addons
+            .where((other) => other.displayName == addon.displayName)
+            .length ==
+        1) {
       legacyLabels['w-${addon.displayName}'] = 'w-${addon.configId}';
     }
   }
-  return PlaybackSourcePriority.order([
-    if (!httpOnly && (selectedSourceId == null || selectedSourceId == 'yt'))
-    OnlineSource(
-      id: 'yt',
-      name: 'YouTube Music',
-      results: (query) async => [
-        for (final track in await YoutubeMusicCatalog(web).search(query))
-          OnlineResult(track, artwork: track.artwork),
-      ],
-      play: (found) => youtube.prepare(found, cache(), cancel: cancel),
-    ),
-    // Independent native source, without any add-on installation or credentials.
-    if (!httpOnly && (selectedSourceId == null || selectedSourceId == 'mono'))
-    OnlineSource(
-      id: 'mono',
-      name: 'Monochrome',
-      results: (query) async => [
-        for (final track in await MonochromeSource.search(web, query))
-          OnlineResult(track, artwork: track.artwork),
-      ],
-      play: (found) async {
-        onStatus?.call('Connecting to Monochrome…');
-        final audio = MonochromeSource.resolve(found);
-        if (forDownload) {
-          return cache().prepare(found, audio, cancel: cancel,
-            onProgress: (received) {
-              if (audio.length case final total? when total > 0) {
-                onStatus?.call('Downloading from Monochrome… ${(received * 100 / total).clamp(0, 100).round()}%');
-              } else {
-                onStatus?.call('Downloading from Monochrome…');
-              }
-            },
-          );
-        }
-        onStatus?.call('Buffering from Monochrome…');
-        return progressiveAddonSong(found, audio);
-      },
-    ),
-    // Built-in SoundCloud source: no HTTP addon or Morneye installation.
-    if (!httpOnly && (selectedSourceId == null || selectedSourceId == 'sc'))
-    OnlineSource(
-      id: 'sc',
-      name: 'SoundCloud',
-      results: (query) async => [
-        for (final track in await SoundCloudSource(web).search(query))
-          OnlineResult(track, artwork: track.artwork),
-      ],
-      play: (found) async {
-        onStatus?.call('Connecting to SoundCloud…');
-        final audio = await SoundCloudSource(web).resolve(
-          found, forDownload: forDownload,
-        );
-        if (forDownload) {
-          onStatus?.call('Downloading from SoundCloud…');
-          return cache().prepare(found, audio, cancel: cancel);
-        }
-        onStatus?.call('Buffering from SoundCloud…');
-        return progressiveAddonSong(found, audio);
-      },
-    ),
-    for (final addon in registry.addons)
-      if (selectedSourceId == null || selectedSourceId == 'w-${addon.configId}')
-      OnlineSource(
-        id: 'w-${addon.configId}',
-        name: addon.displayName,
-        addon: true,
-        results: (query) async => [
-          for (final track in await addon.search(
-            query, cancel: addonCancel('w-${addon.configId}'),
-          ))
-            OnlineResult(track, artwork: track.artwork),
-        ],
-        play: (found) async {
-          onStatus?.call('Connecting to ${addon.displayName}…');
-          final sourceCancel = addonCancel('w-${addon.configId}');
-          final audio = await registry.resolve(
-            found, cancel: sourceCancel, forDownload: forDownload,
-          );
-          // Never log signed URLs, raw manifest XML or the CENC key. The
-          // transport classification is enough to troubleshoot the actual
-          // path used rather than guessing from a generic exception.
-          final transport = audio.hybridPlan != null ? 'hybrid_cenc'
-              : audio.dashMedia != null ? 'dash_mpd'
-              : audio.requiresStaging ? 'opaque_verified' : 'progressive';
-          AppLog.instance.add(
-            '[HttpAddon] resolved source=w-${addon.configId} transport=$transport',
-          );
-          final selectedSpatial = await addon.requestedSpatialCodec(
-            cancel: sourceCancel,
-          );
-          if (automaticAddonAborts?['w-${addon.configId}']?.isCompleted == true) {
-            throw const DiscoveryException('Request cancelled.');
-          }
-          // The HTTP connection and stream descriptor are ready. Full-file
-          // staging for an explicitly chosen spatial rendition may legitimately
-          // take much longer; it must not be killed by the lookup deadline.
-          onHttpAddonStreamReady?.call('w-${addon.configId}');
-          if (selectedSpatial != null) {
-            // HTTP add-ons use a separate protocol from Mornye packages.
-            // A configured Atmos tier must pass through the native verifier,
-            // not progressive PCM playback or a catalogue quality label.
-            onStatus?.call('Verifying selected spatial audio from ${addon.displayName}…');
-            try {
-              return await cache().prepare(
-                found, audio, cancel: cancel,
-                requestedSpatialCodec: selectedSpatial,
-                requireNativeOutput: !forDownload,
+  return PlaybackSourcePriority.order(
+    [
+      if (!httpOnly && (selectedSourceId == null || selectedSourceId == 'yt'))
+        OnlineSource(
+          id: 'yt',
+          name: 'YouTube Music',
+          results: (query) async => [
+            for (final track in await YoutubeMusicCatalog(web).search(query))
+              OnlineResult(track, artwork: track.artwork),
+          ],
+          play: (found) => youtube.prepare(found, cache(), cancel: cancel),
+        ),
+      if (!httpOnly &&
+          (selectedSourceId == null || selectedSourceId == 'mono') &&
+          await isMonochromeEnabled())
+        OnlineSource(
+          id: 'mono',
+          name: 'Monochrome',
+          results: (query) async => [
+            for (final track in await MonochromeSource.search(web, query))
+              OnlineResult(track, artwork: track.artwork),
+          ],
+          play: (found) async {
+            onStatus?.call(lokalText('Connecting to Monochrome…'));
+            final audio = MonochromeSource.resolve(found);
+            if (forDownload) {
+              return cache().prepare(
+                found,
+                audio,
+                cancel: cancel,
+                onProgress: (received) {
+                  if (audio.length case final total? when total > 0) {
+                    onStatus?.call(
+                      lokalText(
+                        'Downloading from Monochrome… {progress}%',
+                        args: {
+                          'progress': (received * 100 / total)
+                              .clamp(0, 100)
+                              .round(),
+                        },
+                      ),
+                    );
+                  } else {
+                    onStatus?.call(lokalText('Downloading from Monochrome…'));
+                  }
+                },
               );
-            } catch (error, stackTrace) {
-              if (stopOnExplicitSpatialFailure) {
-                throw _ExplicitSpatialFailure(error, stackTrace);
-              }
-              rethrow;
             }
-          }
-          if (forDownload || audio.hybridPlan != null ||
-              audio.dashMedia != null || audio.requiresStaging) {
-            // CENC hybrid-v1 is a set of encrypted CDN ranges, not a
-            // progressive media URL. Stage/decrypt it locally, then run the
-            // native audio probe before handing the file to PlayerService.
-            return cache().prepare(
-              found, audio, cancel: cancel,
-              onProgress: (received) {
-                final activity = forDownload ? 'Downloading' : 'Preparing';
-                if (audio.length case final total? when total > 0) {
-                  onStatus?.call('$activity from ${addon.displayName}… '
-                      '${(received * 100 / total).clamp(0, 100).round()}%');
-                } else {
-                  onStatus?.call('$activity from ${addon.displayName}…');
-                }
-              },
+            onStatus?.call(lokalText('Buffering from Monochrome…'));
+            return progressiveAddonSong(found, audio);
+          },
+        ),
+      // Built-in SoundCloud source: no HTTP addon or Morneye installation.
+      if (!httpOnly &&
+          (selectedSourceId == null || selectedSourceId == 'sc') &&
+          await isSoundCloudEnabled())
+        OnlineSource(
+          id: 'sc',
+          name: 'SoundCloud',
+          results: (query) async => [
+            for (final track in await SoundCloudSource(web).search(query))
+              OnlineResult(track, artwork: track.artwork),
+          ],
+          play: (found) async {
+            onStatus?.call(lokalText('Connecting to SoundCloud…'));
+            final audio = await SoundCloudSource(web)
+                .resolve(found, forDownload: forDownload);
+            if (forDownload) {
+              onStatus?.call(lokalText('Downloading from SoundCloud…'));
+              return cache().prepare(found, audio, cancel: cancel);
+            }
+            onStatus?.call(lokalText('Buffering from SoundCloud…'));
+            return progressiveAddonSong(found, audio).copyWith(
+              sourceDisplayName: audio.isPreview
+                  ? lokalText('SoundCloud (preview)')
+                  : 'SoundCloud',
             );
-          }
-          final song = progressiveAddonSong(found, audio);
-          onStatus?.call('Buffering from ${addon.displayName}…');
-          return song;
-        },
-      ),
-    if (includeMorneye)
-      ...await _morneyeSources(morneye, cache, onStatus,
-        cancel: cancel, forDownload: forDownload,
-        selectedSourceId: selectedSourceId),
-  ], (source) => source.id, aliases: legacyLabels,
-    ecoOnCellular: respectEnabledDiscoverySources && selectedSourceId == null);
+          },
+        ),
+      for (final addon in registry.addons)
+        if (selectedSourceId == null ||
+            selectedSourceId == 'w-${addon.configId}')
+          OnlineSource(
+            id: 'w-${addon.configId}',
+            name: addon.displayName,
+            addon: true,
+            results: (query) async => [
+              for (final track in await addon.search(
+                query,
+                cancel: addonCancel('w-${addon.configId}'),
+              ))
+                OnlineResult(track, artwork: track.artwork),
+            ],
+            play: (found) async {
+              onStatus?.call('Connecting to ${addon.displayName}…');
+              final sourceCancel = addonCancel('w-${addon.configId}');
+              final audio = await registry.resolve(
+                found,
+                cancel: sourceCancel,
+                forDownload: forDownload,
+              );
+              // Never log signed URLs, raw manifest XML or the CENC key. The
+              // transport classification is enough to troubleshoot the actual
+              // path used rather than guessing from a generic exception.
+              final transport = audio.hybridPlan != null
+                  ? 'hybrid_cenc'
+                  : audio.dashMedia != null
+                  ? 'dash_mpd'
+                  : audio.requiresStaging
+                  ? 'opaque_verified'
+                  : 'progressive';
+              AppLog.instance.add(
+                '[HttpAddon] resolved source=w-${addon.configId} transport=$transport',
+              );
+              final selectedSpatial = await addon.requestedSpatialCodec(
+                cancel: sourceCancel,
+              );
+              if (automaticAddonAborts?['w-${addon.configId}']?.isCompleted ==
+                  true) {
+                throw const DiscoveryException('Request cancelled.');
+              }
+              // The HTTP connection and stream descriptor are ready. Full-file
+              // staging for an explicitly chosen spatial rendition may legitimately
+              // take much longer; it must not be killed by the lookup deadline.
+              onHttpAddonStreamReady?.call('w-${addon.configId}');
+              if (selectedSpatial != null) {
+                // HTTP add-ons use a separate protocol from Mornye packages.
+                // A configured Atmos tier must pass through the native verifier,
+                // not progressive PCM playback or a catalogue quality label.
+                onStatus?.call(
+                  'Verifying selected spatial audio from ${addon.displayName}…',
+                );
+                try {
+                  return await cache().prepare(
+                    found,
+                    audio,
+                    cancel: cancel,
+                    requestedSpatialCodec: selectedSpatial,
+                    requireNativeOutput: !forDownload,
+                  );
+                } catch (error, stackTrace) {
+                  if (stopOnExplicitSpatialFailure) {
+                    throw _ExplicitSpatialFailure(error, stackTrace);
+                  }
+                  rethrow;
+                }
+              }
+              if (forDownload ||
+                  audio.hybridPlan != null ||
+                  audio.dashMedia != null ||
+                  audio.requiresStaging) {
+                // CENC hybrid-v1 is a set of encrypted CDN ranges, not a
+                // progressive media URL. Stage/decrypt it locally, then run the
+                // native audio probe before handing the file to PlayerService.
+                return cache().prepare(
+                  found,
+                  audio,
+                  cancel: cancel,
+                  onProgress: (received) {
+                    final activity = forDownload ? 'Downloading' : 'Preparing';
+                    if (audio.length case final total? when total > 0) {
+                      onStatus?.call(
+                        '$activity from ${addon.displayName}… '
+                        '${(received * 100 / total).clamp(0, 100).round()}%',
+                      );
+                    } else {
+                      onStatus?.call('$activity from ${addon.displayName}…');
+                    }
+                  },
+                );
+              }
+              final song = progressiveAddonSong(found, audio);
+              onStatus?.call('Buffering from ${addon.displayName}…');
+              return song;
+            },
+          ),
+      if (includeMorneye)
+        ...await _morneyeSources(
+          morneye,
+          cache,
+          onStatus,
+          cancel: cancel,
+          forDownload: forDownload,
+          selectedSourceId: selectedSourceId,
+        ),
+    ],
+    (source) => source.id,
+    aliases: legacyLabels,
+    ecoOnCellular: respectEnabledDiscoverySources && selectedSourceId == null,
+  );
 }
 
 /// The sources Search offers for songs you don't have. [onStatus] hears
@@ -1695,7 +1928,8 @@ class OnlineAddonCooldown {
   void failed(String sourceId, Object error, {DateTime? now}) {
     if (!sourceId.startsWith('w-')) return;
     final reason = _onlineFailureKind(error);
-    if (reason != 'timeout' && reason != 'network' &&
+    if (reason != 'timeout' &&
+        reason != 'network' &&
         !{'http_502', 'http_503', 'http_504'}.contains(reason)) {
       // Auth/verification and other non-transport errors are not part of a
       // consecutive outage: clear an older failure record.
@@ -1705,11 +1939,9 @@ class OnlineAddonCooldown {
     final time = now ?? DateTime.now();
     final previous = _failures[sourceId];
     final consecutive = previous != null && time.isBefore(previous.until)
-        ? previous.failures + 1 : 1;
-    _failures[sourceId] = (
-      failures: consecutive,
-      until: time.add(cooldown),
-    );
+        ? previous.failures + 1
+        : 1;
+    _failures[sourceId] = (failures: consecutive, until: time.add(cooldown));
   }
 
   void succeeded(String sourceId) => _failures.remove(sourceId);
@@ -1739,8 +1971,12 @@ Future<T> boundedAutomaticAddonAttempt<T>(
   // real download/native spatial verification, not an unresponsive endpoint.
   // Cancellation still propagates through the caller's normal user signal.
   if (streamReady != null) {
-    unawaited(streamReady.then((_) => timer.cancel(),
-        onError: (Object _, StackTrace __) => timer.cancel()));
+    unawaited(
+      streamReady.then(
+        (_) => timer.cancel(),
+        onError: (Object _, StackTrace __) => timer.cancel(),
+      ),
+    );
   }
   try {
     return await Future.any([acquire(), expired.future]);
@@ -1870,11 +2106,15 @@ Future<Song> playOnlineTrack(
     final resolved = await source.play(playbackTrack);
     final enrichedTrack = forDownload ? playbackTrack : await artworkLookup;
     _autoHttpAddonCooldown.succeeded(canonicalId);
-    AppLog.instance.add('[OnlineSource] acquisition source=$canonicalId '
-        'mode=${forDownload ? 'download' : 'playback'} '
-        'elapsedMs=${acquisitionTimer.elapsedMilliseconds}');
+    AppLog.instance.add(
+      '[OnlineSource] acquisition source=${onlineSourceLogLabel(canonicalId)} '
+      'mode=${forDownload ? 'download' : 'playback'} '
+      'elapsedMs=${acquisitionTimer.elapsedMilliseconds}',
+    );
     final song = resolved.copyWith(
-      sourceDisplayName: source.name,
+      sourceDisplayName: source.id == 'sc'
+          ? (resolved.sourceDisplayName ?? source.name)
+          : source.name,
       albumArt: resolved.albumArt ?? enrichedTrack.artwork,
     );
     if (!forDownload && sourceId.startsWith('a-')) {
@@ -1890,7 +2130,7 @@ Future<Song> playOnlineTrack(
   } catch (error) {
     _autoHttpAddonCooldown.failed(sourceId, error);
     AppLog.instance.add(
-      '[OnlineSource] playback failed source=$sourceId '
+      '[OnlineSource] playback failed source=${onlineSourceLogLabel(sourceId)} '
       'stage=prepare mode=${forDownload ? 'download' : 'playback'} '
       'elapsedMs=${acquisitionTimer.elapsedMilliseconds} '
       'reason=${_onlineFailureKind(error)}',
@@ -1976,7 +2216,7 @@ Future<DiscoveryTrack?> findDiscoverySourceMatch({
         searchFailure ??= error;
       }
       AppLog.instance.add(
-        '[OnlineSource] search failed source=${source.id} '
+        '[OnlineSource] search failed source=${onlineSourceLogLabel(source.id)} '
         'reason=${_onlineFailureKind(error)}',
       );
       return null;
@@ -2021,15 +2261,17 @@ Future<DiscoveryTrack?> findDiscoverySourceMatch({
 
   void launch(String query) {
     inFlight++;
-    unawaited(search(query).then(
-      completeMatch,
-      onError: (Object error, StackTrace stack) {
-        inFlight--;
-        if (!completion.isCompleted) {
-          completion.completeError(error, stack);
-        }
-      },
-    ));
+    unawaited(
+      search(query).then(
+        completeMatch,
+        onError: (Object error, StackTrace stack) {
+          inFlight--;
+          if (!completion.isCompleted) {
+            completion.completeError(error, stack);
+          }
+        },
+      ),
+    );
   }
 
   startAlternates = () {
@@ -2044,8 +2286,8 @@ Future<DiscoveryTrack?> findDiscoverySourceMatch({
   // Hedging is not a deadline: the primary keeps working and may still win.
   // Launch at most two alternate *metadata* searches, never extra audio
   // downloads or fallback to another selected playback provider.
-  unawaited(Future<void>.delayed(hedgeDelay).then((_) => startAlternates()));
-  final matched = await completion.future;
+  final hedge = Timer(hedgeDelay, startAlternates);
+  final matched = await completion.future.whenComplete(hedge.cancel);
   if (matched == null) reportFailedAttempt();
   return matched;
 }
@@ -2062,18 +2304,21 @@ Map<String, Future<DiscoveryTrack?>> prewarmHttpSourceMatches({
   int maxConcurrent = 3,
 }) {
   final warmed = <String, Future<DiscoveryTrack?>>{};
-  for (final source in sources.where((source) =>
-      source.id.startsWith('w-')).take(maxConcurrent)) {
-    warmed[source.id] = findDiscoverySourceMatch(
-      source: source,
-      candidate: candidate,
-      queries: queries,
-      checkCancelled: checkCancelled,
-      onNoMatchError: (error) => onNoMatchError?.call(source.id, error),
-    ).then(
-      (match) => match,
-      onError: (Object error, StackTrace stackTrace) => null,
-    );
+  for (final source
+      in sources
+          .where((source) => source.id.startsWith('w-'))
+          .take(maxConcurrent)) {
+    warmed[source.id] =
+        findDiscoverySourceMatch(
+          source: source,
+          candidate: candidate,
+          queries: queries,
+          checkCancelled: checkCancelled,
+          onNoMatchError: (error) => onNoMatchError?.call(source.id, error),
+        ).then(
+          (match) => match,
+          onError: (Object error, StackTrace stackTrace) => null,
+        );
   }
   return warmed;
 }
@@ -2128,7 +2373,8 @@ Future<Song?> findDiscoverySong(
       automaticAddonAborts: automaticAddonAborts,
       onHttpAddonStreamReady: (sourceId) {
         final ready = streamLookupReady.putIfAbsent(
-          sourceId, () => Completer<void>(),
+          sourceId,
+          () => Completer<void>(),
         );
         if (!ready.isCompleted) ready.complete();
       },
@@ -2147,18 +2393,21 @@ Future<Song?> findDiscoverySong(
     void prepareHttpSearches() {
       if (preparedHttp) return;
       preparedHttp = true;
-      preparedHttpSearches.addAll(prewarmHttpSourceMatches(
-        sources: sources.where(
-          (source) => !_autoHttpAddonCooldown.shouldSkip(source.id),
+      preparedHttpSearches.addAll(
+        prewarmHttpSourceMatches(
+          sources: sources.where(
+            (source) => !_autoHttpAddonCooldown.shouldSkip(source.id),
+          ),
+          candidate: candidate,
+          queries: queries,
+          checkCancelled: check,
+          onNoMatchError: (sourceId, error) {
+            _autoHttpAddonCooldown.failed(sourceId, error);
+          },
         ),
-        candidate: candidate,
-        queries: queries,
-        checkCancelled: check,
-        onNoMatchError: (sourceId, error) {
-          _autoHttpAddonCooldown.failed(sourceId, error);
-        },
-      ));
+      );
     }
+
     for (final source in sources) {
       check();
       // Never skip every configured source. If all HTTP add-ons are cooling
@@ -2181,7 +2430,8 @@ Future<Song?> findDiscoverySong(
           throw DiscoveryVerificationRequired(source.name);
         }
         onStatus?.call('Verify ${source.name} to continue ${track.title}…');
-        final verified = await playbackSourceVerification?.call(source) ?? false;
+        final verified =
+            await playbackSourceVerification?.call(source) ?? false;
         check();
         if (!verified || source.needsVerification?.call() == true) {
           throw DiscoveryVerificationRequired(source.name);
@@ -2244,16 +2494,17 @@ Future<Song?> findDiscoverySong(
       if (source.id.startsWith('w-')) prepareHttpSearches();
       DiscoveryTrack? found;
       Future<Song?> attempt() async {
-        found = await (preparedHttpSearches[source.id] ??
-            findDiscoverySourceMatch(
-              source: source,
-              candidate: candidate,
-              queries: queries,
-              checkCancelled: check,
-              onNoMatchError: (error) {
-                _autoHttpAddonCooldown.failed(source.id, error);
-              },
-            ));
+        found =
+            await (preparedHttpSearches[source.id] ??
+                findDiscoverySourceMatch(
+                  source: source,
+                  candidate: candidate,
+                  queries: queries,
+                  checkCancelled: check,
+                  onNoMatchError: (error) {
+                    _autoHttpAddonCooldown.failed(source.id, error);
+                  },
+                ));
         if (found == null) return null;
         check();
         // A source abandoned by the automatic deadline must never start
@@ -2266,7 +2517,8 @@ Future<Song?> findDiscoverySong(
         // additional wait on the automatic fallback path.
         final artworkLookup = source.id.startsWith('w-')
             ? resolveMissingAddonArtwork(
-                selected, timeout: const Duration(seconds: 2),
+                selected,
+                timeout: const Duration(seconds: 2),
               )
             : Future<DiscoveryTrack>.value(selected);
         final acquisitionTimer = Stopwatch()..start();
@@ -2279,8 +2531,10 @@ Future<Song?> findDiscoverySong(
           if (!entry.value.isCompleted) entry.value.complete();
         }
         _autoHttpAddonCooldown.succeeded(source.id);
-        AppLog.instance.add('[OnlineSource] discovery acquired source=${source.id} '
-            'elapsedMs=${acquisitionTimer.elapsedMilliseconds}');
+        AppLog.instance.add(
+          '[OnlineSource] discovery acquired source=${onlineSourceLogLabel(source.id)} '
+          'elapsedMs=${acquisitionTimer.elapsedMilliseconds}',
+        );
         final song = resolved.copyWith(
           sourceDisplayName: source.name,
           albumArt: resolved.albumArt ?? artwork.artwork,
@@ -2302,12 +2556,13 @@ Future<Song?> findDiscoverySong(
         final song = source.id.startsWith('w-') && sources.length > 1
             ? await boundedAutomaticAddonAttempt<Song?>(
                 attempt,
-                streamReady: streamLookupReady.putIfAbsent(
-                  source.id, () => Completer<void>(),
-                ).future,
+                streamReady: streamLookupReady
+                    .putIfAbsent(source.id, () => Completer<void>())
+                    .future,
                 abort: () {
                   final pending = automaticAddonAborts.putIfAbsent(
-                    source.id, () => Completer<void>(),
+                    source.id,
+                    () => Completer<void>(),
                   );
                   if (!pending.isCompleted) pending.complete();
                 },
@@ -2318,7 +2573,7 @@ Future<Song?> findDiscoverySong(
         check();
         _autoHttpAddonCooldown.failed(source.id, error);
         AppLog.instance.add(
-          '[OnlineSource] source playback failed source=${source.id} '
+          '[OnlineSource] source playback failed source=${onlineSourceLogLabel(source.id)} '
           'reason=${_onlineFailureKind(error)}',
         );
         if (error is _ExplicitSpatialFailure) {
@@ -2376,15 +2631,13 @@ Song discoveryPendingSong(LokalDiscoveryTrack track) {
           PlayerService().currentSongNotifier.value?.id == pending.id,
     ),
   );
-  OnlineSongSaveRegistry.instance.register(
-    pending,
-    () async {
-      final found = await findDiscoverySong(track);
-      if (found == null) throw const DiscoveryException(
+  OnlineSongSaveRegistry.instance.register(pending, () async {
+    final found = await findDiscoverySong(track);
+    if (found == null)
+      throw const DiscoveryException(
         'This recommendation has no downloadable audio source.',
       );
-      return found;
-    },
-  );
+    return found;
+  });
   return pending;
 }

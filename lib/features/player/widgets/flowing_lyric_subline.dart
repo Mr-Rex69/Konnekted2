@@ -37,13 +37,14 @@ class FlowingLyricSubline extends StatelessWidget {
       return Text(text, style: style);
     }
 
-    final opacity = (style.color ?? Colors.white).a;
+    final color = style.color ?? Theme.of(context).colorScheme.onSurface;
+    final opacity = color.a;
     return LyricMotionLine(
       line: projected,
       position: position,
       style: style,
-      sung: Colors.white.withValues(alpha: opacity),
-      unsung: Colors.white.withValues(alpha: opacity * .40),
+      sung: color,
+      unsung: color.withValues(alpha: opacity * .40),
       lightweight: lightweight,
     );
   }

@@ -34,9 +34,13 @@ void main() {
         ),
       ),
     );
+    final element = tester.element(find.byType(LokalGlass));
+    await ProviderScope.containerOf(element)
+        .read(lokalAppearanceProvider.notifier)
+        .setPerformanceMode(false);
+    await tester.pump();
     expect(find.byType(BackdropFilter), findsOneWidget);
 
-    final element = tester.element(find.byType(LokalGlass));
     await ProviderScope.containerOf(element)
         .read(lokalAppearanceProvider.notifier)
         .setPerformanceMode(true);
@@ -44,24 +48,28 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
-  testWidgets('static glass cards retain material but never sample the backdrop',
-      (tester) async {
-    await tester.pumpWidget(
-      _app(const Scaffold(
-        body: Center(
-          child: LokalGlass(
-            staticSurface: true,
-            child: SizedBox(width: 160, height: 80),
+  testWidgets(
+    'static glass cards retain material but never sample the backdrop',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          const Scaffold(
+            body: Center(
+              child: LokalGlass(
+                staticSurface: true,
+                child: SizedBox(width: 160, height: 80),
+              ),
+            ),
           ),
         ),
-      )),
-    );
-    final card = tester.widget<LokalGlass>(find.byType(LokalGlass));
-    expect(card.staticSurface, isTrue);
-    expect(find.byType(BackdropFilter), findsNothing);
-    expect(find.byType(DecoratedBox), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      final card = tester.widget<LokalGlass>(find.byType(LokalGlass));
+      expect(card.staticSurface, isTrue);
+      expect(find.byType(BackdropFilter), findsNothing);
+      expect(find.byType(DecoratedBox), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('logo sticker takes the accent', (tester) async {
     await tester.pumpWidget(_app(const Scaffold(body: LokalLogo(size: 40))));

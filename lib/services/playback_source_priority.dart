@@ -31,7 +31,22 @@ abstract final class EcoDataMode {
       (await SharedPreferences.getInstance()).getBool(key) ?? false;
 
   static Future<void> setEnabled(bool value) async {
-    await (await SharedPreferences.getInstance()).setBool(key, value);
+    final prefs = await SharedPreferences.getInstance();
+    final previous = prefs.getBool(key);
+    try {
+      if (!await prefs.setBool(key, value)) {
+        throw StateError('Could not save Eco Data Mode.');
+      }
+    } catch (_) {
+      try {
+        if (previous == null) {
+          await prefs.remove(key);
+        } else {
+          await prefs.setBool(key, previous);
+        }
+      } catch (_) {}
+      rethrow;
+    }
     revision.value++;
   }
 
@@ -79,12 +94,14 @@ abstract final class PlaybackSourcePriority {
   }) async {
     final saved = await load();
     final sources = {for (final source in available) id(source): source};
-    final migrated = <String>[
-      for (final key in saved) aliases[key] ?? key,
-    ].toSet().toList();
+    final migrated = <String>[for (final key in saved) aliases[key] ?? key]
+        .toSet()
+        .toList();
     if (migrated.join('\u0000') != saved.join('\u0000')) {
-      await (await SharedPreferences.getInstance())
-          .setStringList(key, migrated);
+      await (await SharedPreferences.getInstance()).setStringList(
+        key,
+        migrated,
+      );
     }
     final ordered = [
       for (final sourceId in {...migrated, ...sources.keys})
@@ -94,8 +111,6 @@ abstract final class PlaybackSourcePriority {
         !await (ecoActive ?? EcoDataMode.activeOnCellular)()) {
       return ordered;
     }
-    // Prefer compressed native streams over lossless Monochrome/addons on
-    // metered mobile data. Keep the saved order for all remaining sources.
     const economical = ['yt', 'sc'];
     return [
       for (final sourceId in economical)
@@ -109,10 +124,7 @@ abstract final class PlaybackSourcePriority {
   /// other sources. Called only for new installs, not package updates.
   static Future<void> promoteNewAddon(String sourceId) async {
     final saved = await load();
-    await (await SharedPreferences.getInstance()).setStringList(
-      key,
-      [sourceId, ...saved.where((id) => id != sourceId)],
-    );
+    await _save([sourceId, ...saved.where((id) => id != sourceId)]);
   }
 
   /// Reorder visible sources using Flutter's pre-removal drop index.
@@ -122,8 +134,10 @@ abstract final class PlaybackSourcePriority {
     int oldIndex,
     int newIndex,
   ) async {
-    if (oldIndex < 0 || oldIndex >= visible.length ||
-        newIndex < 0 || newIndex > visible.length) {
+    if (oldIndex < 0 ||
+        oldIndex >= visible.length ||
+        newIndex < 0 ||
+        newIndex > visible.length) {
       throw RangeError('Invalid playback source reorder indices');
     }
     if (visible.toSet().length != visible.length) {
@@ -142,7 +156,28 @@ abstract final class PlaybackSourcePriority {
       for (final id in saved)
         if (visibleIds.contains(id)) reordered[cursor++] else id,
     ];
-    await (await SharedPreferences.getInstance()).setStringList(key, result);
+    await _save(result);
+  }
+
+  static Future<void> _save(List<String> order) async {
+    final preferences = await SharedPreferences.getInstance();
+    final previous = preferences.getStringList(key);
+    try {
+      if (!await preferences.setStringList(key, order)) {
+        throw StateError('Could not save source priority.');
+      }
+    } catch (_) {
+      // The legacy preferences API updates its cache before the platform reply.
+      // Restore that cache too, so retry/loading agrees with the rolled-back UI.
+      try {
+        if (previous == null) {
+          await preferences.remove(key);
+        } else {
+          await preferences.setStringList(key, previous);
+        }
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   /// Move a row to a final visible index (rather than exchanging two rows).

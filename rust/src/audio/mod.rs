@@ -39,6 +39,7 @@ pub mod audiotrack_direct;
 #[cfg(target_os = "android")]
 pub mod android_mixer;
 pub mod pitch_shifter;
+pub(crate) mod request_generation;
 pub mod resampler;
 pub mod source;
 pub mod strategy;

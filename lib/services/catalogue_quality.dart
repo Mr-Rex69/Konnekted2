@@ -23,11 +23,14 @@ String catalogueQualityLabel(String? value) {
   if (compactAudioResolution(text) case final pair?) {
     final rate = pair.sampleRate / 1000;
     final khz = rate == rate.roundToDouble()
-        ? rate.toStringAsFixed(0) : rate.toStringAsFixed(1);
+        ? rate.toStringAsFixed(0)
+        : rate.toStringAsFixed(1);
     return '${pair.bitDepth}-bit / $khz kHz';
   }
-  final bits = RegExp(r'(?:^|[^0-9])(16|24|32)\s*-?\s*bits?', caseSensitive: false)
-      .firstMatch(text)?.group(1);
+  final bits = RegExp(
+    r'(?:^|[^0-9])(16|24|32)\s*-?\s*bits?',
+    caseSensitive: false,
+  ).firstMatch(text)?.group(1);
   final khz = RegExp(
     r'(?<![\d.])(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?(?![a-z])',
     caseSensitive: false,
@@ -35,7 +38,8 @@ String catalogueQualityLabel(String? value) {
   if (bits != null || khz != null) {
     return [
       if (bits != null) '$bits-bit',
-      if (khz != null) '${double.parse(khz).toStringAsFixed(khz.contains('.') ? 1 : 0)} kHz',
+      if (khz != null)
+        '${double.parse(khz).toStringAsFixed(khz.contains('.') ? 1 : 0)} kHz',
     ].join(' / ');
   }
   switch (text.toUpperCase()) {
@@ -50,8 +54,6 @@ String catalogueQualityLabel(String? value) {
   }
   return text.length < 42 ? text : '';
 }
-
-
 
 /// A Full Player badge is a quality *tier*, not a repetition of the
 /// catalogue's bit-depth/sample-rate text. Those precise measurements remain
@@ -75,17 +77,33 @@ String? catalogueStreamTierLabel({
   }
 
   final advertised = catalogueQualityLabel(quality);
-  final bitText = RegExp(r'(?:^|[^\d])(16|24|32)\s*-?\s*bit', caseSensitive: false)
-      .firstMatch(advertised)?.group(1);
-  final rateText = RegExp(r'(\d{2,3}(?:\.\d+)?)\s*kHz', caseSensitive: false)
-      .firstMatch(advertised)?.group(1);
+  final bitText = RegExp(
+    r'(?:^|[^\d])(16|24|32)\s*-?\s*bit',
+    caseSensitive: false,
+  ).firstMatch(advertised)?.group(1);
+  final rateText = RegExp(
+    r'(\d{2,3}(?:\.\d+)?)\s*kHz',
+    caseSensitive: false,
+  ).firstMatch(advertised)?.group(1);
   final bits = bitDepth ?? int.tryParse(bitText ?? '');
-  final hz = sampleRate ??
-      (rateText == null ? null : ((double.tryParse(rateText) ?? 0) * 1000).round());
+  final hz =
+      sampleRate ??
+      (rateText == null
+          ? null
+          : ((double.tryParse(rateText) ?? 0) * 1000).round());
   if (bits == null && hz == null) return null;
 
   final format = codec?.trim().toUpperCase() ?? '';
-  const lossless = {'FLAC', 'ALAC', 'WAV', 'WAVE', 'AIFF', 'WAVPACK', 'APE', 'WV'};
+  const lossless = {
+    'FLAC',
+    'ALAC',
+    'WAV',
+    'WAVE',
+    'AIFF',
+    'WAVPACK',
+    'APE',
+    'WV',
+  };
   const lossy = {'AAC', 'MP3', 'OPUS', 'VORBIS', 'OGG'};
   // A lossy file's decoded PCM width is not lossless source fidelity.
   if (lossy.contains(format)) return null;
@@ -94,7 +112,8 @@ String? catalogueStreamTierLabel({
   }
   // Both CD measurements and an actual lossless codec are required to assert
   // LOSSLESS. Unknown progressive containers must not inherit the tier.
-  if (lossless.contains(format) && bits != null && hz != null) return 'LOSSLESS';
+  if (lossless.contains(format) && bits != null && hz != null)
+    return 'LOSSLESS';
   return null;
 }
 
@@ -132,12 +151,9 @@ String? catalogueStreamTierLabel({
   final requested = requestedQuality?.trim() ?? '';
   return (
     label: requested,
-    tooltip: requested.isEmpty
-        ? ''
-        : 'Quality requested in add-on settings; the delivered stream is verified during playback.',
+    tooltip: requested.isEmpty ? '' : 'Quality requested in add-on settings; the delivered stream is verified during playback.',
   );
 }
-
 
 // These are advertised source properties, not the actual decoder/output rate.
 // Prefer explicit numerical fields over broad provider labels. Never substitute
@@ -149,15 +165,18 @@ String catalogueAudioDetails({
   String? codec,
 }) {
   final bits = bitDepth != null && bitDepth >= 8 && bitDepth <= 64
-      ? bitDepth : null;
+      ? bitDepth
+      : null;
   final hz = sampleRate != null && sampleRate >= 8000 && sampleRate <= 768000
-      ? sampleRate : null;
+      ? sampleRate
+      : null;
   final supplied = catalogueQualityLabel(quality);
   final bitText = bits == null ? null : '$bits-bit';
   String? rateText;
   if (hz != null) {
     final rate = hz / 1000;
-    rateText = '${rate == rate.roundToDouble() ? rate.toStringAsFixed(0) : rate.toStringAsFixed(1)} kHz';
+    rateText =
+        '${rate == rate.roundToDouble() ? rate.toStringAsFixed(0) : rate.toStringAsFixed(1)} kHz';
   }
   final resolved = <String>[
     if (bitText != null) bitText,
@@ -165,20 +184,36 @@ String catalogueAudioDetails({
   ];
   // A string may contain one of the measurements without the other.
   if (supplied.isNotEmpty) {
-    final hasBits = RegExp(r'\d+\s*-?\s*bit', caseSensitive: false).hasMatch(supplied);
-    final hasRate = RegExp(r'\d+(?:\.\d+)?\s*kHz', caseSensitive: false).hasMatch(supplied);
-    if (resolved.isEmpty || (bits == null && hasBits) || (hz == null && hasRate)) {
+    final hasBits = RegExp(
+      r'\d+\s*-?\s*bit',
+      caseSensitive: false,
+    ).hasMatch(supplied);
+    final hasRate = RegExp(
+      r'\d+(?:\.\d+)?\s*kHz',
+      caseSensitive: false,
+    ).hasMatch(supplied);
+    if (resolved.isEmpty ||
+        (bits == null && hasBits) ||
+        (hz == null && hasRate)) {
       if (resolved.isEmpty) {
         resolved.add(supplied);
       } else {
         final extra = <String>[];
         if (bits == null && hasBits) {
-          final match = RegExp(r'\d+\s*-?\s*bit', caseSensitive: false).firstMatch(supplied);
-          if (match != null) extra.add(match.group(0)!.replaceAll(RegExp(r'\s+'), ''));
+          final match = RegExp(
+            r'\d+\s*-?\s*bit',
+            caseSensitive: false,
+          ).firstMatch(supplied);
+          if (match != null)
+            extra.add(match.group(0)!.replaceAll(RegExp(r'\s+'), ''));
         }
         if (hz == null && hasRate) {
-          final match = RegExp(r'\d+(?:\.\d+)?\s*kHz', caseSensitive: false).firstMatch(supplied);
-          if (match != null) extra.add(match.group(0)!.replaceAll(RegExp(r'\s+'), ' '));
+          final match = RegExp(
+            r'\d+(?:\.\d+)?\s*kHz',
+            caseSensitive: false,
+          ).firstMatch(supplied);
+          if (match != null)
+            extra.add(match.group(0)!.replaceAll(RegExp(r'\s+'), ' '));
         }
         resolved.addAll(extra);
       }
@@ -187,26 +222,28 @@ String catalogueAudioDetails({
   // Bitrate is independent of sample rate. Previously a known 48 kHz
   // decoder rate suppressed a real 192 kbps measurement, leaving misleading
   // "OPUS · 48 kHz" instead of the actual lossy quality.
-  if (RegExp(r'\d+(?:\.\d+)?\s*kbps', caseSensitive: false)
-          .hasMatch(supplied) &&
+  if (RegExp(
+        r'\d+(?:\.\d+)?\s*kbps',
+        caseSensitive: false,
+      ).hasMatch(supplied) &&
       !resolved.any((part) => part.toLowerCase().contains('kbps'))) {
     resolved.add(supplied);
   }
   final format = codec?.trim().toUpperCase() ?? '';
-  if (format.isNotEmpty && format.length <= 12 &&
+  if (format.isNotEmpty &&
+      format.length <= 12 &&
       !resolved.any((part) => part.toUpperCase() == format)) {
     return [format, ...resolved].join(' · ');
   }
   return resolved.join(' / ');
 }
 
-
 /// Provider-advertised numbers for the early streaming handoff. Search can
 /// know the catalogue format before native audio probing has started, so keep
 /// its *explicit* measurements when creating the temporary playable Song.
 /// Never infer a rate/depth from a generic HI_RES/LOSSLESS quality tier.
 ({String fileType, String? resolution, int? bitDepth, int? sampleRate})
-    advertisedOnlineAudio({
+advertisedOnlineAudio({
   required String? codec,
   required String? quality,
   required int? bitDepth,
@@ -215,17 +252,38 @@ String catalogueAudioDetails({
 }) {
   final advertised = quality?.trim();
   final compact = compactAudioResolution(advertised);
-  final bits = bitDepth ?? compact?.bitDepth ??
-      int.tryParse(RegExp(r'(?<!\d)(?:16|24|32)\s*-?\s*bits?', caseSensitive: false)
-              .firstMatch(advertised ?? '')?.group(0)
-              ?.replaceAll(RegExp(r'[^0-9]'), '') ?? '');
-  final rawRate = RegExp(r'(?<![\d.])(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?',
-          caseSensitive: false)
-      .firstMatch(advertised ?? '')?.group(1);
-  final hz = sampleRate ?? compact?.sampleRate ??
-      (rawRate == null ? null : ((double.tryParse(rawRate) ?? 0) * 1000).round());
+  final bits =
+      bitDepth ??
+      compact?.bitDepth ??
+      int.tryParse(
+        RegExp(r'(?<!\d)(?:16|24|32)\s*-?\s*bits?', caseSensitive: false)
+                .firstMatch(advertised ?? '')
+                ?.group(0)
+                ?.replaceAll(RegExp(r'[^0-9]'), '') ??
+            '',
+      );
+  final rawRate = RegExp(
+    r'(?<![\d.])(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?\b',
+    caseSensitive: false,
+  ).firstMatch(advertised ?? '')?.group(1);
+  final hz =
+      sampleRate ??
+      compact?.sampleRate ??
+      (rawRate == null
+          ? null
+          : ((double.tryParse(rawRate) ?? 0) * 1000).round());
   final candidate = codec?.trim().toUpperCase() ?? '';
-  const known = {'FLAC', 'ALAC', 'AAC', 'MP3', 'OPUS', 'VORBIS', 'WAV', 'AIFF', 'OGG'};
+  const known = {
+    'FLAC',
+    'ALAC',
+    'AAC',
+    'MP3',
+    'OPUS',
+    'VORBIS',
+    'WAV',
+    'AIFF',
+    'OGG',
+  };
   return (
     fileType: known.contains(candidate) ? candidate : fallbackFileType,
     resolution: advertised == null || advertised.isEmpty ? null : advertised,
@@ -233,7 +291,6 @@ String catalogueAudioDetails({
     sampleRate: hz != null && hz >= 8000 && hz <= 768000 ? hz : null,
   );
 }
-
 
 /// Only a *codec*, not its containing file format, can classify audio.
 /// M4A/MP4 and WebM are containers which may contain multiple lossy codecs;
@@ -268,13 +325,16 @@ String? measuredLossyBitrate({
       ? bitsPerSecond.toDouble()
       : double.tryParse(bitsPerSecond?.toString() ?? '');
   final seconds = duration?.inMilliseconds == null
-      ? 0.0 : duration!.inMilliseconds / 1000.0;
+      ? 0.0
+      : duration!.inMilliseconds / 1000.0;
   final observed = bps != null && bps >= 16000 && bps <= 1500000
       ? bps
       : (fileBytes != null && fileBytes > 0 && seconds >= 5)
-          ? fileBytes * 8 / seconds : null;
+      ? fileBytes * 8 / seconds
+      : null;
   if (observed == null || !observed.isFinite) return null;
-  return '${(observed / 1000).round()} kbps';
+  final kbps = (observed / 1000).round();
+  return kbps > 0 ? '$kbps kbps' : null;
 }
 
 /// A requested Morneye setting is a helpful Search hint, not the actual

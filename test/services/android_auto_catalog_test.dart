@@ -9,12 +9,20 @@ import 'package:flick/services/playlist_service.dart';
 import 'package:flick/models/playlist.dart';
 
 const _a = Song(
-  id: 'local:one/track', title: 'Autumn', artist: 'Artist A',
-  album: 'First Album', duration: Duration(minutes: 3), fileType: 'FLAC',
+  id: 'local:one/track',
+  title: 'Autumn',
+  artist: 'Artist A',
+  album: 'First Album',
+  duration: Duration(minutes: 3),
+  fileType: 'FLAC',
 );
 const _b = Song(
-  id: 'local:two', title: 'Blue Sky', artist: 'Artist B',
-  album: 'First Album', duration: Duration(minutes: 4), fileType: 'MP3',
+  id: 'local:two',
+  title: 'Blue Sky',
+  artist: 'Artist B',
+  album: 'First Album',
+  duration: Duration(minutes: 4),
+  fileType: 'MP3',
 );
 
 class _Songs implements SongRepository {
@@ -22,8 +30,9 @@ class _Songs implements SongRepository {
   Future<List<Song>> getAllSongs() async => [_a, _b];
 
   @override
-  Future<Map<String, List<Song>>> getSongsByAlbum() async =>
-      {'First Album': [_a, _b]};
+  Future<Map<String, List<Song>>> getSongsByAlbum() async => {
+    'First Album': [_a, _b],
+  };
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -62,7 +71,12 @@ class _Player implements PlayerService {
   PlaybackContext? context;
 
   @override
-  Future<void> play(Song song, {List<Song>? playlist, PlaybackContext? context}) async {
+  Future<void> play(
+    Song song, {
+    List<Song>? playlist,
+    int? playlistIndex,
+    PlaybackContext? context,
+  }) async {
     selected = song;
     queued = playlist;
     this.context = context;
@@ -89,8 +103,10 @@ void main() {
   test('car root exposes four browsable sections', () async {
     final items = await catalog.browse(AndroidAutoCatalog.root);
     expect(items.map((e) => e['id']), [
-      AndroidAutoCatalog.songs, AndroidAutoCatalog.likes,
-      AndroidAutoCatalog.playlists, AndroidAutoCatalog.albums,
+      AndroidAutoCatalog.songs,
+      AndroidAutoCatalog.likes,
+      AndroidAutoCatalog.playlists,
+      AndroidAutoCatalog.albums,
     ]);
     expect(items.every((e) => e['playable'] == false), isTrue);
   });
@@ -113,16 +129,19 @@ void main() {
     expect(player.selected?.id, _b.id);
   });
 
-  test('playlist selections preserve playlist queue order and context', () async {
-    final folders = await catalog.browse(AndroidAutoCatalog.playlists);
-    expect(folders.single['title'], 'Road Trip');
-    final children = await catalog.browse(folders.single['id'] as String);
-    expect(children.map((e) => e['title']), ['Blue Sky', 'Autumn']);
-    expect(await catalog.playMediaId(children.last['id'] as String), isTrue);
-    expect(player.queued?.map((s) => s.id), [_b.id, _a.id]);
-    expect(player.context?.source, PlaybackSource.playlist);
-    expect(player.context?.sourceId, 'playlist/1');
-  });
+  test(
+    'playlist selections preserve playlist queue order and context',
+    () async {
+      final folders = await catalog.browse(AndroidAutoCatalog.playlists);
+      expect(folders.single['title'], 'Road Trip');
+      final children = await catalog.browse(folders.single['id'] as String);
+      expect(children.map((e) => e['title']), ['Blue Sky', 'Autumn']);
+      expect(await catalog.playMediaId(children.last['id'] as String), isTrue);
+      expect(player.queued?.map((s) => s.id), [_b.id, _a.id]);
+      expect(player.context?.source, PlaybackSource.playlist);
+      expect(player.context?.sourceId, 'playlist/1');
+    },
+  );
 
   test('album browsing preserves source context', () async {
     final albums = await catalog.browse(AndroidAutoCatalog.albums);

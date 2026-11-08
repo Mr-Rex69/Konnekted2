@@ -1,5 +1,12 @@
+import 'dart:io';
+
+import '../../services/ios_library_scan_epoch.dart';
+import '../../services/ios_transfer_song_identity.dart';
+import '../../services/ios_transfer_cue_mapping.dart';
+
 import 'package:flick/core/utils/artist_credits.dart';
 
+import '../../services/ios_transfer_scan_guard.dart';
 import '../../services/link/link_journal.dart';
 import '../../services/link/link_protocol.dart';
 
@@ -36,9 +43,18 @@ class AlbumGroup {
 class SongRepository {
   final Isar _isar;
 
-  SongRepository({Isar? isar}) : _isar = isar ?? Database.instance;
+  // The optional policy lets isolated native-database tests exercise iPhone
+  // writer guards on the host. App callers use the actual platform default.
+  SongRepository({Isar? isar, bool? iosImportSafety})
+    : _isar = isar ?? Database.instance,
+      _iosImportSafety = iosImportSafety ?? Platform.isIOS;
+  final bool _iosImportSafety;
 
   Isar get isar => _isar;
+
+  late final IosTransferScanGuard? _iosScanGuard = _iosImportSafety
+      ? IosTransferScanGuard(_isar)
+      : null;
 
   /// Get all songs ordered by title.
   Future<List<Song>> getAllSongs() async {
@@ -49,6 +65,15 @@ class SongRepository {
         .toList();
     songs.sort((a, b) => compareCaseInsensitive(a.title, b.title));
     return songs;
+  }
+
+  /// Read current metadata before a maintenance operation changes a recording.
+  Future<Song?> getSongById(String id) async {
+    final key = int.tryParse(id);
+    if (key == null) return null;
+    final entity = await _isar.songEntitys.get(key);
+    if (entity == null || entity.filePath.startsWith('ghost://')) return null;
+    return _entityToSong(entity);
   }
 
   /// Look up a single local song by path without materializing or sorting
@@ -161,8 +186,21 @@ class SongRepository {
   }
 
   /// Add or update a song. Matches on composite key (filePath, startOffsetMs).
-  Future<void> upsertSong(SongEntity entity) async {
+  Future<void> upsertSong(SongEntity entity) => _upsertSong(entity);
+
+  Future<void> upsertScannedSong(SongEntity entity) =>
+      _upsertSong(entity, fromScanner: true);
+
+  Future<void> _upsertSong(
+    SongEntity entity, {
+    bool fromScanner = false,
+  }) async {
     await _isar.writeTxn(() async {
+      if (fromScanner && _iosImportSafety) IosLibraryScanEpoch.requireCurrent();
+      final guard = fromScanner ? _iosScanGuard : null;
+      if (guard != null && !await guard.allowsUpsertInTransaction(entity)) {
+        return;
+      }
       final existing = await _isar.songEntitys.getByFilePathStartOffsetMs(
         entity.filePath,
         entity.startOffsetMs,
@@ -172,16 +210,34 @@ class SongRepository {
         entity.id = existing.id;
       }
 
+      if (_iosImportSafety) {
+        await retainIosImportSongIdentitiesInTransaction(_isar, [entity]);
+      }
       await _isar.songEntitys.put(entity);
     });
   }
 
   /// Add multiple songs in a batch.
-  Future<void> upsertSongs(List<SongEntity> entities) async {
+  Future<void> upsertSongs(List<SongEntity> entities) => _upsertSongs(entities);
+
+  Future<void> upsertScannedSongs(List<SongEntity> entities) =>
+      _upsertSongs(entities, fromScanner: true);
+
+  Future<void> _upsertSongs(
+    List<SongEntity> entities, {
+    bool fromScanner = false,
+  }) async {
     if (entities.isEmpty) return;
 
     await _isar.writeTxn(() async {
+      if (fromScanner && _iosImportSafety) IosLibraryScanEpoch.requireCurrent();
+      final guard = fromScanner ? _iosScanGuard : null;
+      final accepted = <SongEntity>[];
       for (final entity in entities) {
+        if (guard != null && !await guard.allowsUpsertInTransaction(entity)) {
+          continue;
+        }
+        accepted.add(entity);
         final existing = await _isar.songEntitys.getByFilePathStartOffsetMs(
           entity.filePath,
           entity.startOffsetMs,
@@ -190,8 +246,28 @@ class SongRepository {
           entity.id = existing.id;
         }
       }
-      await _isar.songEntitys.putAll(entities);
+      if (accepted.isNotEmpty) {
+        if (_iosImportSafety) {
+          await retainIosImportSongIdentitiesInTransaction(_isar, accepted);
+        }
+        await _isar.songEntitys.putAll(accepted);
+      }
     });
+  }
+
+  /// Native-import CUE conversion must replace all ranges in one writer.
+  /// False leaves ordinary files on their existing scanner path.
+  Future<bool> replaceImportedCueTracks(
+    String path,
+    List<SongEntity> tracks, {
+    required List<SongEntity> expected,
+  }) async {
+    if (!_iosImportSafety) return false;
+    return _isar.writeTxn(
+      () =>
+          IosTransferCueMapping(_isar)
+              .replaceInTransaction(path, tracks, expected: expected),
+    );
   }
 
   /// Persist ReplayGain metadata for a path (written by the ReplayGain
@@ -271,16 +347,41 @@ class SongRepository {
   }
 
   /// Delete songs by their file paths.
-  Future<void> deleteSongsByPath(List<String> paths) async {
+  Future<void> deleteSongsByPath(List<String> paths) =>
+      _deleteSongsByPath(paths);
+
+  Future<void> deleteScannedSongsByPath(List<String> paths) =>
+      _deleteSongsByPath(paths, fromScanner: true);
+
+  Future<void> _deleteSongsByPath(
+    List<String> paths, {
+    bool fromScanner = false,
+  }) async {
     final uniquePaths = paths.where((path) => path.isNotEmpty).toSet();
     if (uniquePaths.isEmpty) return;
 
     await _isar.writeTxn(() async {
+      if (fromScanner && _iosImportSafety) IosLibraryScanEpoch.requireCurrent();
+      final guard = fromScanner ? _iosScanGuard : null;
       for (final path in uniquePaths) {
-        await _isar.songEntitys
+        if (guard == null) {
+          await _isar.songEntitys
+              .where()
+              .filePathEqualToAnyStartOffsetMs(path)
+              .deleteAll();
+          continue;
+        }
+        final rows = await _isar.songEntitys
             .where()
             .filePathEqualToAnyStartOffsetMs(path)
-            .deleteAll();
+            .findAll();
+        final allowed = <int>[];
+        for (final row in rows) {
+          if (await guard.allowsRemovalInTransaction(row.id)) {
+            allowed.add(row.id);
+          }
+        }
+        if (allowed.isNotEmpty) await _isar.songEntitys.deleteAll(allowed);
       }
     });
   }
@@ -299,27 +400,71 @@ class SongRepository {
   }
 
   /// Delete CUE track songs by file path.
-  Future<void> deleteCueTracksByPath(List<String> paths) async {
+  Future<void> deleteCueTracksByPath(List<String> paths) =>
+      _deleteCueTracksByPath(paths);
+
+  Future<void> deleteScannedCueTracksByPath(List<String> paths) =>
+      _deleteCueTracksByPath(paths, fromScanner: true);
+
+  Future<void> _deleteCueTracksByPath(
+    List<String> paths, {
+    bool fromScanner = false,
+  }) async {
     final uniquePaths = paths.where((path) => path.isNotEmpty).toSet();
     if (uniquePaths.isEmpty) return;
 
     await _isar.writeTxn(() async {
+      if (fromScanner && _iosImportSafety) IosLibraryScanEpoch.requireCurrent();
+      final guard = fromScanner ? _iosScanGuard : null;
       for (final path in uniquePaths) {
-        await _isar.songEntitys
+        if (guard == null) {
+          await _isar.songEntitys
+              .where()
+              .filePathEqualToAnyStartOffsetMs(path)
+              .filter()
+              .startOffsetMsIsNotNull()
+              .deleteAll();
+          continue;
+        }
+        final rows = await _isar.songEntitys
             .where()
             .filePathEqualToAnyStartOffsetMs(path)
             .filter()
             .startOffsetMsIsNotNull()
-            .deleteAll();
+            .findAll();
+        final allowed = <int>[];
+        for (final row in rows) {
+          if (await guard.allowsRemovalInTransaction(row.id)) {
+            allowed.add(row.id);
+          }
+        }
+        if (allowed.isNotEmpty) await _isar.songEntitys.deleteAll(allowed);
       }
     });
   }
 
-  Future<void> deleteSongsByIds(List<Id> ids) async {
-    if (ids.isEmpty) return;
+  Future<void> deleteSongsByIds(List<Id> ids) => _deleteSongsByIds(ids);
 
+  Future<void> deleteScannedSongsByIds(List<Id> ids) =>
+      _deleteSongsByIds(ids, fromScanner: true);
+
+  Future<void> _deleteSongsByIds(
+    List<Id> ids, {
+    bool fromScanner = false,
+  }) async {
+    if (ids.isEmpty) return;
     await _isar.writeTxn(() async {
-      await _isar.songEntitys.deleteAll(ids);
+      if (fromScanner && _iosImportSafety) IosLibraryScanEpoch.requireCurrent();
+      final guard = fromScanner ? _iosScanGuard : null;
+      if (guard == null) {
+        await _isar.songEntitys.deleteAll(ids);
+        return;
+      }
+      final allowed = <int>[];
+      for (final id in ids) {
+        if (await guard.allowsRemovalInTransaction(id)) allowed.add(id);
+      }
+      if (allowed.isNotEmpty) await _isar.songEntitys.deleteAll(allowed);
     });
   }
 
@@ -510,6 +655,9 @@ class SongRepository {
   /// Delete all songs.
   Future<void> deleteAllSongs() async {
     await _isar.writeTxn(() async {
+      if (_iosImportSafety) {
+        await retainIosImportSongIdentitiesInTransaction(_isar, []);
+      }
       await _isar.songEntitys.clear();
     });
   }
@@ -617,9 +765,9 @@ class SongRepository {
     // container extension; mobile-downloaded Atmos files keep a filename
     // suffix so ExoPlayer still receives the original JOC stream.
     final path = entity.filePath.toLowerCase();
-    final ac4 = entity.fileType?.toUpperCase() == 'AC-4' ||
-        path.endsWith('.ac4.atmos.mp4');
-    final atmos = ac4 || entity.fileType?.toUpperCase() == 'E-AC-3 JOC' ||
+    final ac4 = entity.fileType?.toUpperCase() == 'AC-4' || path.endsWith('.ac4.atmos.mp4');
+    final atmos = ac4 ||
+        entity.fileType?.toUpperCase() == 'E-AC-3 JOC' ||
         path.endsWith('.atmos.m4a') ||
         path.endsWith('.atmos.mp4') ||
         path.endsWith('.atmos.ec3') ||

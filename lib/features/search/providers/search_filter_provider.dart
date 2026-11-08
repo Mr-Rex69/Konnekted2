@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,12 +10,25 @@ import '../models/search_category.dart';
 enum SearchScope { all, library, online, soulseek }
 
 const visibleSearchCategories = [
-  SearchCategory.songs, SearchCategory.artists,
-  SearchCategory.albums, SearchCategory.lyrics,
+  SearchCategory.songs,
+  SearchCategory.artists,
+  SearchCategory.albums,
+  SearchCategory.lyrics,
 ];
 
 bool supportsOnlineCategory(SearchCategory? category) =>
     category != null && visibleSearchCategories.contains(category);
+
+/// iPhone uses the bundled client while foreground; UIKit cancels its peer
+/// session in the background. Android retains its foreground service.
+bool get soulseekScopeAvailable =>
+    defaultTargetPlatform == TargetPlatform.android ||
+    defaultTargetPlatform == TargetPlatform.iOS;
+
+SearchScope _availableScope(SearchScope scope) =>
+    scope == SearchScope.soulseek && !soulseekScopeAvailable
+    ? SearchScope.all
+    : scope;
 
 class SearchScopeNotifier extends Notifier<SearchScope> {
   static const _key = 'search_selected_scope_v1';
@@ -31,24 +46,29 @@ class SearchScopeNotifier extends Notifier<SearchScope> {
       final prefs = await SharedPreferences.getInstance();
       if (!ref.mounted || _changed) return;
       final saved = prefs.getString(_key);
-      final scope = SearchScope.values.where((s) => s.name == saved).firstOrNull;
-      if (scope != null) state = scope;
+      final scope = SearchScope.values
+          .where((s) => s.name == saved)
+          .firstOrNull;
+      if (scope != null) state = _availableScope(scope);
     } catch (_) {
       // Keep Search usable when saved preferences are unavailable.
     }
   }
 
-  void select(SearchScope scope) {
+  void select(SearchScope requested) {
+    final scope = _availableScope(requested);
     _changed = true;
     if ((scope == SearchScope.online || scope == SearchScope.soulseek) &&
         !supportsOnlineCategory(ref.read(searchFilterProvider).singleOrNull)) {
       ref.read(searchFilterProvider.notifier).select(SearchCategory.songs);
     }
     state = scope;
-    _saving = _saving.then((_) async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_key, scope.name);
-    }).catchError((Object _) {});
+    _saving = _saving
+        .then((_) async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_key, scope.name);
+        })
+        .catchError((Object _) {});
   }
 }
 
@@ -84,7 +104,8 @@ class SearchFilterNotifier extends Notifier<Set<SearchCategory>> {
   void select(SearchCategory? category) {
     _changed = true;
     final selected = supportsOnlineCategory(category)
-        ? category! : SearchCategory.songs;
+        ? category!
+        : SearchCategory.songs;
     state = {selected};
     _saving = _saving
         .then((_) async {

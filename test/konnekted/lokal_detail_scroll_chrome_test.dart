@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/library/lokal_detail_scroll_chrome.dart';
@@ -14,47 +15,60 @@ void main() {
     expect(detailTopFrostOpacity(200, 0), 0);
   });
 
-  testWidgets('top frost is layered over scrolling UI, not the artwork',
-      (tester) async {
+  testWidgets('top frost is layered over scrolling UI, not the artwork', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = ScrollController();
     addTearDown(controller.dispose);
     await tester.pumpWidget(
-      MaterialApp(
-        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-        home: Scaffold(
-          body: Stack(
-            children: [
-              ListView(
-                controller: controller,
-                children: const [
-                  SizedBox(height: 400, child: ColoredBox(color: Colors.blue)),
-                  SizedBox(height: 1500, child: ColoredBox(color: Colors.white)),
-                ],
-              ),
-              Positioned(
-                top: 0, left: 0, right: 0,
-                child: LokalDetailProgressiveTopBlur(
-                  scrollController: controller,
-                  heroHeight: 400,
-                  background: Colors.black,
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ListView(
+                  controller: controller,
+                  children: const [
+                    SizedBox(
+                      height: 400,
+                      child: ColoredBox(color: Colors.blue),
+                    ),
+                    SizedBox(
+                      height: 1500,
+                      child: ColoredBox(color: Colors.white),
+                    ),
+                  ],
                 ),
-              ),
-              Positioned(
-                top: 0, left: 0, right: 0,
-                child: LokalDetailFloatingControls(
-                  title: 'Artist',
-                  scrollController: controller,
-                  heroHeight: 400,
-                  onlineEnabled: false,
-                  onBack: () {},
-                  onOnline: () {},
-                  onMore: () {},
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: LokalDetailProgressiveTopBlur(
+                    scrollController: controller,
+                    heroHeight: 400,
+                    background: Colors.black,
+                  ),
                 ),
-              ),
-            ],
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: LokalDetailFloatingControls(
+                    title: 'Artist',
+                    scrollController: controller,
+                    heroHeight: 400,
+                    onlineEnabled: false,
+                    onBack: () {},
+                    onOnline: () {},
+                    onMore: () {},
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -81,18 +95,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('performance mode has no dynamic backdrop filter',
-      (tester) async {
+  testWidgets('performance mode has no dynamic backdrop filter', (
+    tester,
+  ) async {
     final controller = ScrollController(initialScrollOffset: 400);
     addTearDown(controller.dispose);
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: LokalDetailProgressiveTopBlur(
-            scrollController: controller,
-            heroHeight: 400,
-            background: Colors.black,
-            dynamicBlur: false,
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: LokalDetailProgressiveTopBlur(
+              scrollController: controller,
+              heroHeight: 400,
+              background: Colors.black,
+              dynamicBlur: false,
+            ),
           ),
         ),
       ),

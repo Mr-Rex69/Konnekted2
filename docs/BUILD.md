@@ -155,3 +155,7 @@ accepts only the exact configured redirect host/path.
    introduce software gain.
 5. Test pause/resume, headset/Bluetooth changes, USB detach, screen-off and
    notification/widget controls.
+
+## iPhone integration
+
+The unsigned iPhone beta and its release evidence are documented in [IOS_PORT.md](IOS_PORT.md) and [IOS_SIDELOADING.md](IOS_SIDELOADING.md). The current merge with Android main has separate qualification gates; see [IOS_MAIN_INTEGRATION.md](IOS_MAIN_INTEGRATION.md). Signing and physical-iPhone acceptance remain outstanding.

@@ -30,6 +30,7 @@ import 'morneye_playback_quality.dart';
 const morneyeRegistry =
     'https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/refs/heads/main/registry.json';
 const morneyeCompatVersion = '5.3.0';
+
 /// Mornye's documented .spotiflac-ext format and its legacy/newer archives.
 bool morneyeIsPackageFileName(String filename) => RegExp(
   r'\.(?:sflx|morneye-ext|spotiflac-ext)$',
@@ -62,8 +63,8 @@ Map<String, Object?>? morneyeSelectedTrackHint({
   required String artist,
   required int? durationMs,
 }) {
-  if (id.trim().isEmpty || title.trim().isEmpty ||
-      artist.trim().isEmpty) return null;
+  if (id.trim().isEmpty || title.trim().isEmpty || artist.trim().isEmpty)
+    return null;
   return {
     'id': id,
     'name': title,
@@ -111,8 +112,10 @@ class MorneyePackageError implements Exception {
 /// Distinct from an addon's tier, authorization or transport failure.
 class MorneyeSourceVerificationError extends MorneyePackageError {
   const MorneyeSourceVerificationError(String codec)
-      : super('The requested $codec source could not be verified. '
-            'No stereo substitute was used.');
+    : super(
+        'The requested $codec source could not be verified. '
+        'No stereo substitute was used.',
+      );
 }
 
 /// Parse an on-demand sample link from a Morneye 5.3 extension. A
@@ -325,8 +328,11 @@ String morneyeAlbumArtworkUrl(String original) {
     RegExp(r'\._[^/.]+_\.(?=(?:jpg|jpeg|png|webp)$)', caseSensitive: false),
     '.',
   );
-  return upgraded == uri.path ? original : uri.replace(path: upgraded).toString();
+  return upgraded == uri.path
+      ? original
+      : uri.replace(path: upgraded).toString();
 }
+
 /// A song an add-on found.
 class MorneyeTrack {
   const MorneyeTrack({
@@ -366,6 +372,7 @@ class MorneyeTrack {
   final int? bitDepth;
   final int? sampleRate;
   final bool atmosAvailable;
+
   /// Per-track confirmed Amazon Atmos presentation, if the codec is known.
   final String? atmosCodec;
   String get key => provider.substring(2);
@@ -376,12 +383,20 @@ class MorneyeTrack {
   }
 
   static int? _sampleRate(Map track) {
-    final raw = track['sample_rate'] ?? track['sampleRate'] ??
-        track['sampling_rate'] ?? track['samplingRate'] ??
-        track['maximum_sampling_rate'] ?? track['maxSampleRate'];
+    final raw =
+        track['sample_rate'] ??
+        track['sampleRate'] ??
+        track['sampling_rate'] ??
+        track['samplingRate'] ??
+        track['maximum_sampling_rate'] ??
+        track['maxSampleRate'];
     final value = raw is num
         ? raw.toDouble()
-        : double.tryParse('$raw'.replaceAll(RegExp(r'\s*k(?:hz)?', caseSensitive: false), '').trim());
+        : double.tryParse(
+            '$raw'
+                .replaceAll(RegExp(r'\s*k(?:hz)?', caseSensitive: false), '')
+                .trim(),
+          );
     if (value == null || !value.isFinite || value <= 0) return null;
     // Preserve 44.1 / 88.2 kHz exactly; don't truncate to 44 / 88.
     final hz = (value <= 384 ? value * 1000 : value).round();
@@ -389,16 +404,25 @@ class MorneyeTrack {
   }
 
   static int? _bitDepth(Map track) {
-    final bits = _positiveInt(track['bit_depth'] ?? track['bitDepth'] ??
-        track['bits_per_sample'] ?? track['bitsPerSample'] ??
-        track['maximum_bit_depth'] ?? track['maxBitDepth']);
+    final bits = _positiveInt(
+      track['bit_depth'] ??
+          track['bitDepth'] ??
+          track['bits_per_sample'] ??
+          track['bitsPerSample'] ??
+          track['maximum_bit_depth'] ??
+          track['maxBitDepth'],
+    );
     return bits != null && bits <= 64 ? bits : null;
   }
 
   static String? _codec(Map track) {
-    final raw = track['codec'] ?? track['audio_codec'] ??
-        track['audioCodec'] ?? track['audio_format'] ??
-        track['audioFormat'] ?? track['format'];
+    final raw =
+        track['codec'] ??
+        track['audio_codec'] ??
+        track['audioCodec'] ??
+        track['audio_format'] ??
+        track['audioFormat'] ??
+        track['format'];
     final text = raw?.toString().toLowerCase() ?? '';
     if (text.contains('flac')) return 'FLAC';
     if (text.contains('alac')) return 'ALAC';
@@ -415,28 +439,43 @@ class MorneyeTrack {
   /// and promote Amazon CDN thumbnails to their unsized original asset.
   static String? _artwork(Map track) {
     double sizeOf(Map value) {
-      double dimension(Object? raw) => raw is num ? raw.toDouble() :
-          double.tryParse(raw?.toString() ?? '') ?? 0;
+      double dimension(Object? raw) => raw is num
+          ? raw.toDouble()
+          : double.tryParse(raw?.toString() ?? '') ?? 0;
       final width = dimension(value['width']);
       final height = dimension(value['height']);
-      return width > 0 && height > 0 ? width * height : width * width + height * height;
+      return width > 0 && height > 0
+          ? width * height
+          : width * width + height * height;
     }
+
     double urlSize(String url) {
       final uri = Uri.tryParse(url);
-      if (uri == null || !PlayerArtworkQuality.isAmazonArtworkHost(uri.host)) return 0;
-      final sizes = RegExp(r'_(?:SX|SY|SL|UX|UY)(\d+)').allMatches(uri.path)
+      if (uri == null || !PlayerArtworkQuality.isAmazonArtworkHost(uri.host))
+        return 0;
+      final sizes = RegExp(r'_(?:SX|SY|SL|UX|UY)(\d+)')
+          .allMatches(uri.path)
           .map((m) => double.parse(m[1]!));
       if (sizes.isEmpty) return 0;
       final largest = sizes.reduce((a, b) => a > b ? a : b);
       return largest * largest;
     }
+
     ({String url, double size})? getImage(Object? value) {
       if (value is String && Uri.tryParse(value)?.hasScheme == true) {
         return (url: value, size: urlSize(value));
       }
       if (value is Map) {
-        for (final field in ['url', 'src', 'cover_url', 'coverUrl', 'original',
-            'large', 'medium', 'small']) {
+        for (final field in [
+          'url',
+          'src',
+          'cover_url',
+          'coverUrl',
+          'original',
+          'large',
+          'medium',
+          'small',
+        ]) {
           final found = getImage(value[field]);
           if (found != null) {
             final explicit = sizeOf(value);
@@ -448,7 +487,8 @@ class MorneyeTrack {
         ({String url, double size})? best;
         for (final image in value) {
           final found = getImage(image);
-          if (found != null && (best == null || found.size >= best.size)) best = found;
+          if (found != null && (best == null || found.size >= best.size))
+            best = found;
         }
         return best;
       }
@@ -462,7 +502,9 @@ class MorneyeTrack {
       // a separate album images array with much larger artwork.
       track['images'], track['image'],
       if (album is Map) ...[
-        album['images'], album['image'], album['cover_art'],
+        album['images'],
+        album['image'],
+        album['cover_art'],
         album['cover_url'],
       ],
       track['artwork_url'], track['artworkUrl'],
@@ -471,7 +513,8 @@ class MorneyeTrack {
       track['cover_url'], track['coverUrl'], track['thumbnail'],
     ]) {
       final found = getImage(value);
-      if (found != null && (best == null || found.size > best.size)) best = found;
+      if (found != null && (best == null || found.size > best.size))
+        best = found;
     }
     // Keep the provider URL, so every renderer/downloader can try the master
     // and still fall back to this known working variant.
@@ -512,7 +555,9 @@ class MorneyeTrack {
       year: int.tryParse(
         '${track['release_date'] ?? ''}'.padRight(4).substring(0, 4).trim(),
       ),
-      quality: (track['audio_quality'] ?? track['audioQuality'] ?? track['quality'])?.toString(),
+      quality:
+          (track['audio_quality'] ?? track['audioQuality'] ?? track['quality'])
+              ?.toString(),
       codec: _codec(track),
       bitDepth: _bitDepth(track),
       sampleRate: _sampleRate(track),
@@ -690,12 +735,20 @@ class MorneyeAccess {
 
 /// The finished download.
 class MorneyeDownload {
-  MorneyeDownload(this.file, this.metadata, this.info, this._staging, {this.atmosEncoded = false, this.atmosCodec});
+  MorneyeDownload(
+    this.file,
+    this.metadata,
+    this.info,
+    this._staging, {
+    this.atmosEncoded = false,
+    this.atmosCodec,
+  });
 
   final File file;
   final Map<String, Object?> metadata;
   final Map<String, Object?> info;
   final Directory _staging;
+
   /// True only after native/FFprobe identified an original AC-4 or JOC stream.
   /// This does not imply that AC-4's immersive presentation was verified.
   final bool atmosEncoded;
@@ -809,12 +862,15 @@ class MorneyePackages {
     const legacyAmazonNewFeed =
         'https://raw.githubusercontent.com/CHEYCKIT/Mornye-Extension/refs/heads/feature/amazon-new-release-20261029/amazon-new-registry.json';
     final oldCount = _repos.length;
-    _repos.removeWhere((r) =>
-        r.url == legacyAmazonNewFeed && r.name == 'Amazon (New) updates');
+    _repos.removeWhere(
+      (r) => r.url == legacyAmazonNewFeed && r.name == 'Amazon (New) updates',
+    );
     final removedBundledFeed = oldCount != _repos.length;
     _loaded = true;
-    if (oldDefaultId != null || migratedAddonRepositoryIds ||
-        removedBundledFeed) _save();
+    if (oldDefaultId != null ||
+        migratedAddonRepositoryIds ||
+        removedBundledFeed)
+      _save();
   }
 
   void _save() => morneyeAtomicWrite(
@@ -1459,19 +1515,18 @@ class MorneyePackages {
     if (reference == null) return link;
     final key = morneyeKeyOf(reference.addonName);
     final addon = _addons[key];
-    if (addon == null ||
-        addon.name != reference.addonName ||
-        !addon.enabled) {
+    if (addon == null || addon.name != reference.addonName || !addon.enabled) {
       throw const MorneyePackageError('Preview addon is not installed');
     }
     final guest = await runtime(key);
     if (!guest.methods.contains('resolvePreview')) {
-      throw const MorneyePackageError('Addon does not support deferred previews');
+      throw const MorneyePackageError(
+        'Addon does not support deferred previews',
+      );
     }
-    final result = await guest.invoke(
-      'resolvePreview',
-      [{'id': reference.trackId}],
-    );
+    final result = await guest.invoke('resolvePreview', [
+      {'id': reference.trackId},
+    ]);
     final url = result is Map ? result['preview_url']?.toString().trim() : null;
     final uri = Uri.tryParse(url ?? '');
     if (uri == null ||
@@ -1783,8 +1838,10 @@ class MorneyePackages {
     String id, {
     String? quality,
     bool forPlayback = false,
+
     /// Exact user-selected catalogue metadata; never replaces authorization.
     Map<String, Object?>? trackHint,
+
     /// Host-side phase callback, distinct from guest-reported download percent.
     void Function(String stage)? onResolutionStage,
     void Function({double? percent, String? message})? onProgress,
@@ -1824,12 +1881,16 @@ class MorneyePackages {
         activeRuntime?.close();
       });
     }
+
     void phase(String stage) {
       onResolutionStage?.call(stage);
       // Private IDs, signed URLs, tokens and track names are never logged.
-      AppLog.instance.add('[Morneye] resolve stage=$stage '
-          'elapsedMs=${preparation.elapsedMilliseconds}');
+      AppLog.instance.add(
+        '[Morneye] resolve stage=$stage '
+        'elapsedMs=${preparation.elapsedMilliseconds}',
+      );
     }
+
     phase('worker_start');
     final runtime = await _createRuntime(
       addon,
@@ -1844,21 +1905,24 @@ class MorneyePackages {
         }
         onProgress?.call(percent: percent, message: message);
       },
-      onTransfer: hooks ? null : (transfer) {
-        // A header-only transfer restart isn't progress. Once real bytes
-        // resume, even below the previous attempt's total, reset watchdog.
-        if (transfer.written > 0 &&
-            (transfer.part != lastPart || transfer.written > lastWritten)) {
-          recordActivity();
-        }
-        lastPart = transfer.part;
-        lastWritten = transfer.written;
-        if (!sawFirstByte && transfer.written > 0) {
-          sawFirstByte = true;
-          phase('first_byte');
-        }
-        onTransfer?.call(transfer);
-      },
+      onTransfer: hooks
+          ? null
+          : (transfer) {
+              // A header-only transfer restart isn't progress. Once real bytes
+              // resume, even below the previous attempt's total, reset watchdog.
+              if (transfer.written > 0 &&
+                  (transfer.part != lastPart ||
+                      transfer.written > lastWritten)) {
+                recordActivity();
+              }
+              lastPart = transfer.part;
+              lastWritten = transfer.written;
+              if (!sawFirstByte && transfer.written > 0) {
+                sawFirstByte = true;
+                phase('first_byte');
+              }
+              onTransfer?.call(transfer);
+            },
       // Isolated download workers need headroom for segments/decryption.
       // Browsing stays at 64 MiB. Native code caps this at 256 MiB.
       heapMb: 256,
@@ -1875,10 +1939,12 @@ class MorneyePackages {
           trackHint != null &&
           '${trackHint['id'] ?? ''}' == id &&
           morneyeSelectedTrackHint(
-            id: id, title: '${trackHint['name'] ?? ''}',
-            artist: '${trackHint['artists'] ?? ''}',
-            durationMs: (trackHint['duration_ms'] as num?)?.toInt(),
-          ) != null) {
+                id: id,
+                title: '${trackHint['name'] ?? ''}',
+                artist: '${trackHint['artists'] ?? ''}',
+                durationMs: (trackHint['duration_ms'] as num?)?.toInt(),
+              ) !=
+              null) {
         // A verified selection avoids getTrack when the saved search cache
         // was evicted. checkAvailability is still mandatory.
         track = Map.of(trackHint);
@@ -1929,6 +1995,7 @@ class MorneyePackages {
               ], const Duration(seconds: 25))
             : Future.value({'available': true, 'track_id': id});
       }
+
       phase('availability');
       var available = await checkAvailability();
       if (morneyeShouldRetryEnrichment(
@@ -1941,7 +2008,9 @@ class MorneyePackages {
         ], const Duration(seconds: 20));
         if (enriched is Map) {
           enriched.forEach((field, value) {
-            if (value != null && value != '' && value != 0 &&
+            if (value != null &&
+                value != '' &&
+                value != 0 &&
                 !(value is String && value.trim().isEmpty) &&
                 !(value is List && value.isEmpty)) {
               track[field] = value;
@@ -1980,21 +2049,32 @@ class MorneyePackages {
       // preserve *verified JOC* but cannot render generic E-AC-3 through the
       // normal Rust decoder. Keep this selection in its native bitstream,
       // require positive JOC evidence and never silently FLAC-transcode it.
-      final explicitAmazonJoc = amazonProvider &&
-          chosen.trim().toLowerCase() == 'eac3';
+      final explicitAmazonJoc =
+          amazonProvider && chosen.trim().toLowerCase() == 'eac3';
       // Play and Save must send the exact configured quality to the addon.
       // A native encoded rendition is verified below; never silently
       // substitute FLAC when Atmos was requested.
       // AC-4 is a codec preference and must be validated from the delivered
       // file; it never creates a catalogue Atmos badge.
-      final selectedAc4 = chosen.trim().toLowerCase().replaceAll('-', '') == 'ac4';
+      final selectedAc4 =
+          chosen.trim().toLowerCase().replaceAll('-', '') == 'ac4';
       // Amazon E-AC-3 must pass the JOC probe before it can be played.
-      final explicitAtmos = isMorneyeAtmosQuality(chosen) ||
-          explicitAmazonJoc;
-      if (explicitAtmos) AtmosDiagnostics.record('addon_download_start', {
-        'source': provider == 'tidal' ? 'tidal' : 'other',
-        'quality': chosen,
-      });
+      final explicitAtmos = isMorneyeAtmosQuality(chosen) || explicitAmazonJoc;
+      // Saving an original encoded file does not require a playback decoder.
+      if (Platform.isIOS &&
+          forPlayback &&
+          explicitAtmos &&
+          (selectedAc4 || !await AtmosPlaybackSupport.available)) {
+        throw const MorneyePackageError(
+          'This iPhone cannot play the selected encoded spatial format. '
+          'Choose a supported addon quality or save the original file.',
+        );
+      }
+      if (explicitAtmos)
+        AtmosDiagnostics.record('addon_download_start', {
+          'source': provider == 'tidal' ? 'tidal' : 'other',
+          'quality': chosen,
+        });
       phase('preparing_media');
       monitoringTransfer = true;
       recordActivity();
@@ -2019,9 +2099,10 @@ class MorneyePackages {
       }
       phase('download_complete');
       if (result is! Map || result['success'] != true) {
-        if (explicitAtmos) AtmosDiagnostics.record('addon_download_failed', {
-          'reason': 'addon_returned_failure',
-        });
+        if (explicitAtmos)
+          AtmosDiagnostics.record('addon_download_failed', {
+            'reason': 'addon_returned_failure',
+          });
         final message = result is Map
             ? (result['error_message'] ?? result['error'])
             : null;
@@ -2034,26 +2115,32 @@ class MorneyePackages {
       if (explicitAtmos) {
         // Diagnose provider tier negotiation without logging track IDs,
         // filesystem paths, signed URLs, manifest credentials or raw results.
-        final claimed = '${result['audio_quality'] ?? result['audioQuality'] ?? result['quality'] ?? ''}'
-            .trim().toUpperCase().replaceAll(RegExp(r'[ -]'), '_');
+        final claimed =
+            '${result['audio_quality'] ?? result['audioQuality'] ?? result['quality'] ?? ''}'
+                .trim()
+                .toUpperCase()
+                .replaceAll(RegExp(r'[ -]'), '_');
         final extension = p.extension(file).toLowerCase();
         AtmosDiagnostics.record('addon_response', {
           'quality': chosen,
           'reason': claimed == 'DOLBY_ATMOS'
               ? 'provider_claimed_atmos'
-              : claimed == 'HI_RES_LOSSLESS' || claimed == 'LOSSLESS' || claimed == 'HIGH'
-                  ? 'provider_claimed_stereo'
-                  : 'provider_quality_unspecified',
-          'container': {'.flac', '.m4a', '.mp4', '.ec3', '.eac3'}
-                  .contains(extension)
+              : claimed == 'HI_RES_LOSSLESS' ||
+                    claimed == 'LOSSLESS' ||
+                    claimed == 'HIGH'
+              ? 'provider_claimed_stereo'
+              : 'provider_quality_unspecified',
+          'container':
+              {'.flac', '.m4a', '.mp4', '.ec3', '.eac3'}.contains(extension)
               ? extension.replaceFirst('.', '')
               : 'other',
         });
       }
       if (!File(file).existsSync() || File(file).lengthSync() == 0) {
-        if (explicitAtmos) AtmosDiagnostics.record('addon_download_failed', {
-          'reason': 'empty_file',
-        });
+        if (explicitAtmos)
+          AtmosDiagnostics.record('addon_download_failed', {
+            'reason': 'empty_file',
+          });
         throw const MorneyePackageError('Addon produced an empty file');
       }
       final decryption =
@@ -2063,9 +2150,8 @@ class MorneyePackages {
               ? {'strategy': 'ffmpeg.mov_key', 'key': result['decryption_key']}
               : null);
       if (decryption != null) {
-        if (explicitAtmos) AtmosDiagnostics.record('postprocess_start', {
-          'stage': 'decrypt',
-        });
+        if (explicitAtmos)
+          AtmosDiagnostics.record('postprocess_start', {'stage': 'decrypt'});
         if (decryption is! Map ||
             decryption['strategy'] != 'ffmpeg.mov_key' ||
             !RegExp(r'^[a-fA-F0-9]{32}$')
@@ -2110,16 +2196,21 @@ class MorneyePackages {
       // Preserve the original compressed stream, including Atmos objects.
       // Amazon exposes 'ac4'; Tidal exposes 'DOLBY_ATMOS' (E-AC-3 JOC).
       // AC-4 verifies the codec, not independently its immersive presentation.
-      final verifiedAtmos = explicitAtmos && (selectedAc4
-          ? await AtmosPlaybackSupport.isAc4File(file)
-          : await AtmosPlaybackSupport.isJocFile(file));
-      if (explicitAtmos) AtmosDiagnostics.record('source_validation', {
-        'codec': selectedAc4 ? 'ac4' : 'eac3_joc',
-        'encoded': verifiedAtmos,
-        'outcome': verifiedAtmos ? 'confirmed' : 'rejected',
-      });
+      final verifiedAtmos =
+          explicitAtmos &&
+          (selectedAc4
+              ? await AtmosPlaybackSupport.isAc4File(file)
+              : await AtmosPlaybackSupport.isJocFile(file));
+      if (explicitAtmos)
+        AtmosDiagnostics.record('source_validation', {
+          'codec': selectedAc4 ? 'ac4' : 'eac3_joc',
+          'encoded': verifiedAtmos,
+          'outcome': verifiedAtmos ? 'confirmed' : 'rejected',
+        });
       if (explicitAtmos && !verifiedAtmos) {
-        throw MorneyeSourceVerificationError(selectedAc4 ? 'AC-4' : 'E-AC-3 JOC');
+        throw MorneyeSourceVerificationError(
+          selectedAc4 ? 'AC-4' : 'E-AC-3 JOC',
+        );
       }
       if (verifiedAtmos) {
         // Media3, not Rust/FFmpeg PCM, retains the original encoded data.

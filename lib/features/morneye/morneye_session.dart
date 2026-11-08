@@ -101,12 +101,17 @@ Map<String, Object?> morneyeSignedAddonResponse(
   // A 4xx response other than throttling/timeouts cannot become playable by
   // retrying the exact same signed ticket. A gateway can explicitly override
   // this with its retry contract.
-  final terminalClientError = status != null &&
-      status >= 400 && status < 500 && status != 408 && status != 429;
+  final terminalClientError =
+      status != null &&
+      status >= 400 &&
+      status < 500 &&
+      status != 408 &&
+      status != 429;
   final retryMode = explicitMode.isNotEmpty
-      ? explicitMode : (terminalClientError ? 'none' : '');
-  final retrySeconds = (contract['retry_after_seconds'] as num?)?.toDouble() ??
-      0.0;
+      ? explicitMode
+      : (terminalClientError ? 'none' : '');
+  final retrySeconds =
+      (contract['retry_after_seconds'] as num?)?.toDouble() ?? 0.0;
   return {
     ...response,
     'code': code,
@@ -518,8 +523,8 @@ class MorneyeSignedSession {
           // Never record a ticket, URL, request body or session credentials.
           AppLog.instance.add(
             '[Morneye] ticket request status=$status '
-            'code=${code.isEmpty ? 'unspecified' : code} '
-            'retryMode=${addonResponse['retryMode']} '
+            'retryable=${addonResponse['retryable'] == true} '
+            'verification=${addonResponse['needsVerification'] == true} '
             'elapsedMs=${clock.elapsedMilliseconds}',
           );
         }

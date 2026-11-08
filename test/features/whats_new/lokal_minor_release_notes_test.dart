@@ -26,8 +26,9 @@ void main() {
   test('parses only the current minor tagged release notes', () async {
     final client = MockClient((request) async {
       expect(request.url.pathSegments.last, 'v4.3.0');
-      return http.Response(jsonEncode({
-        'body': """Intro
+      return http.Response(
+        jsonEncode({
+          'body': """Intro
 
 ## What's Changed
 * Improve playback by @dev in https://github.com/lokal-music/Mobile/pull/1
@@ -35,22 +36,67 @@ void main() {
 
 **Full Changelog**: https://github.com/lokal-music/Mobile/compare/v4.2.7...v4.3.0
 """,
-        'published_at': '2026-11-04T10:00:00Z',
-      }), 200);
+          'published_at': '2026-11-04T10:00:00Z',
+        }),
+        200,
+      );
     });
     addTearDown(client.close);
 
     final notes = await loadLokalMinorRelease('4.3', client: client);
     expect(notes?.version, '4.3');
     expect(notes?.date, '2026-11-04');
-    expect(notes?.sections.single.bullets,
-        ['Improve playback', 'Redesign queue']);
+    expect(notes?.sections.single.bullets, [
+      'Improve playback',
+      'Redesign queue',
+    ]);
   });
 
-  test('an unavailable release never substitutes another minor notes', () async {
-    final client = MockClient((_) async => http.Response('Not found', 404));
+  test(
+    'an unavailable release never substitutes another minor notes',
+    () async {
+      final client = MockClient((_) async => http.Response('Not found', 404));
+      addTearDown(client.close);
+      expect(await loadLokalMinorRelease('4.3', client: client), isNull);
+      expect(
+        (await loadLokalMinorRelease('4.2', client: client))?.version,
+        '4.2',
+      );
+    },
+  );
+
+  test(
+    'iPhone fetches its own tag and retains only its own offline notes',
+    () async {
+      final client = MockClient((request) async {
+        expect(request.url.pathSegments.last, startsWith('ios-v'));
+        return http.Response('Not found', 404);
+      });
+      addTearDown(client.close);
+      final notes = await loadLokalMinorRelease(
+        '1.0',
+        client: client,
+        forIos: true,
+      );
+      expect(notes?.version, '1.0');
+      expect(
+        notes!.sections.expand((section) => section.bullets).join(' '),
+        isNot(contains('USB')),
+      );
+      expect(
+        await loadLokalMinorRelease('4.2', client: client, forIos: true),
+        isNull,
+      );
+      expect(
+        await loadLokalMinorRelease('1.1', client: client, forIos: true),
+        isNull,
+      );
+    },
+  );
+
+  test('malformed minor cannot request a different release path', () async {
+    final client = MockClient((_) async => throw StateError('Unexpected HTTP'));
     addTearDown(client.close);
-    expect(await loadLokalMinorRelease('4.3', client: client), isNull);
-    expect((await loadLokalMinorRelease('4.2', client: client))?.version, '4.2');
+    expect(await loadLokalMinorRelease('../latest', client: client), isNull);
   });
 }

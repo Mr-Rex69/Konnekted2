@@ -2,8 +2,11 @@ import 'package:flick/features/discovery/discovery_sources.dart';
 import 'package:flick/features/discovery/youtube_music_account.dart'
     show parseYoutubeMusicAlbums, parseYoutubeMusicTracks;
 import 'package:flick/features/konnekted/library/lokal_online_catalogue.dart'
-    show LokalCatalogueAlbum, LokalReleaseKind, catalogueArtistCredit,
-         cataloguePrimaryArtist;
+    show
+        LokalCatalogueAlbum,
+        LokalReleaseKind,
+        catalogueArtistCredit,
+        cataloguePrimaryArtist;
 import 'package:flick/features/discovery/recommendation_match.dart'
     show recommendationKey;
 
@@ -27,6 +30,7 @@ void _walkMaps(Object? value, void Function(Map node) visit) {
       }
     }
   }
+
   walk(value, 0);
 }
 
@@ -45,8 +49,11 @@ String _text(Object? node) {
   if (simple is String) return simple.trim();
   final runs = node['runs'];
   if (runs is List) {
-    return runs.whereType<Map>()
-        .map((run) => (run['text'] ?? '').toString()).join().trim();
+    return runs
+        .whereType<Map>()
+        .map((run) => (run['text'] ?? '').toString())
+        .join()
+        .trim();
   }
   return '';
 }
@@ -56,9 +63,9 @@ String _columnTitle(Map row) {
   if (direct.isNotEmpty) return direct;
   final columns = row['flexColumns'];
   if (columns is List && columns.isNotEmpty) {
-    return _text(_at(columns.first, [
-      'musicResponsiveListItemFlexColumnRenderer', 'text',
-    ]));
+    return _text(
+      _at(columns.first, ['musicResponsiveListItemFlexColumnRenderer', 'text']),
+    );
   }
   return '';
 }
@@ -68,10 +75,10 @@ String _browseId(Map row) {
     _at(row, ['navigationEndpoint', 'browseEndpoint']),
     for (final value in [
       row['title'],
-      if (row['flexColumns'] is List &&
-          (row['flexColumns'] as List).isNotEmpty)
+      if (row['flexColumns'] is List && (row['flexColumns'] as List).isNotEmpty)
         _at((row['flexColumns'] as List).first, [
-          'musicResponsiveListItemFlexColumnRenderer', 'text',
+          'musicResponsiveListItemFlexColumnRenderer',
+          'text',
         ]),
     ])
       if (value is Map && value['runs'] is List)
@@ -91,7 +98,8 @@ List<String> youtubeArtistChannelCandidates(Object? response, String artist) {
   final requested = recommendationKey(artist);
   final ids = <String>[];
   _walkMaps(response, (node) {
-    final row = node['musicTwoRowItemRenderer'] ??
+    final row =
+        node['musicTwoRowItemRenderer'] ??
         node['musicResponsiveListItemRenderer'];
     if (row is! Map) return;
     final name = _columnTitle(row);
@@ -102,21 +110,32 @@ List<String> youtubeArtistChannelCandidates(Object? response, String artist) {
   return ids.take(2).toList();
 }
 
-typedef _Shelf = ({Object? contents, LokalReleaseKind kind, List<({String id, String? params})> more});
+typedef _Shelf = ({
+  Object? contents,
+  LokalReleaseKind kind,
+  List<({String id, String? params})> more,
+});
 
 List<_Shelf> _releaseShelves(Object? root) {
   final shelves = <_Shelf>[];
   _walkMaps(root, (node) {
     final shelf = node['musicCarouselShelfRenderer'];
     if (shelf is! Map) return;
-    final name = recommendationKey(_text(_at(shelf, [
-      'header', 'musicCarouselShelfBasicHeaderRenderer', 'title',
-    ])));
+    final name = recommendationKey(
+      _text(
+        _at(shelf, [
+          'header',
+          'musicCarouselShelfBasicHeaderRenderer',
+          'title',
+        ]),
+      ),
+    );
     final kind = switch (name) {
       'albums' => LokalReleaseKind.album,
       'eps' || 'ep' => LokalReleaseKind.ep,
-      'singles' || 'singles and eps' || 'singles eps' =>
-        LokalReleaseKind.single,
+      'singles' ||
+      'singles and eps' ||
+      'singles eps' => LokalReleaseKind.single,
       _ => null,
     };
     if (kind == null) return;
@@ -125,8 +144,10 @@ List<_Shelf> _releaseShelves(Object? root) {
       final endpoint = header['browseEndpoint'];
       if (endpoint is! Map) return;
       final id = endpoint['browseId'];
-      if (id is String && id.startsWith('MPRE') == false &&
-          id.isNotEmpty && id.length < 150) {
+      if (id is String &&
+          id.startsWith('MPRE') == false &&
+          id.isNotEmpty &&
+          id.length < 150) {
         final params = endpoint['params'];
         if (!more.any((value) => value.id == id)) {
           more.add((id: id, params: params is String ? params : null));
@@ -143,7 +164,8 @@ List<_Shelf> _releaseShelves(Object? root) {
 }
 
 List<LokalCatalogueAlbum> parseYoutubeArtistChannelReleases(
-  Object? root, String artist,
+  Object? root,
+  String artist,
 ) {
   final releases = <LokalCatalogueAlbum>[];
   final seen = <String>{};
@@ -154,28 +176,37 @@ List<LokalCatalogueAlbum> parseYoutubeArtistChannelReleases(
       if (!catalogueArtistCredit(credited, artist)) continue;
       final key = recommendationKey(album.title);
       if (key.isEmpty || !seen.add(key)) continue;
-      releases.add(LokalCatalogueAlbum(
-        title: album.title,
-        artist: credited,
-        artwork: album.artworkUrl,
-        url: album.url,
-        releaseKind: !cataloguePrimaryArtist(credited, artist)
-            ? LokalReleaseKind.feature : shelf.kind,
-      ));
+      releases.add(
+        LokalCatalogueAlbum(
+          title: album.title,
+          artist: credited,
+          artwork: album.artworkUrl,
+          url: album.url,
+          releaseKind: !cataloguePrimaryArtist(credited, artist)
+              ? LokalReleaseKind.feature
+              : shelf.kind,
+        ),
+      );
     }
   }
   // Channel songs can advertise a release absent from the visible carousel.
   for (final song in parseYoutubeMusicTracks(root, limit: 50)) {
-    final album = song.album?.trim() ?? '';
-    if (album.isEmpty || !catalogueArtistCredit(song.artist, artist) ||
-        !seen.add(recommendationKey(album))) continue;
-    releases.add(LokalCatalogueAlbum(
-      title: album,
-      artist: song.artist,
-      artwork: song.artworkUrl,
-      releaseKind: !cataloguePrimaryArtist(song.artist, artist)
-          ? LokalReleaseKind.feature : null,
-    ));
+    final album = song.album.trim();
+    if (album.isEmpty ||
+        !catalogueArtistCredit(song.artist, artist) ||
+        !seen.add(recommendationKey(album))) {
+      continue;
+    }
+    releases.add(
+      LokalCatalogueAlbum(
+        title: album,
+        artist: song.artist,
+        artwork: song.artworkUrl,
+        releaseKind: !cataloguePrimaryArtist(song.artist, artist)
+            ? LokalReleaseKind.feature
+            : null,
+      ),
+    );
   }
   return releases;
 }
@@ -195,7 +226,9 @@ Future<List<LokalCatalogueAlbum>> loadYoutubeArtistReleases(
   for (final id in candidates) {
     if (DateTime.now().isAfter(deadline)) break;
     try {
-      final root = await catalogue.rawBrowse(id).timeout(const Duration(seconds: 8));
+      final root = await catalogue
+          .rawBrowse(id)
+          .timeout(const Duration(seconds: 8));
       final parsed = parseYoutubeArtistChannelReleases(root, artist);
       if (parsed.isEmpty) continue;
       final seen = parsed.map((item) => recommendationKey(item.title)).toSet();
@@ -208,27 +241,40 @@ Future<List<LokalCatalogueAlbum>> loadYoutubeArtistReleases(
             final remaining = deadline.difference(DateTime.now());
             final page = await catalogue
                 .rawBrowse(more.id, params: more.params)
-                .timeout(remaining < const Duration(seconds: 6)
-                    ? remaining : const Duration(seconds: 6));
+                .timeout(
+                  remaining < const Duration(seconds: 6)
+                      ? remaining
+                      : const Duration(seconds: 6),
+                );
             for (final release in parseYoutubeMusicAlbums(page)) {
               final credited = release.artist.trim().isEmpty
-                  ? artist : release.artist;
+                  ? artist
+                  : release.artist;
               if (!catalogueArtistCredit(credited, artist) ||
-                  !seen.add(recommendationKey(release.title))) continue;
-              all.add(LokalCatalogueAlbum(
-                title: release.title,
-                artist: credited,
-                artwork: release.artworkUrl,
-                url: release.url,
-                releaseKind: !cataloguePrimaryArtist(credited, artist)
-                    ? LokalReleaseKind.feature : shelf.kind,
-              ));
+                  !seen.add(recommendationKey(release.title))) {
+                continue;
+              }
+              all.add(
+                LokalCatalogueAlbum(
+                  title: release.title,
+                  artist: credited,
+                  artwork: release.artworkUrl,
+                  url: release.url,
+                  releaseKind: !cataloguePrimaryArtist(credited, artist)
+                      ? LokalReleaseKind.feature
+                      : shelf.kind,
+                ),
+              );
             }
-          } catch (_) { /* Keep the verified artist releases already loaded. */ }
+          } catch (_) {
+            /* Keep the verified artist releases already loaded. */
+          }
         }
       }
       return all;
-    } catch (_) { /* Try another exact-named channel, if available. */ }
+    } catch (_) {
+      /* Try another exact-named channel, if available. */
+    }
   }
   return const [];
 }

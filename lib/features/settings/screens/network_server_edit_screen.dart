@@ -21,6 +21,7 @@ import 'package:flick/l10n/l10n.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
+import 'package:flick/widgets/common/ios_transfer_root.dart';
 
 /// Add or edit a network server. All registered protocols are selectable;
 /// each dispatches test/sync/stream through [networkSourceServiceFor].
@@ -111,6 +112,7 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
   bool _testing = false;
   bool? _testPassed;
   String? _testError;
+  String? _removeError;
   String? _certificateCandidateFingerprint;
   String? _certificateCandidateUrl;
 
@@ -159,8 +161,10 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
 
   static String? _safeOrigin(String url) {
     final uri = Uri.tryParse(url);
-    if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') ||
-        uri.host.isEmpty) return null;
+    if (uri == null ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.isEmpty)
+      return null;
     return uri.origin;
   }
 
@@ -258,7 +262,8 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
         if (!ok && _selectedProtocol == NetworkProtocol.webdav) {
           final dav = WebdavService.instance;
           if (_safeOrigin(entity.baseUrl) == dav.untrustedCertificateOrigin) {
-            _certificateCandidateFingerprint = dav.untrustedCertificateFingerprint;
+            _certificateCandidateFingerprint =
+                dav.untrustedCertificateFingerprint;
             _certificateCandidateUrl = _urlController.text.trim();
           }
         }
@@ -317,18 +322,18 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
     final approvedFingerprint = _certificateCandidateFingerprint;
     if (_selectedProtocol != NetworkProtocol.webdav ||
         approvedFingerprint == null ||
-        _certificateCandidateUrl != _urlController.text.trim()) return;
+        _certificateCandidateUrl != _urlController.text.trim())
+      return;
     setState(() {
       _testing = true;
       _testError = null;
     });
     try {
       final token = await _resolvePersistedToken();
-      final ok = await WebdavService.instance
-          .trustPresentedCertificate(
-            _draftEntity(token: token),
-            approvedFingerprint: approvedFingerprint,
-          );
+      final ok = await WebdavService.instance.trustPresentedCertificate(
+        _draftEntity(token: token),
+        approvedFingerprint: approvedFingerprint,
+      );
       if (!mounted) return;
       setState(() {
         _testing = false;
@@ -337,8 +342,7 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
           _certificateCandidateFingerprint = null;
           _certificateCandidateUrl = null;
         }
-        if (!ok) _testError = WebdavService.instance.lastPingError ??
-            'The certificate was not trusted because the WebDAV check failed.';
+        if (!ok) _testError = WebdavService.instance.lastPingError ?? 'The certificate was not trusted because the WebDAV check failed.';
       });
     } catch (e) {
       if (!mounted) return;
@@ -399,19 +403,37 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
       confirmLabel: l10n.delete,
       destructive: true,
     );
-    if (!confirmed) return;
-    if (server.protocol == NetworkProtocol.jellyfin) {
-      await JellyfinService.instance.forgetPassword(server.id);
-    }
-    await Database.instance.writeTxn(() async {
-      await Database.networkServers.delete(server.id);
+    if (!confirmed || !mounted || _saving) return;
+    setState(() {
+      _saving = true;
+      _removeError = null;
     });
-    await SongRepository().deleteSongsForRemoteServer(server.id);
-    await PlaylistService.instance.removeNetworkPlaylistsForServer(
-      '${server.id}',
-    );
-    if (!mounted) return;
-    Navigator.of(context).pop(true);
+    try {
+      // Removing a server also purges its downloaded library rows and linked
+      // playlists. Stop the iPhone native import owner before any of those
+      // mutations (including credential revocation) become visible.
+      await IosTransferRoot.withMutationBarrier(context, () async {
+        if (server.protocol == NetworkProtocol.jellyfin) {
+          await JellyfinService.instance.forgetPassword(server.id);
+        }
+        await Database.instance.writeTxn(() async {
+          await Database.networkServers.delete(server.id);
+        });
+        await SongRepository().deleteSongsForRemoteServer(server.id);
+        await PlaylistService.instance.removeNetworkPlaylistsForServer(
+          '${server.id}',
+        );
+      });
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _removeError =
+            'Server removal could not finish. Check library transfer '
+            'recovery and try again.';
+      });
+    }
   }
 
   IconData get _testIcon => _testPassed == null
@@ -540,7 +562,8 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
               children: [
                 LokalSettingsNotice(
                   warning: true,
-                  text: 'Self-signed HTTPS certificate on '
+                  text:
+                      'Self-signed HTTPS certificate on '
                       '${WebdavService.instance.untrustedCertificateOrigin}. '
                       'Verify its SHA-256 fingerprint independently before '
                       'approving it for this NAS only: '
@@ -578,6 +601,11 @@ class _NetworkServerEditScreenState extends State<NetworkServerEditScreen> {
               expand: true,
               onPressed: _saving ? null : _delete,
             ),
+          ),
+        if (_removeError != null)
+          LokalSettingsBlock(
+            top: 10,
+            child: LokalSettingsNotice(warning: true, text: _removeError!),
           ),
       ],
     );

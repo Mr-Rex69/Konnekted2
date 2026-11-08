@@ -757,3 +757,7 @@ independent metadata failures; missing covers use verified Deezer/iTunes fallbac
 Search categories are single-choice with an explicit All reset and separate
 Library/Online scopes. Online artist/album results open their catalogue pages.
 See `docs/SEARCH_AND_ALBUM_LOOKUP.md` for validation and remaining test limits.
+
+## iPhone integration
+
+The unsigned iPhone beta and its release evidence are documented in [IOS_PORT.md](IOS_PORT.md) and [IOS_SIDELOADING.md](IOS_SIDELOADING.md). The current merge with Android main has separate qualification gates; see [IOS_MAIN_INTEGRATION.md](IOS_MAIN_INTEGRATION.md). Signing and physical-iPhone acceptance remain outstanding.

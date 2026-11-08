@@ -6,10 +6,13 @@ import 'package:path_provider/path_provider.dart';
 import 'entities/artist_entity.dart';
 import 'entities/link_event_entities.dart';
 import 'entities/folder_entity.dart';
+import 'entities/ios_transfer_receipt_entity.dart';
+import 'entities/ios_song_identity_entity.dart';
 import 'entities/network_server_entity.dart';
 import 'entities/recently_played_entity.dart';
 import 'entities/song_audio_cache_entity.dart';
 import 'entities/song_entity.dart';
+import '../services/ios_transfer_song_identity.dart';
 
 export 'entities/artist_entity.dart';
 export 'entities/link_event_entities.dart';
@@ -37,7 +40,25 @@ class Database {
   static Future<void> init() async {
     if (_instance != null) return;
 
-    final dir = await getApplicationDocumentsDirectory();
+    // Music is exposed through Files on iPhone. Keep database internals in
+    // Application Support so file sharing cannot accidentally edit the store.
+    final dir = Platform.isIOS
+        ? await getApplicationSupportDirectory()
+        : await getApplicationDocumentsDirectory();
+    File? migratedLegacy;
+    if (Platform.isIOS) {
+      final documents = await getApplicationDocumentsDirectory();
+      final legacy = File('${documents.path}/$_databaseName.isar');
+      final current = File('${dir.path}/$_databaseName.isar');
+      if (!await current.exists() && await legacy.exists()) {
+        await dir.create(recursive: true);
+        final staging = File('${current.path}.migrating');
+        await legacy.copy(staging.path);
+        await staging.rename(current.path);
+        migratedLegacy = legacy;
+        // Keep the original until the migrated database opens successfully.
+      }
+    }
     final schemas = [
       SongEntitySchema,
       FolderEntitySchema,
@@ -47,15 +68,36 @@ class Database {
       NetworkServerEntitySchema,
       PlayEventEntitySchema,
       LibraryOpEntitySchema,
+      // Private import recovery state; never exported through the peer journal.
+      if (Platform.isIOS) IosTransferReceiptEntitySchema,
+      if (Platform.isIOS) IosSongIdentityEntitySchema,
     ];
 
     try {
-      _instance = await Isar.open(
+      final opened = await Isar.open(
         schemas,
         directory: dir.path,
         name: _databaseName,
+        // A native import may acknowledge its receipt only after Isar commits
+        // durable truth. Other platforms retain their existing default mode.
+        relaxedDurability: !Platform.isIOS,
       );
+      try {
+        if (Platform.isIOS) {
+          await opened.writeTxn(() async {
+            if (await opened.iosSongIdentityEntitys.count() == 0) {
+              await retainIosImportSongIdentitiesInTransaction(opened, []);
+            }
+          });
+        }
+        // Publish only after the old library's identity floor is durable.
+        _instance = opened;
+      } catch (_) {
+        await opened.close();
+        rethrow;
+      }
     } on IsarError catch (e) {
+      if (Platform.isIOS) rethrow;
       if (e.message.contains('MDBX_INCOMPATIBLE')) {
         await _deleteDatabaseFiles(dir.path);
         await _clearFingerprintCache(dir.path);
@@ -66,6 +108,16 @@ class Database {
         );
       } else {
         rethrow;
+      }
+    }
+    if (migratedLegacy != null) {
+      final backup = File(
+        '${dir.path}/$_databaseName.pre-storage-migration.isar',
+      );
+      try {
+        if (!await backup.exists()) await migratedLegacy.rename(backup.path);
+      } on FileSystemException {
+        // Retain the original backup if moving it fails; never delete it.
       }
     }
   }

@@ -75,8 +75,6 @@ Duration desktopNotificationDuration(LokalRemoteSnapshot snapshot) {
   return Duration(milliseconds: (seconds * 1000).round());
 }
 
-
-
 /// A passive paired socket may be suspended to conserve resources. An active
 /// remote-control session must not be treated as idle merely because the phone
 /// itself is not playing: the desktop owns playback in that mode.
@@ -154,6 +152,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   var _shouldPoll = false;
   var _failures = 0;
   var _generation = 0;
+  var _configurationRevision = 0;
   var _disposed = false;
 
   @override
@@ -192,11 +191,15 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<void> _restore() async {
+    final revision = _configurationRevision;
     try {
       final credentials = await ref
           .read(lokalRemoteCredentialsStoreProvider)
           .read();
-      if (_disposed || credentials == null) return;
+      if (_disposed ||
+          revision != _configurationRevision ||
+          credentials == null)
+        return;
       _credentials = credentials;
       state = state.copyWith(
         config: LokalRemoteConfig.fromCredentials(credentials),
@@ -209,7 +212,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
         });
       }
     } catch (_) {
-      if (!_disposed) {
+      if (!_disposed && revision == _configurationRevision) {
         state = state.copyWith(
           status: LokalRemoteConnectionStatus.unconfigured,
           error: 'Saved Lokal remote settings could not be read.',
@@ -228,7 +231,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     required String remoteToken,
     required String apiKey,
   }) async {
+    final revision = ++_configurationRevision;
     await _ensureRestored();
+    if (_disposed || revision != _configurationRevision) return;
     disconnect();
     final normalized = LokalRemoteService.normalizeOrigin(origin);
     final credentials = LokalRemoteCredentials(
@@ -237,7 +242,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       apiKey: apiKey.trim(),
     );
     await ref.read(lokalRemoteCredentialsStoreProvider).write(credentials);
-    if (_disposed) return;
+    if (_disposed || revision != _configurationRevision) return;
     _generation++;
     _shouldPoll = false;
     _pollTimer?.cancel();
@@ -248,10 +253,21 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     );
   }
 
-  Future<void> forgetConfiguration() async {
+  Future<void> forgetConfiguration({
+    required LokalRemoteCredentials? expected,
+  }) async {
+    final revision = ++_configurationRevision;
+    await _ensureRestored();
+    if (_disposed || revision != _configurationRevision) {
+      throw StateError('Desktop pairing changed. Refresh and retry.');
+    }
+    // Read/compare/clear is serialized with writes by the same credential
+    // store. A stale confirmation cannot erase a newly-paired desktop.
+    await ref
+        .read(lokalRemoteCredentialsStoreProvider)
+        .clearIfMatching(expected);
+    if (_disposed || revision != _configurationRevision) return;
     disconnect();
-    await ref.read(lokalRemoteCredentialsStoreProvider).clear();
-    if (_disposed) return;
     _generation++;
     _shouldPoll = false;
     _pollTimer?.cancel();
@@ -399,7 +415,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     String? expectedDesktopId,
     bool syncTheme = false,
   }) async {
+    final revision = ++_configurationRevision;
     await _ensureRestored();
+    if (_disposed || revision != _configurationRevision) return;
     final credentials = await ref
         .read(lokalLinkServiceProvider)
         .pair(
@@ -407,10 +425,13 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           code: code,
           expectedDesktopId: expectedDesktopId,
         );
+    if (_disposed || revision != _configurationRevision) return;
     disconnect();
     await ref.read(lokalRemoteCredentialsStoreProvider).write(credentials);
+    if (_disposed || revision != _configurationRevision) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('lokal.link.${credentials.desktopId}.theme', syncTheme);
+    if (_disposed || revision != _configurationRevision) return;
     _credentials = credentials;
     ref.invalidate(linkedDesktopProfileProvider);
     state = LokalRemoteControllerState(
@@ -531,9 +552,11 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       await PlayerService().pause();
     }
     if (_disposed) return;
-    state = state.copyWith(controlsDesktop: value,
+    state = state.copyWith(
+      controlsDesktop: value,
       clearRemoteArtwork: !value,
-      clearArtworkServer: !value);
+      clearArtworkServer: !value,
+    );
     if (!value) {
       NotificationService().release(_notificationOwner);
       _notificationTrack = null;
@@ -555,12 +578,18 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   /// its current song has no cover. Queue rows require a resolvable server ID.
   Future<void> _registerRemoteArtworkSource() async {
     final credentials = _credentials;
-    if (credentials == null || credentials.desktopId == null ||
-        !Database.isInitialized) return;
+    if (credentials == null ||
+        credentials.desktopId == null ||
+        !Database.isInitialized)
+      return;
     final generation = _generation;
     try {
-      final server = await LokalDesktopSource.instance.ensureServer(credentials);
-      if (!_disposed && state.controlsDesktop && generation == _generation &&
+      final server = await LokalDesktopSource.instance.ensureServer(
+        credentials,
+      );
+      if (!_disposed &&
+          state.controlsDesktop &&
+          generation == _generation &&
           identical(_credentials, credentials)) {
         state = state.copyWith(artworkServerId: server.id);
       }
@@ -588,11 +617,13 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           'The paired desktop library command is unavailable.',
         );
       }
-      await ref.read(lokalRemoteServiceProvider).sendLibraryCommand(
-        credentials,
-        action,
-        Map<String, dynamic>.from(value),
-      );
+      await ref
+          .read(lokalRemoteServiceProvider)
+          .sendLibraryCommand(
+            credentials,
+            action,
+            Map<String, dynamic>.from(value),
+          );
       return;
     }
     final actions = LokalRemoteAction.values.where(
@@ -864,7 +895,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           !state.socketConnected ||
           coordinator == null ||
           !ref.read(lokalLinkServiceProvider).connected) {
-        throw StateError('Desktop disconnected before library sync. Reconnect and retry.');
+        throw StateError(
+          'Desktop disconnected before library sync. Reconnect and retry.',
+        );
       }
       await coordinator.synchronize();
       if (_disposed ||
@@ -872,7 +905,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           !state.socketConnected ||
           !ref.read(lokalLinkServiceProvider).connected ||
           !identical(_linkSync, coordinator)) {
-        throw StateError('Desktop disconnected during library sync. Reconnect and retry.');
+        throw StateError(
+          'Desktop disconnected during library sync. Reconnect and retry.',
+        );
       }
     } catch (_) {
       if (!_disposed && generation == _generation) {
@@ -1057,7 +1092,11 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     await sendRawCommand('fadePause');
   }
 
-  Future<void> _receiveHandoff(Map<String, dynamic> value) async {
+  Future<void> _receiveHandoff(Map<String, dynamic> value) => LokalDesktopSource
+      .instance
+      .runLibraryTransfer(() => _receiveHandoffTracked(value));
+
+  Future<void> _receiveHandoffTracked(Map<String, dynamic> value) async {
     final raw = value['queue'], index = value['index'];
     if (raw is! List ||
         raw.isEmpty ||
@@ -1172,8 +1211,8 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       final server = await LokalDesktopSource.instance.ensureServer(
         credentials,
       );
-      if (_disposed || !state.controlsDesktop ||
-          _notificationArtworkKey != key) return;
+      if (_disposed || !state.controlsDesktop || _notificationArtworkKey != key)
+        return;
       if (state.artworkServerId != server.id) {
         state = state.copyWith(artworkServerId: server.id);
       }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flick/features/settings/widgets/battery_optimization_setting.dart';
 import 'package:flick/features/settings/widgets/eco_data_mode_toggle.dart';
 import 'package:flick/features/settings/library_scan/library_scan_flow.dart';
@@ -16,6 +17,7 @@ import 'package:flick/features/settings/widgets/lastfm_settings_tile.dart';
 import 'package:flick/features/settings/widgets/listenbrainz_settings_tile.dart';
 
 import 'dart:async';
+import 'dart:io';
 
 import '../../../link/lokal_desktop_link_screen.dart';
 
@@ -30,6 +32,7 @@ import 'package:flick/services/alac_converter_service.dart';
 import 'package:flick/services/album_art_service.dart';
 import 'package:flick/services/playback_cache_preferences_service.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
+import 'package:flick/widgets/common/ios_transfer_root.dart';
 
 /// Bumped after a cache changes, so the sizes shown measure again.
 final _cacheChanged = ValueNotifier<int>(0);
@@ -96,12 +99,18 @@ List<LokalSettingsSection> dataSettings(
   LokalSettingsSection(
     title: LokalDataSections.accounts,
     children: [
-      LokalSettingCustom(
-        label: lokalText('Soulseek'),
-        description: lokalText('Search, download and optionally share your main music folder.'),
-        child: const SoulseekAccountSettingsTile(),
-      ),
-      // Keep Spotify sign-in and likes sync together as the first Data control.
+      if (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)
+        LokalSettingCustom(
+          label: lokalText('Soulseek'),
+          description: lokalText(
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? 'Search, download and optionally share your main music folder while Lokal is open.'
+                : 'Search, download and optionally share your main music folder.',
+          ),
+          child: const SoulseekAccountSettingsTile(),
+        ),
+      // Keep Spotify sign-in and likes sync together.
       LokalSettingCustom(
         label: lokalText('Spotify'),
         description: lokalText(
@@ -148,20 +157,19 @@ List<LokalSettingsSection> dataSettings(
   ),
   LokalSettingsSection(
     title: lokalText('Mobile data'),
-    children: const [
-      EcoDataModeToggle(),
-    ],
+    children: const [EcoDataModeToggle()],
   ),
-  LokalSettingsSection(
-    title: lokalText('Background'),
-    children: const [
-      LokalSettingCustom(
-        label: 'Battery optimization',
-        description: 'Allow background playback, scans and file transfers.',
-        child: BatteryOptimizationSetting(),
-      ),
-    ],
-  ),
+  if (Platform.isAndroid)
+    LokalSettingsSection(
+      title: lokalText('Background'),
+      children: const [
+        LokalSettingCustom(
+          label: 'Battery optimization',
+          description: 'Allow background playback, scans and file transfers.',
+          child: BatteryOptimizationSetting(),
+        ),
+      ],
+    ),
   LokalSettingsSection(
     title: lokalText('Library tools'),
     children: [
@@ -288,7 +296,10 @@ List<LokalSettingsSection> dataSettings(
             );
             if (!ok || !context.mounted) return;
             try {
-              await SongRepository().deleteAllSongs();
+              await IosTransferRoot.withLibraryClearBarrier(
+                context,
+                () => SongRepository().deleteAllSongs(),
+              );
               if (context.mounted) _say(context, 'Library cleared.');
             } catch (error) {
               if (context.mounted) {

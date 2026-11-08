@@ -63,23 +63,28 @@ void main() {
     expect(restored.query, 'music');
   });
 
-  testWidgets('Library and playlist views restore distinct saved directions',
-      (tester) async {
+  testWidgets('Library and playlist views restore distinct saved directions', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({
-      libraryKey: jsonEncode(const LokalSongBrowserViewSettings(
-        sort: LokalSongSort.title,
-        descending: true,
-        location: LokalSongLocation.all,
-        audioFilter: 'all',
-        query: '',
-      ).toJson()),
-      playlistKey: jsonEncode(const LokalSongBrowserViewSettings(
-        sort: LokalSongSort.original,
-        descending: false,
-        location: LokalSongLocation.all,
-        audioFilter: 'all',
-        query: '',
-      ).toJson()),
+      libraryKey: jsonEncode(
+        const LokalSongBrowserViewSettings(
+          sort: LokalSongSort.title,
+          descending: true,
+          location: LokalSongLocation.all,
+          audioFilter: 'all',
+          query: '',
+        ).toJson(),
+      ),
+      playlistKey: jsonEncode(
+        const LokalSongBrowserViewSettings(
+          sort: LokalSongSort.original,
+          descending: false,
+          location: LokalSongLocation.all,
+          audioFilter: 'all',
+          query: '',
+        ).toJson(),
+      ),
     });
     tester.view.physicalSize = const Size(420, 900);
     tester.view.devicePixelRatio = 1;
@@ -93,10 +98,12 @@ void main() {
     // Switching the criterion must preserve the descending selection.
     await tester.tap(find.byTooltip('Sort: Title'));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(
-      of: find.byType(BottomSheet),
-      matching: find.text('Artist'),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Artist'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byTooltip('Descending · switch to ascending'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
@@ -107,18 +114,20 @@ void main() {
     expect(savedLibrary!.sort, LokalSongSort.artist);
     expect(savedLibrary.descending, isTrue);
 
-    await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(browserPage(playlistKey));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Ascending · switch to descending'), findsOneWidget);
     expect(find.byTooltip('Sort: Playlist order'), findsOneWidget);
-    expect(LokalSongBrowserViewSettings.decode(
-      prefs.getString(libraryKey),
-    )!.descending, isTrue);
+    expect(
+      LokalSongBrowserViewSettings.decode(prefs.getString(libraryKey))!
+          .descending,
+      isTrue,
+    );
   });
 
-  testWidgets('reopening the same list restores newly saved direction',
-      (tester) async {
+  testWidgets('reopening the same list restores newly saved direction', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(420, 900);
     tester.view.devicePixelRatio = 1;

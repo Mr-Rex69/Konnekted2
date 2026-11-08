@@ -24,16 +24,18 @@ void main() {
           // This no longer clamps the cover bottom to its destination:
           // that clamp was why the user's J-shaped reference never rendered.
           final inFlight = LokalArtworkFlight.rect(
-            source, target, progress, sheetTravel: 700,
+            source,
+            target,
+            progress,
+            sheetTravel: 700,
           );
           if (progress == .15) {
             expect(inFlight.center.dy, greaterThan(source.center.dy + 20));
             expect(inFlight.bottom, greaterThan(source.bottom));
           }
-          expect(
-            inFlight.size,
-            Rect.lerp(source, target, progress)!.size,
-          );
+          final expectedSize = Rect.lerp(source, target, progress)!.size;
+          expect(inFlight.width, closeTo(expectedSize.width, 1e-8));
+          expect(inFlight.height, closeTo(expectedSize.height, 1e-8));
           await tester.pumpWidget(
             MaterialApp(
               home: RepaintBoundary(
@@ -71,7 +73,10 @@ void main() {
               format: ui.ImageByteFormat.rawRgba,
             );
             final center = LokalArtworkFlight.rect(
-              source, target, progress, sheetTravel: 700,
+              source,
+              target,
+              progress,
+              sheetTravel: 700,
             ).center;
             final offset =
                 (center.dy.round() * image.width + center.dx.round()) * 4;

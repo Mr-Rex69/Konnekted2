@@ -98,14 +98,14 @@ class _KonnektedDiscoveryViewState
       _shelfLayouts[source.name] ?? DiscoveryShelfLayout.defaults(source.name);
 
   List<Widget> _arranged(
-    KonnektedDiscoverySource source, Map<String, List<Widget>> shelves,
-  ) => [
-    for (final id in _layout(source).visible) ...?shelves[id],
-  ];
+    KonnektedDiscoverySource source,
+    Map<String, List<Widget>> shelves,
+  ) => [for (final id in _layout(source).visible) ...?shelves[id]];
 
   Future<void> _customize(KonnektedDiscoverySource source) async {
     final provider = source.name;
     var layout = _layout(source);
+    var saving = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -113,63 +113,94 @@ class _KonnektedDiscoveryViewState
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, update) => SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  lokalText(
-                    'Customize {arg0}',
-                    args: {
-                      'arg0': switch (source) {
-                        KonnektedDiscoverySource.youtube => 'YouTube',
-                        KonnektedDiscoverySource.lastfm => 'Last.fm',
-                        KonnektedDiscoverySource.spotify => 'Spotify',
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * .85,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    lokalText(
+                      'Customize {arg0}',
+                      args: {
+                        'arg0': switch (source) {
+                          KonnektedDiscoverySource.youtube => 'YouTube',
+                          KonnektedDiscoverySource.lastfm => 'Last.fm',
+                          KonnektedDiscoverySource.spotify => 'Spotify',
+                        },
                       },
-                    },
-                  ),
-                  style: Theme.of(sheetContext).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  lokalText('Choose sections to show and drag to reorder.'),
-                  style: TextStyle(color: sheetContext.lokal.muted),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: MediaQuery.sizeOf(sheetContext).height * .56,
-                  child: ReorderableListView(
-                    buildDefaultDragHandles: true,
-                    onReorder: (from, to) => update(
-                      () => layout = layout.moved(from, to),
                     ),
-                    children: [
-                      for (final id in layout.order)
-                        SwitchListTile(
-                          key: ValueKey(id),
-                          title: Text(lokalText(discoveryShelfTitles[id] ?? id)),
-                          secondary: const Icon(Icons.drag_handle_rounded),
-                          value: !layout.hidden.contains(id),
-                          onChanged: (show) => update(
-                            () => layout = layout.showing(id, show),
+                    style: Theme.of(sheetContext).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    lokalText('Choose sections to show and drag to reorder.'),
+                    style: TextStyle(color: sheetContext.lokal.muted),
+                  ),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ReorderableListView(
+                      shrinkWrap: true,
+                      buildDefaultDragHandles: true,
+                      onReorderItem: (from, to) => update(() {
+                        if (!saving) layout = layout.moved(from, to);
+                      }),
+                      children: [
+                        for (final id in layout.order)
+                          SwitchListTile(
+                            key: ValueKey(id),
+                            title: Text(
+                              lokalText(discoveryShelfTitles[id] ?? id),
+                            ),
+                            secondary: const Icon(Icons.drag_handle_rounded),
+                            value: !layout.hidden.contains(id),
+                            onChanged: saving
+                                ? null
+                                : (show) => update(
+                                    () => layout = layout.showing(id, show),
+                                  ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      setState(() => _shelfLayouts[provider] = layout);
-                      unawaited(_shelfStore.write(provider, layout));
-                      Navigator.of(sheetContext).pop();
-                    },
-                    child: Text(lokalText('Done')),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              update(() => saving = true);
+                              try {
+                                await _shelfStore.write(provider, layout);
+                                if (mounted) {
+                                  setState(
+                                    () => _shelfLayouts[provider] = layout,
+                                  );
+                                }
+                                if (sheetContext.mounted) {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              } catch (_) {
+                                if (sheetContext.mounted) {
+                                  update(() => saving = false);
+                                }
+                                if (mounted) {
+                                  _say(
+                                    lokalText(
+                                      'Could not save Discovery layout. Try again.',
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      child: Text(lokalText('Done')),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -178,7 +209,8 @@ class _KonnektedDiscoveryViewState
   }
 
   Widget _youtubeCategory(
-    LokalDiscoveryCategory category, KonnektedLibraryIndex library,
+    LokalDiscoveryCategory category,
+    KonnektedLibraryIndex library,
   ) {
     final entries = category.tracks;
     final expanded = _expandedCategory == category.id;
@@ -189,8 +221,8 @@ class _KonnektedDiscoveryViewState
           title: lokalText(discoveryShelfTitles[category.id] ?? category.id),
           onSeeAll: entries.length > 6
               ? () => setState(
-                    () => _expandedCategory = expanded ? null : category.id,
-                  )
+                  () => _expandedCategory = expanded ? null : category.id,
+                )
               : null,
           seeAllLabel: expanded ? 'Show less' : 'See all',
         ),
@@ -209,7 +241,8 @@ class _KonnektedDiscoveryViewState
             storageKey: 'youtube-${category.id}',
             mixes: category.mixes,
             busyId: _busy?.startsWith('mix:') == true
-                ? _busy!.substring(4) : null,
+                ? _busy!.substring(4)
+                : null,
             onTap: _playMix,
           ),
         if (category.albums.isNotEmpty)
@@ -239,9 +272,7 @@ class _KonnektedDiscoveryViewState
       setState(() => _open = _open == shelf ? null : shelf);
 
   /// What's being got ready, on one line updated in place.
-  late final _progress = LokalStatusSnack(
-    () => mounted ? context : null,
-  );
+  late final _progress = LokalStatusSnack(() => mounted ? context : null);
 
   @override
   void dispose() {
@@ -398,8 +429,11 @@ class _KonnektedDiscoveryViewState
       }
       final index = await player.addToQueue(song);
       if (next && index > 0) await player.moveQueueItemToNext(index);
-      _say(next ? '${track.title} plays next' :
-          'Added ${track.title} to the queue');
+      _say(
+        next
+            ? '${track.title} plays next'
+            : 'Added ${track.title} to the queue',
+      );
     } catch (_) {
       if (mounted) _say('Could not add ${track.title} to the queue.');
     }
@@ -412,10 +446,15 @@ class _KonnektedDiscoveryViewState
     _progress.update('Downloading ${track.title} to library…');
     try {
       final found = await widget.findSong(
-        track, onStatus: (text) { if (mounted) _progress.update(text); },
+        track,
+        onStatus: (text) {
+          if (mounted) _progress.update(text);
+        },
       );
-      if (found == null) throw const DiscoveryException(
-          'No playable source was found for this track.');
+      if (found == null)
+        throw const DiscoveryException(
+          'No playable source was found for this track.',
+        );
       if (OnlineSongSaveRegistry.instance.canSave(found)) {
         await OnlineSongSaveRegistry.instance.save(found);
       } else {
@@ -423,27 +462,35 @@ class _KonnektedDiscoveryViewState
       }
       if (mounted) _say('Saved ${track.title} to your library');
     } catch (error) {
-      if (mounted) _say('Could not save ${track.title}. Check your connection or source and retry.');
+      if (mounted)
+        _say(
+          'Could not save ${track.title}. Check your connection or source and retry.',
+        );
     } finally {
       if (mounted) setState(() => _busy = null);
     }
   }
 
   Future<void> _actions(
-    LokalDiscoveryTrack track, List<LokalDiscoveryTrack> shelf,
+    LokalDiscoveryTrack track,
+    List<LokalDiscoveryTrack> shelf,
   ) async {
     HapticFeedback.mediumImpact();
-    final result = OnlineResult(DiscoveryTrack(
-      id: track.videoId ?? track.key,
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      duration: track.duration,
-      artwork: track.artworkUrl,
-      source: DiscoverySource.youtubeMusic,
-    ));
+    final result = OnlineResult(
+      DiscoveryTrack(
+        id: track.videoId ?? track.key,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration,
+        artwork: track.artworkUrl,
+        source: DiscoverySource.youtubeMusic,
+      ),
+    );
     final action = await showOnlineResultActions(
-      context, result: result, sourceName: 'Discovery',
+      context,
+      result: result,
+      sourceName: 'Discovery',
       saving: _busy == 'save:${track.key}',
     );
     if (!mounted || action == null) return;
@@ -511,10 +558,13 @@ class _KonnektedDiscoveryViewState
     // Hidden account/history shelves must not count as visible recommendations.
     final hasRecommendations = source == KonnektedDiscoverySource.lastfm
         ? albums.isNotEmpty || artists.isNotEmpty || fresh.isNotEmpty
-        : mixes.isNotEmpty || artists.isNotEmpty || fresh.isNotEmpty ||
-            quick.isNotEmpty ||
-            (data?.categories ?? const <LokalDiscoveryCategory>[])
-                .any((category) => !category.isEmpty);
+        : mixes.isNotEmpty ||
+              artists.isNotEmpty ||
+              fresh.isNotEmpty ||
+              quick.isNotEmpty ||
+              (data?.categories ?? const <LokalDiscoveryCategory>[]).any(
+                (category) => !category.isEmpty,
+              );
 
     Widget tracks(_Shelf shelf, List<LokalDiscoveryTrack> items) => Column(
       children: [
@@ -649,8 +699,10 @@ class _KonnektedDiscoveryViewState
         ..._arranged(source, <String, List<Widget>>{
           if (source == KonnektedDiscoverySource.lastfm && albums.isNotEmpty)
             'albums': [
-              KonnektedSectionHeading(title: lokalText('Albums For You'),
-                icon: Icons.album_rounded),
+              KonnektedSectionHeading(
+                title: lokalText('Albums For You'),
+                icon: Icons.album_rounded,
+              ),
               _AlbumShelf(
                 albums: albums,
                 onTap: (album) => pushLokal(
@@ -661,8 +713,10 @@ class _KonnektedDiscoveryViewState
                     localSongs: _library().album(album.title, album.artist),
                     initialOnline: true,
                     release: LokalCatalogueAlbum(
-                      title: album.title, artist: album.artist,
-                      artwork: album.artworkUrl, url: album.url,
+                      title: album.title,
+                      artist: album.artist,
+                      artwork: album.artworkUrl,
+                      url: album.url,
                     ),
                   ),
                 ),
@@ -670,33 +724,47 @@ class _KonnektedDiscoveryViewState
             ],
           if (source == KonnektedDiscoverySource.youtube && mixes.isNotEmpty)
             'mixes': [
-              KonnektedSectionHeading(title: lokalText('Mixed for you'),
-                icon: Icons.queue_music_rounded),
+              KonnektedSectionHeading(
+                title: lokalText('Mixed for you'),
+                icon: Icons.queue_music_rounded,
+              ),
               _MixShelf(
                 mixes: mixes,
                 busyId: _busy?.startsWith('mix:') == true
-                    ? _busy!.substring(4) : null,
+                    ? _busy!.substring(4)
+                    : null,
                 onTap: _playMix,
               ),
             ],
           if (fresh.isNotEmpty &&
               (source != KonnektedDiscoverySource.youtube ||
-                  (data?.categories ?? const <LokalDiscoveryCategory>[]).isEmpty))
+                  (data?.categories ?? const <LokalDiscoveryCategory>[])
+                      .isEmpty))
             'fresh': [
-              heading(_Shelf.fresh, 'Fresh Finds',
-                  Icons.music_note_rounded, fresh.length),
+              heading(
+                _Shelf.fresh,
+                'Fresh Finds',
+                Icons.music_note_rounded,
+                fresh.length,
+              ),
               tracks(_Shelf.fresh, fresh),
             ],
           if (source == KonnektedDiscoverySource.youtube && quick.isNotEmpty)
             'quick': [
-              heading(_Shelf.quick, 'Quick Picks',
-                  Icons.auto_awesome_rounded, quick.length),
+              heading(
+                _Shelf.quick,
+                'Quick Picks',
+                Icons.auto_awesome_rounded,
+                quick.length,
+              ),
               tracks(_Shelf.quick, quick),
             ],
           if (artists.isNotEmpty)
             'artists': [
-              KonnektedSectionHeading(title: lokalText('Artists For You'),
-                icon: Icons.person_rounded),
+              KonnektedSectionHeading(
+                title: lokalText('Artists For You'),
+                icon: Icons.person_rounded,
+              ),
               _ArtistShelf(
                 artists: artists,
                 onTap: (artist) => pushLokal(
@@ -710,8 +778,8 @@ class _KonnektedDiscoveryViewState
               ),
             ],
           if (source == KonnektedDiscoverySource.youtube)
-            for (final category in data?.categories ??
-                const <LokalDiscoveryCategory>[])
+            for (final category
+                in data?.categories ?? const <LokalDiscoveryCategory>[])
               if (!category.isEmpty)
                 category.id: [_youtubeCategory(category, library)],
         }),
@@ -719,8 +787,10 @@ class _KonnektedDiscoveryViewState
             data?.mixError != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-            child: Text(data!.mixError!,
-              style: TextStyle(fontSize: 12, color: t.muted)),
+            child: Text(
+              data!.mixError!,
+              style: TextStyle(fontSize: 12, color: t.muted),
+            ),
           ),
       ],
     );
@@ -737,10 +807,14 @@ class _KonnektedDiscoveryViewState
     final fresh = data?.freshFinds ?? const <LokalDiscoveryTrack>[];
     final quick = data?.quickPicks ?? const <LokalDiscoveryTrack>[];
     final history = data?.recentlyPlayed ?? const <LokalDiscoveryTrack>[];
-    final hasRecommendations = data != null && (
-        data.mixes.isNotEmpty || data.freshFinds.isNotEmpty ||
-        data.quickPicks.isNotEmpty || data.recentlyPlayed.isNotEmpty ||
-        data.albums.isNotEmpty || data.artists.isNotEmpty);
+    final hasRecommendations =
+        data != null &&
+        (data.mixes.isNotEmpty ||
+            data.freshFinds.isNotEmpty ||
+            data.quickPicks.isNotEmpty ||
+            data.recentlyPlayed.isNotEmpty ||
+            data.albums.isNotEmpty ||
+            data.artists.isNotEmpty);
 
     Widget tracks(_Shelf shelf, List<LokalDiscoveryTrack> items) => Column(
       children: [
@@ -783,7 +857,9 @@ class _KonnektedDiscoveryViewState
           onCustomize: (provider) => unawaited(_customize(provider)),
           onRefresh: () {
             HapticFeedback.selectionClick();
-            unawaited(ref.read(konnektedSpotifyDiscoveryProvider.notifier).refresh());
+            unawaited(
+              ref.read(konnektedSpotifyDiscoveryProvider.notifier).refresh(),
+            );
           },
         ),
         if (snapshot.hasError)
@@ -844,8 +920,7 @@ class _KonnektedDiscoveryViewState
             ),
             icon: Icons.auto_awesome_rounded,
           ),
-        ..._arranged(KonnektedDiscoverySource.spotify,
-            <String, List<Widget>>{
+        ..._arranged(KonnektedDiscoverySource.spotify, <String, List<Widget>>{
           if (data != null && data.mixes.isNotEmpty)
             'mixes': [
               KonnektedSectionHeading(
@@ -856,37 +931,54 @@ class _KonnektedDiscoveryViewState
                 storageKey: 'spotify-mixes',
                 mixes: data.mixes,
                 busyId: _busy?.startsWith('mix:') == true
-                    ? _busy!.substring(4) : null,
+                    ? _busy!.substring(4)
+                    : null,
                 onTap: (mix) => unawaited(_playMix(mix, spotify: true)),
               ),
             ],
           if (fresh.isNotEmpty)
             'fresh': [
-              heading(_Shelf.fresh, 'Fresh Finds',
-                  Icons.music_note_rounded, fresh.length),
+              heading(
+                _Shelf.fresh,
+                'Fresh Finds',
+                Icons.music_note_rounded,
+                fresh.length,
+              ),
               tracks(_Shelf.fresh, fresh),
             ],
           if (quick.isNotEmpty)
             'quick': [
-              heading(_Shelf.quick, 'Quick Picks',
-                  Icons.auto_awesome_rounded, quick.length),
+              heading(
+                _Shelf.quick,
+                'Quick Picks',
+                Icons.auto_awesome_rounded,
+                quick.length,
+              ),
               tracks(_Shelf.quick, quick),
             ],
           if (history.isNotEmpty)
             'history': [
-              heading(_Shelf.history, 'Recently Played',
-                  Icons.history_rounded, history.length),
+              heading(
+                _Shelf.history,
+                'Recently Played',
+                Icons.history_rounded,
+                history.length,
+              ),
               _History(
                 entries: _open == _Shelf.history
-                    ? history : history.take(6).toList(),
+                    ? history
+                    : history.take(6).toList(),
                 row: (track) => KonnektedDiscoveryRow(
                   track: track,
                   inLibrary: library.match(track) != null,
                   busy: _busy == track.key,
-                  trailing: track.scrobbledAt == null ? null :
-                    DateFormat.Hm().format(
-                      DateTime.fromMillisecondsSinceEpoch(
-                        track.scrobbledAt! * 1000)),
+                  trailing: track.scrobbledAt == null
+                      ? null
+                      : DateFormat.Hm().format(
+                          DateTime.fromMillisecondsSinceEpoch(
+                            track.scrobbledAt! * 1000,
+                          ),
+                        ),
                   onTap: () => _play(track, history),
                   onMore: () => unawaited(_actions(track, history)),
                   onQueue: () => _enqueue(track),
@@ -896,19 +988,24 @@ class _KonnektedDiscoveryViewState
             ],
           if (data?.albums case final albums? when albums.isNotEmpty)
             'albums': [
-              KonnektedSectionHeading(title: lokalText('Albums For You'),
-                  icon: Icons.album_rounded),
+              KonnektedSectionHeading(
+                title: lokalText('Albums For You'),
+                icon: Icons.album_rounded,
+              ),
               _AlbumShelf(
                 albums: albums,
                 onTap: (album) => pushLokal(
                   context,
                   LokalMusicDetailPage.album(
-                    title: album.title, artist: album.artist,
+                    title: album.title,
+                    artist: album.artist,
                     localSongs: library.album(album.title, album.artist),
                     initialOnline: true,
                     release: LokalCatalogueAlbum(
-                      title: album.title, artist: album.artist,
-                      artwork: album.artworkUrl, url: album.url,
+                      title: album.title,
+                      artist: album.artist,
+                      artwork: album.artworkUrl,
+                      url: album.url,
                     ),
                   ),
                 ),
@@ -916,8 +1013,10 @@ class _KonnektedDiscoveryViewState
             ],
           if (data?.artists case final artists? when artists.isNotEmpty)
             'artists': [
-              KonnektedSectionHeading(title: lokalText('Artists For You'),
-                  icon: Icons.person_rounded),
+              KonnektedSectionHeading(
+                title: lokalText('Artists For You'),
+                icon: Icons.person_rounded,
+              ),
               _ArtistShelf(
                 artists: artists,
                 onTap: (artist) => pushLokal(
@@ -961,27 +1060,27 @@ class _Header extends StatelessWidget {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: LokalGlass.capsule(
-                thickness: LokalGlassThickness.thin,
-                shadow: false,
-                padding: const EdgeInsets.all(3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final provider in KonnektedDiscoverySource.values)
-                      _ProviderChip(
-                        label: lokalText(switch (provider) {
-                          KonnektedDiscoverySource.lastfm => 'Last.fm',
-                          KonnektedDiscoverySource.youtube => 'YouTube',
-                          KonnektedDiscoverySource.spotify => 'Spotify',
-                        }),
-                        selected: source == provider,
-                        onTap: () => onSourceChanged(provider),
-                        onLongPress: () => onCustomize(provider),
-                      ),
-                  ],
-                ),
+              thickness: LokalGlassThickness.thin,
+              shadow: false,
+              padding: const EdgeInsets.all(3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final provider in KonnektedDiscoverySource.values)
+                    _ProviderChip(
+                      label: lokalText(switch (provider) {
+                        KonnektedDiscoverySource.lastfm => 'Last.fm',
+                        KonnektedDiscoverySource.youtube => 'YouTube',
+                        KonnektedDiscoverySource.spotify => 'Spotify',
+                      }),
+                      selected: source == provider,
+                      onTap: () => onSourceChanged(provider),
+                      onLongPress: () => onCustomize(provider),
+                    ),
+                ],
               ),
             ),
+          ),
         ),
         IconButton(
           tooltip: lokalText('Refresh'),
