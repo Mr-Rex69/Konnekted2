@@ -1,0 +1,27 @@
+name: Mobile automatic backup regression
+on:
+  pull_request:
+    paths:
+      - 'lib/services/automatic_backup_service.dart'
+      - 'lib/features/settings/widgets/automatic_backup_settings_tile.dart'
+      - 'lib/features/settings/lokal/groups/data_group.dart'
+      - 'lib/main.dart'
+      - 'lib/app/app.dart'
+      - 'test/services/automatic_backup_service_test.dart'
+      - '.github/workflows/automatic-backups.yml'
+  workflow_dispatch:
+
+jobs:
+  automatic-backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+      - name: Analyze backup service and settings widget
+        run: dart analyze lib/services/automatic_backup_service.dart lib/features/settings/widgets/automatic_backup_settings_tile.dart
+      - name: Run automatic backup regressions
+        run: flutter test test/services/automatic_backup_service_test.dart
