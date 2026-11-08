@@ -13,6 +13,8 @@ To publish iOS, run **iPhone build and sideload package** on `main` with **publi
 
 The IPA uploads as soon as device compilation finishes; validation continues in parallel. See the [iOS build schedule, caching and retry guide](IOS_BUILD_PERFORMANCE.md).
 
+iOS has its own version progression. Select **bump** (`patch`, `minor`, `major`, default `patch`) or enter an exact **version** such as `1.1.0`. The calculation reads the published iOS manifest, independently of Android, and rejects reused or older published versions. The IPA's marketing version, release title and store-source version all use this value. The build number increases separately and remains greater than the published build number. For example, after `1.1.0`, patch produces `1.1.1`, minor produces `1.2.0`, and major produces `2.0.0`.
+
 **Keep platform releases tidy** reconciles completed publications and can also be run manually. Its cleanup first validates both platforms' retained manifests and required asset sets, then preserves the current release assets while consolidating older entries. It removes only superseded mobile releases and unreferenced legacy `vX.Y.Z...` / `ios-sideload-beta-N-attemptN` tags. Draft releases, unrelated tag names, branches and the two platform tags are preserved. The workflow always executes `main` code and does not consume artifacts from its triggering run.
 
 For a read-only preview with authenticated `gh`:

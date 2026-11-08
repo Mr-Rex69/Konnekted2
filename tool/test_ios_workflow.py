@@ -83,6 +83,13 @@ class IosWorkflowTests(unittest.TestCase):
             self.assertIn('needs.iphone.outputs.ipa_artifact', download['with']['artifact-ids'])
             self.assertNotIn('name', download['with'])
 
+    def test_selected_ios_version_reaches_the_actual_device_package(self):
+        inputs = self.workflow['on']['workflow_dispatch']['inputs']
+        self.assertEqual(inputs['bump']['options'], ['patch', 'minor', 'major'])
+        build = next(step for step in self.jobs['iphone']['steps'] if step.get('id') == 'device_build')
+        self.assertIn('--build-name "$IOS_BUILD_VERSION"', build['run'])
+        self.assertIn('steps.ios_version.outputs.version', build['env']['IOS_BUILD_VERSION'])
+
     def test_shards_use_identical_complete_selection_and_valid_indices(self):
         first = command(0, 3)
         for index in (1, 2):

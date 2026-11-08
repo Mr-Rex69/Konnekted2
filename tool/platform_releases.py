@@ -190,6 +190,8 @@ def publish(github, platform, directory, sha, body):
     existing = github.api(f'releases/tags/{platform}', missing=True)
     if existing:
         old = release_metadata(github, existing, platform)
+        if platform == 'ios' and tuple(map(int, metadata['version'].split('.'))) < tuple(map(int, old['version'].split('.'))):
+            raise ValueError('An iOS release must not downgrade its app version')
         if metadata['build'] < old['build']:
             raise ValueError('A rolling platform release must not downgrade its build')
         if metadata['build'] == old['build'] and metadata['sha'] != old['sha']:

@@ -7,6 +7,15 @@ name: iPhone build and sideload package
       - release/ios-sideload-*
   workflow_dispatch:
     inputs:
+      bump:
+        description: iOS version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Optional exact iOS version (overrides bump)
+        type: string
+        default: ''
       publish:
         description: Update the iOS release after all build, simulator and audit checks pass
         type: boolean
@@ -195,6 +204,7 @@ jobs:
           python3 -m unittest discover -s tool -p test_ios_prepare_smb.py
           python3 -m unittest discover -s tool -p test_ios_package_smb.py
           python3 -m unittest discover -s tool -p test_ios_workflow.py
+          python3 -m unittest discover -s tool -p test_ios_release_version.py
       - name: Analyze application and native build helper
         if: matrix.shard == 0
         run: |
@@ -270,10 +280,20 @@ jobs:
           key: ios-cargo-symbols-v3-${{ runner.os }}-${{ runner.arch }}-xcode26.0.1-rust1.98.0-iphoneos-Release-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml', 'rust/cargokit.yaml', 'rust/vendor/**', 'rust_builder/cargokit/build_tool/lib/**', 'rust_builder/cargokit/build_tool/pubspec.lock', 'rust_builder/cargokit/*.sh') }}-${{ hashFiles('rust/**/*.rs') }}
           restore-keys: |
             ios-cargo-symbols-v3-${{ runner.os }}-${{ runner.arch }}-xcode26.0.1-rust1.98.0-iphoneos-Release-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml', 'rust/cargokit.yaml', 'rust/vendor/**', 'rust_builder/cargokit/build_tool/lib/**', 'rust_builder/cargokit/build_tool/pubspec.lock', 'rust_builder/cargokit/*.sh') }}-
+      - name: Calculate iOS version and build from the published release
+        id: ios_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IOS_VERSION_BUMP: ${{ inputs.bump || 'patch' }}
+          IOS_VERSION: ${{ inputs.version || '' }}
+        run: python3 tool/ios_release_version.py
       - name: Build the release iPhone app without signing credentials
         id: device_build
+        env:
+          IOS_BUILD_VERSION: ${{ steps.ios_version.outputs.version }}
+          IOS_BUILD_NUMBER: ${{ steps.ios_version.outputs.build }}
         run: |
-          if ! flutter build ios --release --no-codesign --no-pub --build-number '${{ github.run_number }}' --split-debug-info=build/ios/dart-symbols --verbose > "$RUNNER_TEMP/ios-device-build.log" 2>&1; then
+          if ! flutter build ios --release --no-codesign --no-pub --build-name "$IOS_BUILD_VERSION" --build-number "$IOS_BUILD_NUMBER" --split-debug-info=build/ios/dart-symbols --verbose > "$RUNNER_TEMP/ios-device-build.log" 2>&1; then
             python3 tool/ios_build_diagnostics.py "$RUNNER_TEMP/ios-device-build.log"
             exit 1
           fi
