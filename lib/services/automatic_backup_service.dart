@@ -19,7 +19,10 @@ class AutomaticBackupService {
     DateTime Function()? clock,
     Future<Map<String, dynamic>> Function(SharedPreferences)? snapshot,
   }) : _preferences = preferences ?? SharedPreferences.getInstance,
-       _directory = directory ?? getApplicationDocumentsDirectory,
+       _directory = directory ??
+           (Platform.isIOS
+               ? getApplicationSupportDirectory
+               : getApplicationDocumentsDirectory),
        _clock = clock ?? DateTime.now,
        _snapshot = snapshot;
 
@@ -70,7 +73,7 @@ class AutomaticBackupService {
 
   Future<Map<String, dynamic>> _export(SharedPreferences prefs) async {
     final db = Database.instance;
-    return {
+    return db.txn(() async => {
       'format': 'lokal-mobile-backup',
       'version': 1,
       'exportedAt': _clock().toUtc().toIso8601String(),
@@ -81,7 +84,7 @@ class AutomaticBackupService {
       'recentlyPlayed': await db.recentlyPlayedEntitys.where().exportJson(),
       'playEvents': await db.playEventEntitys.where().exportJson(),
       'libraryOps': await db.libraryOpEntitys.where().exportJson(),
-    };
+    });
   }
 
   Future<Directory> backupDirectory() async {
@@ -121,14 +124,27 @@ class AutomaticBackupService {
   Future<File?> runIfDue() => _run(force: false);
   Future<File?> backupNow() => _run(force: true);
 
+  bool _runningForced = false;
+
+  /// Share compatible requests, but never let a manual backup join a due
+  /// check that returns null without creating a file.
   Future<File?> _run({required bool force}) async {
-    if (_running != null) return _running;
+    final active = _running;
+    if (active != null) {
+      if (!force || _runningForced) return active;
+      try { await active; } catch (_) {}
+      return _run(force: true);
+    }
     final work = _perform(force: force);
     _running = work;
+    _runningForced = force;
     try {
       return await work;
     } finally {
-      _running = null;
+      if (identical(_running, work)) {
+        _running = null;
+        _runningForced = false;
+      }
     }
   }
 
@@ -185,10 +201,7 @@ class AutomaticBackupService {
     if (bytes.isEmpty || bytes.length > maxBackupBytes) {
       throw const FormatException('Backup is empty or too large.');
     }
-    final decoded = gzip.decode(bytes);
-    if (decoded.length > 300 * 1024 * 1024) {
-      throw const FormatException('Uncompressed backup is too large.');
-    }
+    final decoded = decompressLimited(bytes);
     final data = jsonDecode(utf8.decode(decoded));
     if (data is! Map<String, dynamic> ||
         data['format'] != 'lokal-mobile-backup' || data['version'] != 1) {
@@ -206,6 +219,26 @@ class AutomaticBackupService {
       throw const FormatException('Invalid preferences in backup.');
     }
     return data;
+  }
+
+  /// Stop decompression before appending output beyond the declared bound.
+  /// The conversion sink propagates FormatException out of add()/close().
+  static Uint8List decompressLimited(
+    Uint8List bytes, {
+    int maxOutputBytes = 300 * 1024 * 1024,
+  }) {
+    if (bytes.isEmpty || bytes.length > maxBackupBytes) {
+      throw const FormatException('Backup is empty or too large.');
+    }
+    final sink = _LimitedBackupSink(maxOutputBytes);
+    final conversion = gzip.decoder.startChunkedConversion(sink);
+    const chunkSize = 16 * 1024;
+    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+      final end = (offset + chunkSize).clamp(0, bytes.length);
+      conversion.add(bytes.sublist(offset, end));
+    }
+    conversion.close();
+    return sink.output.takeBytes();
   }
 
   static List<Map<String, dynamic>> _rows(Map<String, dynamic> data, String key) =>
@@ -259,4 +292,22 @@ class AutomaticBackupService {
       }
     }
   }
+}
+
+/// Bounded decompression sink; never retain a chunk that exceeds the cap.
+class _LimitedBackupSink implements Sink<List<int>> {
+  _LimitedBackupSink(this.maxBytes);
+  final int maxBytes;
+  final BytesBuilder output = BytesBuilder(copy: false);
+
+  @override
+  void add(List<int> bytes) {
+    if (maxBytes < 0 || bytes.length > maxBytes - output.length) {
+      throw const FormatException('Uncompressed backup is too large.');
+    }
+    output.add(bytes);
+  }
+
+  @override
+  void close() {}
 }
