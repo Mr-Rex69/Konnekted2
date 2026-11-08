@@ -1,30 +1,30 @@
 HTTP Lossless Addon Link by [Heisenberg](https://github.com/Vishnuuu-s1):
-[Copy this link](https://soundfean-music.vercel.app/qobuz-de/a/30a0c6091e194c8c7785f0d7bb6e1eac9b76c0528f02213d1b6a5fbcc76ceff4/manifest.json)
+[Copy this link](https://soundfean-musics.onrender.com/a/manifest.json)
 
 <p align="center"><img src="docs/images/hero.png" alt="Lokal Mobile — Your music. Everywhere you go." width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/Lokal-Konnekt/lokal-mobile/releases"><img alt="Version 1.0.0" src="https://img.shields.io/badge/next_stable-1.0.0-65e2ce?style=flat-square&labelColor=0b1318"></a>
+  <a href="https://github.com/lokal-music/Mobile/releases"><img alt="Version 1.0.0" src="https://img.shields.io/badge/next_stable-1.0.0-65e2ce?style=flat-square&labelColor=0b1318"></a>
   <img alt="Android 8.0 and later" src="https://img.shields.io/badge/Android-8.0%2B-65e2ce?style=flat-square&labelColor=0b1318">
   <img alt="64-bit ARM phones" src="https://img.shields.io/badge/Phones-64--bit_ARM-65e2ce?style=flat-square&labelColor=0b1318">
   <a href="LICENSE"><img alt="GPL-3.0 license" src="https://img.shields.io/badge/license-GPL--3.0-65e2ce?style=flat-square&labelColor=0b1318"></a>
 </p>
 
-**Your music, your files, a modern player. Now on Android.** Lokal Mobile brings the artwork-led library, personal mixes and synced lyrics of [Lokal desktop](https://github.com/sipbuu/lokal) to your pocket. Play the collection you already own, discover something new through sources you choose, and keep your phone and desktop connected.
+**Your music, your files, a modern player. Now on Android.** Lokal Mobile brings the artwork-led library, personal mixes and synced lyrics of [Lokal desktop](https://github.com/lokal-music/Desktop) to your pocket. Play the collection you already own, discover something new through sources you choose, and keep your phone and desktop connected.
 
 No Lokal account is needed to play local files. Your library and listening history live on your device; online discovery, lyrics, artwork and account integrations are optional.
 
 <p align="center">
-  <a href="https://github.com/Lokal-Konnekt/lokal-mobile/releases"><b>Download</b></a> ·
-  <a href="https://github.com/Lokal-Konnekt/lokal-mobile/actions/workflows/android-nightly.yml">Nightly builds</a> ·
-  <a href="https://github.com/Lokal-Konnekt/lokal-mobile/issues">Report an issue</a> ·
+  <a href="https://github.com/lokal-music/Mobile/releases"><b>Download</b></a> ·
+  <a href="https://github.com/lokal-music/Mobile/actions/workflows/android-nightly.yml">Nightly builds</a> ·
+  <a href="https://github.com/lokal-music/Mobile/issues">Report an issue</a> ·
   <a href="docs/BUILD.md">Build from source</a> ·
-  <a href="https://github.com/sipbuu/lokal">Lokal for desktop</a>
+  <a href="https://github.com/lokal-music/Desktop">Lokal for desktop</a>
 </p>
 
 **1.0.0 is the next stable mobile release.** Until it is published, preview APKs are available on the Releases page. Stable releases and nightlies have separate, manually triggered build flows; merging a pull request does not publish another beta.
 
-An experimental iPhone port is in progress. See the [architecture and evidence](docs/IOS_PORT.md) and [Windows IPA signing guide](docs/IOS_SIDELOADING.md). Engineering IPAs still require physical-iPhone and installation qualification.
+The iPhone unsigned beta is available for signing and physical-device acceptance. See the [Windows IPA signing guide](docs/IOS_SIDELOADING.md), [port architecture](docs/IOS_PORT.md), and [main integration notes](docs/IOS_MAIN_INTEGRATION.md).
 
 ---
 
@@ -68,7 +68,7 @@ Moving covers support Apple Music, Tidal, community artwork, m8tec and Spotify C
 
 ## Take your desktop library with you
 
-Pair with [Lokal desktop](https://github.com/sipbuu/lokal) over Wi-Fi from **You → Data → Accounts → Desktop link**.
+Pair with [Lokal desktop](https://github.com/lokal-music/Desktop) over Wi-Fi from **You → Data → Accounts → Desktop link**.
 
 - Control desktop playback from the phone, including the Android notification.
 - Merge supported library records, likes, playlists, listening history and profile data.
@@ -90,7 +90,7 @@ Optional integrations include Last.fm and ListenBrainz scrobbling, network music
 
 ## Install and update
 
-1. Open [Releases](https://github.com/Lokal-Konnekt/lokal-mobile/releases) and choose stable or nightly.
+1. Open [Releases](https://github.com/lokal-music/Mobile/releases) and choose stable or nightly.
 2. Download **`Lokal-<version>-arm64.apk`** (the full build). The optional Play variant adds `-Play` to its name. Each APK is built for **64-bit ARM phones** to reduce download size. 32-bit-only phones and x86 Android emulators are not supported; existing compatible installations can update in place with the same signing key.
 3. Allow your browser/file manager to install the APK, then choose your music folders from Library settings.
 
@@ -113,7 +113,7 @@ Both flows generate their own mobile banner, changelog, signed APKs, certificate
 
 Start with [BUILD.md](docs/BUILD.md) for the pinned Flutter, Rust and Android toolchain. The internal Dart package (`flick`) and Android application ID remain stable for compatibility and existing installations; the product is **Lokal Mobile**.
 
-When reporting playback or UI problems, include your phone, Android version, installed build, source/file format and relevant in-app logs. Remove cookies, tokens and pairing secrets before sharing logs. [Open an issue](https://github.com/Lokal-Konnekt/lokal-mobile/issues) or send a pull request with a focused explanation of the change.
+When reporting playback or UI problems, include your phone, Android version, installed build, source/file format and relevant in-app logs. Remove cookies, tokens and pairing secrets before sharing logs. [Open an issue](https://github.com/lokal-music/Mobile/issues) or send a pull request with a focused explanation of the change.
 
 ## License and credits
 

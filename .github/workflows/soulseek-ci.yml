@@ -1,0 +1,60 @@
+name: Soulseek native integration
+
+on:
+  pull_request:
+    paths:
+      - 'rust/Cargo.toml'
+      - 'rust/Cargo.lock'
+      - 'rust/src/soulseek_ffi.rs'
+      - 'rust/src/lib.rs'
+      - 'lib/services/soulseek_service.dart'
+      - 'lib/features/search/**'
+      - 'lib/features/settings/widgets/soulseek_account_settings_tile.dart'
+      - 'lib/features/settings/lokal/groups/data_group.dart'
+      - 'android/app/src/main/AndroidManifest.xml'
+      - 'android/app/src/main/kotlin/com/mossapps/flick/SoulseekForegroundService.kt'
+      - 'android/app/src/main/kotlin/com/mossapps/flick/MainActivity.kt'
+      - '.github/workflows/soulseek-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  soulseek:
+    name: Rust, Flutter and Android Soulseek
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/android-toolchain
+      - name: Check native Soulseek protocol adapter
+        run: cargo test --locked --lib --manifest-path rust/Cargo.toml soulseek_ffi
+      - name: Analyze new account, transfer and search sources
+        run: |
+          set -euo pipefail
+          for file in \
+            lib/services/soulseek_service.dart \
+            lib/features/search/widgets/soulseek_search_section.dart \
+            lib/features/settings/widgets/soulseek_account_settings_tile.dart \
+            lib/features/search/screens/search_screen.dart \
+            lib/features/search/providers/search_filter_provider.dart \
+            lib/features/search/widgets/search_filter_chips.dart \
+            lib/features/settings/lokal/groups/data_group.dart; do
+            dart analyze --no-fatal-warnings "$file"
+          done
+      - name: Exercise Soulseek models and search scope
+        run: >-
+          flutter test --no-pub
+          test/features/search/soulseek_search_test.dart
+          test/features/search/search_filters_test.dart
+      - name: Generate app brand assets
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 tool/gen_lokal_launcher_icons.py
+      - name: Compile full flavor APK with embedded native Soulseek
+        run: flutter build apk --debug --flavor full --target-platform android-arm64 --no-pub
+      - name: Ensure dependency locks are committed
+        run: git diff --exit-code -- rust/Cargo.lock pubspec.lock

@@ -8,13 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('fixed-size artwork avoids layout-builder overhead in lists',
       (tester) async {
-    final dir = await Directory.systemTemp.createTemp('lokal-thumbnail-test');
-    addTearDown(() async => dir.delete(recursive: true));
+    final dir = (await tester.runAsync(() => Directory.systemTemp.createTemp('lokal-thumbnail-test')))!;
+    addTearDown(() => tester.runAsync(() => dir.delete(recursive: true)));
     final image = File('${dir.path}/art.png');
     // A valid one-pixel PNG: no network or platform artwork resolver needed.
-    await image.writeAsBytes(base64Decode(
+    await tester.runAsync(() => image.writeAsBytes(base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/9qkAAAAASUVORK5CYII='
-    ));
+    )));
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(

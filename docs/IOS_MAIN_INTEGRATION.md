@@ -33,7 +33,10 @@ The legacy ARB allowlist records 431 keys already unreferenced on Android main;
 it does not exempt new unused keys. Scanner placeholder recognition now handles
 all shipped locales so a language change cannot block later tag enrichment.
 
-The consolidation must pass its own Android and iPhone workflows before merge.
+Android CI is manually disabled in repository settings. A separate Android
+compatibility workflow runs only on this consolidation branch, without changing
+that setting. The consolidation must pass its Android and iPhone workflows
+before merge.
 It does not inherit a passing status from beta 143 and does not publish or replace
 that release. The resulting engineering IPA still needs physical-device checks.
 iOS widgets remain excluded.

@@ -19,7 +19,6 @@ class AppPreferences {
   final int crossfadeCurveIndex;
   final int crossfeedLevel;
   final bool swipeActionsEnabled;
-
   /// Swap song-row swipe actions: right = Play next, left = Add to queue.
   final bool swipeQueueDirectionsReversed;
   final String favoriteRemovalMode; // 'swipe' or 'longpress'
@@ -203,7 +202,7 @@ class AppPreferences {
     this.miniPlayerSwipeAction = 'switchSongs',
     this.separateMiniPlayerFromNavBar = false,
     this.keepPlayingOnQuit = false,
-    this.priorityAnchorEnabled = true,
+    this.priorityAnchorEnabled = false,
     this.motionArtDuringBitPerfect = false,
     this.pauseOnBluetoothDisconnect = true,
     this.resumeOnBluetoothReconnect = false,
@@ -386,15 +385,13 @@ class AppPreferences {
       showUsbVolumeOnSettings:
           showUsbVolumeOnSettings ?? this.showUsbVolumeOnSettings,
       crossfadeEnabled: crossfadeEnabled ?? this.crossfadeEnabled,
-      automixStemClipsEnabled:
-          automixStemClipsEnabled ?? this.automixStemClipsEnabled,
+      automixStemClipsEnabled: automixStemClipsEnabled ?? this.automixStemClipsEnabled,
       crossfadeDurationSecs:
           crossfadeDurationSecs ?? this.crossfadeDurationSecs,
       crossfadeCurveIndex: crossfadeCurveIndex ?? this.crossfadeCurveIndex,
       crossfeedLevel: crossfeedLevel ?? this.crossfeedLevel,
       swipeActionsEnabled: swipeActionsEnabled ?? this.swipeActionsEnabled,
-      swipeQueueDirectionsReversed:
-          swipeQueueDirectionsReversed ?? this.swipeQueueDirectionsReversed,
+      swipeQueueDirectionsReversed: swipeQueueDirectionsReversed ?? this.swipeQueueDirectionsReversed,
       favoriteRemovalMode: favoriteRemovalMode ?? this.favoriteRemovalMode,
       fastIndexEnabled: fastIndexEnabled ?? this.fastIndexEnabled,
       fastIndexTimeoutSeconds:
@@ -561,8 +558,7 @@ class AppPreferencesService {
   static const _crossfadeCurveKey = 'audio_crossfade_curve_index';
   static const _crossfeedLevelKey = 'audio_crossfeed_level';
   static const _swipeActionsEnabledKey = 'swipe_actions_enabled';
-  static const _swipeQueueDirectionsReversedKey =
-      'swipe_queue_directions_reversed';
+  static const _swipeQueueDirectionsReversedKey = 'swipe_queue_directions_reversed';
   static const _favoriteRemovalModeKey = 'favorite_removal_mode';
   static const _fastIndexEnabledKey = 'fast_index_enabled';
   static const _fastIndexTimeoutKey = 'fast_index_timeout_seconds';
@@ -703,8 +699,7 @@ class AppPreferencesService {
       crossfadeCurveIndex: prefs.getInt(_crossfadeCurveKey) ?? 0,
       crossfeedLevel: prefs.getInt(_crossfeedLevelKey) ?? 0,
       swipeActionsEnabled: prefs.getBool(_swipeActionsEnabledKey) ?? true,
-      swipeQueueDirectionsReversed:
-          prefs.getBool(_swipeQueueDirectionsReversedKey) ?? false,
+      swipeQueueDirectionsReversed: prefs.getBool(_swipeQueueDirectionsReversedKey) ?? false,
       favoriteRemovalMode: prefs.getString(_favoriteRemovalModeKey) ?? 'swipe',
       fastIndexEnabled: prefs.getBool(_fastIndexEnabledKey) ?? true,
       fastIndexTimeoutSeconds: prefs.getInt(_fastIndexTimeoutKey) ?? 3,
@@ -784,7 +779,7 @@ class AppPreferencesService {
       separateMiniPlayerFromNavBar:
           prefs.getBool(_separateMiniPlayerFromNavBarKey) ?? false,
       keepPlayingOnQuit: prefs.getBool(_keepPlayingOnQuitKey) ?? false,
-      priorityAnchorEnabled: prefs.getBool(_priorityAnchorEnabledKey) ?? true,
+      priorityAnchorEnabled: prefs.getBool(_priorityAnchorEnabledKey) ?? false,
       motionArtDuringBitPerfect:
           prefs.getBool(_motionArtDuringBitPerfectKey) ?? false,
       pauseOnBluetoothDisconnect:
@@ -1626,7 +1621,7 @@ class AppPreferencesService {
 
   Future<bool> getPriorityAnchorEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_priorityAnchorEnabledKey) ?? true;
+    return prefs.getBool(_priorityAnchorEnabledKey) ?? false;
   }
 
   Future<void> setPriorityAnchorEnabled(bool value) async {

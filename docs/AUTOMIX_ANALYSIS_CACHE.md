@@ -100,14 +100,3 @@ and battery controls. **Do not bundle the Python models or their weights** in
 the base Android APK. Review LGPL-2.1 and each model's license before shipping
 a model provider. In the absence of a prepared high-quality report, keep the
 lightweight cue hints and standard crossfade path.
-
-
-## iPhone boundary
-
-Flow artist spacing, queue preparation and shared metadata caches are reused.
-The iOS system engine supports ordinary two-player crossfade, with retirement
-checks across decoder creation, source load, seek and configuration. Its offline
-profile and stem lookups are disabled: imported model cues cannot move an iPhone
-transition, and no third stem decoder can be created. The experimental prepared
-stem setting is shown only on Android. This is an explicit compatibility limit,
-not a claim of iPhone model/stem or physical listening acceptance.

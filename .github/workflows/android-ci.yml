@@ -2,6 +2,7 @@ name: Android CI
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: ['**']
   workflow_call:
@@ -18,25 +19,116 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install Python test dependency
+        run: python3 -m pip install --disable-pip-version-check Pillow
+      - name: Generate full-bleed CD launcher assets
+        run: |
+          python3 tool/gen_lokal_launcher_icons.py
+          python3 -m unittest tool/ci_brand_icons_test.py -v
       - name: Test CI helpers
         run: |
           python3 -B -m unittest discover -s tool -p 'ci_*_test.py' -v
           python3 -B tool/native_test_cargokit_launcher.py
       - uses: ./.github/actions/android-toolchain
-      - name: Generate full-bleed CD launcher assets
+      # Cover every provider playlist screen as well as the API/cache.
+      # A missing type import in provider_playlist_track_browser.dart was
+      # previously missed and surfaced only during the signed release build.
+      - name: Analyze provider playlist Dart sources
         run: |
-          python3 -m pip install --disable-pip-version-check Pillow
-          python3 tool/gen_lokal_launcher_icons.py
-          python3 -m unittest tool/ci_brand_icons_test.py -v
+          set -euo pipefail
+          for source in \
+            lib/features/spotify/spotify_web_api.dart \
+            lib/features/spotify/spotify_playlist_cache.dart \
+            lib/features/spotify/spotify_playlists_screen.dart \
+            lib/features/spotify/provider_playlist_track_browser.dart \
+            lib/features/spotify/provider_playlist_track_tile.dart \
+            lib/features/spotify/provider_playlist_visibility.dart \
+            lib/features/discovery/youtube_music_playlists_screen.dart \
+            lib/features/discovery/youtube_music_playlist_cache.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
+      - name: Analyze HTTP add-on media transport
+        run: |
+          set -euo pipefail
+          for source in \
+            lib/features/discovery/addon_dash_media.dart \
+            lib/features/discovery/addon_hybrid_media.dart \
+            lib/features/discovery/addon_hybrid_cenc.dart \
+            lib/features/discovery/discovery_sources.dart \
+            lib/features/discovery/discovery_playback.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
+      - name: Analyze glass dock, navigation and Library/You performance changes
+        run: |
+          set -euo pipefail
+          for source in \
+            lib/widgets/lokal/lokal_glass.dart \
+            lib/features/konnekted/konnekted_dock.dart \
+            lib/features/konnekted/konnekted_shell.dart \
+            lib/features/konnekted/konnekted_you.dart \
+            lib/features/konnekted/konnekted_library.dart \
+            lib/core/navigation/lokal_navigation_switcher.dart \
+            lib/features/appearance/lokal_performance_advisor.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
+      - name: Analyze desktop remote player, lyrics and queue integration
+        run: |
+          set -euo pipefail
+          for source in \
+            lib/features/player/screens/desktop_remote_full_player.dart \
+            lib/features/player/screens/desktop_remote_lyrics_panel.dart \
+            lib/features/player/widgets/full_bleed_artwork_frame.dart \
+            lib/features/player/widgets/synced_lyrics_view.dart \
+            lib/features/player/widgets/karaoke_lyric_line.dart \
+            lib/features/player/widgets/flowing_background_vocals.dart \
+            lib/features/player/widgets/lyrics_focus_timing.dart \
+            lib/services/lyrics_service.dart \
+            lib/services/lyrics_flac_vorbis_reader.dart \
+            lib/features/player/widgets/player_song_blur_background.dart \
+            lib/features/player/widgets/player_artwork_image.dart \
+            lib/features/player/screens/full_player_screen.dart \
+            lib/providers/player_provider.dart \
+            lib/providers/lokal_remote_provider.dart \
+            lib/models/lokal_remote_state.dart; do
+            dart analyze --no-fatal-warnings "$source"
+          done
+      - name: Verify desktop remote cover swipes, lyrics and queue animation
+        run: flutter test --no-pub test/features/player/desktop_remote_full_player_test.dart
+      - name: Verify curved cover docking for full-cover and compact artwork
+        run: >-
+          flutter test --no-pub
+          test/widgets/lokal/lokal_artwork_flight_test.dart
+          test/widgets/lokal_glass_soft_optics_test.dart
+          test/features/player/player_morph_return_test.dart
+          test/features/player/full_bleed_artwork_morph_test.dart
       - name: Focused suites from docs/BUILD.md, including share and picker
         run: >-
           flutter test --no-pub
           test/spotify test/morneye test/playlist_links test/flow test/discovery test/konnekted
+          test/widgets/provider_playlist_track_browser_test.dart
+          test/widgets/provider_playlist_track_tile_test.dart
           test/l10n test/features/search/search_localization_test.dart
           test/widgets/share_actions_test.dart
           test/features/player/picked_lyrics_file_test.dart
+          test/features/player/lyrics_search_sheet_test.dart
+          test/services/lyrics_flac_vorbis_reader_test.dart
+          test/features/player/supporting_vocal_visibility_test.dart
+          test/features/player/flowing_background_vocal_reveal_test.dart
+          test/features/player/player_song_blur_background_test.dart
+          test/features/player/immersive_lyrics_stage_test.dart
           test/classipod test/services test/providers test/core test/data
-          test/widgets/lokal test/widgets/overflow_marquee_title_test.dart
+          test/widgets/lokal test/features/appearance/lokal_frame_bottleneck_test.dart
+          test/widgets/overflow_marquee_title_test.dart
+          test/features/player/usb_dac_quick_status_sheet_test.dart
+          test/features/player/full_player_overflow_actions_test.dart
+          test/features/link/lokal_ghost_availability_test.dart
+          test/features/konnekted/library_fallback_selection_test.dart
+      - name: Verify GitHub release discovery and repo-rename compatibility
+        run: >-
+          flutter test --no-pub
+          test/features/updates/github_update_service_test.dart
+          test/features/whats_new/lokal_minor_release_notes_test.dart
+          test/features/internet_radio/radio_timeout_test.dart
       - name: Check dependency locks remained unchanged
         run: git diff --exit-code -- pubspec.lock rust/Cargo.lock
 
@@ -61,10 +153,20 @@ jobs:
           flutter build apk --debug --flavor full --target-platform android-arm64 --no-pub
           flutter build apk --debug --flavor play --target-platform android-arm64 --no-pub
           bash android/gradlew -p android verifyBuiltInKotlin --console=plain --no-daemon
+      - name: Publish installable test APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: lokal-mobile-adaptive-test-apks
+          path: |
+            build/app/outputs/flutter-apk/app-full-debug.apk
+            build/app/outputs/flutter-apk/app-play-debug.apk
+          if-no-files-found: error
+          retention-days: 14
       - name: Test widget preference codec compatibility
         run: >-
           bash android/gradlew -p android :app:testFullDebugUnitTest
           --tests com.mossapps.flick.widgets.WidgetPreferenceValueTest
+          --tests com.mossapps.flick.LokalReleaseUrlTest
           --console=plain --no-daemon
       - name: Check dependency locks remained unchanged
         run: git diff --exit-code -- pubspec.lock rust/Cargo.lock
