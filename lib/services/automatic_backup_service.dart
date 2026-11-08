@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flick/data/database.dart';
+import 'package:flick/services/ios_transfer_song_identity.dart';
 import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -234,6 +235,12 @@ class AutomaticBackupService {
       await db.recentlyPlayedEntitys.importJson(recent);
       await db.playEventEntitys.importJson(events);
       await db.libraryOpEntitys.importJson(ops);
+      if (Platform.isIOS) {
+        // Keep the durable monotonic song-ID floor ahead of every restored
+        // recording and historical transfer receipt. New iOS imports must
+        // never reuse an ID that was already allocated by this installation.
+        await retainIosImportSongIdentitiesInTransaction(db, []);
+      }
     });
     final prefs = await _preferences();
     for (final entry in prefsData.entries) {
