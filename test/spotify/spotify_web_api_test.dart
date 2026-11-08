@@ -237,6 +237,91 @@ void main() {
     },
   );
 
+  test('cookie playlists load more than 1000 songs, even on short pages', () async {
+    final store = _Store();
+    final offsets = <int>[];
+    final api = SpotifyWebApi(
+      store: store,
+      oauth: SpotifyOAuthService(tokenStore: store),
+      client: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map;
+        expect(body['operationName'], 'fetchPlaylist');
+        final vars = body['variables'] as Map;
+        final offset = vars['offset'] as int;
+        offsets.add(offset);
+        const total = 1234;
+        final remaining = total - offset;
+        final length = remaining < 40 ? remaining : 40;
+        final items = [
+          for (var i = 0; i < length; i++)
+            {
+              'itemV2': {
+                'data': {
+                  ...track('Song ${offset + i}'),
+                  'uri': 'spotify:track:${(offset + i).toString().padLeft(22, '0')}',
+                },
+              },
+            },
+        ];
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'playlistV2': {
+                '__typename': 'Playlist',
+                'content': {'totalCount': total, 'items': items},
+              },
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    addTearDown(api.close);
+    final songs = await api.getPlaylistTracks('a' * 22);
+    expect(songs.length, 1234);
+    expect(songs.first.title, 'Song 0');
+    expect(songs.last.title, 'Song 1233');
+    expect(offsets.first, 0);
+    expect(offsets[1], 40);
+    expect(offsets.last, 1200);
+  });
+
+  test('cookie playlist does not accept an incomplete page as a full list', () async {
+    final store = _Store();
+    final api = SpotifyWebApi(
+      store: store,
+      oauth: SpotifyOAuthService(tokenStore: store),
+      client: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map;
+        final offset = (body['variables'] as Map)['offset'] as int;
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'playlistV2': {
+                '__typename': 'Playlist',
+                'content': {
+                  'totalCount': 125,
+                  'items': offset == 0
+                      ? [
+                          for (var i = 0; i < 100; i++)
+                            {'itemV2': {'data': track('Song $i')}},
+                        ]
+                      : <Object>[],
+                },
+              },
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    addTearDown(api.close);
+    await expectLater(
+      api.getPlaylistTracks('a' * 22),
+      throwsA(predicate((e) => e.toString().contains('before loading all'))),
+    );
+  });
+
   test('incremental likes stop at an old entry', () async {
     final store = _Store();
     var requests = 0;
