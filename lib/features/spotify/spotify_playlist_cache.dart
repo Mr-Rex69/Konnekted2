@@ -94,7 +94,9 @@ class SpotifyPlaylistCache {
     await _ensure();
     final entry = _entry((_state?['tracks'] as Map?)?[playlistId]);
     final items = entry?['items'];
-    if (items is! List) return null;
+    // Pre-fix caches may contain only the first 1,000 songs. Refresh them
+    // on first open even when automatic updates are disabled.
+    if (items is! List || entry?['complete'] != true) return null;
     return [
       for (final raw in items)
         if (raw is Map && raw['id'] is String && raw['title'] is String)
@@ -189,13 +191,13 @@ class SpotifyPlaylistCache {
       throw const SpotifyApiException('Connect Spotify in Data → Accounts.');
     }
     try {
-      final list = await api.getPlaylistTracks(playlistId, max: 1000);
+      final list = await api.getPlaylistTracks(playlistId);
       if (account != await _fingerprint()) {
         throw const SpotifyApiException('Spotify account changed. Retry the update.');
       }
       await _ensure();
       (_state!['tracks'] as Map)[playlistId] = {
-        'updated': _timestamp, 'retryAfter': 0,
+        'updated': _timestamp, 'retryAfter': 0, 'complete': true,
         'items': [
           for (final t in list)
             {'id': t.id, 'title': t.title, 'artist': t.artist,
