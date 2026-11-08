@@ -33,6 +33,43 @@ Map<String, Object?> release(
 };
 
 void main() {
+  test(
+    'permanent Android tag updates existing installs using package metadata',
+    () async {
+      final rolling = release('7.5.3');
+      rolling['tag_name'] = 'android';
+      for (final asset in rolling['assets'] as List<Map<String, String>>) {
+        asset['browser_download_url'] = asset['browser_download_url']!
+            .replaceFirst('/v7.5.3/', '/android/');
+      }
+      final client = MockClient(
+        (request) async => http.Response(
+          jsonEncode(
+            request.url.host == 'api.github.com'
+                ? rolling
+                : {
+                    'version': '7.5.3',
+                    'versionCode': 216500001,
+                    'flavor': 'full',
+                    'sha256': hash,
+                  },
+          ),
+          200,
+        ),
+      );
+      addTearDown(client.close);
+      final update = await GithubUpdateService(
+        client,
+      ).check(const AppBuildInfo(version: '7.5.2', build: '216500000'), 'full');
+      expect(update?.version, '7.5.3');
+      expect(update?.apkUrl, '$root/android/Lokal-7.5.3-arm64.apk');
+      expect(
+        update?.pageUrl,
+        'https://github.com/lokal-music/Mobile/releases/tag/android',
+      );
+    },
+  );
+
   test('finds the published 2.0.0 update after repository rename', () async {
     final requested = <Uri>[];
     final client = MockClient((request) async {

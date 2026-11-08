@@ -5,6 +5,10 @@ on:
     branches: ['release/ios-sideload-*']
   workflow_dispatch:
     inputs:
+      publish:
+        description: 'Update the iOS release after all build, simulator and audit checks pass'
+        type: boolean
+        default: true
       live_video_probe:
         description: 'Observe the public YouTube embed in actual WebKit (network-dependent evidence)'
         type: boolean
@@ -16,6 +20,8 @@ on:
       - 'rust/**'
       - 'rust_builder/**'
       - 'pubspec.*'
+      - 'tool/platform_releases.py'
+      - 'tool/ci_platform_releases_test.py'
       - 'assets/youtube/**'
       - 'test/discovery/youtube_audio_test.dart'
       - 'test/discovery/youtube_player_cipher_test.dart'
@@ -560,7 +566,10 @@ jobs:
   publish_sideload_beta:
     name: Publish the audited unsigned iPhone beta
     needs: [iphone, ios_current, ios_release_audit]
-    if: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'release/ios-sideload-') }}
+    if: ${{ (github.event_name == 'push' && startsWith(github.ref_name, 'release/ios-sideload-')) || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.publish) }}
+    concurrency:
+      group: lokal-mobile-publication
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -575,14 +584,14 @@ jobs:
           path: ${{ runner.temp }}/audited-iphone
       - name: Prepare only the exact independently verified release assets
         id: release
+        env:
+          LOKAL_IOS_PUBLISH: ${{ inputs.publish }}
         run: python3 tool/ios_sideload_release.py "$RUNNER_TEMP/audited-iphone" "$RUNNER_TEMP/sideload-release"
       - name: Publish the qualified pre-device beta and matching source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          gh release create "$RELEASE_TAG" "$RUNNER_TEMP"/sideload-release/* \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
-            --title "Lokal iPhone beta ${{ github.run_number }} — unsigned" \
-            --notes-file "$RUNNER_TEMP/sideload-release/RELEASE-NOTES.md"
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+          python3 tool/platform_releases.py publish --platform ios \
+            --assets "$RUNNER_TEMP/sideload-release" --sha "$GITHUB_SHA" \
+            --notes "$RUNNER_TEMP/sideload-release/RELEASE-NOTES.md"
+          gh release view ios --repo "$GITHUB_REPOSITORY" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

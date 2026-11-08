@@ -38,3 +38,12 @@ class ReleaseBoundaryTests(unittest.TestCase):
         self.bridge.write_text('let libraryImport = true\n// upload still pending\n')
         with self.assertRaisesRegex(ValueError, 'upload'):
             validate_context(self.repo, self.environment)
+
+    def test_manual_main_publication_is_explicit_and_never_accepts_a_pr(self):
+        manual = {**self.environment, 'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                  'GITHUB_REF_NAME': 'main', 'LOKAL_IOS_PUBLISH': 'true'}
+        self.assertEqual(validate_context(self.repo, manual), self.commit)
+        for change in ({'LOKAL_IOS_PUBLISH': 'false'}, {'GITHUB_REF_NAME': 'feature/test'},
+                       {'GITHUB_EVENT_NAME': 'pull_request'}):
+            with self.assertRaises(ValueError):
+                validate_context(self.repo, {**manual, **change})

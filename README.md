@@ -4,7 +4,7 @@ HTTP Lossless Addon Link by [Heisenberg](https://github.com/Vishnuuu-s1):
 <p align="center"><img src="docs/images/hero.png" alt="Lokal Mobile — Your music. Everywhere you go." width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/lokal-music/Mobile/releases"><img alt="Version 1.0.0" src="https://img.shields.io/badge/next_stable-1.0.0-65e2ce?style=flat-square&labelColor=0b1318"></a>
+  <a href="https://github.com/lokal-music/Mobile/releases/tag/android"><img alt="Download Android" src="https://img.shields.io/badge/download-Android-65e2ce?style=flat-square&labelColor=0b1318"></a>
   <img alt="Android 8.0 and later" src="https://img.shields.io/badge/Android-8.0%2B-65e2ce?style=flat-square&labelColor=0b1318">
   <img alt="64-bit ARM phones" src="https://img.shields.io/badge/Phones-64--bit_ARM-65e2ce?style=flat-square&labelColor=0b1318">
   <a href="LICENSE"><img alt="GPL-3.0 license" src="https://img.shields.io/badge/license-GPL--3.0-65e2ce?style=flat-square&labelColor=0b1318"></a>
@@ -15,14 +15,15 @@ HTTP Lossless Addon Link by [Heisenberg](https://github.com/Vishnuuu-s1):
 No Lokal account is needed to play local files. Your library and listening history live on your device; online discovery, lyrics, artwork and account integrations are optional.
 
 <p align="center">
-  <a href="https://github.com/lokal-music/Mobile/releases"><b>Download</b></a> ·
+  <a href="https://github.com/lokal-music/Mobile/releases/tag/android"><b>Android download</b></a> ·
+  <a href="https://github.com/lokal-music/Mobile/releases/tag/ios"><b>iPhone download</b></a> ·
   <a href="https://github.com/lokal-music/Mobile/actions/workflows/android-nightly.yml">Nightly builds</a> ·
   <a href="https://github.com/lokal-music/Mobile/issues">Report an issue</a> ·
   <a href="docs/BUILD.md">Build from source</a> ·
   <a href="https://github.com/lokal-music/Desktop">Lokal for desktop</a>
 </p>
 
-**1.0.0 is the next stable mobile release.** Until it is published, preview APKs are available on the Releases page. Stable releases and nightlies have separate, manually triggered build flows; merging a pull request does not publish another beta.
+**Two permanent download pages:** `android` holds the current signed Android release; `ios` holds the current unsigned iPhone beta. Successful release builds update these entries, so users do not need to find a new tag each time. Version and build numbers remain in the release title and package metadata. Nightly APKs are available as workflow artifacts and do not replace the public Android download. Merging a pull request does not publish a release. See the [release workflow guide](docs/PLATFORM_RELEASES.md).
 
 The iPhone unsigned beta is available for signing and physical-device acceptance. See the [Windows IPA signing guide](docs/IOS_SIDELOADING.md), [port architecture](docs/IOS_PORT.md), and [main integration notes](docs/IOS_MAIN_INTEGRATION.md).
 
