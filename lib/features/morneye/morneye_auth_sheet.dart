@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:flick/core/theme/lokal_tokens.dart';
 
 import 'morneye_packages.dart';
+import '../../widgets/common/web_sign_in_frame.dart';
 
 /// An add-on's verification or login page, opened in the app the way
 /// desktop opens it in its own window. When the page hands back to the
@@ -18,11 +21,13 @@ class MorneyeAuthSheet extends StatefulWidget {
     required this.packages,
     required this.addon,
     required this.url,
+    this.fullscreen = false,
   });
 
   final MorneyePackages packages;
   final MorneyeAddon addon;
   final String url;
+  final bool fullscreen;
 
   /// Opens [url]; true once the add-on accepted the page's callback.
   static Future<bool> show(
@@ -30,16 +35,33 @@ class MorneyeAuthSheet extends StatefulWidget {
     required MorneyePackages packages,
     required MorneyeAddon addon,
     required String url,
-  }) async =>
-      await showModalBottomSheet<bool>(
-        context: context,
-        useRootNavigator: true,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) =>
-            MorneyeAuthSheet(packages: packages, addon: addon, url: url),
-      ) ==
-      true;
+  }) async {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return await Navigator.of(context, rootNavigator: true).push<bool>(
+            MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => MorneyeAuthSheet(
+                packages: packages,
+                addon: addon,
+                url: url,
+                fullscreen: true,
+              ),
+            ),
+          ) ==
+          true;
+    }
+    return await showModalBottomSheet<bool>(
+          context: context,
+          useRootNavigator: true,
+          isScrollControlled: true,
+          enableDrag: false,
+          useSafeArea: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) =>
+              MorneyeAuthSheet(packages: packages, addon: addon, url: url),
+        ) ==
+        true;
+  }
 
   @override
   State<MorneyeAuthSheet> createState() => _MorneyeAuthSheetState();
@@ -101,14 +123,8 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.lokal;
-    return Container(
-      height: MediaQuery.sizeOf(context).height * .92,
-      padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      clipBehavior: Clip.antiAlias,
+    return WebSignInFrame(
+      fullscreen: widget.fullscreen,
       child: Column(
         children: [
           Padding(
@@ -155,6 +171,11 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
           if (_finishing) LinearProgressIndicator(color: tokens.accent),
           Expanded(
             child: InAppWebView(
+              gestureRecognizers: {
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
               initialUrlRequest: URLRequest(url: WebUri(widget.url)),
               initialSettings: InAppWebViewSettings(
                 javaScriptEnabled: true,
@@ -165,6 +186,9 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
                 incognito: true,
                 // Same black-page workaround as the YouTube Music sign-in.
                 useHybridComposition: false,
+                disableVerticalScroll: false,
+                verticalScrollBarEnabled: true,
+                isTextInteractionEnabled: true,
               ),
               shouldOverrideUrlLoading: _navigate,
               onReceivedError: (controller, request, error) {

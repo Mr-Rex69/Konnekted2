@@ -21,6 +21,7 @@ import 'morneye_session.dart';
 import 'morneye_storage.dart';
 import 'morneye_ffmpeg.dart';
 import 'morneye_playback_quality.dart';
+import 'morneye_diagnostics.dart';
 
 /// Morneye add-on packages (.sflx), as desktop's
 /// electron/morneye/packages.js: repositories to install from, installed
@@ -80,6 +81,46 @@ bool morneyeShouldRetryEnrichment({
   required Object? available,
   required bool hasEnrichment,
 }) => hasEnrichment && (available is! Map || available['available'] != true);
+
+/// Preserve explicit cross-catalogue IDs and prefer the current, verified
+/// provider identity after enrichment. A foreign numeric ID is not a Deezer ID.
+Map<String, Object?> morneyeAvailabilityOptions(
+  String provider,
+  Map track,
+  String originalId,
+) {
+  final options = <String, Object?>{
+    'track': track,
+    'duration_ms': track['duration_ms'] ?? 0,
+    for (final field in ['spotify_id', 'deezer_id', 'qobuz_id', 'tidal_id'])
+      if (track[field] != null && '${track[field]}'.trim().isNotEmpty)
+        field: '${track[field]}',
+  };
+  final owner = '${track['provider_id'] ?? ''}'.replaceFirst(
+    RegExp(r'-web$'),
+    '',
+  );
+  final currentId = '${track['id'] ?? originalId}';
+  final owned =
+      owner.isEmpty ||
+      owner == provider ||
+      ((provider == 'amazon-new') && owner == 'amazon');
+  if (provider.startsWith('amazon') &&
+      owned &&
+      RegExp(r'^[A-Z0-9]{10}$').hasMatch(currentId)) {
+    // Amazon's documented legacy field accepts its native ASIN. Prefer this
+    // exact selected recording over a Spotify mapping from its metadata.
+    options['spotify_id'] = currentId;
+  } else if (provider == 'deezer') {
+    if (owned && RegExp(r'^[1-9][0-9]{0,19}$').hasMatch(currentId)) {
+      options['deezer_id'] = currentId;
+    }
+  } else if (owned && {'qobuz', 'tidal', 'soundcloud'}.contains(provider)) {
+    final field = provider == 'soundcloud' ? 'spotify_id' : '${provider}_id';
+    options.putIfAbsent(field, () => currentId);
+  }
+  return options;
+}
 
 /// The installed package's stable key (also its storage namespace).
 String morneyeKeyOf(String name) =>
@@ -1451,6 +1492,7 @@ class MorneyePackages {
     void Function({double? percent, String? message})? onProgress,
     void Function(MorneyeTransfer)? onTransfer,
     int heapMb = 64,
+    MorneyeDiagnostics? diagnostics,
   }) {
     final network = _networkFor(addon);
     final session = addon.signedSession != null
@@ -1468,6 +1510,13 @@ class MorneyePackages {
       onProgress: onProgress,
       onTransfer: onTransfer,
       appVersion: appVersion,
+      diagnostics:
+          diagnostics ??
+          MorneyeDiagnostics(
+            name: addon.name,
+            key: addon.key,
+            version: addon.version,
+          ),
     );
     return MorneyeRuntime.start(
       code,
@@ -1863,6 +1912,13 @@ class MorneyePackages {
                 const [])
             .any((h) => h is Map && h['defaultEnabled'] == true);
     final preparation = Stopwatch()..start();
+    final diagnostics = MorneyeDiagnostics(
+      name: addon.name,
+      key: addon.key,
+      version: addon.version,
+      mode: forPlayback ? 'playback' : 'download',
+    );
+    var lastStage = 'worker_start';
     var sawFirstByte = false;
     MorneyeRuntime? activeRuntime;
     Timer? inactivityTimer;
@@ -1883,6 +1939,8 @@ class MorneyePackages {
     }
 
     void phase(String stage) {
+      lastStage = stage;
+      diagnostics.stage(stage);
       onResolutionStage?.call(stage);
       // Private IDs, signed URLs, tokens and track names are never logged.
       AppLog.instance.add(
@@ -1892,41 +1950,49 @@ class MorneyePackages {
     }
 
     phase('worker_start');
-    final runtime = await _createRuntime(
-      addon,
-      _code(key),
-      grants: [staged.path],
-      onProgress: ({double? percent, String? message}) {
-        // Percent can restart from zero on a failed segment retry.
-        // Compare with the preceding callback, not the highest old value.
-        if (percent != null) {
-          if (percent > lastPercent) recordActivity();
-          lastPercent = percent;
-        }
-        onProgress?.call(percent: percent, message: message);
-      },
-      onTransfer: hooks
-          ? null
-          : (transfer) {
-              // A header-only transfer restart isn't progress. Once real bytes
-              // resume, even below the previous attempt's total, reset watchdog.
-              if (transfer.written > 0 &&
-                  (transfer.part != lastPart ||
-                      transfer.written > lastWritten)) {
-                recordActivity();
-              }
-              lastPart = transfer.part;
-              lastWritten = transfer.written;
-              if (!sawFirstByte && transfer.written > 0) {
-                sawFirstByte = true;
-                phase('first_byte');
-              }
-              onTransfer?.call(transfer);
-            },
-      // Isolated download workers need headroom for segments/decryption.
-      // Browsing stays at 64 MiB. Native code caps this at 256 MiB.
-      heapMb: 256,
-    );
+    late final MorneyeRuntime runtime;
+    try {
+      runtime = await _createRuntime(
+        addon,
+        _code(key),
+        grants: [staged.path],
+        onProgress: ({double? percent, String? message}) {
+          // Percent can restart from zero on a failed segment retry.
+          // Compare with the preceding callback, not the highest old value.
+          if (percent != null) {
+            if (percent > lastPercent) recordActivity();
+            lastPercent = percent;
+          }
+          onProgress?.call(percent: percent, message: message);
+        },
+        onTransfer: hooks
+            ? null
+            : (transfer) {
+                // A header-only transfer restart isn't progress. Once real bytes
+                // resume, even below the previous attempt's total, reset watchdog.
+                if (transfer.written > 0 &&
+                    (transfer.part != lastPart ||
+                        transfer.written > lastWritten)) {
+                  recordActivity();
+                }
+                lastPart = transfer.part;
+                lastWritten = transfer.written;
+                if (!sawFirstByte && transfer.written > 0) {
+                  sawFirstByte = true;
+                  phase('first_byte');
+                }
+                onTransfer?.call(transfer);
+              },
+        // Isolated download workers need headroom for segments/decryption.
+        // Browsing stays at 64 MiB. Native code caps this at 256 MiB.
+        heapMb: 256,
+        diagnostics: diagnostics,
+      );
+    } catch (error) {
+      diagnostics.failure(lastStage, error);
+      await staged.delete(recursive: true);
+      rethrow;
+    }
     activeRuntime = runtime;
     unawaited(cancel?.then((_) => runtime.close()));
     try {
@@ -1963,29 +2029,14 @@ class MorneyePackages {
         };
       }
       track = Map.of(track);
+      diagnostics.metadata(track);
       final provider = addon.name.replaceFirst(RegExp(r'-web$'), '');
       final amazonProvider = provider == 'amazon' || provider == 'amazon-new';
       // First request is always the provider's own availability/download
       // ticket, regardless of Play vs Save or Tidal/Deezer/Qobuz identity.
       // This removes redundant enrichment before a source can transfer bytes.
       Future<dynamic> checkAvailability() {
-        final options = <String, Object?>{
-          'track': track,
-          'duration_ms': track['duration_ms'] ?? 0,
-        };
-        const directFields = {
-          'qobuz': 'qobuz_id',
-          'tidal': 'tidal_id',
-          'deezer': 'deezer_id',
-          'soundcloud': 'spotify_id',
-          'amazon': 'spotify_id',
-          'amazon-new': 'spotify_id',
-        };
-        final directField = directFields[provider];
-        if (directField != null) {
-          options[directField] =
-              '${track[directField] ?? (amazonProvider || provider == 'soundcloud' ? track['id'] : id)}';
-        }
+        final options = morneyeAvailabilityOptions(provider, track, id);
         return runtime.methods.contains('checkAvailability')
             ? runtime.invoke('checkAvailability', [
                 track['isrc'] ?? '',
@@ -1998,6 +2049,7 @@ class MorneyePackages {
 
       phase('availability');
       var available = await checkAvailability();
+      diagnostics.availability(available);
       if (morneyeShouldRetryEnrichment(
         available: available,
         hasEnrichment: runtime.methods.contains('enrichTrack'),
@@ -2019,6 +2071,7 @@ class MorneyePackages {
         }
         phase('availability_retry');
         available = await checkAvailability();
+        diagnostics.availability(available);
       }
       if (available is! Map || available['available'] != true) {
         throw MorneyePackageError(
@@ -2045,6 +2098,7 @@ class MorneyePackages {
         options: addon.qualityOptions,
         provider: provider,
       );
+      diagnostics.quality(chosen);
       // E-AC-3 is not automatically Atmos. The current native path can
       // preserve *verified JOC* but cannot render generic E-AC-3 through the
       // normal Rust decoder. Keep this selection in its native bitstream,
@@ -2150,6 +2204,7 @@ class MorneyePackages {
               ? {'strategy': 'ffmpeg.mov_key', 'key': result['decryption_key']}
               : null);
       if (decryption != null) {
+        phase('decrypting_media');
         if (explicitAtmos)
           AtmosDiagnostics.record('postprocess_start', {'stage': 'decrypt'});
         if (decryption is! Map ||
@@ -2229,6 +2284,7 @@ class MorneyePackages {
           result['requiresContainerConversion'] == true;
       final postProcessing = addon.manifest['postProcessing'];
       if (postProcessing is Map && postProcessing['enabled'] == true) {
+        phase('postprocessing_media');
         for (final hook in postProcessing['hooks'] as List? ?? const []) {
           if (hook is! Map || hook['defaultEnabled'] != true) continue;
           final formats =
@@ -2259,6 +2315,7 @@ class MorneyePackages {
         }
       }
       Map<String, Object?> info;
+      phase('verifying_media');
       if (requiresContainerConversion) {
         // Symphonia may not probe a FLAC bitstream wrapped in an MP4/DASH
         // container. Try the probe first; if it is readable, ALAC-in-M4A can
@@ -2310,6 +2367,7 @@ class MorneyePackages {
         file = renamed;
         info = {...info};
       }
+      phase('ready');
       return MorneyeDownload(
         File(file),
         {...track.cast<String, Object?>(), ...result.cast<String, Object?>()},
@@ -2317,6 +2375,7 @@ class MorneyePackages {
         staged,
       );
     } catch (error) {
+      diagnostics.failure(lastStage, error);
       if (staged.existsSync()) await staged.delete(recursive: true);
       rethrow;
     } finally {

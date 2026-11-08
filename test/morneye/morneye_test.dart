@@ -1036,6 +1036,69 @@ void main() {
       await downloaded.cleanup();
     });
 
+    test('Amazon receives an explicit Deezer identity for cross-catalogue matching', () async {
+      var checked = false;
+      engine.scripts['amazon-deezer-match'] = {
+        ...downloader(),
+        'searchTracks': (args, call) async => [{
+          'id': '12345', 'name': 'Song', 'artists': 'Artist',
+          'provider_id': 'deezer', 'deezer_id': '12345',
+        }],
+        'checkAvailability': (args, call) async {
+          checked = true;
+          final options = args[3] as Map;
+          expect(options['deezer_id'], '12345');
+          expect(options.containsKey('spotify_id'), isFalse);
+          return {'available': true, 'track_id': 'B012345678'};
+        },
+      };
+      final addon = await packages.install(bytes: packageBytes(
+        manifestFor('amazon'), 'amazon-deezer-match'));
+      await packages.search(addon.key, 'Song');
+      final file = await packages.download(addon.key, '12345', forPlayback: true);
+      expect(checked, isTrue);
+      await file.cleanup();
+    });
+
+    test('Deezer retry uses the enriched canonical ID instead of the original foreign ID', () async {
+      var checked = 0;
+      engine.scripts['deezer-enriched-id'] = {
+        ...downloader(),
+        'searchTracks': (args, call) async => [{
+          'id': 'original-spotify-id', 'name': 'Song', 'artists': 'Artist',
+          'provider_id': 'spotify',
+        }],
+        'enrichTrack': (args, call) async => {'id': '67890', 'provider_id': 'deezer'},
+        'checkAvailability': (args, call) async {
+          checked++;
+          final options = args[3] as Map;
+          if (checked == 1) {
+            expect(options.containsKey('deezer_id'), isFalse);
+            return {'available': false, 'reason': 'No Deezer track match found'};
+          }
+          expect(options['deezer_id'], '67890');
+          return {'available': true, 'track_id': '67890'};
+        },
+      };
+      final addon = await packages.install(bytes: packageBytes(
+        manifestFor('deezer'), 'deezer-enriched-id'));
+      await packages.search(addon.key, 'Song');
+      final file = await packages.download(addon.key, 'original-spotify-id', forPlayback: true);
+      expect(checked, 2);
+      await file.cleanup();
+    });
+
+    test('native Amazon selection wins over a foreign Spotify mapping', () {
+      final options = morneyeAvailabilityOptions('amazon', {
+        'id': 'B012345678', 'provider_id': 'amazon', 'spotify_id': 'spotify-mapping',
+      }, 'old-original-id');
+      expect(options['spotify_id'], 'B012345678');
+      final foreign = morneyeAvailabilityOptions('deezer', {
+        'id': '12345', 'provider_id': 'tidal',
+      }, '12345');
+      expect(foreign.containsKey('deezer_id'), isFalse);
+    });
+
     test('failed cross-catalogue availability enriches and retries once', () async {
       final steps = <String>[];
       engine.scripts['cross-catalogue-retry'] = {

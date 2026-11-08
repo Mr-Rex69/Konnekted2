@@ -1,25 +1,26 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../../core/utils/app_log.dart';
+import '../../widgets/common/web_sign_in_frame.dart';
 import 'youtube_music_account.dart';
 
 const _musicUrl = 'https://music.youtube.com';
 
 /// BitChord's first-party YouTube Music login flow. In particular, do not
-/// impersonate desktop Chrome: use Android WebView's real user agent and let
+/// impersonate desktop Chrome: use the platform WebView's real user agent and let
 /// Google's ServiceLogin redirect directly to YouTube Music.
-Uri youtubeMusicSignInUri() => Uri.https(
-  'accounts.google.com',
-  '/ServiceLogin',
-  {
-    'ltmpl': 'music',
-    'service': 'youtube',
-    'passive': 'true',
-    'continue': '$_musicUrl/',
-  },
-);
+Uri youtubeMusicSignInUri() =>
+    Uri.https('accounts.google.com', '/ServiceLogin', {
+      'ltmpl': 'music',
+      'service': 'youtube',
+      'passive': 'true',
+      'continue': '$_musicUrl/',
+    });
 
 const _ytcfgProbe = r'''
 (function () {
@@ -49,7 +50,7 @@ Map<String, dynamic> _decodeYtcfg(Object? raw) {
   // JSON-encoded string. Accept either without relying on double encoding.
   for (var i = 0; i < 2 && decoded is String; i++) {
     try {
-      decoded = jsonDecode(decoded as String);
+      decoded = jsonDecode(decoded);
     } on FormatException {
       return {};
     }
@@ -61,16 +62,31 @@ Map<String, dynamic> _decodeYtcfg(Object? raw) {
 /// Interactive sign-in sheet. A session is saved only after the user confirms
 /// the selected YouTube Music profile and the live page reports LOGGED_IN.
 class YoutubeMusicSignInSheet extends StatefulWidget {
-  const YoutubeMusicSignInSheet({super.key});
+  const YoutubeMusicSignInSheet({super.key, this.fullscreen = false});
+  final bool fullscreen;
 
-  static Future<YoutubeMusicSession?> show(BuildContext context) =>
-      showModalBottomSheet<YoutubeMusicSession>(
-        context: context,
-        useRootNavigator: true,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => const YoutubeMusicSignInSheet(),
+  static Future<YoutubeMusicSession?> show(BuildContext context) {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return Navigator.of(
+        context,
+        rootNavigator: true,
+      ).push<YoutubeMusicSession>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const YoutubeMusicSignInSheet(fullscreen: true),
+        ),
       );
+    }
+    return showModalBottomSheet<YoutubeMusicSession>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      enableDrag: false,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const YoutubeMusicSignInSheet(),
+    );
+  }
 
   @override
   State<YoutubeMusicSignInSheet> createState() =>
@@ -83,6 +99,15 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
   bool _capturing = false;
   String? _error;
 
+  void _log(String event) => AppLog.instance.add('[YouTube sign-in] $event');
+
+  static String _page(WebUri? uri) => switch (uri?.host) {
+    'accounts.google.com' => 'google_accounts',
+    'music.youtube.com' => 'youtube_music',
+    'www.youtube.com' => 'youtube',
+    _ => 'other',
+  };
+
   Future<void> _onLoadStop(
     InAppWebViewController controller,
     WebUri? uri,
@@ -91,6 +116,7 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
     if (!mounted) return;
     final isMusicPage =
         uri?.scheme == 'https' && uri?.host == 'music.youtube.com';
+    _log('event=load_complete page=${_page(uri)}');
     setState(() {
       _pageReady = isMusicPage;
       if (isMusicPage) _error = null;
@@ -104,6 +130,7 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
       _capturing = true;
       _error = null;
     });
+    _log('event=capture_started');
 
     try {
       final cookieList = await CookieManager.instance().getCookies(
@@ -119,13 +146,14 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
         await controller.evaluateJavascript(source: _ytcfgProbe),
       );
       final loggedInValue = contextValues['loggedIn'];
-      final loggedIn = loggedInValue == true ||
+      final loggedIn =
+          loggedInValue == true ||
           '${loggedInValue ?? ''}'.toLowerCase() == 'true';
       if (!loggedIn) {
+        _log('event=capture_failed reason=profile_not_confirmed');
         if (mounted) {
           setState(() {
-            _error =
-                'YouTube Music has not confirmed a signed-in profile yet. Finish choosing your account on the page, then try again.';
+            _error = 'YouTube Music has not confirmed a signed-in profile yet. Finish choosing your account on the page, then try again.';
           });
         }
         return;
@@ -133,10 +161,10 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
 
       final userAgent = contextValues['userAgent']?.toString().trim() ?? '';
       if (userAgent.isEmpty) {
+        _log('event=capture_failed reason=browser_identity_missing');
         if (mounted) {
           setState(() {
-            _error =
-                'Could not read the browser session. Reload YouTube Music and try again.';
+            _error = 'Could not read the browser session. Reload YouTube Music and try again.';
           });
         }
         return;
@@ -144,7 +172,7 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
 
       final session = YoutubeMusicSession(
         cookies: cookies,
-        // Keep the actual Android WebView UA. Replacing it with a desktop UA
+        // Keep the actual platform WebView UA. Replacing it with a desktop UA
         // creates a mismatch between the sign-in page and Innertube requests.
         userAgent: userAgent,
         sessionIndex: contextValues['sessionIndex']?.toString(),
@@ -153,21 +181,22 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
         clientVersion: contextValues['clientVersion']?.toString(),
       );
       if (!session.signedIn) {
+        _log('event=capture_failed reason=signing_cookie_missing');
         if (mounted) {
           setState(() {
-            _error =
-                'YouTube Music is open, but no signing cookie was found. Finish signing in and try again.';
+            _error = 'YouTube Music is open, but no signing cookie was found. Finish signing in and try again.';
           });
         }
         return;
       }
 
+      _log('event=capture_complete');
       if (mounted) Navigator.of(context).pop(session);
     } catch (_) {
+      _log('event=capture_failed reason=session_read_failed');
       if (mounted) {
         setState(() {
-          _error =
-              'Could not read the YouTube Music session. Reload the page and try again.';
+          _error = 'Could not read the YouTube Music session. Reload the page and try again.';
         });
       }
     } finally {
@@ -177,13 +206,8 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.sizeOf(context).height * .92,
-      padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    return WebSignInFrame(
+      fullscreen: widget.fullscreen,
       child: Column(
         children: [
           Padding(
@@ -228,13 +252,26 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
                 ),
               ),
             ),
+          if (widget.fullscreen && MediaQuery.viewInsetsOf(context).bottom == 0)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: Text(
+                'If Google cannot use your passkey here, choose “Try another way” to use your password or another verification method.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
           Expanded(
             child: InAppWebView(
+              gestureRecognizers: {
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
               initialUrlRequest: URLRequest(
                 url: WebUri(youtubeMusicSignInUri().toString()),
               ),
               initialSettings: InAppWebViewSettings(
-                // Deliberately omit userAgent: use the native Android
+                // Deliberately omit userAgent: use the native platform
                 // WebView identity, as BitChord does.
                 javaScriptEnabled: true,
                 thirdPartyCookiesEnabled: true,
@@ -243,15 +280,24 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
                 // Drawn as a texture: as a hybrid-composition view the page
                 // stays black under Impeller on Android 12 and later.
                 useHybridComposition: false,
+                disableVerticalScroll: false,
+                verticalScrollBarEnabled: true,
+                isTextInteractionEnabled: true,
               ),
               onWebViewCreated: (controller) => _controller = controller,
               onLoadStop: _onLoadStop,
+              onLoadStart: (controller, uri) {
+                _log('event=load_started page=${_page(uri)}');
+                if (mounted) setState(() => _pageReady = false);
+              },
               onReceivedError: (controller, request, error) {
                 if (!mounted || request.isForMainFrame != true) return;
+                _log(
+                  'event=load_failed page=${_page(request.url)} reason=page_load_failed',
+                );
                 setState(() {
                   _pageReady = false;
-                  _error =
-                      'The sign-in page could not be loaded. Check your connection and try again.';
+                  _error = 'The sign-in page could not be loaded. Check your connection and try again.';
                 });
               },
             ),
@@ -268,8 +314,7 @@ class _YoutubeMusicSignInSheetState extends State<YoutubeMusicSignInSheet> {
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
-                  onPressed:
-                      _pageReady && !_capturing ? _capture : null,
+                  onPressed: _pageReady && !_capturing ? _capture : null,
                   child: _capturing
                       ? const SizedBox(
                           width: 18,

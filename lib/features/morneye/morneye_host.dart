@@ -11,6 +11,7 @@ import 'morneye_network.dart';
 import 'morneye_session.dart';
 import 'morneye_storage.dart';
 import 'morneye_ffmpeg.dart';
+import 'morneye_diagnostics.dart';
 
 /// Answers Morneye add-ons' host calls, as desktop's
 /// electron/morneye/host.js does: files inside the add-on's own folder,
@@ -328,6 +329,7 @@ class MorneyeHost {
     this.onTransfer,
     this.appVersion = '1.0.0',
     this.stallTimeout = const Duration(seconds: 30),
+    this.diagnostics,
   }) : root = p.normalize(p.absolute(root)),
        grants = [for (final grant in grants) p.normalize(p.absolute(grant))] {
     Directory(this.root).createSync(recursive: true);
@@ -346,6 +348,7 @@ class MorneyeHost {
   final void Function({double? percent, String? message})? onProgress;
   final void Function(MorneyeTransfer transfer)? onTransfer;
   final String appVersion;
+  final MorneyeDiagnostics? diagnostics;
 
   /// How long a download may go without a byte before its connection is
   /// dropped and the download resumed.
