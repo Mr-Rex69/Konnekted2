@@ -416,6 +416,29 @@ mod tests {
     }
 
     #[test]
+    fn youtube_ejs_decodes_signatures_in_the_production_sandbox() {
+        let bootstrap = include_str!("../../assets/youtube/sandbox.js");
+        let code = format!("{}\nObject.assign(globalThis,lib);\n{}\nregisterExtension({{solve: input => jsc(input)}});",
+            include_str!("../../assets/youtube/yt.solver.lib.min.js"),
+            include_str!("../../assets/youtube/yt.solver.core.min.js"));
+        let host: Host = Arc::new(|_, _| Box::pin(async { panic!("Solver must not call the host") }));
+        let engine = Engine::start(code, bootstrap.into(), r#"{"heapMb":256}"#.into(), host).unwrap();
+        let input = serde_json::json!([{
+            "type": "player",
+            "player": include_str!("../../test/fixtures/youtube/player.js"),
+            "requests": [
+                {"type":"sig", "challenges":["abc"]},
+                {"type":"n", "challenges":["xyz"]},
+            ],
+        }]);
+        let result = futures::executor::block_on(engine.invoke("solve".into(), input.to_string(), 10_000)).unwrap();
+        let decoded: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(decoded["responses"][0]["data"]["abc"], "cba");
+        assert_eq!(decoded["responses"][1]["data"]["xyz"], "xyz_decoded");
+        engine.close();
+    }
+
+    #[test]
     fn missing_registration_fails() {
         let error = start("1 + 1", echo_host()).err().unwrap();
         assert!(error.contains("registerExtension"), "{error}");

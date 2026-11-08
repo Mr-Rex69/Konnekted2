@@ -3,31 +3,41 @@ import 'dart:io' as io;
 
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as net;
+import 'package:flick/services/catalogue_quality.dart';
 
+import '../../core/utils/app_log.dart';
 import 'discovery_http.dart';
 import 'discovery_models.dart';
 import 'discovery_sources.dart';
-import 'package:flick/services/catalogue_quality.dart';
 import 'youtube_music_account.dart';
 import 'youtube_music_store.dart';
 import 'discovery_playback.dart';
+import 'youtube_player_cipher.dart';
 import '../../models/song.dart';
 
-/// YouTube audio through the maintained native InnerTubeX/cipher/PoToken path
-/// on Android. The direct-client walk is only a fallback for other hosts or
-/// an older native build without the channel.
+/// Android prefers InnerTubeX/cipher/PoToken. Both phones can recover through
+/// direct clients with the shared sandboxed player-signature decoder.
 class YoutubeAudio {
-  YoutubeAudio(this.http, {this.session, this.nativeFallback});
+  YoutubeAudio(
+    this.http, {
+    this.session,
+    this.nativeFallback,
+    YoutubePlayerCipher? cipher,
+  }) : cipher =
+           cipher ??
+           ((io.Platform.isIOS || io.Platform.isAndroid)
+               ? YoutubePlayerCipher(http)
+               : null);
 
   final DiscoveryHttp http;
+  final YoutubePlayerCipher? cipher;
 
   /// Existing browser sign-in is reused when available. Anonymous playback
   /// still tries the public clients, and cookie material is only sent to
   /// YouTube Music itself.
   final YoutubeMusicSession? session;
 
-  /// Injectable seam for tests; production Android calls the native
-  /// InnerTubeX resolver when the quick public-client walk cannot play a URL.
+  /// Injectable seam for tests; production Android tries InnerTubeX first.
   final Future<ResolvedDiscoveryAudio?> Function(
     String videoId,
     YoutubeMusicSession? session,
@@ -103,6 +113,7 @@ class YoutubeAudio {
           )
           .timeout(const Duration(seconds: 6));
       if (response.statusCode != 200) return null;
+      cipher?.readPlayerUrl(response.body);
       return RegExp(r'"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"')
           .firstMatch(response.body)
           ?.group(1);
@@ -157,14 +168,12 @@ class YoutubeAudio {
       name: 'ANDROID',
       id: 3,
       version: '20.10.38',
-      userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14; en_US; Pixel 7 Pro Build/UQ1A.240205.004) gzip',
-      extra: {
-        'deviceMake': 'Google',
-        'deviceModel': 'Pixel 7 Pro',
-        'androidSdkVersion': 34,
-        'osName': 'Android',
-        'osVersion': '14',
-      },
+      // The SDK-less client does not request Android device attestation.
+      // This fallback runs on iOS too; advertising an SDK without providing
+      // its attestation can yield OK player responses with unusable media.
+      userAgent:
+          'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+      extra: {'osName': 'Android', 'osVersion': '11'},
     ),
     YoutubeClient(
       name: 'IOS',
@@ -186,6 +195,13 @@ class YoutubeAudio {
       embedUrl: 'https://www.youtube.com/',
     ),
     YoutubeClient(
+      name: 'TVHTML5',
+      id: 7,
+      version: '7.20251105.10.00',
+      userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version,gzip(gfe)',
+      extra: {'platform': 'DESKTOP'},
+    ),
+    YoutubeClient(
       name: 'WEB_REMIX',
       id: 67,
       version: '1.20260114.03.00',
@@ -204,6 +220,10 @@ class YoutubeAudio {
     if (!_videoId.hasMatch(videoId)) {
       throw const DiscoveryException('This isn’t a YouTube recording.');
     }
+    var cancelled = false;
+    if (cancel != null) unawaited(cancel.then((_) => cancelled = true));
+    await Future<void>.value();
+    if (cancelled) throw const DiscoveryException('Request cancelled.');
     DiscoveryException? failure;
     final signedInSession = await _loadSession();
     final signedInHeaders = signedInSession == null
@@ -211,7 +231,7 @@ class YoutubeAudio {
         : youtubeMusicHeaders(signedInSession);
     // Android's maintained cipher/PoToken-aware catalogue handles guest
     // clients as well. Do not spend six stale direct-client attempts first.
-    if (io.Platform.isAndroid && nativeFallback == null) {
+    if (io.Platform.isAndroid || nativeFallback != null) {
       try {
         final audio = await _resolveWithNativeFallback(
           videoId,
@@ -219,10 +239,13 @@ class YoutubeAudio {
           cancel: cancel,
         );
         if (audio != null) return audio;
-      } on DiscoveryException {
-        // Do not hide a maintained resolver failure behind minutes of stale
-        // client retries and a second identical native walk.
-        rethrow;
+      } on DiscoveryException catch (error) {
+        if (error.message == 'Request cancelled.') rethrow;
+        failure = error;
+        _logFailure('native', error);
+        // A native client/cipher outage must not disable every public song.
+        // Recover through the independent direct path once, without invoking
+        // the same failed native walk again at the end.
       }
     }
     for (final client in clients) {
@@ -237,6 +260,10 @@ class YoutubeAudio {
             liveVersion ??
             (useSignedInMusicClient ? signedInSession!.clientVersion : null) ??
             client.version;
+        final signatureTimestamp =
+            client.name == 'WEB_REMIX' || client.name == 'TVHTML5'
+            ? await cipher?.signatureTimestamp(cancel: cancel)
+            : null;
         final requestClient = useSignedInMusicClient
             ? YoutubeClient(
                 name: client.name,
@@ -285,10 +312,17 @@ class YoutubeAudio {
             'videoId': videoId,
             'contentCheckOk': true,
             'racyCheckOk': true,
+            if (signatureTimestamp != null)
+              'playbackContext': {
+                'contentPlaybackContext': {
+                  'signatureTimestamp': signatureTimestamp,
+                },
+              },
           },
           cancel: cancel,
         );
-        final audio = pick(response, requestClient);
+        final decoded = await cipher?.decipher(response, cancel: cancel);
+        final audio = pick(decoded ?? response, requestClient);
         // A player response can say OK while its URL is already dead or is
         // bound to a different client identity. Verify actual media access
         // before handing the link to the downloader; a 403 from one client
@@ -298,18 +332,8 @@ class YoutubeAudio {
       } on DiscoveryException catch (error) {
         if (error.message == 'Request cancelled.') rethrow;
         failure = error;
+        _logFailure(client.name, error);
       }
-    }
-    try {
-      final advanced = await _resolveWithNativeFallback(
-        videoId,
-        signedInSession,
-        cancel: cancel,
-      );
-      if (advanced != null) return advanced;
-    } on DiscoveryException catch (error) {
-      if (error.message == 'Request cancelled.') rethrow;
-      failure = error;
     }
     throw failure ??
         const DiscoveryException('YouTube didn’t give this song’s audio.');
@@ -349,9 +373,8 @@ class YoutubeAudio {
         .invokeMapMethod<String, Object?>('resolveStream', {
           'videoId': videoId,
           'requestId': requestId,
-          if (cookie != null) 'cookie': cookie,
-          if (signedInSession?.visitorData case final visitorData?)
-            'visitorData': visitorData,
+          'cookie': ?cookie,
+          'visitorData': ?signedInSession?.visitorData,
         })
         .timeout(const Duration(seconds: 50));
     final Map<String, Object?>? response;
@@ -367,6 +390,9 @@ class YoutubeAudio {
     } on DiscoveryException {
       rethrow;
     } on PlatformException catch (error) {
+      if (error.code == 'CANCELLED') {
+        throw const DiscoveryException('Request cancelled.');
+      }
       throw DiscoveryException(
         error.code == 'RESOLVE_TIMEOUT'
             ? 'YouTube stream resolution timed out. Try again.'
@@ -409,7 +435,8 @@ class YoutubeAudio {
       headers: headers,
       codec: verifiedAudioCodec(response['mime']),
       bitrate: response['bitrate'] is num
-          ? (response['bitrate'] as num).toInt() : null,
+          ? (response['bitrate'] as num).toInt()
+          : null,
     );
   }
 
@@ -435,6 +462,10 @@ class YoutubeAudio {
     final request =
         net.AbortableRequest('GET', audio.url, abortTrigger: abort.future)
           ..followRedirects = true
+          // This response is deliberately cut short after its first bytes.
+          // Never race an abort against IOClient returning it to the pool
+          // (_HttpClient._returnConnection crashes in both supplied logs).
+          ..persistentConnection = false
           ..headers.addAll({
             'Accept': '*/*',
             'Range': 'bytes=0-16383',
@@ -514,6 +545,12 @@ class YoutubeAudio {
         prefix.startsWith('<?xml');
   }
 
+  static void _logFailure(String client, DiscoveryException error) {
+    AppLog.instance.add(
+      '[YouTube playback] client=$client reason=${youtubeFailureKind(error)}',
+    );
+  }
+
   /// The best AAC audio in a player [response]: the player plays MP4 audio,
   /// not WebM, so Opus formats are skipped.
   static ResolvedDiscoveryAudio pick(
@@ -531,8 +568,13 @@ class YoutubeAudio {
       if (format is! Map) continue;
       final mime = '${format['mimeType'] ?? ''}';
       final url = Uri.tryParse('${format['url'] ?? ''}');
-      final length = int.tryParse('${format['contentLength'] ?? ''}') ?? 0;
-      // A ciphered link needs the player script, which the phone hasn't got.
+      final length =
+          int.tryParse(
+            '${format['contentLength'] ?? url?.queryParameters['clen'] ?? ''}',
+          ) ??
+          0;
+      // Ciphered links are decoded before selection; no raw cipher may reach
+      // the downloader or be mistaken for a playable URL.
       if (!mime.startsWith('audio/mp4') ||
           url == null ||
           url.scheme != 'https' ||
@@ -623,4 +665,30 @@ class YoutubeClient {
   final Map<String, Object> extra;
   final String host;
   final String? embedUrl;
+}
+
+/// Fixed diagnostic labels only: never copy provider text, signed URLs or
+/// account material to exported logs.
+String youtubeFailureKind(DiscoveryException error) {
+  final message = error.message.toLowerCase();
+  if (message == 'request cancelled.') return 'cancelled';
+  if (message.contains('signature') || message.contains('player script')) {
+    return 'player_cipher';
+  }
+  if (message.contains('age verification')) return 'age_verification';
+  if (message.contains('verification')) return 'verification_required';
+  if (message.contains('region')) return 'region_unavailable';
+  if (message.contains('format')) return 'no_direct_aac';
+  final status = RegExp(r'http (\d{3})').firstMatch(message)?.group(1);
+  if (status != null) return 'http_$status';
+  if (message.contains('timed out')) return 'timeout';
+  if (message.contains('non-audio') ||
+      message.contains('no playable audio bytes')) {
+    return 'invalid_media';
+  }
+  if (message.contains('securely') || message.contains('connection')) {
+    return 'network';
+  }
+  if (message.contains('refused playback')) return 'player_refused';
+  return 'resolve_failed';
 }
