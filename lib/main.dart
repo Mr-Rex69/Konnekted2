@@ -193,7 +193,7 @@ Future<void> _bootstrapAppAfterFirstFrame() async {
   // Never hold the first frame for a scheduled user-data backup.
   unawaited(
     AutomaticBackupService.instance.runIfDue().catchError(
-      (Object e) => devLog('Automatic backup failed: $e'),
+      (Object e) { devLog('Automatic backup failed: $e'); return null; },
     ),
   );
   unawaited(DisplayModeService().initialize());
