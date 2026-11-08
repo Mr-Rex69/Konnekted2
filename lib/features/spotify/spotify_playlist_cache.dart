@@ -94,7 +94,8 @@ class SpotifyPlaylistCache {
     await _ensure();
     final entry = _entry((_state?['tracks'] as Map?)?[playlistId]);
     final items = entry?['items'];
-    // Pre-fix caches may contain only the first 1,000 songs. Refresh them\n    // on first open even when automatic updates are disabled.\n    if (items is! List || entry?['complete'] != true) return null;
+    // Pre-fix caches may contain only the first 1,000 songs. Refresh them
+    // on first open even when automatic updates are disabled.\n    if (items is! List || entry?['complete'] != true) return null;
     return [
       for (final raw in items)
         if (raw is Map && raw['id'] is String && raw['title'] is String)
