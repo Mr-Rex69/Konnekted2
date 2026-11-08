@@ -422,16 +422,24 @@ class SpotifyWebApi implements SpotifyLibraryApi {
     String playlistId, {
     void Function(int)? onProgress,
     SpotifyCancellation? cancellation,
-    int max = 200,
+    // Null reads the entire playlist; Discovery explicitly requests a preview.
+    int? max,
   }) async {
     if (!RegExp(r'^[A-Za-z0-9]{22}$').hasMatch(playlistId))
       throw const SpotifyApiException('Invalid Spotify playlist.');
+    if (max != null && max <= 0) return const [];
     final tracks = <SpotifyTrack>[];
-    for (var offset = 0; offset < max; offset += 100) {
+    var offset = 0;
+    // Guard against an endpoint that keeps repeating pages, without silently
+    // trimming a large user playlist to a fixed number of tracks.
+    for (var page = 0; page < 10000; page++) {
+      cancellation?.check();
+      if (max != null && offset >= max) return tracks;
+      final pageSize = max == null ? 100 : (max - offset).clamp(1, 100).toInt();
       final data = await query('fetchPlaylist', {
         'uri': 'spotify:playlist:$playlistId',
         'offset': offset,
-        'limit': 100,
+        'limit': pageSize,
         'enableWatchFeedEntrypoint': false,
         'includeEpisodeContentRatingsV2': false,
       }, cancellation: cancellation);
@@ -440,15 +448,37 @@ class SpotifyWebApi implements SpotifyLibraryApi {
         throw const SpotifyApiException(
           'Spotify could not read that playlist.',
         );
-      final items = playlist['content']?['items'] as List? ?? [];
-      for (final item in items.whereType<Map>()) {
+      final content = playlist['content'];
+      final rawItems = content is Map ? content['items'] : null;
+      if (rawItems is! List || rawItems.length > pageSize)
+        throw const SpotifyApiException(
+          'Spotify returned an invalid playlist page. Retry later.',
+        );
+      final totalValue = content is Map ? content['totalCount'] : null;
+      final total = totalValue is num ? totalValue.toInt() : null;
+      if (total != null && total < 0)
+        throw const SpotifyApiException('Spotify returned an invalid playlist total.');
+      if (rawItems.isEmpty) {
+        if (total != null && offset < total)
+          throw const SpotifyApiException(
+            'Spotify stopped before loading all playlist tracks. Retry later.',
+          );
+        return tracks;
+      }
+      for (final item in rawItems.whereType<Map>()) {
         final row = track(item['itemV2']?['data']);
         if (row != null) tracks.add(row);
       }
+      offset += rawItems.length;
       onProgress?.call(tracks.length);
-      if (items.length < 100 || tracks.length >= max) break;
+      // Offset counts every Spotify item, including episodes and unavailable
+      // tracks, even when Lokal cannot show them as playable songs.
+      if (total != null && offset >= total) return tracks;
+      if (total == null && rawItems.length < pageSize) return tracks;
     }
-    return tracks.take(max).toList();
+    throw const SpotifyApiException(
+      'Spotify playlist pagination exceeded its safety limit.',
+    );
   }
 
   /// Desktop policy: null cursor reads one row to establish a baseline only.
