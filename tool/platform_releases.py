@@ -16,7 +16,8 @@ import tempfile
 import time
 from urllib.parse import quote
 
-from ios_store_distribution import ipa_name, validate_source
+from ios_store_distribution import (PUBLIC_IPA, ipa_name, release_notes,
+                                    validate_source, write_source)
 
 REPO = 'lokal-music/mobile'
 LEGACY_ANDROID = re.compile(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\Z')
@@ -70,12 +71,15 @@ class GitHub:
             subprocess.run(['gh', 'release', 'upload', tag, str(file), '--clobber',
                             '--repo', REPO], check=True)
 
-    def download(self, release, destination):
+    def download(self, release, destination, names=None):
         for asset in release['assets']:
             if Path(asset['name']).name != asset['name']:
                 raise ValueError('Unsafe release asset name')
-        subprocess.run(['gh', 'release', 'download', release['tag_name'], '--repo', REPO,
-                        '--dir', str(destination)], check=True)
+        args = ['gh', 'release', 'download', release['tag_name'], '--repo', REPO,
+                '--dir', str(destination)]
+        for name in names or []:
+            args += ['--pattern', name]
+        subprocess.run(args, check=True)
 
 
 def platform_of(release):
@@ -208,6 +212,66 @@ def publish(github, platform, directory, sha, body):
     return result
 
 
+def refresh_ios_store(github):
+    """Refresh store metadata/copy for the published IPA without replacing it.
+
+    This maintenance operation also repairs an interrupted checksum/source
+    upload. It never creates a new package or advances the platform tag.
+    """
+    release = github.api('releases/tags/ios')
+    assets = {asset['name']: asset for asset in release['assets']}
+    name = ipa_name(assets)
+    required = {'Lokal-source.tar.gz', 'Lokal-crash-symbols.tar.gz', 'LICENSE',
+                'THIRD_PARTY_NOTICES.md', 'qualification.json', name, name + '.json'}
+    if release['draft'] or not required <= assets.keys():
+        raise ValueError('No complete published iOS package to index')
+    metadata = github.asset_json(assets[name + '.json'])
+    if not SHA.fullmatch(metadata['source_commit']):
+        raise ValueError('Invalid published iOS source commit')
+    qualification = github.asset_json(assets['qualification.json'])
+    if qualification['source_commit'] != metadata['source_commit']:
+        raise ValueError('Published IPA/qualification source mismatch')
+    with tempfile.TemporaryDirectory(prefix='lokal-store-source-') as temporary:
+        directory = Path(temporary)
+        github.download(release, directory, names=[name, name + '.json'])
+        if name != PUBLIC_IPA:
+            for suffix in ('', '.json'):
+                (directory / (name + suffix)).rename(directory / (PUBLIC_IPA + suffix))
+        if json.loads((directory / (PUBLIC_IPA + '.json')).read_text()) != metadata:
+            raise ValueError('Downloaded IPA manifest differs from published metadata')
+        body = release.get('body') or ''
+        changes = '* Music library, playback, lyrics and desktop transfers on iPhone.'
+        if "## What's Changed\n" in body:
+            lines = body.split("## What's Changed\n", 1)[1].splitlines()
+            bullets = []
+            for line in lines:
+                if line.startswith('## '):
+                    break
+                if line.startswith('* '):
+                    bullets.append(line)
+            if bullets:
+                changes = '\n'.join(bullets)
+        write_source(directory, date=release['published_at'], description=changes)
+        validate_source(directory)
+        (directory / (PUBLIC_IPA + '.sha256')).write_text(f'{metadata["sha256"]}  {PUBLIC_IPA}\n')
+        notes = release_notes(metadata, changes)
+        (directory / 'RELEASE-NOTES.md').write_text(notes)
+        # Refuse to touch a release replaced while its IPA was downloading.
+        current = github.api('releases/tags/ios')
+        if {(a['id'], a['name']) for a in current['assets']} != {(a['id'], a['name']) for a in release['assets']}:
+            raise ValueError('iOS release changed during store source generation')
+        for suffix in ('', '.json', '.sha256'):
+            if name != PUBLIC_IPA and name + suffix in assets:
+                github.api(f'releases/assets/{assets[name + suffix]["id"]}', 'PATCH',
+                           {'name': PUBLIC_IPA + suffix})
+        github.upload('ios', [directory / (PUBLIC_IPA + '.sha256'),
+                             directory / 'RELEASE-NOTES.md', directory / 'altstore-source.json'])
+        value = {'version': metadata['version'], 'build': int(metadata['build']),
+                 'sha': metadata['source_commit']}
+        github.api(f'releases/{release["id"]}', 'PATCH', release_fields('ios', value, notes))
+        print(f'Updated iOS store source for {value["version"]}+{value["build"]}; existing IPA preserved')
+
+
 def consolidate(github, cleanup=False, dry_run=False):
     releases = github.releases()
     plans = []
@@ -285,7 +349,7 @@ def consolidate(github, cleanup=False, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('metadata', 'publish', 'consolidate'))
+    parser.add_argument('command', choices=('metadata', 'publish', 'consolidate', 'refresh-ios-store'))
     parser.add_argument('--platform', choices=('android', 'ios'))
     parser.add_argument('--assets', type=Path)
     parser.add_argument('--sha')
@@ -294,7 +358,9 @@ def main():
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     github = GitHub()
-    if args.command == 'consolidate':
+    if args.command == 'refresh-ios-store':
+        refresh_ios_store(github)
+    elif args.command == 'consolidate':
         consolidate(github, args.cleanup, args.dry_run)
     elif args.command == 'metadata':
         release = github.api(f'releases/tags/{args.platform}', missing=True)

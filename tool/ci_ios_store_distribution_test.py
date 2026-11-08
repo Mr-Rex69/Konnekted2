@@ -9,7 +9,8 @@ import zipfile
 
 from ios_store_distribution import (SOURCE_URL, make_source, release_notes,
                                     write_source, validate_source, entitlements)
-from platform_releases import validated_files
+from platform_releases import validated_files, refresh_ios_store
+from ci_platform_releases_test import FakeGitHub
 
 
 class StoreDistributionTests(unittest.TestCase):
@@ -117,6 +118,41 @@ class StoreDistributionTests(unittest.TestCase):
         (self.root / 'altstore-source.json').write_text(json.dumps(source))
         with self.assertRaises(ValueError):
             validated_files(self.root, 'ios', 'a' * 40)
+
+    def published_fixture(self):
+        github = FakeGitHub()
+        row = github.add('ios', 'ios', 162, version='1.0.0')
+        row['published_at'] = '2026-11-08T20:00:00Z'
+        github.metadata[row['id'] * 10 + 1] = self.metadata.copy()
+        github.metadata[row['id'] * 10 + 4] = {'source_commit': 'a' * 40}
+        def download(release, destination, names=None):
+            for name in names:
+                content = json.dumps(self.metadata).encode() if name.endswith('.json') else self.ipa.read_bytes()
+                (destination / name).write_bytes(content)
+        github.download = download
+        return github, row
+
+    def test_refresh_repairs_missing_checksum_and_preserves_existing_package_id(self):
+        github, row = self.published_fixture()
+        original_id = row['assets'][0]['id']
+        row['assets'] = [a for a in row['assets'] if not a['name'].endswith('.sha256')]
+        refresh_ios_store(github)
+        assets = {a['name']: a for a in row['assets']}
+        self.assertEqual(assets['Lokal.ipa']['id'], original_id)
+        self.assertIn('Lokal.ipa.sha256', assets)
+        self.assertIn('altstore-source.json', assets)
+        self.assertNotIn('unsigned', row['body'].lower())
+        source = github.metadata[assets['altstore-source.json']['id']]
+        self.assertEqual(source['apps'][0]['versions'][0]['buildVersion'], '162')
+        self.assertFalse(any(op[1].startswith('git/refs') for op in github.operations))
+
+    def test_refresh_rejects_mismatched_ipa_before_any_remote_change(self):
+        self.info['CFBundleVersion'] = '161'
+        self.package()
+        github, _ = self.published_fixture()
+        with self.assertRaises(ValueError):
+            refresh_ios_store(github)
+        self.assertFalse(any(op[0] != 'GET' for op in github.operations))
 
 
 if __name__ == '__main__':

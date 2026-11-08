@@ -22,3 +22,5 @@ python3 tool/platform_releases.py consolidate --cleanup --dry-run
 In-app release notes fetch the platform tag and verify the platform/version marker before displaying them. Older minor versions use their bundled fallback notes.
 
 iOS update checks read the dedicated `ios` release, including its prerelease. Update prompts open AltStore Classic or SideStore; installation happens in that store. See [store setup and updates](IOS_STORE_UPDATES.md).
+
+To regenerate the store source and installation preamble for the already published IPA, run **Keep platform releases tidy** manually with **refresh_ios_store** enabled. This verifies the existing package's checksum, bundle identity and qualification source, preserves its binary and tag, and uploads only the source/checksum/release-note files. It can also repair an interrupted metadata upload without rebuilding the app.
