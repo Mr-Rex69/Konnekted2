@@ -82,8 +82,10 @@ class _AutomaticBackupSettingsTileState extends State<AutomaticBackupSettingsTil
   }
 
   Future<void> _backupNow() => _perform(() async {
-    await _service.backupNow();
-    if (mounted) LokalToast.show(context, 'Backup saved. Save a copy outside Lokal using Share.');
+    final file = await _service.backupNow();
+    if (file != null && mounted) {
+      LokalToast.show(context, 'Backup saved. Save a copy outside Lokal using Share.');
+    }
   });
 
   Future<void> _share() => _perform(() async {
