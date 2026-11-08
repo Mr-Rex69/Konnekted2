@@ -398,6 +398,6 @@ Future<List<LokalDiscoveryTrack>> loadSpotifyWebMix(
   SpotifyWebApi api,
   String id,
 ) async =>
-    (await api.getPlaylistTracks(id).timeout(const Duration(seconds: 30)))
+    (await api.getPlaylistTracks(id, max: 200).timeout(const Duration(seconds: 30)))
         .map(spotifyDiscoveryTrack)
         .toList();
