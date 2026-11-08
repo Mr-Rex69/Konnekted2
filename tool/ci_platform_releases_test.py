@@ -73,6 +73,11 @@ class FakeGitHub:
             for row in self.rows.values():
                 row['assets'] = [a for a in row['assets'] if a['id'] != identifier]
             return None
+        if path.startswith('releases/assets/') and method == 'PATCH':
+            identifier = int(path.split('/')[-1])
+            asset = next(a for row in self.rows.values() for a in row['assets'] if a['id'] == identifier)
+            asset.update(payload)
+            return copy.deepcopy(asset)
         identifier = int(path.split('/')[-1])
         if method == 'DELETE':
             del self.rows[identifier]
@@ -91,7 +96,7 @@ class FakeGitHub:
             row['assets'] = [a for a in row['assets'] if a['name'] != file.name]
             asset = {'id': self.serial * 10, 'name': file.name, 'size': file.stat().st_size}
             row['assets'].append(asset)
-            if file.name.endswith('-metadata.json'):
+            if file.name.endswith('.json'):
                 self.metadata[asset['id']] = json.loads(file.read_text())
 
 

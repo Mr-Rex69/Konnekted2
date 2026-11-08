@@ -1,6 +1,11 @@
 name: Keep platform releases tidy
 on:
   workflow_dispatch:
+    inputs:
+      refresh_ios_store:
+        description: Refresh the published iOS store source and release guide without rebuilding the app
+        type: boolean
+        default: false
   release:
     types: [published]
   workflow_run:
@@ -36,4 +41,9 @@ jobs:
       - name: Retain current downloads and remove superseded mobile releases/tags
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 tool/platform_releases.py consolidate --cleanup
+          REFRESH_IOS_STORE: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_ios_store }}
+        run: |
+          if [ "$REFRESH_IOS_STORE" = true ]; then
+            python3 tool/platform_releases.py refresh-ios-store
+          fi
+          python3 tool/platform_releases.py consolidate --cleanup
