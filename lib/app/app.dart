@@ -201,7 +201,7 @@ class _RootRouterState extends ConsumerState<_RootRouter>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // A missed daily/weekly export runs when the user returns to Lokal.
-      unawaited(AutomaticBackupService.instance.runIfDue().catchError((_) {}));
+      unawaited(AutomaticBackupService.instance.runIfDue().catchError((_) => null));
     }
   }
 
