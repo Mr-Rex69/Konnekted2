@@ -259,6 +259,32 @@ Future<void> probeIosWebKitReset(
         hasLength(1),
         reason: 'Space must retain the same native view',
       );
+      // Simulator startup/frame delivery can consume almost the entire
+      // 12-second fixture (build 170 reached 11.92s). Reset from a known
+      // nonzero position with enough media remaining to measure replay.
+      await video.command('pause');
+      await until(
+        () => !video.playingNotifier.value,
+        'Pause before establishing the reset checkpoint',
+      );
+      await video.command('seek', {'positionMs': 2000});
+      await until(() async {
+        final sample = await nativeSnapshot();
+        final position = (sample['position'] as num?) ?? -1;
+        return sample['seeking'] == false &&
+            sample['pendingSeekSeconds'] == null &&
+            position >= 1.8 &&
+            position < 3 &&
+            video.sourcePosition.inMilliseconds >= 1800 &&
+            video.sourcePosition.inMilliseconds < 3000;
+      }, 'Native seek must establish an early reset checkpoint');
+      await video.command('play');
+      await until(
+        () async =>
+            video.playingNotifier.value &&
+            (await nativeSnapshot())['state'] == 1,
+        'Native playback must resume before the playing-state reset',
+      );
       final before = video.sourcePosition;
       final oldView = views.single;
       await const MethodChannel('lokal/ios')
