@@ -36,4 +36,4 @@ FFmpeg and SMB archives are cached by the pinned preparation scripts and lockfil
 
 Audit/publication download the device artifact by its returned artifact ID, and runtime jobs use the integration artifact ID. **Re-run failed jobs** can therefore reuse successful builds from the earlier attempt of the same run instead of looking for a nonexistent artifact with the new attempt number. A changed source commit still needs its own build.
 
-Closing/merging a PR cancels its obsolete workflow without starting more Mac builds. This prevents abandoned validation runs from occupying runners needed for a new `main` build. Release publication remains explicit through the existing workflow inputs.
+The iOS workflow is manual-only. Opening, updating, closing or merging a PR, and pushing branches, do not start iPhone builds. Use **Run workflow** when you want a build and choose whether to publish it.
