@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
@@ -129,23 +130,102 @@ Map<String, Object?> morneyeSignedAddonResponse(
   };
 }
 
+/// A gateway cooldown is recoverable; it is not a missing recording or login.
+class MorneyeRateLimitException implements Exception {
+  const MorneyeRateLimitException(this.retryAfter);
+  final Duration retryAfter;
+
+  @override
+  String toString() =>
+      'The add-on service is rate limiting requests (HTTP 429). '
+      'Try again in ${(retryAfter.inMilliseconds + 999) ~/ 1000} seconds.';
+}
+
 class MorneyeSignedSession {
-  MorneyeSignedSession(this.config, this.storage, this.network, String owner)
-    : namespace = _sha256(
-        utf8.encode(
-          [
-            config['namespace'] as String? ?? owner,
-            config['baseUrl'],
-            config['appVersion'] as String? ?? 'ext-1.0',
-            config['platform'] as String? ?? 'extension',
-          ].join('\n'),
-        ),
-      );
+  MorneyeSignedSession(
+    this.config,
+    this.storage,
+    this.network,
+    String owner, {
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now,
+       namespace = _sha256(
+         utf8.encode(
+           [
+             config['namespace'] as String? ?? owner,
+             config['baseUrl'],
+             config['appVersion'] as String? ?? 'ext-1.0',
+             config['platform'] as String? ?? 'extension',
+           ].join('\n'),
+         ),
+       );
 
   final Map<String, Object?> config;
   final MorneyeStorage storage;
   final MorneyeNetwork? network;
   final String namespace;
+  final DateTime Function() _now;
+
+  /// Stored separately from credentials so a new runtime or restart cannot
+  /// turn a server cooldown into another burst of ticket requests.
+  MorneyeRateLimitException? get rateLimitError {
+    final until = storage.read(namespace, 'ratelimit')['until'];
+    if (until is! int) return null;
+    final remaining = until - _now().millisecondsSinceEpoch;
+    return remaining > 0
+        ? MorneyeRateLimitException(Duration(milliseconds: remaining))
+        : null;
+  }
+
+  void throwIfRateLimited() {
+    final error = rateLimitError;
+    if (error != null) throw error;
+  }
+
+  void _rememberRateLimit(Map<String, Object?> response) {
+    Map contract = const {};
+    try {
+      final decoded = jsonDecode('${response['body']}');
+      if (decoded is Map) contract = decoded;
+    } catch (_) {}
+    final headers = response['headers'];
+    final rawHeader = headers is Map
+        ? headers.entries
+              .where((e) => '${e.key}'.toLowerCase() == 'retry-after')
+              .map((e) => '${e.value}')
+              .firstOrNull
+        : null;
+    final headerSeconds =
+        double.tryParse(rawHeader ?? '') ??
+        (rawHeader == null ? null : _retryDateSeconds(rawHeader));
+    final bodySeconds = num.tryParse(
+      '${contract['retry_after_seconds'] ?? ''}',
+    );
+    final delays = [
+      headerSeconds,
+      bodySeconds,
+    ].whereType<num>().where((n) => n.isFinite && n > 0);
+    final seconds = delays.isEmpty
+        ? 60
+        : delays.reduce((a, b) => a > b ? a : b).ceil();
+    final until = _now().add(Duration(seconds: seconds)).millisecondsSinceEpoch;
+    final previous = storage.read(namespace, 'ratelimit')['until'];
+    storage.write(namespace, 'ratelimit', {
+      'until': previous is int && previous > until ? previous : until,
+    });
+    // Closed diagnostic fields only; never include the response body or URL.
+    AppLog.instance.add(
+      '[Morneye] gateway rate_limited http=429 retryAfterSeconds=$seconds',
+    );
+  }
+
+  double? _retryDateSeconds(String value) {
+    try {
+      return HttpDate.parse(value).difference(_now()).inMilliseconds / 1000;
+    } catch (_) {
+      return null;
+    }
+  }
 
   MorneyePending? pending;
   String? pendingGrant;
@@ -474,9 +554,10 @@ class MorneyeSignedSession {
     String path,
     String body,
     Map<String, String> headers,
-  ) {
+  ) async {
+    throwIfRateLimited();
     final url = endpoint(path);
-    return _network.jsonResponse(
+    final response = await _network.jsonResponse(
       url,
       method: method.toUpperCase(),
       body: body,
@@ -486,6 +567,11 @@ class MorneyeSignedSession {
         ...morneyeSignedHeaders(config, record, method, url, body),
       },
     );
+    if (response['status'] == 429) {
+      _rememberRateLimit(response);
+      throw rateLimitError!;
+    }
+    return response;
   }
 
   /// A signed request for the add-on; asks for verification when needed.
@@ -498,6 +584,7 @@ class MorneyeSignedSession {
   ]) async {
     final wait = sleep ?? (Duration d) => Future<void>.delayed(d);
     try {
+      throwIfRateLimited();
       var record = this.record();
       if (!usable(record) || blocked) {
         if (!await bootstrap()) return verification();
@@ -565,6 +652,8 @@ class MorneyeSignedSession {
         return addonResponse;
       }
       return {'ok': false, 'error': 'Signed request failed'};
+    } on MorneyeRateLimitException {
+      rethrow;
     } catch (error) {
       return {'ok': false, 'error': '$error'};
     }

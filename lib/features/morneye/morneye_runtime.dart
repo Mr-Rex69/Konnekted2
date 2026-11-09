@@ -6,6 +6,7 @@ import 'package:flick/src/rust/api/morneye_api.dart' as native;
 
 import 'morneye_bootstrap.dart';
 import 'morneye_host.dart';
+import 'morneye_session.dart';
 
 /// A running add-on, as desktop's electron/morneye/runtime.js: calls go
 /// one at a time, each with a time limit, and a call that times out or is
@@ -213,6 +214,9 @@ class MorneyeRuntime {
           timeout,
         );
         final decoded = jsonDecode(json);
+        if (decoded is Map && decoded['success'] == false) {
+          host.session?.throwIfRateLimited();
+        }
         host.diagnostics?.method(
           method,
           finished: true,
@@ -225,6 +229,13 @@ class MorneyeRuntime {
         );
         return decoded;
       } catch (error) {
+        final rateLimit = error is MorneyeRateLimitException
+            ? error
+            : host.session?.rateLimitError;
+        if (rateLimit != null) {
+          host.diagnostics?.method(method, error: rateLimit);
+          throw rateLimit;
+        }
         final text = '$error'.replaceFirst(
           RegExp(r'^AnyhowException\((.*)\)$', dotAll: true),
           r'$1',

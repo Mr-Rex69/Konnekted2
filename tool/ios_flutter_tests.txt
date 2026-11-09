@@ -111,6 +111,9 @@ test/features/link/lokal_ghost_availability_test.dart
 test/discovery/discovery_source_resolution_quality_test.dart
 test/discovery/source_resolution_localization_test.dart
 test/morneye/morneye_signing_test.dart
+test/morneye/morneye_session_callback_test.dart
+test/morneye/morneye_rate_limit_test.dart
+test/konnekted/addon_rate_limit_test.dart
 test/services/lyrics_translation_test.dart
 test/services/lyrics_mobile_parity_test.dart
 test/features/player/player_transport_motion_test.dart

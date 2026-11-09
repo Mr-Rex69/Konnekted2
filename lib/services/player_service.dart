@@ -1232,14 +1232,14 @@ class PlayerService {
       onlinePlaybackError.value = failure is DiscoveryException
           ? failure.message
           : 'Couldn’t prepare this song for playback. Try another source or try again.';
-      if (failure is DiscoveryVerificationRequired) {
-        // A login challenge is recoverable user interaction, not a missing
-        // recording. Keep the pending Mix entry selected for manual retry.
+      if (shouldHoldPendingPlayback(failure)) {
+        // Verification and rate limits can recover without skipping tracks.
+        // Keep the pending entry selected for manual retry.
         _pendingFailures = 0;
         if (_pendingPresentationTrackId == pending.id) {
           _pendingPresentationTrackId = null;
         }
-        _debugLog('[Playback] ${pending.title} waiting for verification');
+        _debugLog('[Playback] ${pending.title} waiting for source access');
         return;
       }
       _debugLog(

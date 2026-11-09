@@ -131,6 +131,14 @@ class DiscoveryVerificationRequired extends DiscoveryException {
       : super('$provider needs verification. Complete verification and retry this song.');
 }
 
+/// Pause autoplay on a service cooldown instead of skipping the whole queue.
+class DiscoveryRateLimited extends DiscoveryException {
+  const DiscoveryRateLimited(super.message);
+}
+
+bool shouldHoldPendingPlayback(Object? failure) =>
+    failure is DiscoveryVerificationRequired || failure is DiscoveryRateLimited;
+
 String discoveryError(Object error) => error is DiscoveryException
     ? error.message
     : 'The request could not be completed. Check your connection and try again.';

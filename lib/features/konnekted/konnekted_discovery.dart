@@ -1,3 +1,4 @@
+import 'package:flick/features/morneye/morneye_session.dart';
 import 'package:flick/core/utils/online_source_log_label.dart';
 import 'package:flick/core/utils/artist_credits.dart';
 import 'package:flick/core/utils/app_log.dart';
@@ -1346,6 +1347,7 @@ Future<List<_PlaybackSource>> _morneyeSources(
                   );
                 }
               } catch (error) {
+                if (error is MorneyeRateLimitException) rethrow;
                 final reason = error.toString();
                 if (tryAtmos || found.atmosAvailable) {
                   AtmosDiagnostics.record('download_error', {
@@ -1377,6 +1379,8 @@ Future<List<_PlaybackSource>> _morneyeSources(
                 }
                 rethrow;
               }
+            } on MorneyeRateLimitException catch (error) {
+              throw DiscoveryRateLimited('$error');
             } on MorneyePackageError catch (error) {
               final detail = error.message;
               throw DiscoveryException(
@@ -2212,6 +2216,10 @@ Future<DiscoveryTrack?> findDiscoverySourceMatch({
       );
     } catch (error) {
       checkCancelled?.call();
+      if (error is MorneyeRateLimitException) {
+        throw DiscoveryRateLimited('$error');
+      }
+      if (error is DiscoveryRateLimited) rethrow;
       if (_onlineFailureKind(error) != 'cancelled') {
         searchFailure ??= error;
       }
@@ -2472,7 +2480,9 @@ Future<Song?> findDiscoverySong(
           // Public videos can be refused by one YouTube client as it rotates.
           // Try the other configured sources rather than treating the first
           // player response as proof the recording is unavailable in this region.
-          failure = error;
+          if (failure is! DiscoveryRateLimited) {
+            failure = error;
+          }
           onStatus?.call(
             'YouTube Music could not start ${track.title}. Trying another source…',
           );
@@ -2482,9 +2492,11 @@ Future<Song?> findDiscoverySong(
             '[OnlineSource] direct YouTube failed '
             'reason=${_onlineFailureKind(error)}',
           );
-          failure = const DiscoveryException(
-            'YouTube Music could not resolve this recording. Trying another source.',
-          );
+          if (failure is! DiscoveryRateLimited) {
+            failure = const DiscoveryException(
+              'YouTube Music could not resolve this recording. Trying another source.',
+            );
+          }
           onStatus?.call(
             'YouTube Music could not start ${track.title}. Trying another source…',
           );
@@ -2586,11 +2598,13 @@ Future<Song?> findDiscoverySong(
           onStatus?.call(error.message);
           rethrow;
         }
-        failure = error is DiscoveryException
-            ? error
-            : DiscoveryException(
-                '${source.name} couldn’t get ${track.title} ready.',
-              );
+        if (failure is! DiscoveryRateLimited || error is DiscoveryRateLimited) {
+          failure = error is DiscoveryException
+              ? error
+              : DiscoveryException(
+                  '${source.name} couldn’t get ${track.title} ready.',
+                );
+        }
         onStatus?.call(
           'Couldn’t get ${track.title} from ${source.name}. '
           'Trying elsewhere…',
