@@ -98,7 +98,7 @@ def copy_crashes(device, output, since):
                     shutil.copy2(report, reports / report.name)
 
 
-def probe(app, output, prefix):
+def probe(app, output, prefix, *, vm_timeout=90):
     device = os.environ['IOS_SIMULATOR_UDID']
     info = plistlib.loads((app / 'Info.plist').read_bytes())
     bundle = info['CFBundleIdentifier']
@@ -109,7 +109,7 @@ def probe(app, output, prefix):
         process, service = start(device, bundle, console)
         ready = False
         try:
-            ready = wait_for_vm(service)
+            ready = wait_for_vm(service, timeout=vm_timeout)
             # Give the application a chance to draw its initial frame.
             if ready:
                 time.sleep(5)

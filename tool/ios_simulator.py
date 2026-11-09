@@ -27,7 +27,7 @@ def main():
     try:
         # CoreSimulatorService is cold on an isolated hosted Mac. Inventory
         # needs its own bounded startup allowance, before a UDID exists.
-        devices_json = command('xcrun', 'simctl', 'list', 'devices', 'available', '--json', timeout=90)
+        devices_json = command('xcrun', 'simctl', 'list', 'devices', 'available', '--json', timeout=180)
         (output / 'devices-before.json').write_text(devices_json)
         runtimes_json = command('xcrun', 'simctl', 'list', 'runtimes', 'available', '--json', timeout=90)
         (output / 'runtimes.json').write_text(runtimes_json)

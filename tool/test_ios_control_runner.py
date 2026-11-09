@@ -23,11 +23,13 @@ class ControlRecoveryTest(unittest.TestCase):
              patch.object(ios_control_runner.ios_simulator, 'main') as boot:
             ios_control_runner.verify(self.app(directory), Path(directory))
             probe.assert_called_once()
+            self.assertEqual(probe.call_args.kwargs['vm_timeout'], 180)
             boot.assert_not_called()
 
     def recover(self, directory, results):
         observed = []
-        def probe(*args):
+        def probe(*args, **kwargs):
+            self.assertEqual(kwargs['vm_timeout'], 180)
             observed.append((args[2], os.environ['IOS_SIMULATOR_UDID']))
             result = results.pop(0)
             if result is not None:
@@ -70,6 +72,11 @@ class ControlRecoveryTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 ios_control_runner.verify(self.app(directory), Path(directory))
             boot.assert_not_called()
+
+    def test_lokal_probe_keeps_its_original_vm_deadline(self):
+        import inspect
+        from ios_runtime import probe
+        self.assertEqual(inspect.signature(probe).parameters['vm_timeout'].default, 90)
 
 
 if __name__ == '__main__':
