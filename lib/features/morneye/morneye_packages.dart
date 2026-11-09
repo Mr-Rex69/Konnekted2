@@ -1901,6 +1901,9 @@ class MorneyePackages {
     if (addon == null || !addon.enabled) {
       throw const MorneyePackageError('Addon is not available');
     }
+    if (addon.signedSession != null) {
+      _sessionFor(addon, null).throwIfRateLimited();
+    }
     final staged = Directory(
       p.join(root.path, 'work', '${DateTime.now().microsecondsSinceEpoch}'),
     );
