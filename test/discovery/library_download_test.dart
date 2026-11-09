@@ -9,6 +9,9 @@ import 'package:flick/data/entities/song_entity.dart';
 import 'package:flick/features/discovery/discovery_models.dart';
 import 'package:flick/features/search/library_download.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/src/rust/api/metadata_editor.dart' as rust_metadata;
+import 'package:flick/features/konnekted/konnekted_data.dart';
+import 'package:flick/features/konnekted/lokal_mixes.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -23,6 +26,8 @@ void main() {
   final covers = <String>[];
   final tags = <String>[];
   final savedLyrics = <String?>[];
+  final probed = <String>[];
+  rust_metadata.TagReadResult embedded = const rust_metadata.TagReadResult();
   LyricsData? downloadLyrics;
 
   setUp(() async {
@@ -37,6 +42,8 @@ void main() {
     covers.clear();
     tags.clear();
     savedLyrics.clear();
+    probed.clear();
+    embedded = const rust_metadata.TagReadResult();
     downloadLyrics = null;
   });
 
@@ -68,11 +75,170 @@ void main() {
         savedLyrics.add(LibraryDownloader.portableLyrics(lyrics));
       return tagged;
     },
+    readTags: (path) async {
+      probed.add(path);
+      return embedded;
+    },
     lyricsLookup: (_) async => downloadLyrics,
     cover: (path, song, url) async => covers.add(url),
     indexMedia: (paths) async => indexed.addAll(paths),
     now: () => DateTime(2026, 10, 20),
   );
+
+  test('iPhone imports embedded album grouping and track order without changing carousel behavior', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final music = Directory(p.join(root.path, 'Library'))..createSync();
+    final folders = [
+      LibraryDownloadFolder(uri: 'library', name: 'Music', path: music.path),
+    ];
+    for (final number in [2, 1]) {
+      embedded = rust_metadata.TagReadResult(
+        album: 'Apple Music Album',
+        albumArtist: 'Album Owner',
+        trackNumber: number,
+        discNumber: 1,
+        genre: 'Rock',
+        year: 2026,
+      );
+      await downloader(folders).save(
+        Song(
+          id: 'track-$number',
+          title: 'Track $number',
+          artist: 'Performer $number',
+          album: number == 2 ? 'Unknown Album' : null,
+          filePath: cached.path,
+          duration: const Duration(seconds: 200),
+          fileType: 'M4A',
+        ),
+      );
+    }
+    expect(probed, hasLength(2));
+    expect(
+      probed.every(
+        (path) =>
+            File(path).existsSync() &&
+            !p.isWithin(p.dirname(cached.path), path),
+      ),
+      isTrue,
+    );
+    expect(upserts.map((s) => s.album), [
+      'Apple Music Album',
+      'Apple Music Album',
+    ]);
+    expect(upserts.map((s) => s.albumArtist), ['Album Owner', 'Album Owner']);
+    expect(
+      upserts.every(
+        (s) => s.discNumber == 1 && s.genre == 'Rock' && s.year == 2026,
+      ),
+      isTrue,
+    );
+    final songs = [
+      for (final row in upserts)
+        Song(
+          id: row.title,
+          title: row.title,
+          artist: row.artist,
+          album: row.album,
+          albumArtist: row.albumArtist,
+          trackNumber: row.trackNumber,
+          discNumber: row.discNumber,
+          duration: const Duration(seconds: 200),
+          fileType: 'M4A',
+        ),
+    ];
+    const mix = LokalMix(
+      id: 'mix',
+      name: 'Daily Mix',
+      type: LokalMixType.daily,
+      tracks: [],
+    );
+    final covers = konnektedCoversWithLocalAlbums([
+      for (final song in songs) LokalMadeForYouPick(song: song, mix: mix),
+    ], songs);
+    expect(
+      covers,
+      hasLength(2),
+      reason: 'keep Android recommendation cards and front-face behavior',
+    );
+    for (final cover in covers) {
+      expect(cover.coverSong, isNotNull);
+      expect(cover.songs.map((s) => s.trackNumber), [
+        1,
+        2,
+      ], reason: 'long-press opens the whole album');
+    }
+  });
+
+  test('Android retains its existing MediaStore indexing path', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await downloader([]).save(prepared());
+    expect(probed, isEmpty);
+    expect(indexed, hasLength(1));
+    expect(upserts.single.metadataComplete, isTrue);
+  });
+
+  test('iPhone tag writes preserve existing values when catalogue fields are placeholders', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final fields = LibraryDownloader.tagFieldsForDownload(
+      const Song(
+        id: 'song',
+        title: 'Title',
+        artist: 'Artist',
+        album: 'Unknown Album',
+        albumArtist: ' ',
+        trackNumber: 0,
+        discNumber: 0,
+        year: 0,
+        duration: Duration.zero,
+        fileType: 'FLAC',
+      ),
+      null,
+    );
+    expect(fields.album, isNull);
+    expect(fields.albumArtist, isNull);
+    expect(fields.trackNumber, isNull);
+    expect(fields.discNumber, isNull);
+    expect(fields.year, isNull);
+    final tagged = LibraryDownloader.tagFieldsForDownload(
+      const Song(
+        id: 'song',
+        title: 'Title',
+        artist: 'Guest Artist',
+        album: 'Album',
+        albumArtist: 'Album Owner',
+        trackNumber: 3,
+        discNumber: 2,
+        year: 2026,
+        duration: Duration.zero,
+        fileType: 'FLAC',
+      ),
+      null,
+    );
+    expect(tagged.albumArtist, 'Album Owner');
+    expect(tagged.trackNumber, 3);
+    expect(tagged.discNumber, 2);
+  });
+
+  test('iPhone tag-read failure retains the download and leaves metadata eligible for retry', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final saved = await LibraryDownloader(
+      folders: () async => [],
+      fallbackRoot: p.join(root.path, 'Music'),
+      registerFolder: (_, _) async {},
+      upsert: (song) async => upserts.add(song),
+      tag: (_, _, _) async => true,
+      readTags: (_) async => throw const FileSystemException('Read failed'),
+      lyricsLookup: (_) async => null,
+      indexMedia: (_) async {},
+    ).save(prepared());
+    expect(File(saved.path).readAsBytesSync(), cached.readAsBytesSync());
+    expect(upserts.single.album, 'Album');
+    expect(upserts.single.metadataComplete, isFalse);
+  });
 
   test('iPhone download fallback uses persistent app-owned Music', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
