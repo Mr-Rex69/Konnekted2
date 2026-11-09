@@ -28,6 +28,8 @@ The native cache missed on this run. Its key required an exact source match, and
 
 The first run can still have cold caches, and GitHub runner queues vary. Compare actual job/step durations before assigning a new fixed build-time expectation.
 
+Before boot, the simulator helper waits for dyld shared-cache preparation for the selected runtime only. Apple documents this prerequisite for first-boot failures ([152328794](https://developer.apple.com/documentation/xcode-release-notes/xcode-26_1-release-notes)). Cache preparation has its own five-minute bound and saved log; failures stop preflight before app installation. The empty control app allows three minutes for cold launch, while Lokal's own readiness and playback assertions retain their existing deadlines.
+
 ## Cache and retry behavior
 
 Device and simulator native caches are isolated by SDK/configuration, runner architecture, Xcode, Rust, dependency/tooling fingerprints and source. A dependency-compatible restore prefix lets Cargo reuse unchanged dependencies after a Rust edit; Cargo still validates fingerprints and rebuilds changed inputs. Final app bundles/IPAs are not restored from these caches.

@@ -132,12 +132,31 @@ class SimulatorCoordinatorTest(unittest.TestCase):
             ))
             self.assertEqual(run.call_args.args[0], ['xcrun', 'simctl', 'bootstatus', 'owned-udid', '-b'])
             calls = [call.args[0] for call in run.call_args_list]
+            cache = ['xcrun', 'simctl', 'runtime', 'dyld_shared_cache', 'update', RUNTIME]
+            self.assertLess(calls.index(cache), calls.index(['xcrun', 'simctl', 'boot', 'owned-udid']))
+            self.assertFalse(any('--all' in call for call in calls))
             self.assertEqual(calls[-2], ['open', '-a',
                 '/Xcode/Developer/Applications/Simulator.app', '--args',
                 '-CurrentDeviceUDID', 'owned-udid'])
             selected = json.loads((Path(directory) / 'ios-simulator-boot-18.6/selected.json').read_text())
             self.assertEqual(selected['runtime'], RUNTIME)
             self.assertEqual(selected['device_type'], DEVICE)
+
+    def test_cache_preparation_failure_never_boots_or_enters_device_recovery(self):
+        for error in (subprocess.CalledProcessError(1, ['xcrun', 'simctl', 'runtime']),
+                      subprocess.TimeoutExpired(['xcrun', 'simctl', 'runtime'], 300)):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as directory, \
+                 patch.dict(os.environ, self.environment(directory), clear=True), \
+                 patch.object(ios_simulator, 'command', side_effect=[DEVICES, RUNTIMES]) as inventory, \
+                 patch.object(ios_simulator.subprocess, 'run', side_effect=error) as commands:
+                with self.assertRaises(type(error)):
+                    ios_simulator.boot_before_install()
+                self.assertEqual(inventory.call_count, 2)
+                self.assertEqual(commands.call_count, 1)
+                evidence = Path(directory) / 'ios-simulator-boot-18.6'
+                self.assertTrue((evidence / 'runtime-cache.log').exists())
+                self.assertIn(type(error).__name__, (evidence / 'runtime-cache-failure.txt').read_text())
+                self.assertFalse((evidence / 'selected.json').exists())
 
     def test_boot_timeout_preserves_identity_and_failure_instead_of_reporting_ready(self):
         def run(args, **kwargs):
@@ -157,7 +176,7 @@ class SimulatorCoordinatorTest(unittest.TestCase):
             self.assertIn('TimeoutExpired', (evidence / 'failure.txt').read_text())
             self.assertTrue((evidence / 'devices-before.json').is_file())
             self.assertTrue((evidence / 'devices-after.json').is_file())
-            ready.assert_not_called()
+            self.assertFalse(any('iPhone simulator ready' in str(c) for c in ready.call_args_list))
 
     def test_recovery_device_keeps_original_boot_evidence_and_publishes_new_identity(self):
         with tempfile.TemporaryDirectory() as directory:
