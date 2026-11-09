@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:flick/core/theme/lokal_tokens.dart';
+import 'package:flick/core/utils/app_log.dart';
 
 import 'morneye_packages.dart';
 import '../../widgets/common/web_sign_in_frame.dart';
@@ -71,6 +72,11 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
   String? _error;
   bool _finishing = false;
 
+  // Do not include URLs, grants, cookies or raw web errors in exported logs.
+  void _log(String event) => AppLog.instance.add(
+    '[Morneye verification] addon=${widget.addon.key} event=$event',
+  );
+
   Future<NavigationActionPolicy> _navigate(
     InAppWebViewController controller,
     NavigationAction action,
@@ -84,7 +90,10 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
       callback = false;
     }
     if (callback) {
-      if (!_finishing) unawaited(_finish(url));
+      if (!_finishing) {
+        _log('callback_detected');
+        unawaited(_finish(url));
+      }
       return NavigationActionPolicy.CANCEL;
     }
     final scheme = action.request.url?.scheme ?? '';
@@ -110,8 +119,10 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
         });
         return;
       }
+      _log('complete');
       Navigator.of(context).pop(true);
     } catch (error) {
+      _log('callback_failed');
       if (!mounted) return;
       setState(() {
         _finishing = false;
@@ -191,10 +202,13 @@ class _MorneyeAuthSheetState extends State<MorneyeAuthSheet> {
                 isTextInteractionEnabled: true,
               ),
               shouldOverrideUrlLoading: _navigate,
+              onLoadStart: (_, __) => _log('page_started'),
+              onLoadStop: (_, __) => _log('page_loaded'),
               onReceivedError: (controller, request, error) {
                 if (!mounted || request.isForMainFrame != true) return;
                 // A refused app link is reported as an error: not one to show.
                 if (request.url.scheme != 'https') return;
+                _log('page_load_failed');
                 setState(
                   () => _error =
                       'The page couldn’t be loaded. Check your connection '

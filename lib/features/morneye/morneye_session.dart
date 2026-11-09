@@ -310,6 +310,7 @@ class MorneyeSignedSession {
       );
     }
     pending = MorneyePending(challenge.toString(), state, DateTime.now());
+    _authEvent('challenge_ready');
     return false;
   }
 
@@ -338,6 +339,7 @@ class MorneyeSignedSession {
       }),
     );
     if (response['ok'] != true) {
+      _authEvent('exchange_failed_http_${response['status']}');
       throw StateError('Session exchange returned HTTP ${response['status']}');
     }
     final body = jsonDecode(response['body'] as String) as Map<String, Object?>;
@@ -358,18 +360,18 @@ class MorneyeSignedSession {
     pending = null;
     pendingGrant = null;
     blocked = false;
+    _authEvent('exchange_complete');
     return {'success': true};
   }
 
   /// Handles the page's redirect to the callback URL (spotiflac://session-grant).
   Future<Map<String, Object?>> callback(String raw) {
-    var url = Uri.parse(raw);
-    final nested = url.queryParameters['cb'];
-    if (nested != null) url = Uri.parse(nested);
+    final url = _callbackTarget(raw);
     final expected = Uri.parse(_callbackUrl);
     final pending = this.pending;
-    final state = url.queryParameters['state'];
-    if (url.scheme != expected.scheme ||
+    final state = url?.queryParameters['state'];
+    if (url == null ||
+        url.scheme != expected.scheme ||
         url.authority != expected.authority ||
         url.path != expected.path ||
         pending == null ||
@@ -377,27 +379,59 @@ class MorneyeSignedSession {
             const Duration(minutes: 3) ||
         state == null ||
         state != pending.state) {
+      _authEvent('callback_rejected');
       return Future.error(
         StateError('Invalid or expired verification callback'),
       );
     }
-    pendingGrant = url.queryParameters['grant'] ?? url.queryParameters['code'];
+    final grant = _returnedGrant(url);
+    if (grant == null) {
+      _authEvent('callback_missing_grant');
+      return Future.error(
+        StateError(
+          'The verification page returned no grant. Please try verification again.',
+        ),
+      );
+    }
+    _authEvent('callback_received');
+    pendingGrant = grant;
     return completeGrant();
   }
 
-  /// Whether [raw] is where the verification page hands back its grant.
-  bool isCallback(String raw) {
+  // Never log callback URLs, state, grants or session credentials.
+  void _authEvent(String event) =>
+      AppLog.instance.add('[Morneye verification] event=$event');
+
+  String? _returnedGrant(Uri url) {
+    for (final field in ['grant', 'code']) {
+      final value = url.queryParameters[field];
+      if (value != null && value.trim().isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  Uri? _callbackTarget(String raw) {
     final url = Uri.tryParse(raw);
-    if (url == null) return false;
-    final target = url.queryParameters['cb'] != null
-        ? Uri.tryParse(url.queryParameters['cb']!)
-        : url;
+    if (url == null) return null;
     final expected = Uri.parse(_callbackUrl);
-    return target != null &&
+    bool matches(Uri target) =>
         target.scheme == expected.scheme &&
         target.authority == expected.authority &&
         target.path == expected.path;
+    if (matches(url)) return url;
+
+    // A challenge page itself contains cb=<callback template>. WKWebView
+    // reports that initial navigation too: consuming it closes the page before
+    // the user can verify. Only unwrap a callback carrying an issued grant.
+    final nested = url.queryParameters['cb'];
+    final target = nested == null ? null : Uri.tryParse(nested);
+    return target != null && matches(target) && _returnedGrant(target) != null
+        ? target
+        : null;
   }
+
+  /// Whether [raw] is a direct callback or a wrapped, issued grant.
+  bool isCallback(String raw) => _callbackTarget(raw) != null;
 
   Future<void> _refresh(Map<String, Object?> record) {
     final path = _endpoints['refresh'] as String?;
