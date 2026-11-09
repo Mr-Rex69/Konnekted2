@@ -50,6 +50,18 @@ def main():
         types = [t for t in types if t['identifier'] == requested_type]
     if not types:
         raise RuntimeError(f'No compatible iPhone for required iOS {version} / {requested_type}; inspect {output}')
+    # Apple documents first-boot failures while runtime dyld cache generation
+    # is unfinished (152328794). Prepare only this required runtime, avoiding
+    # both a boot/cache race and work for unrelated installed runtimes.
+    try:
+        print(f'Preparing simulator runtime cache: {runtime_id}', flush=True)
+        with (output / 'runtime-cache.log').open('w') as log:
+            subprocess.run(['xcrun', 'simctl', 'runtime', 'dyld_shared_cache',
+                            'update', runtime_id], check=True, stdout=log,
+                           stderr=subprocess.STDOUT, timeout=300)
+    except (OSError, subprocess.SubprocessError) as error:
+        (output / 'runtime-cache-failure.txt').write_text(f'{type(error).__name__}: {error}\n')
+        raise
     device_type = sorted(types, key=lambda t: t['name'])[0]
     # Use our own device, avoiding the hosted image's preconfigured simulators.
     name = f'Lokal iPhone iOS {version}' + (f' {suffix}' if suffix else '')

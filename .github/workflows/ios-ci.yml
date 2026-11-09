@@ -263,11 +263,11 @@ jobs:
             exit 1
           fi
       - name: Boot an iPhone simulator
-        timeout-minutes: 16
+        timeout-minutes: 24
         run: python3 tool/ios_simulator.py --recover-preinstall-boot
       - name: Verify the simulator with a minimal Flutter control app
         id: control
-        timeout-minutes: 16
+        timeout-minutes: 24
         run: |
           flutter create --platforms=ios --org app.lokal --project-name lokal_control "$RUNNER_TEMP/lokal-control"
           (
@@ -488,11 +488,11 @@ jobs:
           RESTORE
       - name: Boot the selected iPhone runtime
         id: boot
-        timeout-minutes: 16
+        timeout-minutes: 24
         run: python3 tool/ios_simulator.py --recover-preinstall-boot
       - name: Verify runtime with the precompiled Flutter control
         id: control
-        timeout-minutes: 16
+        timeout-minutes: 24
         run: python3 tool/ios_control_runner.py "$RUNNER_TEMP/compiled-apps/control/Runner.app"
       - name: Exercise actual startup, FFI and playback
         id: smoke
