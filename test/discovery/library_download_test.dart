@@ -187,7 +187,7 @@ void main() {
         id: 'song',
         title: 'Title',
         artist: 'Artist',
-        album: 'Unknown Album',
+        album: ' Unknown Album ',
         albumArtist: ' ',
         trackNumber: 0,
         discNumber: 0,

@@ -159,10 +159,14 @@ class LibraryDownloader {
       value?.trim().isNotEmpty == true ? value!.trim() : null;
   static int? _positive(int? value) =>
       value != null && value > 0 ? value : null;
-  static String? _album(String? value) =>
-      isUnknownLibraryAlbum(value) ? null : _text(value);
-  static String? _albumArtist(String? value) =>
-      isUnknownLibraryArtist(value) ? null : _text(value);
+  static String? _album(String? value) {
+    final text = _text(value);
+    return isUnknownLibraryAlbum(text) ? null : text;
+  }
+  static String? _albumArtist(String? value) {
+    final text = _text(value);
+    return isUnknownLibraryArtist(text) ? null : text;
+  }
 
   /// Null fields preserve existing embedded tags in the native writer.
   @visibleForTesting
