@@ -107,11 +107,10 @@ class IosWorkflowTests(unittest.TestCase):
                 self.assertEqual(archive_path('framework.zip'), root / 'framework.zip')
                 self.assertTrue(root.is_dir())
 
-    def test_closed_pr_cancels_old_work_without_starting_more_mac_builds(self):
-        self.assertIn('closed', self.workflow['on']['pull_request']['types'])
-        self.assertTrue(self.workflow['concurrency']['cancel-in-progress'])
-        for name in ('checks', 'iphone', 'production_launch', 'simulator_build'):
-            self.assertIn("github.event.action != 'closed'", self.jobs[name]['if'])
+    def test_builds_only_start_from_explicit_manual_dispatch(self):
+        self.assertEqual(set(self.workflow['on']), {'workflow_dispatch'})
+        self.assertIn("github.event_name == 'workflow_dispatch'", self.jobs['publish_sideload_beta']['if'])
+        self.assertIn("github.ref_name == 'main'", self.jobs['publish_sideload_beta']['if'])
 
 
 if __name__ == '__main__':

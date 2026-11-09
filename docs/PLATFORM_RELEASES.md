@@ -9,7 +9,7 @@ Successful publications update the existing release, move only that platform's t
 
 To publish Android, run **Release Lokal Mobile** on `main`. The default bumps the patch version; **replace_existing** keeps the version while issuing a newer build. **draft** builds workflow artifacts without changing the public release. **Build Lokal Mobile Nightly (artifacts only)** produces preview artifacts without replacing the stable APK.
 
-To publish iOS, run **iPhone build and sideload package** on `main` with **publish** enabled. Both installed simulator suites, external background tests and the independent package audit must pass before publication. Explicit `release/ios-sideload-*` pushes also publish after those checks. Pull requests and manual runs with publication disabled produce artifacts only.
+To publish iOS, run **iPhone build and sideload package** on `main` with **publish** enabled. Both installed simulator suites, external background tests and the independent package audit must pass before publication. The iOS build starts only through manual dispatch; PR creation, merges and branch pushes do not start it. Manual runs with publication disabled produce artifacts only.
 
 The IPA uploads as soon as device compilation finishes; validation continues in parallel. See the [iOS build schedule, caching and retry guide](IOS_BUILD_PERFORMANCE.md).
 

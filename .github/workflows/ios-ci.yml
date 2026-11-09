@@ -2,9 +2,6 @@
 # Both runtime suites and all checks remain mandatory before publication.
 name: iPhone build and sideload package
 'on':
-  push:
-    branches:
-      - release/ios-sideload-*
   workflow_dispatch:
     inputs:
       bump:
@@ -24,150 +21,14 @@ name: iPhone build and sideload package
         description: Observe the public YouTube embed in actual WebKit (network-dependent evidence)
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - ios/**
-      - lib/**
-      - rust/**
-      - rust_builder/**
-      - pubspec.*
-      - tool/platform_releases.py
-      - tool/ci_platform_releases_test.py
-      - tool/test_ios_workflow.py
-      - tool/ci_ios_store_distribution_test.py
-      - test/features/updates/**
-      - test/providers/ios_update_check_provider_test.dart
-      - assets/youtube/**
-      - test/discovery/youtube_audio_test.dart
-      - test/discovery/youtube_player_cipher_test.dart
-      - test/morneye/morneye_diagnostics_test.dart
-      - test/morneye/morneye_response_cleanup_test.dart
-      - test/morneye/morneye_test.dart
-      - test/widgets/web_sign_in_frame_test.dart
-      - integration_test/**
-      - tool/ios_*
-      - tool/test_ios_simulator.py
-      - tool/test_ios_verify_engineering_release.py
-      - test/services/rust_audio_polling_test.dart
-      - test/services/last_played_service_test.dart
-      - test/core/app_log_persistence_test.dart
-      - test/widgets/share_actions_test.dart
-      - test/features/search/local_lyrics_matcher_test.dart
-      - test/features/settings/artwork_repair_screen_test.dart
-      - test/services/artwork_*
-      - test/services/desktop_copy_favorites_test.dart
-      - test/services/online_favorites_test.dart
-      - test/providers/favorites_provider_stability_test.dart
-      - test/services/link/**
-      - test/konnekted/list_filter_persistence_test.dart
-      - test/konnekted/liked_sort_persistence_test.dart
-      - test/features/search/search_filters_test.dart
-      - test/features/player/full_player_action_chip_row_test.dart
-      - test/features/player/full_player_overflow_actions_test.dart
-      - test/widgets/lokal/lokal_settings_groups_test.dart
-      - test/widgets/lokal/playback_source_priority_panel_test.dart
-      - test/widgets/lokal/lokal_settings_kit_test.dart
-      - test/services/lokal_remote_credentials_store_test.dart
-      - test/services/ios_transfer_transport_test.dart
-      - test/services/ios_transfer_publication_transport_test.dart
-      - test/services/ios_transfer_recovery_transport_test.dart
-      - test/services/ios_transfer_upload_recovery_transport_test.dart
-      - test/services/ios_transfer_upload_admission_test.dart
-      - test/services/ios_transfer_upload_source_transport_test.dart
-      - test/services/ios_transfer_upload_session_test.dart
-      - test/services/ios_transfer_queue_test.dart
-      - test/services/ios_transfer_queue_transport_test.dart
-      - test/services/ios_transfer_copy_plan_test.dart
-      - test/features/link/ios_transfer_queue_screen_test.dart
-      - test/services/ios_transfer_cleanup_transport_test.dart
-      - test/services/ios_transfer_orphan_transport_test.dart
-      - test/services/ios_transfer_submission_test.dart
-      - test/services/ios_transfer_mutation_barrier_test.dart
-      - test/services/ios_library_scan_epoch_test.dart
-      - test/services/ios_foreground_transfer_barrier_test.dart
-      - test/services/ios_pairing_retirement_test.dart
-      - lib/services/ios_transfer_mutation_barrier.dart
-      - lib/widgets/common/ios_transfer_root.dart
-      - test/morneye/morneye_iphone_stereo_quality_test.dart
-      - test/services/online_lyrics_service_test.dart
-      - test/features/player/lyrics_search_sheet_test.dart
-      - test/services/atmos_ac4_source_test.dart
-      - test/morneye/morneye_addons_panel_test.dart
-      - test/services/tidal_atmos_metadata_test.dart
-      - test/services/ios_transfer_scan_guard_test.dart
-      - test/services/local_network_access_test.dart
-      - test/services/smb_service_parse_test.dart
-      - test/services/smb_native_transport_test.dart
-      - test/services/ios_nas_scan_retirement_test.dart
-      - test/data/repositories/link_history_projection_test.dart
-      - test/providers/lokal_manual_desktop_sync_test.dart
-      - test/services/webdav_service_test.dart
-      - test/services/webdav_sync_integration_test.dart
-      - test/konnekted/library_recently_played_shelf_test.dart
-      - test/konnekted/lokal_genres_grouping_test.dart
-      - test/widgets/lokal/lokal_swipe_to_queue_test.dart
-      - test/morneye/morneye_live_playback_test.dart
-      - test/support/cloud_cover_pixel_contract.dart
-      - test/services/library_scanner*
-      - test/data/repositories/song_repository_test.dart
-      - test/services/playback_secure_storage_test.dart
-      - test/fixtures/ios_transfer_*
-      - test/providers/lokal_remote_provider_test.dart
-      - test/services/lokal_remote_service_test.dart
-      - test/discovery/online_song_save_test.dart
-      - test/services/shared_motion_playback_test.dart
-      - test/widgets/motion_art_suppression_test.dart
-      - test/discovery/artwork_redirect_transport_test.dart
-      - test/discovery/discovery_playback_test.dart
-      - test/services/catalogue_quality_test.dart
-      - test/features/player/lyrics_save_button_test.dart
-      - test/features/player/lyrics_save_button_localization_test.dart
-      - test/konnekted/library_add_sheet_test.dart
-      - test/konnekted/library_occurrence_selection_test.dart
-      - test/widgets/motion_art_warm_preview_test.dart
-      - test/services/http_addon_short_stream_guard_test.dart
-      - test/discovery/http_addon_manifest_settings_test.dart
-      - test/services/player_service_format_test.dart
-      - test/services/player_service_shuffle_test.dart
-      - test/features/whats_new/**
-      - test/core/theme/lokal_appearance_test.dart
-      - test/konnekted/discovery_snapshot_cache_test.dart
-      - test/konnekted/discovery_spotify_cache_ownership_test.dart
-      - test/konnekted/discovery_source_test.dart
-      - test/widgets/lokal/lokal_quality_test.dart
-      - test/features/player/full_bleed_artwork_frame_test.dart
-      - test/features/player/player_morph_return_test.dart
-      - test/providers/whats_new_provider_test.dart
-      - test/widgets/lokal/lokal_player_route_test.dart
-      - test/widgets/lokal/lokal_settings_reskin_test.dart
-      - test/features/konnekted/**
-      - test/features/link/lokal_ghost_availability_test.dart
-      - test/discovery/discovery_source_resolution_quality_test.dart
-      - test/discovery/source_resolution_localization_test.dart
-      - test/morneye/morneye_signing_test.dart
-      - test/services/lyrics_translation_test.dart
-      - test/services/lyrics_mobile_parity_test.dart
-      - test/features/player/player_transport_motion_test.dart
-      - test/services/android_auto_catalog_test.dart
-      - test/classipod/classipod_controller_test.dart
-      - test/widgets/lokal/online_search_section_test.dart
-      - test/native/**
-      - test/fixtures/**
-      - .github/workflows/ios-ci.yml
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - closed
 permissions:
   contents: read
 concurrency:
-  group: ios-${{ github.event.pull_request.number || github.ref }}
+  group: ios-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   checks:
     name: Flutter regressions (shard ${{ matrix.shard }})
-    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
@@ -218,7 +79,6 @@ jobs:
     name: Build iPhone IPA
     outputs:
       ipa_artifact: ${{ steps.ipa_bundle.outputs.artifact-id }}
-    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: macos-15
     timeout-minutes: 40
     env:
@@ -335,7 +195,6 @@ jobs:
           key: ${{ steps.rust_cache.outputs.cache-primary-key }}
   production_launch:
     name: Production entry point and first launch
-    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -449,7 +308,6 @@ jobs:
           key: ${{ steps.rust_cache.outputs.cache-primary-key }}
   simulator_build:
     name: Compile integration simulator apps
-    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: macos-15
     timeout-minutes: 45
     outputs:
@@ -700,7 +558,7 @@ jobs:
       - production_launch
       - ios_acceptance
       - ios_release_audit
-    if: ${{ (github.event_name == 'push' && startsWith(github.ref_name, 'release/ios-sideload-')) || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.publish) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.publish }}
     concurrency:
       group: lokal-mobile-publication
       cancel-in-progress: false
