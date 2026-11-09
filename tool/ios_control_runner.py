@@ -19,7 +19,10 @@ def verify(app: Path, output: Path):
     if info.get('CFBundleIdentifier') != 'app.lokal.lokalControl':
         raise ValueError('Simulator recovery is restricted to the minimal control app')
     try:
-        probe(app, output, 'ios-control')
+        # Hosted iOS 26 LaunchServices can take ~160 seconds to launch even
+        # this empty control app. This allowance applies only to preflight;
+        # Lokal's own VM, playback and frame-progress deadlines stay intact.
+        probe(app, output, 'ios-control', vm_timeout=180)
         return
     except SystemExit:
         # probe exits only when its VM readiness check fails. Installation,
@@ -41,7 +44,7 @@ def verify(app: Path, output: Path):
     subprocess.run(['open', '-a', str(simulator), '--args',
                     '-CurrentDeviceUDID', os.environ['IOS_SIMULATOR_UDID']],
                    check=True, timeout=20)
-    probe(app, output, 'ios-control-recovery')
+    probe(app, output, 'ios-control-recovery', vm_timeout=180)
 
 
 if __name__ == '__main__':
