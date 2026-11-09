@@ -123,7 +123,7 @@ def marker(platform, metadata):
 
 
 def title(platform, metadata):
-    return f'Android — {metadata["version"]}' if platform == 'android' else f'iOS — {metadata["version"]} (Build {metadata["build"]})'
+    return f'Android — {metadata["version"]}' if platform == 'android' else f'iOS — {metadata["version"]}'
 
 
 def move_tag(github, tag, sha):
