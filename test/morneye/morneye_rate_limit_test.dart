@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -238,7 +239,7 @@ void main() {
     );
   }
 
-  test('autoplay holds service cooldowns and verification, but skips missing songs', () {
+  test('autoplay holds failed lookups, but skips error-free misses', () {
     expect(
       shouldHoldPendingPlayback(const DiscoveryRateLimited('Service busy')),
       isTrue,
@@ -248,8 +249,22 @@ void main() {
       isTrue,
     );
     expect(
-      shouldHoldPendingPlayback(const DiscoveryException('Song missing')),
-      isFalse,
+      shouldHoldPendingPlayback(
+        const DiscoveryException('The addon could not resolve this recording.'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldHoldPendingPlayback(TimeoutException('Source timed out')),
+      isTrue,
+    );
+    expect(
+      shouldHoldPendingPlayback(const SocketException('Connection failed')),
+      isTrue,
+    );
+    expect(
+      shouldHoldPendingPlayback(StateError('Invalid source response')),
+      isTrue,
     );
     expect(shouldHoldPendingPlayback(null), isFalse);
   });

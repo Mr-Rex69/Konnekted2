@@ -136,8 +136,11 @@ class DiscoveryRateLimited extends DiscoveryException {
   const DiscoveryRateLimited(super.message);
 }
 
-bool shouldHoldPendingPlayback(Object? failure) =>
-    failure is DiscoveryVerificationRequired || failure is DiscoveryRateLimited;
+/// A failed request does not establish that the recording is unavailable.
+/// Advancing on provider, transport or decoder errors can exhaust a Search
+/// queue and trigger rate limiting before the service ever returns HTTP 429.
+/// Only an error-free miss (null) may automatically try the next recording.
+bool shouldHoldPendingPlayback(Object? failure) => failure != null;
 
 String discoveryError(Object error) => error is DiscoveryException
     ? error.message
