@@ -1,7 +1,38 @@
 import 'package:flick/services/library_scanner_service.dart';
+import 'package:flick/data/entities/song_entity.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('ordinary iPhone scans repair old sparse album rows despite cached timestamps', () {
+    final song = SongEntity()..metadataComplete = true;
+    expect(
+      LibraryScannerService.canReuseAlbumScanFingerprint(song, isIOS: true),
+      isFalse,
+    );
+    expect(
+      LibraryScannerService.canReuseAlbumScanFingerprint(song, isIOS: false),
+      isTrue,
+      reason: 'Android scan policy stays unchanged',
+    );
+    song.albumArtist = ' ';
+    expect(
+      LibraryScannerService.canReuseAlbumScanFingerprint(song, isIOS: true),
+      isFalse,
+    );
+    song.albumArtist = 'Album owner';
+    expect(
+      LibraryScannerService.canReuseAlbumScanFingerprint(song, isIOS: true),
+      isTrue,
+      reason: 'completed repair is not rescanned forever',
+    );
+    song.albumArtist = null;
+    song.hasLocalEdits = true;
+    expect(
+      LibraryScannerService.canReuseAlbumScanFingerprint(song, isIOS: true),
+      isTrue,
+      reason: 'never replace user-edited tags automatically',
+    );
+  });
   group('chooseAndroidScanEngine', () {
     test('all-files access with readable path routes to Rust walk', () {
       expect(

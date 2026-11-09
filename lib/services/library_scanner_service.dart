@@ -1931,7 +1931,8 @@ class LibraryScannerService {
         continue;
       }
       existingMap[song.filePath] = song;
-      if (song.lastModified != null) {
+      if (song.lastModified != null &&
+          canReuseAlbumScanFingerprint(song, isIOS: Platform.isIOS)) {
         knownFiles[song.filePath] = song.lastModified!.millisecondsSinceEpoch;
       }
     }
@@ -1942,7 +1943,9 @@ class LibraryScannerService {
     // every file and the library ends up empty.
     if (cachedFingerprints != null) {
       for (final entry in cachedFingerprints.entries) {
-        if (existingMap.containsKey(entry.key)) {
+        final existing = existingMap[entry.key];
+        if (existing != null &&
+            canReuseAlbumScanFingerprint(existing, isIOS: Platform.isIOS)) {
           knownFiles[entry.key] = entry.value;
         }
       }
@@ -2010,6 +2013,7 @@ class LibraryScannerService {
           final artist = (metadata.artist?.trim().isNotEmpty ?? false)
               ? metadata.artist!.trim()
               : l10n.unknownArtist;
+          final priorAlbumArtist = existing?.albumArtist?.trim();
           final song = SongEntity()
             ..filePath = metadata.path
             ..title = (metadata.title?.trim().isNotEmpty ?? false)
@@ -2023,6 +2027,10 @@ class LibraryScannerService {
                 Platform.isIOS &&
                     (metadata.albumArtist?.trim().isNotEmpty ?? false)
                 ? metadata.albumArtist!.trim()
+                : Platform.isIOS
+                ? (priorAlbumArtist?.isNotEmpty == true
+                      ? priorAlbumArtist
+                      : artist)
                 : existing?.albumArtist ?? artist
             ..trackNumber = metadata.trackNumber ?? existing?.trackNumber ?? 0
             ..discNumber = metadata.discNumber ?? existing?.discNumber ?? 1
@@ -3053,6 +3061,18 @@ class LibraryScannerService {
 
   static int? _positiveOrNull(int? value) =>
       value != null && value > 0 ? value : null;
+
+  /// Older iPhone downloads were marked complete without importing album
+  /// tags. Read those files once despite unchanged timestamps/fingerprints.
+  /// The scan supplies a real album artist or its normal artist fallback,
+  /// so legitimately absent tags do not cause perpetual full rescans.
+  @visibleForTesting
+  static bool canReuseAlbumScanFingerprint(
+    SongEntity song, {
+    required bool isIOS,
+  }) => !isIOS ||
+      song.hasLocalEdits ||
+      song.albumArtist?.trim().isNotEmpty == true;
 
   Future<void> _runDetachedScanTask(
     String displayName,

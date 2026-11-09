@@ -13,6 +13,7 @@ import 'package:flick/data/entities/song_entity.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/features/discovery/discovery_models.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/core/utils/library_metadata_placeholders.dart';
 import 'package:flick/services/atmos_diagnostics.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/album_art_import_service.dart';
@@ -64,6 +65,7 @@ class LibraryDownloader {
     Future<void> Function(String path, String name)? registerFolder,
     Future<void> Function(SongEntity entity)? upsert,
     Future<bool> Function(String path, Song song, LyricsData? lyrics)? tag,
+    Future<rust_metadata.TagReadResult> Function(String path)? readTags,
     Future<LyricsData?> Function(Song song)? lyricsLookup,
     Future<void> Function(String path, Song song, String artwork)? cover,
     Future<void> Function(List<String> paths)? indexMedia,
@@ -72,6 +74,7 @@ class LibraryDownloader {
        _registerFolder = registerFolder ?? _register,
        _upsert = upsert ?? SongRepository().upsertSong,
        _tag = tag ?? _writeTags,
+       _readTags = readTags ?? ((path) => rust_metadata.readTags(path: path)),
        _lyricsLookup = lyricsLookup ?? _getDownloadLyrics,
        _cover = cover ?? _applyCover,
        _indexMedia = indexMedia ?? MusicFolderService().indexMediaFiles,
@@ -86,6 +89,7 @@ class LibraryDownloader {
   final Future<void> Function(String path, String name) _registerFolder;
   final Future<void> Function(SongEntity entity) _upsert;
   final Future<bool> Function(String path, Song song, LyricsData? lyrics) _tag;
+  final Future<rust_metadata.TagReadResult> Function(String path) _readTags;
   final Future<LyricsData?> Function(Song song) _lyricsLookup;
   final Future<void> Function(String path, Song song, String artwork) _cover;
   final Future<void> Function(List<String> paths) _indexMedia;
@@ -143,17 +147,45 @@ class LibraryDownloader {
     try {
       final result = await rust_metadata.writeTags(
         path: path,
-        fields: rust_metadata.TagEditFields(
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          lyrics: portableLyrics(lyrics),
-        ),
+        fields: tagFieldsForDownload(song, lyrics),
       );
       return result.success;
     } catch (_) {
       return false;
     }
+  }
+
+  static String? _text(String? value) =>
+      value?.trim().isNotEmpty == true ? value!.trim() : null;
+  static int? _positive(int? value) =>
+      value != null && value > 0 ? value : null;
+  static String? _album(String? value) {
+    final text = _text(value);
+    return isUnknownLibraryAlbum(text) ? null : text;
+  }
+  static String? _albumArtist(String? value) {
+    final text = _text(value);
+    return isUnknownLibraryArtist(text) ? null : text;
+  }
+
+  /// Null fields preserve existing embedded tags in the native writer.
+  @visibleForTesting
+  static rust_metadata.TagEditFields tagFieldsForDownload(
+    Song song,
+    LyricsData? lyrics,
+  ) {
+    final ios = defaultTargetPlatform == TargetPlatform.iOS;
+    return rust_metadata.TagEditFields(
+      title: song.title,
+      artist: song.artist,
+      album: ios ? _album(song.album) : song.album,
+      albumArtist: ios ? _albumArtist(song.albumArtist) : null,
+      trackNumber: ios ? _positive(song.trackNumber) : null,
+      discNumber: ios ? _positive(song.discNumber) : null,
+      genre: ios ? _text(song.genre) : null,
+      year: ios ? _positive(song.year) : null,
+      lyrics: portableLyrics(lyrics),
+    );
   }
 
   static Future<void> _applyCover(String path, Song song, String url) async {
@@ -302,12 +334,42 @@ class LibraryDownloader {
       }
       final stat = await copy.stat();
       final now = _now();
+      final ios = defaultTargetPlatform == TargetPlatform.iOS;
+      rust_metadata.TagReadResult? embedded;
+      if (ios) {
+        // Android's MediaStore indexes the saved file's tags. On iPhone we
+        // must populate these ourselves; a completed sparse row otherwise
+        // keeps a correctly tagged album looking like unrelated singles.
+        try {
+          embedded = await _readTags(copy.path);
+        } catch (_) {
+          /* Retry through background metadata. */
+        }
+      }
       await _upsert(
         SongEntity()
           ..filePath = copy.path
           ..title = prepared.title
           ..artist = prepared.artist
-          ..album = prepared.album
+          ..album = ios
+              ? _album(prepared.album) ?? _album(embedded?.album)
+              : prepared.album
+          ..albumArtist = ios
+              ? _albumArtist(prepared.albumArtist) ??
+                    _albumArtist(embedded?.albumArtist)
+              : null
+          ..trackNumber = ios
+              ? _positive(prepared.trackNumber) ??
+                    _positive(embedded?.trackNumber)
+              : null
+          ..discNumber = ios
+              ? _positive(prepared.discNumber) ??
+                    _positive(embedded?.discNumber)
+              : null
+          ..genre = ios ? _text(prepared.genre) ?? _text(embedded?.genre) : null
+          ..year = ios
+              ? _positive(prepared.year) ?? _positive(embedded?.year)
+              : null
           ..durationMs = prepared.duration.inMilliseconds
           ..fileType = prepared.atmosEncoded
               ? (prepared.fileType.toUpperCase() == 'AC-4'
@@ -323,7 +385,7 @@ class LibraryDownloader {
           ..relativeFolderPath = p
               .relative(target.dir, from: target.root)
               .replaceFirst(RegExp(r'^\.$'), '')
-          ..metadataComplete = true
+          ..metadataComplete = !ios || embedded != null
           // Untagged: keep these names over the file's when rescanned.
           ..hasLocalEdits = !tagged,
       );
