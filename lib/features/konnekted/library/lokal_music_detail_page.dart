@@ -61,6 +61,7 @@ class LokalMusicDetailPage extends ConsumerStatefulWidget {
     required String name,
     required this.localSongs,
     this.initialOnline = false,
+    this.catalogue,
   }) : title = name,
        artist = name,
        isArtist = true,
@@ -72,6 +73,7 @@ class LokalMusicDetailPage extends ConsumerStatefulWidget {
     required this.artist,
     required this.localSongs,
     this.initialOnline = false,
+    this.catalogue,
     this.release,
     this.artworkHeroTag,
   }) : isArtist = false;
@@ -80,6 +82,7 @@ class LokalMusicDetailPage extends ConsumerStatefulWidget {
   final List<Song> localSongs;
   final bool isArtist, initialOnline;
   final LokalCatalogueAlbum? release;
+  final LokalOnlineCatalogue? catalogue;
   final String? artworkHeroTag;
 
   @override
@@ -101,6 +104,7 @@ String? lokalAlbumRunningTime(List<Song?> rowSongs) {
 }
 
 class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
+  LokalOnlineCatalogue get _catalogue => widget.catalogue ?? LokalOnlineCatalogue.instance;
   // Detail routes must open at pixel zero, even after an overscroll bounce or
   // reopening the same artist/album. Never restore a previous scroll offset.
   final _scrollController = ScrollController(keepScrollOffset: false);
@@ -110,6 +114,7 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
     () => mounted ? context : null,
   );
   LokalCataloguePage? _page;
+  Future<void>? _catalogueLoad;
   bool _online = false,
       _loading = false,
       _busy = false,
@@ -367,7 +372,13 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
     }
   }
 
-  Future<void> _load({bool refresh = false}) async {
+  Future<void> _load({bool refresh = false}) {
+    final work = _loadCatalogue(refresh: refresh);
+    _catalogueLoad = work;
+    return work;
+  }
+
+  Future<void> _loadCatalogue({bool refresh = false}) async {
     if (!_online) return;
     final request = ++_request;
     setState(() {
@@ -376,11 +387,11 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
     });
     try {
       final page = await (widget.isArtist
-          ? LokalOnlineCatalogue.instance.artist(
+          ? _catalogue.artist(
               widget.artist,
               refresh: refresh,
             )
-          : LokalOnlineCatalogue.instance.album(
+          : _catalogue.album(
               widget.title,
               widget.artist,
               release: widget.release,
@@ -425,18 +436,21 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
     return found;
   }
 
-  List<_Entry> _entries(List<Song> library, List<Song> local) {
+  List<_Entry> _entries(
+    List<Song> library, List<Song> local, Map<String, int> counts, {
+    bool matchLibrary = false,
+  }) {
     // Rebuilding the hero (online toggle, artwork resolution, favorites) must
     // not re-sort every song or reconstruct the global catalogue match index.
     // Use object identity; repository/provider updates create new snapshots.
-    final counts = ref.watch(lokalPlayCountsProvider).value ?? const {};
+    final ready = _relatedReady || matchLibrary;
     if (_entryCache != null &&
         identical(local, _entryCacheLocal) &&
         identical(library, _entryCacheLibrary) &&
         identical(counts, _entryCacheCounts) &&
         identical(_page, _entryCachePage) &&
         _entryCacheOnline == _online &&
-        _entryCacheReady == _relatedReady) {
+        _entryCacheReady == ready) {
       return _entryCache!;
     }
     final seen = <String>{};
@@ -448,7 +462,7 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
         // Even a cached online catalogue can return during the push.
         // Delay the first global match-index construction until the page
         // settles; entries are rematched in the next build.
-        final owned = _relatedReady
+        final owned = ready
             ? KonnektedLibraryIndex.of(library).match(track.metadata)
             : null;
         if (owned != null) seenOwned.add(owned.id);
@@ -488,8 +502,32 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
     _entryCacheCounts = counts;
     _entryCachePage = _page;
     _entryCacheOnline = _online;
-    _entryCacheReady = _relatedReady;
+    _entryCacheReady = ready;
     return _entryCache = rows;
+  }
+
+  // Online album actions must not capture the local-only rows painted while
+  // the catalogue is loading. Wait for that request, then use the latest
+  // full list, with owned files kept in their published positions.
+  Future<List<_Entry>> _actionRows() async {
+    while (_online && _catalogueLoad != null) {
+      final work = _catalogueLoad!;
+      await work;
+      if (!mounted) return const [];
+      if (identical(work, _catalogueLoad)) break;
+    }
+    if (!mounted) return const [];
+    if (_online && (_error != null || _page?.tracks.isNotEmpty != true)) {
+      throw DiscoveryException(_error ?? 'No online tracks found.');
+    }
+    final library =
+        ref.read(konnektedLibraryProvider).value ?? widget.localSongs;
+    return _entries(
+      library,
+      _localOnce(library),
+      ref.read(lokalPlayCountsProvider).value ?? const {},
+      matchLibrary: true,
+    );
   }
 
   Future<Song> _prepare(_Entry entry) async {
@@ -518,25 +556,37 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
 
   Future<void> _play(
     List<_Entry> rows, {
-    int start = 0,
+    int? start,
     bool shuffle = false,
   }) async {
     if (rows.isEmpty || _busy || _playPending) return;
     // Prevent duplicate concurrent play requests without rebuilding the
     // entire artist/album page or momentarily disabling its header controls.
     _playPending = true;
-    final ordered = List<_Entry>.of(rows);
-    if (shuffle) {
-      ordered.shuffle();
-      start = 0;
-    }
+    final selected = start == null ? null : rows[start].track.metadata.key;
     try {
+      final ordered = List<_Entry>.of(
+        widget.isArtist ? rows : await _actionRows(),
+      );
+      if (ordered.isEmpty || !mounted) return;
+      var selectedIndex = selected == null
+          ? 0
+          : ordered.indexWhere((entry) => entry.track.metadata.key == selected);
+      if (selectedIndex < 0) return;
+      if (shuffle) {
+        ordered.shuffle();
+        selectedIndex = 0;
+      }
       final queue = [
         for (final entry in ordered) entry.owned ?? entry.track.pending(),
       ];
       await ref
           .read(playerProvider.notifier)
-          .play(queue[start], playlist: queue);
+          .play(
+            queue[selectedIndex],
+            playlist: queue,
+            playlistIndex: selectedIndex,
+          );
       _progress.clear();
     } catch (error) {
       if (mounted) _progress.fail(discoveryError(error));
@@ -631,7 +681,9 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
     final local = !_relatedReady
         ? widget.localSongs
         : _localOnce(library);
-    final rows = _entries(library, local);
+    final rows = _entries(
+      library, local, ref.watch(lokalPlayCountsProvider).value ?? const {},
+    );
     final year = local.where((song) => song.year != null).firstOrNull?.year ??
         widget.release?.year;
     final runningTime = lokalAlbumRunningTime(
@@ -1179,7 +1231,7 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
           LokalChoice(value: 'like',
             label: allLiked ? lokalText('Unlike all') : lokalText('Like all'),
             icon: allLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded),
-        if (rows.isNotEmpty)
+        if (rows.isNotEmpty || (_online && _loading))
           LokalChoice(value: 'queue', label: lokalText('Add to queue'),
             icon: Icons.queue_music_rounded),
         if (!widget.isArtist && local.isNotEmpty)
@@ -1213,9 +1265,16 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
         case 'like':
           await _like(local, !allLiked);
         case 'queue':
-          final player = ref.read(playerProvider.notifier);
-          for (final row in rows) {
-            await player.addToQueue(row.owned ?? row.track.pending());
+          setState(() => _busy = true);
+          try {
+            final album = await _actionRows();
+            if (!mounted) return;
+            final player = ref.read(playerProvider.notifier);
+            for (final row in album) {
+              await player.addToQueue(row.owned ?? row.track.pending());
+            }
+          } finally {
+            if (mounted) setState(() => _busy = false);
           }
         case 'identify':
           await IdentifyAlbumSheet.show(
