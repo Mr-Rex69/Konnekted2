@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flick/models/song.dart';
+import 'package:flick/features/discovery/discovery_models.dart';
 import 'package:flick/features/discovery/discovery_progressive_streams.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/services/queue_pre_resolver.dart';
@@ -319,6 +320,48 @@ void main() {
         expect(lookups.asked, ['first', 'second', 'third']);
       },
     );
+
+    for (final failure in [
+      const DiscoveryException('The addon could not resolve this recording.'),
+      TimeoutException('Source timed out'),
+    ]) {
+      testResolver(
+        'failed Search lookup (${failure.runtimeType}) holds prefetch until retry',
+        (tester) async {
+          final first = pending('first');
+          host.playlist = [first, pending('second'), pending('third')];
+          host.playAt(0);
+          final result = expectLater(
+            resolver.resolveNow(first),
+            throwsA(same(failure)),
+          );
+          lookups.pending.remove('first')!.completeError(failure);
+          await tester.pump();
+          await result;
+
+          // PlayerService holds on a failed request instead of advancing
+          // through Search results. Queue notifications and delayed prefetch
+          // must not launch requests while that selected song stays pending.
+          expect(shouldHoldPendingPlayback(failure), isTrue);
+          host.queue.value++;
+          await tester.pump(const Duration(seconds: 10));
+          expect(resolver.schedule(), isEmpty);
+          expect(lookups.asked, ['first']);
+          expect(host.currentIndex, 0);
+          expect(host.playlist.first, same(first));
+
+          // A manual retry can recover and open the normal lookahead window.
+          final retried = resolver.resolveNow(first);
+          expect(lookups.asked, ['first', 'first']);
+          lookups.answer('first');
+          expect((await retried)?.id, 'discovery:first');
+          await tester.pump(const Duration(milliseconds: 600));
+          expect(lookups.asked, ['first', 'first', 'second']);
+          await tester.pump(const Duration(seconds: 2));
+          expect(lookups.asked, ['first', 'first', 'second', 'third']);
+        },
+      );
+    }
 
     testResolver('new playlist first track cancels stale add-on lookups', (
       tester,

@@ -1233,13 +1233,14 @@ class PlayerService {
           ? failure.message
           : 'Couldn’t prepare this song for playback. Try another source or try again.';
       if (shouldHoldPendingPlayback(failure)) {
-        // Verification and rate limits can recover without skipping tracks.
-        // Keep the pending entry selected for manual retry.
+        // A provider failure can affect every result in this queue. Hold on
+        // the selected song for manual retry instead of rapidly requesting
+        // each successor until the service rate limits the listener.
         _pendingFailures = 0;
         if (_pendingPresentationTrackId == pending.id) {
           _pendingPresentationTrackId = null;
         }
-        _debugLog('[Playback] ${pending.title} waiting for source access');
+        _debugLog('[Playback] ${pending.title} waiting for manual retry');
         return;
       }
       _debugLog(
