@@ -64,10 +64,11 @@ Widget _workspace({
   Widget? mobileDock,
   VoidCallback? toggleQueue,
   ValueChanged<KonnektedDestination>? navigate,
+  ValueChanged<KonnektedTab>? select,
 }) => KonnektedTabletWorkspace(
   selected: KonnektedTab.listen,
   route: null,
-  onSelect: (_) {},
+  onSelect: select ?? (_) {},
   onNavigate: navigate ?? (_) {},
   hasPlayer: hasPlayer,
   player: KonnektedMiniPlayerContent(
@@ -167,7 +168,11 @@ void main() {
             expect(
               clearance!.bottom,
               wide
-                  ? KonnektedTabletFooter.reservedHeight(collapsed: false)
+                  ? KonnektedTabletFooter.reservedHeight(
+                      collapsed:
+                          paneSize!.width - 32 <
+                          KonnektedTabletFooter.compactBreakpoint,
+                    )
                   : greaterThan(0),
             );
             if (wide) expect(typeSize, closeTo(22, .01));
@@ -257,6 +262,87 @@ void main() {
       }
     }
   });
+
+  testWidgets(
+    'navigation is one equal list and Search lives next to the header toggle',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(1366, 900)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      KonnektedTab? selected;
+      KonnektedDestination? destination;
+      await tester.pumpWidget(
+        _app(
+          _workspace(
+            child: const SizedBox.expand(),
+            select: (value) => selected = value,
+            navigate: (value) => destination = value,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byKey(const ValueKey('tablet-navigation-list'));
+      expect(
+        find.descendant(of: list, matching: find.byIcon(Icons.search_rounded)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: list, matching: find.byType(Divider)),
+        findsNothing,
+      );
+      expect(find.text('LIBRARY'), findsNothing);
+      for (final label in [
+        'Home',
+        'Library',
+        'Songs',
+        'Albums',
+        'Artists',
+        'Playlists',
+        'Liked',
+        'Folders',
+        'You',
+        'Settings',
+      ]) {
+        expect(
+          find.ancestor(of: find.text(label), matching: list),
+          findsOneWidget,
+        );
+      }
+      final youTop = tester.getTopLeft(find.text('You')).dy;
+      final settingsTop = tester.getTopLeft(find.text('Settings')).dy;
+      tester.view.physicalSize = const Size(1366, 1100);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.text('You')).dy, youTop);
+      expect(tester.getTopLeft(find.text('Settings')).dy, settingsTop);
+      tester.view.physicalSize = const Size(1366, 600);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Settings'),
+        120,
+        scrollable: find.descendant(
+          of: list,
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Settings').hitTestable(), findsOneWidget);
+      await tester.tap(find.text('Settings'));
+      expect(destination, KonnektedDestination.settings);
+      final search = find.byKey(const ValueKey('tablet-header-search'));
+      expect(
+        tester.getRect(search).right,
+        lessThanOrEqualTo(
+          tester
+              .getRect(find.byKey(const ValueKey('toggle-right-sidebar')))
+              .left,
+        ),
+      );
+      await tester.tap(search);
+      expect(selected, KonnektedTab.explore);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('tablet without playback retains the bottom system inset', (
     tester,

@@ -454,6 +454,7 @@ class _KonnektedTabletPlayerSidebarState
           Divider(height: 1, color: t.border),
           Expanded(
             child: Stack(
+              fit: StackFit.expand,
               children: [
                 Offstage(
                   offstage: widget.tab != TabletPlayerTab.details,
@@ -481,11 +482,7 @@ class _KonnektedTabletPlayerSidebarState
                             widget.tab == TabletPlayerTab.queue,
                         child: playback.isRadio
                             ? const _StationQueue()
-                            : QueueList(
-                                embedded: true,
-                                themed: true,
-                                onOpenPlayer: widget.onOpenPlayer,
-                              ),
+                            : QueueList(embedded: true, themed: true),
                       ),
                     ),
                   ),

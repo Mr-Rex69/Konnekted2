@@ -9,8 +9,10 @@ class LyricsSublineButtons extends StatefulWidget {
     super.key,
     required this.lyrics,
     required this.onChanged,
+    this.compactControls = false,
   });
   final LyricsData lyrics;
+  final bool compactControls;
   final ValueChanged<LyricsData?> onChanged;
   @override
   State<LyricsSublineButtons> createState() => _LyricsSublineButtonsState();
@@ -80,7 +82,8 @@ class _LyricsSublineButtonsState extends State<LyricsSublineButtons> {
         _busy = false;
       });
       widget.onChanged(null);
-      LokalToast.fromSnackBar(context, 
+      LokalToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text('These lyrics are already in your system language.'),
         ),
@@ -96,7 +99,8 @@ class _LyricsSublineButtonsState extends State<LyricsSublineButtons> {
     });
     widget.onChanged(result);
     if (result == null)
-      LokalToast.fromSnackBar(context, 
+      LokalToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             mode == 'romanize'
@@ -114,7 +118,12 @@ class _LyricsSublineButtonsState extends State<LyricsSublineButtons> {
       for (final mode in ['translate', 'romanize'])
         IconButton(
           tooltip: mode == 'translate' ? 'Translate lyrics' : 'Romanize lyrics',
-          visualDensity: VisualDensity.compact,
+          visualDensity: widget.compactControls
+              ? VisualDensity.standard
+              : VisualDensity.compact,
+          constraints: widget.compactControls
+              ? const BoxConstraints.tightFor(width: 44, height: 44)
+              : null,
           isSelected: _mode == mode,
           icon: _busy && _mode == mode
               ? const SizedBox.square(

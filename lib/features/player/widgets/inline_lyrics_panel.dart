@@ -564,6 +564,7 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
         ),
       if (_lyricsData case final lyrics?)
         LyricsSublineButtons(
+          compactControls: widget.compactControls,
           lyrics: lyrics,
           onChanged: (value) => setState(() => _sublineLyrics = value),
         ),
@@ -589,9 +590,17 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
     return Column(
       children: [
         if (widget.compactControls)
-          Padding(
+          IconButtonTheme(
             key: const ValueKey('compact-lyrics-toolbar'),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            data: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: const Size(44, 44),
+                maximumSize: const Size(44, 44),
+                padding: const EdgeInsets.all(8),
+                visualDensity: VisualDensity.standard,
+              ),
+            ),
             child: Wrap(
               alignment: WrapAlignment.center,
               crossAxisAlignment: WrapCrossAlignment.center,

@@ -2,7 +2,6 @@ import 'konnekted_tablet_footer.dart';
 
 import 'package:flutter/material.dart';
 
-import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/l10n/l10n.dart';
@@ -74,9 +73,19 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
         300.0,
         (size.width - 32).clamp(300.0, 420.0),
       );
+      final footerPaneWidth =
+          size.width - (tablet ? leftWidth : 0) - (showRight ? rightWidth : 0);
+      final footerMargin = footerPaneWidth < 400 ? 8.0 : 16.0;
+      final footerWidth =
+          footerPaneWidth -
+          footerMargin * 2 -
+          (widget.leftOpen ? 0 : media.padding.left) -
+          (showRight ? 0 : media.padding.right);
       final playerClearance = tablet && widget.hasPlayer
           ? KonnektedTabletFooter.reservedHeight(
-              collapsed: widget.playerCollapsed,
+              collapsed:
+                  widget.playerCollapsed ||
+                  footerWidth < KonnektedTabletFooter.compactBreakpoint,
               systemInset: media.padding.bottom,
             )
           : media.padding.bottom;
@@ -101,7 +110,7 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                         size: panelBounds.biggest,
                         padding: media.padding.copyWith(
                           left: 0,
-                          bottom: playerClearance,
+                          bottom: media.padding.bottom,
                         ),
                       ),
                       child: widget.playerSidebar,
@@ -121,6 +130,7 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                       child: MouseRegion(
                         cursor: SystemMouseCursors.resizeLeftRight,
                         child: GestureDetector(
+                          key: const ValueKey('resize-player-sidebar'),
                           behavior: HitTestBehavior.translucent,
                           onHorizontalDragUpdate: (details) =>
                               _resize(-details.delta.dx),
@@ -146,19 +156,12 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                       if (tablet && widget.leftOpen)
                         SizedBox(
                           width: leftWidth,
-                          child: MediaQuery(
-                            data: media.copyWith(
-                              padding: media.padding.copyWith(
-                                bottom: playerClearance,
-                              ),
-                            ),
-                            child: _Sidebar(
-                              extended: extended,
-                              selected: widget.selected,
-                              route: widget.route,
-                              onSelect: widget.onSelect,
-                              onNavigate: widget.onNavigate,
-                            ),
+                          child: _Sidebar(
+                            extended: extended,
+                            selected: widget.selected,
+                            route: widget.route,
+                            onSelect: widget.onSelect,
+                            onNavigate: widget.onNavigate,
                           ),
                         ),
                       Expanded(
@@ -195,6 +198,23 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                                           ),
                                         ),
                                         const Spacer(),
+                                        IconButton(
+                                          key: const ValueKey(
+                                            'tablet-header-search',
+                                          ),
+                                          tooltip: l10n.search,
+                                          isSelected:
+                                              widget.selected ==
+                                                  KonnektedTab.explore &&
+                                              widget.route == null,
+                                          onPressed: () => widget.onSelect(
+                                            KonnektedTab.explore,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.search_rounded,
+                                            size: 21,
+                                          ),
+                                        ),
                                         IconButton(
                                           key: const ValueKey(
                                             'toggle-right-sidebar',
@@ -283,13 +303,20 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                   if (tablet && widget.hasPlayer)
                     Positioned(
                       key: const ValueKey('tablet-player-bar'),
-                      left: 0,
-                      right: 0,
+                      left: widget.leftOpen ? leftWidth : 0,
+                      right: showRight ? rightWidth : 0,
                       bottom: 0,
                       child: SafeArea(
                         top: false,
-                        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: widget.player,
+                        left: !widget.leftOpen,
+                        right: !showRight,
+                        minimum: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: footerMargin,
+                          ),
+                          child: widget.player,
+                        ),
                       ),
                     ),
                 ],
@@ -363,13 +390,10 @@ class _Sidebar extends StatelessWidget {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                key: const ValueKey('tablet-navigation-list'),
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                 children: [
-                  for (final tab in [
-                    KonnektedTab.listen,
-                    KonnektedTab.explore,
-                    KonnektedTab.library,
-                  ])
+                  for (final tab in [KonnektedTab.listen, KonnektedTab.library])
                     _item(
                       context,
                       tab.localizedLabel,
@@ -377,18 +401,6 @@ class _Sidebar extends StatelessWidget {
                       active: route == null && selected == tab,
                       onTap: () => onSelect(tab),
                     ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 22,
-                    ),
-                    child: extended
-                        ? Text(
-                            lokalText('Library').toUpperCase(),
-                            style: LokalTheme.label(t),
-                          )
-                        : Divider(color: t.border),
-                  ),
                   for (final (label, icon, destination) in shortcuts)
                     _item(
                       context,
@@ -397,13 +409,6 @@ class _Sidebar extends StatelessWidget {
                       active: route == '/konnekted/${destination.name}',
                       onTap: () => onNavigate(destination),
                     ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-              child: Column(
-                children: [
                   _item(
                     context,
                     KonnektedTab.settings.localizedLabel,

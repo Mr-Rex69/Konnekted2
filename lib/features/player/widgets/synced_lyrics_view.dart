@@ -559,12 +559,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                             )
                           : const <ActiveSupportingVocal>[];
                       final reduceMotion = MediaQuery.disableAnimationsOf(context);
-                      return AnimatedSize(
-                        duration: reduceMotion
-                            ? Duration.zero
-                            : const Duration(milliseconds: 340),
-                        curve: Curves.easeInOutCubic,
-                        alignment: Alignment.topCenter,
+                      return lyricSizeTransition(
+                        context,
+                        duration: const Duration(milliseconds: 340),
                         child: AnimatedSwitcher(
                           duration: reduceMotion
                               ? Duration.zero
