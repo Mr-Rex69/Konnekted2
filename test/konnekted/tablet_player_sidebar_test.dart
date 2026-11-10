@@ -619,6 +619,18 @@ void main() {
               findsOneWidget,
             );
             expect(find.byType(KonnektedTabletFooter), findsOneWidget);
+            final timeline = find.byType(TabletSeekBar);
+            if (timeline.evaluate().isNotEmpty) {
+              final timelineRect = tester.getRect(timeline);
+              final footerRect = tester.getRect(
+                find.byKey(const ValueKey('tablet-footer-glass')),
+              );
+              expect(timelineRect.width, lessThanOrEqualTo(448));
+              expect(
+                timelineRect.center.dx,
+                closeTo(footerRect.center.dx, .01),
+              );
+            }
             expect(
               tester.takeException(),
               isNull,
@@ -1134,8 +1146,9 @@ void main() {
                     clearance = MediaQuery.paddingOf(context);
                     return NotificationListener<ScrollNotification>(
                       onNotification: (notification) {
-                        if (notification is ScrollEndNotification)
+                        if (notification is ScrollEndNotification) {
                           scroll.reset();
+                        }
                         if (notification is ScrollUpdateNotification &&
                             notification.dragDetails != null) {
                           final next = scroll.push(
@@ -1187,7 +1200,8 @@ void main() {
       expect(collapsed, isTrue);
       expect(tester.getSize(glass), const Size(760, 56));
       expect(clearance!.bottom, 98);
-      await tester.tap(find.byTooltip('Expand player'));
+      expect(find.byTooltip('Expand player'), findsNothing);
+      await tester.drag(glass, const Offset(0, 80));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 80));
       final middle = tester.getSize(glass);
@@ -1197,13 +1211,80 @@ void main() {
       ); // Reverse while the pill is still expanding.
       await tester.pumpAndSettle();
       expect(tester.getSize(glass), const Size(760, 56));
-      await tester.tap(find.byTooltip('Expand player'));
+      expect(find.byTooltip('Expand player'), findsNothing);
+      await tester.drag(glass, const Offset(0, 80));
       await tester.pumpAndSettle();
       expect(tester.getSize(glass), const Size(1118, 80));
       await tester.tap(find.byTooltip('Volume'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('tablet-volume')), findsOneWidget);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'collapsed tablet transport keeps previous playable on Android and iOS',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+        for (final radio in [false, true]) {
+          for (final width in [220.0, 360.0, 600.0, 768.0, 1366.0]) {
+            await tester.pumpWidget(const SizedBox.shrink());
+            tester.view.physicalSize = Size(width, 900);
+            final player = _Player();
+            await tester.pumpWidget(
+              _app(
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: KonnektedTabletFooter(
+                    collapsed: true,
+                    onExpand: () {},
+                    onOpenPlayer: () {},
+                    onOpenPanel: (_) {},
+                  ),
+                ),
+                player: player,
+                radio: radio,
+                platform: platform,
+              ),
+            );
+            await tester.pumpAndSettle();
+            for (final tooltip in ['Previous', 'Play', 'Next', 'Full screen']) {
+              expect(
+                find.byTooltip(tooltip).hitTestable(),
+                findsOneWidget,
+                reason: '$platform width=$width radio=$radio',
+              );
+            }
+            expect(find.byTooltip('Playback options'), findsNothing);
+            expect(find.byTooltip('Expand player'), findsNothing);
+            if (width >= 440) {
+              expect(
+                find.byTooltip('Shuffle off').hitTestable(),
+                findsOneWidget,
+              );
+              expect(
+                find.byTooltip('Repeat all').hitTestable(),
+                findsOneWidget,
+              );
+            }
+            await tester.tap(find.byTooltip('Previous'));
+            await tester.pumpAndSettle();
+            if (radio) {
+              final container = ProviderScope.containerOf(
+                tester.element(find.byType(KonnektedTabletFooter)),
+              );
+              final notifier =
+                  container.read(radioPlayerProvider.notifier) as _Radio;
+              expect(notifier.actions, ['radio-previous']);
+            } else {
+              expect(player.actions, ['previous']);
+            }
+            expect(tester.takeException(), isNull);
+          }
+        }
+      }
     },
   );
 
@@ -1255,9 +1336,8 @@ void main() {
         TabletPlayerTab.queue,
         TabletPlayerTab.details,
       ]);
-      await tester.tap(find.byTooltip('Playback options'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Full screen'));
+      expect(find.byTooltip('Playback options'), findsNothing);
+      await tester.tap(find.byTooltip('Full screen'));
       await tester.pumpAndSettle();
       expect(opened, 1);
       final slider = find.byKey(const ValueKey('tablet-seek'));

@@ -14,10 +14,6 @@ import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/internet_radio/radio_providers.dart';
 import 'package:flick/features/link/lokal_devices_card.dart';
 import 'package:flick/features/player/widgets/player_artwork_image.dart';
-import 'package:flick/features/player/widgets/sleep_timer_bottom_sheet.dart';
-import 'package:flick/features/player/widgets/speed_bottom_sheet.dart';
-import 'package:flick/features/player/widgets/pitch_bottom_sheet.dart';
-import 'package:flick/features/settings/screens/equalizer_screen.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
 import 'package:flick/providers/player_provider.dart';
@@ -214,64 +210,56 @@ class KonnektedTabletFooter extends ConsumerWidget {
         ),
       ),
     );
-    Widget transport({bool compact = false, double progress = 0}) => Row(
+    final previousButton = IconButton(
+      tooltip: lokalText('Previous'),
+      icon: const Icon(Icons.skip_previous_rounded),
+      onPressed: () => unawaited(
+        command(
+          playback.isRadio
+              ? ref.read(radioPlayerProvider.notifier).previousStation
+              : player.previous,
+        ),
+      ),
+    );
+    final shuffleButton = IconButton(
+      tooltip: lokalText(flags.$2 ? 'Shuffle on' : 'Shuffle off'),
+      onPressed: playback.isRadio
+          ? null
+          : () => unawaited(command(player.toggleShuffle)),
+      icon: Icon(
+        Icons.shuffle_rounded,
+        size: 18,
+        color: flags.$2 && !playback.isRadio ? t.accent : t.muted,
+      ),
+    );
+    final repeatButton = IconButton(
+      tooltip: lokalText(
+        flags.$3 == LoopMode.off
+            ? 'Repeat off'
+            : flags.$3 == LoopMode.one
+            ? 'Repeat one'
+            : 'Repeat all',
+      ),
+      onPressed: playback.isRadio ? null : player.toggleLoopMode,
+      icon: Icon(
+        flags.$3 == LoopMode.one
+            ? Icons.repeat_one_rounded
+            : Icons.repeat_rounded,
+        size: 18,
+        color: flags.$3 != LoopMode.off && !playback.isRadio
+            ? t.accent
+            : t.muted,
+      ),
+    );
+    Widget transport() => Row(
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!compact)
-          _foldControl(
-            IconButton(
-              tooltip: lokalText(flags.$2 ? 'Shuffle on' : 'Shuffle off'),
-              onPressed: playback.isRadio
-                  ? null
-                  : () => unawaited(command(player.toggleShuffle)),
-              icon: Icon(
-                Icons.shuffle_rounded,
-                size: 18,
-                color: flags.$2 && !playback.isRadio ? t.accent : t.muted,
-              ),
-            ),
-            progress,
-          ),
-        _foldControl(
-          IconButton(
-            tooltip: lokalText('Previous'),
-            icon: const Icon(Icons.skip_previous_rounded),
-            onPressed: () => unawaited(
-              command(
-                playback.isRadio
-                    ? ref.read(radioPlayerProvider.notifier).previousStation
-                    : player.previous,
-              ),
-            ),
-          ),
-          progress,
-        ),
+        shuffleButton,
+        previousButton,
         playButton,
         nextButton,
-        if (!compact)
-          _foldControl(
-            IconButton(
-              tooltip: lokalText(
-                flags.$3 == LoopMode.off
-                    ? 'Repeat off'
-                    : flags.$3 == LoopMode.one
-                    ? 'Repeat one'
-                    : 'Repeat all',
-              ),
-              onPressed: playback.isRadio ? null : player.toggleLoopMode,
-              icon: Icon(
-                flags.$3 == LoopMode.one
-                    ? Icons.repeat_one_rounded
-                    : Icons.repeat_rounded,
-                size: 18,
-                color: flags.$3 != LoopMode.off && !playback.isRadio
-                    ? t.accent
-                    : t.muted,
-              ),
-            ),
-            progress,
-          ),
+        repeatButton,
       ],
     );
     final timeline = playback.isRadio
@@ -316,128 +304,50 @@ class KonnektedTabletFooter extends ConsumerWidget {
               ),
             ),
           );
-    final options = SizedBox.square(
-      dimension: 44,
-      child: PopupMenuButton<String>(
-        tooltip: lokalText('Playback options'),
-        icon: const Icon(Icons.more_horiz_rounded, size: 20),
-        onSelected: (action) {
-          final service = ref.read(playerServiceProvider);
-          switch (action) {
-            case 'lyrics':
-              onOpenPanel(TabletPlayerTab.lyrics);
-            case 'queue':
-              onOpenPanel(TabletPlayerTab.queue);
-            case 'output':
-              _openOutput(context, playback);
-            case 'volume':
-              _openVolume(context, playback);
-            case 'shuffle':
-              unawaited(command(player.toggleShuffle));
-            case 'repeat':
-              player.toggleLoopMode();
-            case 'fullscreen':
-              onOpenPlayer();
-            case 'sleep':
-              unawaited(SleepTimerBottomSheet.show(context, service));
-            case 'speed':
-              unawaited(SpeedBottomSheet.show(context, service));
-            case 'pitch':
-              unawaited(PitchBottomSheet.show(context, service));
-            case 'eq':
-              unawaited(
-                Navigator.of(context, rootNavigator: true).push(
-                  LokalPageRoute<void>(builder: (_) => const EqualizerScreen()),
-                ),
-              );
-          }
-        },
-        itemBuilder: (_) => [
-          PopupMenuItem(value: 'lyrics', child: Text(l10n.lyrics)),
-          PopupMenuItem(value: 'queue', child: Text(l10n.queue)),
-          PopupMenuItem(value: 'volume', child: Text(lokalText('Volume'))),
-          PopupMenuItem(value: 'output', child: Text(lokalText('Output'))),
-          if (!playback.isRadio) ...[
-            PopupMenuItem(
-              value: 'shuffle',
-              child: Text(lokalText(flags.$2 ? 'Shuffle on' : 'Shuffle off')),
-            ),
-            PopupMenuItem(
-              value: 'repeat',
-              child: Text(
-                lokalText(
-                  flags.$3 == LoopMode.off
-                      ? 'Repeat off'
-                      : flags.$3 == LoopMode.one
-                      ? 'Repeat one'
-                      : 'Repeat all',
-                ),
-              ),
-            ),
-          ],
-          PopupMenuItem(
-            value: 'fullscreen',
-            child: Text(lokalText('Full screen')),
-          ),
-          if (!playback.isRadio && !playback.remote) ...[
-            PopupMenuItem(value: 'sleep', child: Text(l10n.sleepTimer)),
-            PopupMenuItem(value: 'speed', child: Text(l10n.speedUp)),
-            PopupMenuItem(value: 'pitch', child: Text(l10n.pitch)),
-            PopupMenuItem(value: 'eq', child: Text(l10n.equalizer)),
-          ],
-        ],
-      ),
+    final fullscreenButton = IconButton(
+      tooltip: lokalText('Full screen'),
+      icon: const Icon(Icons.fullscreen_rounded, size: 20),
+      onPressed: onOpenPlayer,
     );
-    Widget utilities(bool wide, double progress, {bool canExpand = true}) =>
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (wide) ...[
-              _foldControl(
-                IconButton(
-                  tooltip: l10n.lyrics,
-                  icon: const Icon(Icons.lyrics_outlined, size: 20),
-                  onPressed: () => onOpenPanel(TabletPlayerTab.lyrics),
-                ),
-                progress,
-              ),
-              _foldControl(
-                IconButton(
-                  tooltip: l10n.queue,
-                  icon: const Icon(Icons.queue_music_rounded, size: 20),
-                  onPressed: () => onOpenPanel(TabletPlayerTab.queue),
-                ),
-                progress,
-              ),
-            ],
+    Widget utilities(bool wide, double progress) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (wide) ...[
+          _foldControl(
             IconButton(
-              tooltip: lokalText('Now playing'),
-              icon: const Icon(Icons.view_sidebar_outlined, size: 20),
-              onPressed: () => onOpenPanel(TabletPlayerTab.details),
+              tooltip: l10n.lyrics,
+              icon: const Icon(Icons.lyrics_outlined, size: 20),
+              onPressed: () => onOpenPanel(TabletPlayerTab.lyrics),
             ),
-            if (wide)
-              _foldControl(
-                IconButton(
-                  tooltip: lokalText('Volume'),
-                  icon: const Icon(Icons.volume_up_rounded, size: 20),
-                  onPressed: () => _openVolume(context, playback),
-                ),
-                progress,
-              ),
-            if (canExpand)
-              _foldControl(
-                IconButton(
-                  tooltip: lokalText('Expand player'),
-                  icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 22),
-                  onPressed: onExpand,
-                ),
-                progress,
-                reverse: true,
-              ),
-            options,
-          ],
-        );
-    return LayoutBuilder(
+            progress,
+          ),
+          _foldControl(
+            IconButton(
+              tooltip: l10n.queue,
+              icon: const Icon(Icons.queue_music_rounded, size: 20),
+              onPressed: () => onOpenPanel(TabletPlayerTab.queue),
+            ),
+            progress,
+          ),
+        ],
+        IconButton(
+          tooltip: lokalText('Now playing'),
+          icon: const Icon(Icons.view_sidebar_outlined, size: 20),
+          onPressed: () => onOpenPanel(TabletPlayerTab.details),
+        ),
+        if (wide)
+          _foldControl(
+            IconButton(
+              tooltip: lokalText('Volume'),
+              icon: const Icon(Icons.volume_up_rounded, size: 20),
+              onPressed: () => _openVolume(context, playback),
+            ),
+            progress,
+          ),
+        fullscreenButton,
+      ],
+    );
+    final footer = LayoutBuilder(
       builder: (context, bounds) => TweenAnimationBuilder<double>(
         tween: Tween(
           end: collapsed || bounds.maxWidth < compactBreakpoint ? 1 : 0,
@@ -455,7 +365,7 @@ class KonnektedTabletFooter extends ConsumerWidget {
           final folded = progress >= .5;
           final wide = bounds.maxWidth >= 1000;
           final timelineHeight = 24 * (1 - progress);
-          final micro = bounds.maxWidth < 360;
+          final micro = bounds.maxWidth < 440;
           return Center(
             heightFactor: 1,
             child: SizedBox(
@@ -491,9 +401,12 @@ class KonnektedTabletFooter extends ConsumerWidget {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceEvenly,
                                 children: [
+                                  if (bounds.maxWidth >= 308) shuffleButton,
+                                  if (bounds.maxWidth >= 220) previousButton,
                                   playButton,
                                   if (bounds.maxWidth >= 220) nextButton,
-                                  if (bounds.maxWidth >= 112) options,
+                                  if (bounds.maxWidth >= 308) repeatButton,
+                                  if (bounds.maxWidth >= 112) fullscreenButton,
                                 ],
                               )
                             : Column(
@@ -507,38 +420,20 @@ class KonnektedTabletFooter extends ConsumerWidget {
                                       ),
                                       const SizedBox(width: 8),
                                       if (wide)
-                                        Expanded(
-                                          flex: 4,
-                                          child: transport(progress: progress),
-                                        )
+                                        Expanded(flex: 4, child: transport())
                                       else
-                                        transport(
-                                          compact: true,
-                                          progress: progress,
-                                        ),
+                                        transport(),
                                       const SizedBox(width: 8),
                                       if (wide)
                                         Expanded(
                                           flex: 3,
                                           child: Align(
                                             alignment: Alignment.centerRight,
-                                            child: utilities(
-                                              wide,
-                                              progress,
-                                              canExpand:
-                                                  bounds.maxWidth >=
-                                                  compactBreakpoint,
-                                            ),
+                                            child: utilities(wide, progress),
                                           ),
                                         )
                                       else
-                                        utilities(
-                                          wide,
-                                          progress,
-                                          canExpand:
-                                              bounds.maxWidth >=
-                                              compactBreakpoint,
-                                        ),
+                                        utilities(wide, progress),
                                     ],
                                   ),
                                   SizedBox(
@@ -554,7 +449,17 @@ class KonnektedTabletFooter extends ConsumerWidget {
                                             ignoring: folded,
                                             child: Opacity(
                                               opacity: 1 - progress,
-                                              child: timeline,
+                                              child: Center(
+                                                child: ConstrainedBox(
+                                                  // Match desktop's max-w-md
+                                                  // timeline, including labels.
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                        maxWidth: 448,
+                                                      ),
+                                                  child: timeline,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -572,6 +477,14 @@ class KonnektedTabletFooter extends ConsumerWidget {
           );
         },
       ),
+    );
+    return GestureDetector(
+      onVerticalDragUpdate: collapsed && onExpand != null
+          ? (details) {
+              if (details.delta.dy > 0) onExpand!();
+            }
+          : null,
+      child: footer,
     );
   }
 }

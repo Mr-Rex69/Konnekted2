@@ -37,6 +37,8 @@ test/discovery/online_source_log_label_test.dart
 test/discovery/youtube_music_home_categories_test.dart
 test/konnekted/discovery_shelf_layout_test.dart
 test/konnekted/konnekted_components_test.dart
+test/konnekted/tablet_player_sidebar_test.dart
+test/konnekted/tablet_workspace_test.dart
 test/konnekted/konnekted_you_test.dart
 test/features/settings/spotify_cookie_data_placement_test.dart
 test/konnekted/home_navigation_localization_test.dart
