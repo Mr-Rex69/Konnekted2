@@ -128,6 +128,72 @@ IconData radioOutputRouteIcon(AndroidPlaybackDeviceInfo route) {
   }
 }
 
+/// Shared album navigation for the radio player and tablet sidebar. Only an
+/// exact metadata match can open a release; uncertain matches go to Search.
+Future<void> openRadioCurrentAlbum(
+  BuildContext context,
+  WidgetRef ref,
+  String title,
+  String artist, {
+  void Function(String)? onSearch,
+}) async {
+  void find(String query) {
+    if (onSearch != null)
+      onSearch(query);
+    else
+      unawaited(pushLokalPage(context, SearchScreen(initialQuery: query)));
+  }
+
+  final normalizedTitle = title.trim();
+  final normalizedArtist = artist.trim();
+  if (normalizedTitle.isEmpty || normalizedArtist.isEmpty) {
+    find('$normalizedArtist $normalizedTitle');
+    return;
+  }
+
+  // Prefer a verified local recording, never create an album by guessing
+  // from a station name or from a search result with a different artist.
+  final local = ref.read(konnektedLibraryProvider).value ?? const <Song>[];
+  final owned = radioMatchingLocalAlbum(
+    local,
+    title: normalizedTitle,
+    artist: normalizedArtist,
+  );
+  if (owned != null) {
+    await openLokalAlbumForSong(context, owned);
+    return;
+  }
+
+  GlobalCatalogueSong? matched;
+  try {
+    final result = await const GlobalCatalogueSearchService()
+        .search('$normalizedArtist $normalizedTitle', songsOnly: true)
+        .timeout(const Duration(seconds: 9));
+    matched = radioMatchingCatalogueAlbum(
+      result.songs,
+      title: normalizedTitle,
+      artist: normalizedArtist,
+    );
+  } catch (_) {
+    // A radio stream does not identify the album; never open an unrelated
+    // release on timeout, invalid metadata, or ambiguous catalogue hits.
+  }
+  if (!context.mounted) return;
+  if (matched == null) {
+    find('$normalizedArtist $normalizedTitle');
+    return;
+  }
+  await pushLokalPage(
+    context,
+    LokalMusicDetailPage.album(
+      title: matched.album,
+      artist: matched.artist,
+      localSongs: const [],
+      initialOnline: true,
+    ),
+  );
+}
+
 /// The live-radio transport shares FullPlayerScreen's player route, artwork
 /// morph, dismissal spring and appearance settings with local/remote playback.
 class RadioNowPlayingPage extends ConsumerStatefulWidget {
@@ -209,56 +275,8 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
     );
   }
 
-  Future<void> _openCurrentAlbum(String title, String artist) async {
-    final normalizedTitle = title.trim();
-    final normalizedArtist = artist.trim();
-    if (normalizedTitle.isEmpty || normalizedArtist.isEmpty) {
-      _find('$normalizedArtist $normalizedTitle');
-      return;
-    }
-
-    // Prefer a verified local recording, never create an album by guessing
-    // from a station name or from a search result with a different artist.
-    final local = ref.read(konnektedLibraryProvider).value ?? const <Song>[];
-    final owned = radioMatchingLocalAlbum(
-      local,
-      title: normalizedTitle,
-      artist: normalizedArtist,
-    );
-    if (owned != null) {
-      await openLokalAlbumForSong(context, owned);
-      return;
-    }
-
-    GlobalCatalogueSong? matched;
-    try {
-      final result = await const GlobalCatalogueSearchService()
-          .search('$normalizedArtist $normalizedTitle', songsOnly: true)
-          .timeout(const Duration(seconds: 9));
-      matched = radioMatchingCatalogueAlbum(
-        result.songs,
-        title: normalizedTitle,
-        artist: normalizedArtist,
-      );
-    } catch (_) {
-      // A radio stream does not identify the album; never open an unrelated
-      // release on timeout, invalid metadata, or ambiguous catalogue hits.
-    }
-    if (!mounted) return;
-    if (matched == null) {
-      _find('$normalizedArtist $normalizedTitle');
-      return;
-    }
-    await pushLokalPage(
-      context,
-      LokalMusicDetailPage.album(
-        title: matched.album,
-        artist: matched.artist,
-        localSongs: const [],
-        initialOnline: true,
-      ),
-    );
-  }
+  Future<void> _openCurrentAlbum(String title, String artist) =>
+      openRadioCurrentAlbum(context, ref, title, artist, onSearch: _find);
 
   Future<void> _chooseOutput() async {
     await openAndroidOutputChooser(context);

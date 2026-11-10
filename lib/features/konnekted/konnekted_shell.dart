@@ -1,5 +1,8 @@
 import 'package:flick/core/utils/lokal_layout.dart';
-import 'package:flick/features/queue/screens/queue_screen.dart';
+
+import 'konnekted_tablet_footer.dart';
+import 'konnekted_tablet_player_sidebar.dart';
+import 'tablet_playback.dart';
 
 import 'konnekted_tablet_workspace.dart';
 
@@ -95,7 +98,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   final _route = ValueNotifier<String?>(null);
-  final _queueVisible = ValueNotifier(true);
+  final _rightVisible = ValueNotifier<bool?>(null);
+  final _leftVisible = ValueNotifier(true);
+  final _panelTab = ValueNotifier(TabletPlayerTab.details);
   late final _routeObserver = _WorkspaceRouteObserver((name) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _route.value = name == '/' ? null : name ?? '@detail';
@@ -356,6 +361,10 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
 
   void _back(bool didPop, Object? result) {
     if (didPop || _nestedSystemBackHandled) return;
+    if (_overlayPlayerOpen) {
+      _rightVisible.value = false;
+      return;
+    }
     // Child Back is owned by NavigatorPopHandler; this callback is for
     // switching tabs / double-back exit when the child is already at root.
     if (nestedNavigatorKey.currentState?.canPop() == true) return;
@@ -377,17 +386,34 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     }
   }
 
-  void _queueFromMiniPlayer() {
-    final size = MediaQuery.sizeOf(context);
-    if (LokalLayout.usesSidebar(size) &&
-        size.width >= 1180 &&
-        ref.read(currentSongProvider) != null &&
-        ref.read(radioPlayerProvider).station == null) {
-      _queueVisible.value = !_queueVisible.value;
-    } else {
-      _navigate(KonnektedDestination.queue);
+  bool get _rightOpen =>
+      _rightVisible.value ??
+      (MediaQuery.sizeOf(context).width >= 1000 &&
+          (ref.read(currentSongProvider) != null ||
+              ref.read(radioPlayerProvider).station != null));
+
+  bool get _overlayPlayerOpen =>
+      LokalLayout.usesSidebar(MediaQuery.sizeOf(context)) &&
+      MediaQuery.sizeOf(context).width < 1000 &&
+      _rightOpen;
+
+  void _toggleRight() => _rightVisible.value = !_rightOpen;
+
+  void _showPlayerPanel(TabletPlayerTab tab) {
+    if (!LokalLayout.usesSidebar(MediaQuery.sizeOf(context))) {
+      if (tab == TabletPlayerTab.queue) {
+        _navigate(KonnektedDestination.queue);
+      } else {
+        unawaited(_openPlayer());
+      }
+      return;
     }
+    final close = _rightOpen && _panelTab.value == tab;
+    _panelTab.value = tab;
+    _rightVisible.value = !close;
   }
+
+  void _queueFromMiniPlayer() => _showPlayerPanel(TabletPlayerTab.queue);
 
   Widget _runtime(Widget child) =>
       widget.runtimeBuilder?.call(child) ??
@@ -402,7 +428,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     _pull?.cancel();
     disposeArtworkGate();
     _route.dispose();
-    _queueVisible.dispose();
+    _rightVisible.dispose();
+    _leftVisible.dispose();
+    _panelTab.dispose();
     _tab.dispose();
     _searchFocusRequests.dispose();
     _dockCollapsed.dispose();
@@ -479,7 +507,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                       _tab,
                       _dockCollapsed,
                       _route,
-                      _queueVisible,
+                      _rightVisible,
+                      _leftVisible,
+                      _panelTab,
                     ]),
                     builder: (context, _) => KonnektedTabletWorkspace(
                       selected: _tab.value,
@@ -494,14 +524,26 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         _navigate(destination);
                       },
                       hasPlayer: hasSong,
-                      supportsQueuePanel: !hasRadio,
-                      player: miniPlayer,
-                      queueOpen: !hasRadio && _queueVisible.value,
-                      onToggleQueue: () =>
-                          _queueVisible.value = !_queueVisible.value,
-                      queue: QueueList(
-                        embedded: true,
-                        themed: true,
+                      leftOpen: _leftVisible.value,
+                      rightOpen: _rightOpen,
+                      onToggleLeft: () =>
+                          _leftVisible.value = !_leftVisible.value,
+                      onToggleRight: _toggleRight,
+                      player: KonnektedTabletFooter(
+                        key: _miniPlayerKey,
+                        artworkKey: _miniArtworkKey,
+                        onOpenPlayer: _openPlayer,
+                        onOpenPanel: _showPlayerPanel,
+                      ),
+                      playerSidebar: KonnektedTabletPlayerSidebar(
+                        active:
+                            LokalLayout.usesSidebar(
+                              MediaQuery.sizeOf(context),
+                            ) &&
+                            _rightOpen,
+                        tab: _panelTab.value,
+                        onTabChanged: (tab) => _panelTab.value = tab,
+                        onClose: () => _rightVisible.value = false,
                         onOpenPlayer: _openPlayer,
                       ),
                       mobileDock: KonnektedDock(
@@ -516,6 +558,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         onNotification: _onScroll,
                         child: RepaintBoundary(
                           child: NavigatorPopHandler<void>(
+                            enabled: !_overlayPlayerOpen,
                             onPopWithResult: (_) => _popNestedRoute(),
                             child: Navigator(
                               key: nestedNavigatorKey,

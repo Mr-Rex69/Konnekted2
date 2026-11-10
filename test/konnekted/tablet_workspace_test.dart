@@ -54,7 +54,9 @@ Widget _app(
 
 Widget _workspace({
   required Widget child,
-  bool queueOpen = true,
+  bool queueOpen = false,
+  bool leftOpen = true,
+  VoidCallback? toggleLeft,
   bool hasPlayer = true,
   VoidCallback? toggleQueue,
   ValueChanged<KonnektedDestination>? navigate,
@@ -75,9 +77,11 @@ Widget _workspace({
     progress: const LinearProgressIndicator(value: .4),
   ),
   mobileDock: const SizedBox(key: ValueKey('phone-dock'), height: 120),
-  queue: const Center(child: Text('Real queue slot')),
-  queueOpen: queueOpen,
-  onToggleQueue: toggleQueue ?? () {},
+  playerSidebar: const Center(child: Text('Player sidebar slot')),
+  leftOpen: leftOpen,
+  rightOpen: queueOpen,
+  onToggleLeft: toggleLeft ?? () {},
+  onToggleRight: toggleQueue ?? () {},
   child: child,
 );
 
@@ -152,8 +156,8 @@ void main() {
               wide ? findsOneWidget : findsNothing,
             );
             expect(
-              find.byKey(const ValueKey('tablet-queue-panel')),
-              size.width >= 1180 ? findsOneWidget : findsNothing,
+              find.byKey(const ValueKey('tablet-player-sidebar')),
+              findsNothing,
             );
             expect(clearance!.bottom, wide ? 0 : greaterThan(0));
             if (wide) expect(typeSize, closeTo(22, .01));
@@ -193,7 +197,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(padding!.bottom, 24);
     expect(find.byKey(const ValueKey('tablet-player-bar')), findsNothing);
-    expect(find.byKey(const ValueKey('tablet-queue-panel')), findsNothing);
+    expect(find.byKey(const ValueKey('tablet-player-sidebar')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -280,9 +284,9 @@ void main() {
       scroll.jumpTo(600);
       await tester.pump();
       final originalNavigator = navigator.currentState;
-      await tester.tap(find.byTooltip('Close'));
+      await tester.tap(find.byKey(const ValueKey('toggle-right-sidebar')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('tablet-queue-panel')), findsNothing);
+      expect(find.byKey(const ValueKey('tablet-player-sidebar')), findsNothing);
       for (final size in [
         const Size(768, 1024),
         const Size(540, 900),

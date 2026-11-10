@@ -26,7 +26,8 @@ import 'package:flick/services/player_service.dart';
 import 'package:flick/widgets/lokal/settings/lokal_settings_surfaces.dart';
 import 'package:flick/widgets/common/ios_transfer_root.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -115,6 +116,7 @@ class SongActionsBottomSheet extends ConsumerWidget {
     bool nowPlaying = false,
     bool hideMediaActions = false,
     bool followPlaybackSong = false,
+    ValueListenable<Song?>? playbackSong,
   }) {
     final t = context.lokal;
     return showModalBottomSheet<void>(
@@ -146,7 +148,7 @@ class SongActionsBottomSheet extends ConsumerWidget {
         // leave source-specific actions, metadata, or Like state stuck on
         // the song for which it was first opened.
         return ValueListenableBuilder<Song?>(
-          valueListenable: PlayerService().currentSongNotifier,
+          valueListenable: playbackSong ?? PlayerService().currentSongNotifier,
           builder: (_, currentSong, __) {
             final liveSong = songForOpenMenu(
               nowPlaying: nowPlaying || followPlaybackSong,

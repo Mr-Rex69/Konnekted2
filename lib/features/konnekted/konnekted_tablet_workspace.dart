@@ -12,146 +12,264 @@ import 'konnekted_dock.dart';
 
 /// A stable navigator slot across rotation, split view and panel changes.
 /// Only the chrome changes; the active page and its scroll state stay mounted.
-class KonnektedTabletWorkspace extends StatelessWidget {
+class KonnektedTabletWorkspace extends StatefulWidget {
   const KonnektedTabletWorkspace({
     super.key,
     required this.child,
     required this.mobileDock,
     required this.player,
+    required this.playerSidebar,
     required this.hasPlayer,
     required this.selected,
     required this.route,
     required this.onSelect,
     required this.onNavigate,
-    required this.queue,
-    required this.queueOpen,
-    required this.onToggleQueue,
-    this.supportsQueuePanel = true,
+    required this.leftOpen,
+    required this.rightOpen,
+    required this.onToggleLeft,
+    required this.onToggleRight,
   });
 
-  final Widget child, mobileDock, player, queue;
-  final bool hasPlayer, queueOpen;
-  final bool supportsQueuePanel;
+  final Widget child, mobileDock, player, playerSidebar;
+  final bool hasPlayer, leftOpen, rightOpen;
   final KonnektedTab selected;
   final String? route;
   final ValueChanged<KonnektedTab> onSelect;
   final ValueChanged<KonnektedDestination> onNavigate;
-  final VoidCallback onToggleQueue;
+  final VoidCallback onToggleLeft, onToggleRight;
+
+  @override
+  State<KonnektedTabletWorkspace> createState() =>
+      _KonnektedTabletWorkspaceState();
+}
+
+class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
+  final _panelKey = GlobalKey();
+  double _panelWidth = 340;
+
+  void _resize(double delta) =>
+      setState(() => _panelWidth = (_panelWidth + delta).clamp(300, 420));
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final size = constraints.biggest;
-      // Keyboard insets shrink the body, not the window's navigation mode.
-      final tablet = LokalLayout.usesSidebar(
-        Size(size.width, MediaQuery.sizeOf(context).height),
-      );
-      final canShowQueue = tablet && supportsQueuePanel && size.width >= 1180;
-      final showQueue = canShowQueue && hasPlayer && queueOpen;
-      final extended = size.width >= (showQueue ? 1280 : 1000);
-      final t = context.lokal;
       final media = MediaQuery.of(context);
+      // A keyboard changes content height, never the window's chrome mode.
+      final tablet = LokalLayout.usesSidebar(
+        Size(size.width, media.size.height),
+      );
+      final docked = tablet && size.width >= 1000;
+      final showRight = tablet && widget.rightOpen;
+      final extended =
+          size.width - (showRight && docked ? _panelWidth : 0) >= 1000;
+      final leftWidth = widget.leftOpen
+          ? (extended ? 216.0 : 80.0) + media.padding.left
+          : 0.0;
+      final rightWidth = _panelWidth.clamp(
+        300.0,
+        (size.width - 32).clamp(300.0, 420.0),
+      );
+      final t = context.lokal;
+      final panel = KeyedSubtree(
+        key: _panelKey,
+        child: TickerMode(
+          enabled: showRight,
+          child: Container(
+            key: const ValueKey('tablet-player-sidebar'),
+            width: rightWidth,
+            decoration: BoxDecoration(
+              color: t.surface,
+              border: Border(left: BorderSide(color: t.border)),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: LayoutBuilder(
+                    builder: (context, panelBounds) => MediaQuery(
+                      data: media.copyWith(
+                        size: panelBounds.biggest,
+                        padding: media.padding.copyWith(
+                          left: 0,
+                          bottom: widget.hasPlayer ? 0 : media.padding.bottom,
+                        ),
+                      ),
+                      child: widget.playerSidebar,
+                    ),
+                  ),
+                ),
+                if (docked)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 8,
+                    child: Semantics(
+                      label: lokalText('Resize player sidebar'),
+                      onIncrease: () => _resize(24),
+                      onDecrease: () => _resize(-24),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeLeftRight,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onHorizontalDragUpdate: (details) =>
+                              _resize(-details.delta.dx),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
       return LokalContentScope(
         tablet: tablet,
         child: Column(
           children: [
             Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              child: Stack(
                 children: [
-                  if (tablet)
-                    SizedBox(
-                      width: (extended ? 216 : 80) + media.padding.left,
-                      child: _Sidebar(
-                        extended: extended,
-                        selected: selected,
-                        route: route,
-                        onSelect: onSelect,
-                        onNavigate: onNavigate,
-                      ),
-                    ),
-                  Expanded(
-                    key: const ValueKey('workspace-content'),
-                    child: LayoutBuilder(
-                      builder: (context, pane) => LokalContentScope(
-                        tablet: tablet,
-                        child: MediaQuery(
-                          data: media.copyWith(
-                            size: pane.biggest,
-                            padding: media.padding.copyWith(
-                              left: tablet ? 0 : media.padding.left,
-                              right: showQueue ? 0 : media.padding.right,
-                              bottom: tablet
-                                  ? (hasPlayer ? 0 : media.padding.bottom)
-                                  : KonnektedDock.reservedHeight(
-                                      hasMiniPlayer: hasPlayer,
-                                      systemInset: media.padding.bottom,
-                                    ),
-                            ),
-                          ),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              child,
-                              if (!tablet)
-                                Positioned(
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  child: mobileDock,
-                                ),
-                            ],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (tablet && widget.leftOpen)
+                        SizedBox(
+                          width: leftWidth,
+                          child: _Sidebar(
+                            extended: extended,
+                            selected: widget.selected,
+                            route: widget.route,
+                            onSelect: widget.onSelect,
+                            onNavigate: widget.onNavigate,
                           ),
                         ),
-                      ),
-                    ),
-                  ),
-                  if (showQueue)
-                    Container(
-                      key: const ValueKey('tablet-queue-panel'),
-                      width: 320,
-                      decoration: BoxDecoration(
-                        color: t.surface,
-                        border: Border(left: BorderSide(color: t.border)),
-                      ),
-                      child: SafeArea(
-                        left: false,
-                        bottom: false,
+                      Expanded(
+                        key: const ValueKey('workspace-content'),
                         child: Column(
                           children: [
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: IconButton(
-                                tooltip: lokalText('Close'),
-                                onPressed: onToggleQueue,
-                                icon: const Icon(Icons.chevron_right_rounded),
+                            if (tablet)
+                              SafeArea(
+                                bottom: false,
+                                left: !widget.leftOpen,
+                                right: !showRight,
+                                child: SizedBox(
+                                  height: 44,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        IconButton(
+                                          key: const ValueKey(
+                                            'toggle-left-sidebar',
+                                          ),
+                                          tooltip: lokalText(
+                                            widget.leftOpen
+                                                ? 'Hide navigation sidebar'
+                                                : 'Show navigation sidebar',
+                                          ),
+                                          isSelected: widget.leftOpen,
+                                          onPressed: widget.onToggleLeft,
+                                          icon: const Icon(
+                                            Icons.menu_rounded,
+                                            size: 21,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        IconButton(
+                                          key: const ValueKey(
+                                            'toggle-right-sidebar',
+                                          ),
+                                          tooltip: lokalText(
+                                            showRight
+                                                ? 'Hide player sidebar'
+                                                : 'Show player sidebar',
+                                          ),
+                                          isSelected: showRight,
+                                          onPressed: widget.onToggleRight,
+                                          icon: Icon(
+                                            showRight
+                                                ? Icons.chevron_right_rounded
+                                                : Icons.view_sidebar_outlined,
+                                            size: 21,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Expanded(
+                              key: const ValueKey('workspace-page'),
+                              child: LayoutBuilder(
+                                builder: (context, pane) => MediaQuery(
+                                  data: media.copyWith(
+                                    size: pane.biggest,
+                                    padding: media.padding.copyWith(
+                                      top: tablet ? 0 : media.padding.top,
+                                      left: tablet && widget.leftOpen
+                                          ? 0
+                                          : media.padding.left,
+                                      right: showRight && docked
+                                          ? 0
+                                          : media.padding.right,
+                                      bottom: tablet
+                                          ? (widget.hasPlayer
+                                                ? 0
+                                                : media.padding.bottom)
+                                          : KonnektedDock.reservedHeight(
+                                              hasMiniPlayer: widget.hasPlayer,
+                                              systemInset: media.padding.bottom,
+                                            ),
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      widget.child,
+                                      if (!tablet)
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 0,
+                                          child: widget.mobileDock,
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                            Expanded(child: queue),
                           ],
                         ),
                       ),
+                      if (showRight && docked) panel,
+                    ],
+                  ),
+                  if (!showRight) Offstage(child: panel),
+                  if (showRight && !docked) ...[
+                    Positioned.fill(
+                      child: ModalBarrier(
+                        color: t.bg.withValues(alpha: .45),
+                        dismissible: true,
+                        onDismiss: widget.onToggleRight,
+                        semanticsLabel: lokalText('Close player sidebar'),
+                      ),
                     ),
+                    Positioned(top: 0, right: 0, bottom: 0, child: panel),
+                  ],
                 ],
               ),
             ),
-            if (tablet && hasPlayer)
+            if (tablet && widget.hasPlayer)
               Container(
                 key: const ValueKey('tablet-player-bar'),
                 decoration: BoxDecoration(
                   color: t.surface,
                   border: Border(top: BorderSide(color: t.border)),
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    child: player,
-                  ),
-                ),
+                child: SafeArea(top: false, child: widget.player),
               ),
           ],
         ),
