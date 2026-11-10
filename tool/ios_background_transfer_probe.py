@@ -61,8 +61,20 @@ def launch(device, environment):
     # Pending background tasks can cause an unconfigured OS relaunch before
     # this explicit test launch. SIMCTL_CHILD variables apply to a new process,
     # so never reuse that process with stale/missing fixture coordinates.
-    output = command('xcrun', 'simctl', 'launch', '--terminate-running-process',
-                     device, BUNDLE, env=env)
+    # simctl's combined terminate-and-launch can hang after our deliberate
+    # SIGKILL while CoreSimulator reconciles the old process. Reconcile that
+    # process explicitly before requesting a new launch with fresh fixture env.
+    stopped = subprocess.run(
+        ['xcrun', 'simctl', 'terminate', device, BUNDLE],
+        check=False, timeout=30, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    if stopped.returncode and not any(message in stopped.stdout.lower() for message in (
+            'found nothing to terminate', 'not running', 'no such process')):
+        raise subprocess.CalledProcessError(
+            stopped.returncode, stopped.args, output=stopped.stdout,
+        )
+    output = command('xcrun', 'simctl', 'launch', device, BUNDLE, env=env)
     match = re.search(r'app\.lokal\.mobile:\s*(\d+)', output)
     if not match:
         raise RuntimeError('Cannot identify owned native probe process: ' + output)
@@ -73,7 +85,15 @@ def stop_owned(pid, sig):
     try:
         os.kill(pid, sig)
     except ProcessLookupError:
-        pass
+        return
+    if sig == signal.SIGKILL:
+        def exited():
+            try:
+                os.kill(pid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+        eventually(exited, bool, 'Owned native probe process exit', timeout=10)
 
 
 def qualify_case(device, container, output, death_while_pending):

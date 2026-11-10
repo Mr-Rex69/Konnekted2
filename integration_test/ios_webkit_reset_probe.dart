@@ -262,12 +262,12 @@ Future<void> probeIosWebKitReset(
       // Simulator startup/frame delivery can consume almost the entire
       // 12-second fixture (build 170 reached 11.92s). Reset from a known
       // nonzero position with enough media remaining to measure replay.
-      await video.command('pause');
-      await until(
-        () => !video.playingNotifier.value,
-        'Pause before establishing the reset checkpoint',
-      );
       await video.command('seek', {'positionMs': 2000});
+      // This checkpoint exercises a playing-state reset. On iOS 26 WebKit
+      // can keep a paused Blob seek pending until decoding resumes, even with
+      // fully buffered data. Resume before requiring native seek completion;
+      // the paused-state reset is qualified separately below.
+      await video.command('play');
       await until(() async {
         final sample = await nativeSnapshot();
         final position = (sample['position'] as num?) ?? -1;
@@ -278,7 +278,6 @@ Future<void> probeIosWebKitReset(
             video.sourcePosition.inMilliseconds >= 1800 &&
             video.sourcePosition.inMilliseconds < 3000;
       }, 'Native seek must establish an early reset checkpoint');
-      await video.command('play');
       await until(
         () async =>
             video.playingNotifier.value &&
