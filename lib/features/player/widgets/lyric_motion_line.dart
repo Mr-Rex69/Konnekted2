@@ -25,6 +25,7 @@ class LyricMotionLine extends StatefulWidget {
   final Color sung, unsung;
   final TextAlign textAlign;
   final bool timing;
+
   /// Fast subtitle path: clip timed syllables without GPU saveLayer/blur passes.
   final bool lightweight;
   static TextPainter layout(
@@ -39,7 +40,7 @@ class LyricMotionLine extends StatefulWidget {
     textAlign: align,
     textScaler: MediaQuery.textScalerOf(context),
     locale: Localizations.maybeLocaleOf(context),
-  )..layout(maxWidth: width);
+  )..layout(minWidth: width, maxWidth: width);
   static double height(
     BuildContext context,
     String text,
@@ -310,6 +311,8 @@ class _LyricPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LyricPainter old) =>
-      old.position != position || old.lit != lit ||
-      old.reduced != reduced || old.lightweight != lightweight;
+      old.position != position ||
+      old.lit != lit ||
+      old.reduced != reduced ||
+      old.lightweight != lightweight;
 }

@@ -279,6 +279,38 @@ Widget _app(
 );
 
 void main() {
+  testWidgets('sidebar Lyrics opens the full-player lyrics entry point', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(340, 1000)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var playerOpens = 0, lyricsOpens = 0;
+    await tester.pumpWidget(
+      _app(
+        KonnektedTabletPlayerSidebar(
+          active: true,
+          tab: TabletPlayerTab.details,
+          onTabChanged: (_) {},
+          onClose: () {},
+          onOpenPlayer: () => playerOpens++,
+          onOpenLyrics: () => lyricsOpens++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Lyrics, full screen'));
+    await tester.tap(find.byTooltip('Lyrics, full screen'));
+    expect(lyricsOpens, 1);
+    expect(playerOpens, 0);
+    expect(find.byType(Scaffold), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sidebar-artwork')));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(playerOpens, 1);
+    expect(lyricsOpens, 1);
+  });
+
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -511,6 +543,12 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.byType(SyncedLyricsView), findsOneWidget);
+      expect(
+        tester
+            .widget<SyncedLyricsView>(find.byType(SyncedLyricsView))
+            .fullPlayerTypography,
+        isTrue,
+      );
       expect(
         tester.getSize(find.byType(SyncedLyricsView)).height,
         greaterThan(350),

@@ -33,6 +33,7 @@ class KaraokeLyricLine extends StatefulWidget {
   /// Position source to sweep against. Defaults to the player's own position;
   /// carousel peek stages pass a static source so their sweep stays put.
   final ValueNotifier<Duration>? positionNotifier;
+
   /// Optional external playback status, e.g. a paired desktop transport.
   final ValueNotifier<bool>? playingNotifier;
 
@@ -131,9 +132,9 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
     // Project against resolved playback windows, not raw ELRC words whose
     // end may equal their start until the next word/line is inspected.
     // Leave the original vocal rendering path unchanged.
-    final sourceLine = widget.sublineText == null
-        ? widget.lyrics.lines[widget.lineIndex]
-        : widget.lyricsService.playbackLines(widget.lyrics)[widget.lineIndex];
+    final sourceLine = widget.lyricsService.playbackLines(
+      widget.lyrics,
+    )[widget.lineIndex];
     if (widget.backgroundVoice) {
       final words = sourceLine.backgroundWords;
       _displayLine = LyricsLine(

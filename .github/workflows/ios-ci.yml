@@ -66,6 +66,7 @@ jobs:
           python3 -m unittest discover -s tool -p test_ios_package_smb.py
           python3 -m unittest discover -s tool -p test_ios_workflow.py
           python3 -m unittest discover -s tool -p test_ios_release_version.py
+          python3 -m unittest discover -s tool -p test_ios_background_transfer_probe.py
       - name: Analyze application and native build helper
         if: matrix.shard == 0
         run: |

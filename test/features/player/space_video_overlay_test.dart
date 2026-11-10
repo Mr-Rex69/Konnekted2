@@ -56,6 +56,54 @@ class _ArtworkMarkerState extends State<_ArtworkMarker> {
 }
 
 void main() {
+  testWidgets('tablet Space captions stay inside the right-hand seek pane', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final link = LayerLink();
+    for (final width in [768.0, 1024.0, 1366.0]) {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            children: [
+              Positioned(
+                left: width * .56,
+                right: 32,
+                bottom: 220,
+                child: CompositedTransformTarget(
+                  link: link,
+                  child: const SizedBox(
+                    key: ValueKey('right-seek'),
+                    height: 40,
+                  ),
+                ),
+              ),
+              SeekbarAlignedSpaceSubtitle(
+                seekbarLink: link,
+                subtitle: const SizedBox(
+                  key: ValueKey('right-caption'),
+                  height: 80,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      final seek = tester.getRect(find.byKey(const ValueKey('right-seek')));
+      final caption = tester.getRect(
+        find.byKey(const ValueKey('right-caption')),
+      );
+      expect(caption.left, greaterThanOrEqualTo(seek.left));
+      expect(caption.right, lessThanOrEqualTo(seek.right));
+      expect(caption.center.dx, closeTo(seek.center.dx, .01));
+      expect(caption.center.dy, closeTo(seek.center.dy, .01));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('Space subtitles follow the hidden full-player seekbar', (
     tester,
   ) async {

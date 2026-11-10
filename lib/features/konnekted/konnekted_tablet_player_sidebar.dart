@@ -9,7 +9,6 @@ import 'package:flick/features/internet_radio/radio_now_playing_page.dart'
     show openRadioCurrentAlbum;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/folders/screens/folders_screen.dart';
@@ -56,12 +55,14 @@ class KonnektedTabletPlayerSidebar extends ConsumerStatefulWidget {
     required this.onTabChanged,
     required this.onClose,
     required this.onOpenPlayer,
+    this.onOpenLyrics,
     this.lyricsBuilder,
   });
   final bool active;
   final TabletPlayerTab tab;
   final ValueChanged<TabletPlayerTab> onTabChanged;
   final VoidCallback onClose, onOpenPlayer;
+  final VoidCallback? onOpenLyrics;
   @visibleForTesting
   final Widget Function(Song song, bool remote, bool active)? lyricsBuilder;
 
@@ -91,10 +92,7 @@ class _KonnektedTabletPlayerSidebarState
     super.dispose();
   }
 
-  Future<void> _fullscreenLyrics() =>
-      Navigator.of(context, rootNavigator: true).push<void>(
-        LokalPageRoute<void>(builder: (_) => const TabletLyricsFullscreen()),
-      );
+  void _fullscreenLyrics() => (widget.onOpenLyrics ?? widget.onOpenPlayer)();
 
   Future<void> _showMore(Song song, TabletPlayback playback) async {
     if (playback.isRadio) {
@@ -507,6 +505,7 @@ class _KonnektedTabletPlayerSidebarState
             widget.lyricsBuilder?.call(song, remote, active) ??
             (remote
                 ? DesktopRemoteLyricsPanel(
+                    fullPlayerTypography: true,
                     key: ValueKey('tablet-remote-lyrics:${song.id}'),
                     song: song,
                     onClose: () => widget.onTabChanged(TabletPlayerTab.details),
@@ -657,7 +656,7 @@ class _KonnektedTabletPlayerSidebarState
           Expanded(
             child: IconButton(
               tooltip: lokalText('Lyrics, full screen'),
-              onPressed: () => unawaited(_fullscreenLyrics()),
+              onPressed: _fullscreenLyrics,
               icon: const Icon(Icons.lyrics_outlined, size: 20),
             ),
           ),
@@ -1012,52 +1011,6 @@ class _StationQueue extends ConsumerWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class TabletLyricsFullscreen extends ConsumerWidget {
-  const TabletLyricsFullscreen({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final playback = TabletPlayback.watch(ref);
-    final song = playback.lyricsSong;
-    final dark = LokalTokens.resolve(LokalThemeId.dark).copyWith(
-      accent: context.lokal.accent,
-      accentDim: context.lokal.accentDim,
-    );
-    return Theme(
-      data: LokalTheme.build(dark),
-      child: Scaffold(
-        backgroundColor: dark.bg,
-        appBar: AppBar(
-          title: Text(lokalText('Lyrics')),
-          backgroundColor: dark.bg,
-        ),
-        body: SafeArea(
-          child: song == null
-              ? Center(
-                  child: Text(
-                    lokalText(
-                      playback.isRadio
-                          ? 'Waiting for track information'
-                          : 'Nothing playing',
-                    ),
-                  ),
-                )
-              : playback.remote
-              ? DesktopRemoteLyricsPanel(
-                  song: song,
-                  onClose: () => Navigator.of(context).pop(),
-                )
-              : InlineLyricsPanel(
-                  key: ValueKey(song.id),
-                  playerService: ref.read(playerServiceProvider),
-                  lyricsService: LyricsService(),
-                  song: song,
-                ),
-        ),
-      ),
     );
   }
 }

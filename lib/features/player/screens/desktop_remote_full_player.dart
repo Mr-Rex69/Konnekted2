@@ -32,9 +32,14 @@ import 'package:flick/widgets/lokal/lokal_queue_reveal.dart';
 /// FullPlayerScreen route. Never reads PlayerService.currentSongNotifier:
 /// that notifier still contains the last song played by the phone.
 class DesktopRemoteFullPlayer extends ConsumerStatefulWidget {
-  const DesktopRemoteFullPlayer({super.key, required this.onClose});
+  const DesktopRemoteFullPlayer({
+    super.key,
+    required this.onClose,
+    this.initialLyrics = false,
+  });
 
   final VoidCallback onClose;
+  final bool initialLyrics;
 
   @override
   ConsumerState<DesktopRemoteFullPlayer> createState() =>
@@ -63,6 +68,7 @@ class _DesktopRemoteFullPlayerState
   @override
   void initState() {
     super.initState();
+    _showLyrics = widget.initialLyrics;
     _queueMotion.addListener(_onQueueTargetChanged);
   }
 

@@ -19,10 +19,12 @@ class DesktopRemoteLyricsPanel extends ConsumerStatefulWidget {
     super.key,
     required this.song,
     required this.onClose,
+    this.fullPlayerTypography = false,
   });
 
   final Song song;
   final VoidCallback onClose;
+  final bool fullPlayerTypography;
 
   @override
   ConsumerState<DesktopRemoteLyricsPanel> createState() =>
@@ -106,13 +108,20 @@ class _DesktopRemoteLyricsPanelState
               IconButton(
                 tooltip: lokalText('Back to player'),
                 onPressed: widget.onClose,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.white,
+                ),
               ),
               const Spacer(),
-              Text(lokalText('Lyrics'),
-                  style: const TextStyle(color: Colors.white,
-                      fontSize: 18, fontWeight: FontWeight.w600)),
+              Text(
+                lokalText('Lyrics'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const Spacer(),
               IconButton(
                 tooltip: lokalText('Refresh lyrics'),
@@ -126,38 +135,42 @@ class _DesktopRemoteLyricsPanelState
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _lyrics == null || _lyrics!.lines.isEmpty
-                  ? Center(
-                      child: Text(
-                        lokalText('No lyrics available for this song'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white60),
-                      ),
-                    )
-                  : _lyrics!.isSynchronized
-                      ? SyncedLyricsView(
-                          key: ValueKey('desktop-lyrics:${widget.song.id}'),
-                          playerService: PlayerService(),
-                          lyricsService: _service,
-                          lyrics: _lyrics!,
-                          positionNotifier: _position,
-                          playingNotifier: _playing,
-                          onSeek: (position) =>
-                              ref.read(playerProvider.notifier).seek(position),
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(22, 28, 22, 80),
-                          children: [
-                            for (final line in _lyrics!.lines)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 9),
-                                child: Text(line.text,
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 20,
-                                      height: 1.5)),
-                              ),
-                          ],
+              ? Center(
+                  child: Text(
+                    lokalText('No lyrics available for this song'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white60),
+                  ),
+                )
+              : _lyrics!.isSynchronized
+              ? SyncedLyricsView(
+                  fullPlayerTypography: widget.fullPlayerTypography,
+                  key: ValueKey('desktop-lyrics:${widget.song.id}'),
+                  playerService: PlayerService(),
+                  lyricsService: _service,
+                  lyrics: _lyrics!,
+                  positionNotifier: _position,
+                  playingNotifier: _playing,
+                  onSeek: (position) =>
+                      ref.read(playerProvider.notifier).seek(position),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(22, 28, 22, 80),
+                  children: [
+                    for (final line in _lyrics!.lines)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        child: Text(
+                          line.text,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            height: 1.5,
+                          ),
                         ),
+                      ),
+                  ],
+                ),
         ),
       ],
     );

@@ -1,4 +1,6 @@
 import 'package:flick/features/player/widgets/lokal_player_columns.dart';
+import 'package:flick/features/player/widgets/player_video_frame.dart';
+import 'package:flick/features/player/widgets/player_lyric_style.dart';
 import 'package:flick/core/utils/lokal_layout.dart';
 
 import 'desktop_remote_full_player.dart';
@@ -114,11 +116,13 @@ class FullPlayerScreen extends ConsumerStatefulWidget {
   /// audio. The local audio queue is not replaced by a different recording.
   final Song? videoSong;
   final String? videoId;
+  final bool initialLyrics;
   const FullPlayerScreen({
     super.key,
     this.heroTag = 'album_art_hero',
     this.videoSong,
     this.videoId,
+    this.initialLyrics = false,
   }) : assert((videoSong == null) == (videoId == null));
 
   @override
@@ -372,6 +376,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   @override
   void initState() {
     super.initState();
+    _showLyrics = widget.initialLyrics;
+    if (widget.initialLyrics) _lyricsProgress.value = 1;
     _videoController.nativeNotifier.addListener(_onVideoBackendChanged);
     if (widget.videoId != null) unawaited(_prepareInitialVideo());
     LokalPerformanceAdvisor.noteNavigation(surface: 'full-player');
@@ -1349,14 +1355,20 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         ref.watch(
           lokalRemoteControllerProvider.select((s) => s.controlsDesktop),
         )) {
-      return DesktopRemoteFullPlayer(onClose: _close);
+      return DesktopRemoteFullPlayer(
+        onClose: _close,
+        initialLyrics: widget.initialLyrics,
+      );
     }
     // Stations share this exact spring-driven player route with local music
     // and desktop remote playback. The radio transport owns its own session,
     // but chrome, dismissal and artwork morph are not separate architectures.
     if (widget.videoSong == null &&
         ref.watch(radioPlayerProvider.select((s) => s.station != null))) {
-      return RadioNowPlayingPage(onClose: _close);
+      return RadioNowPlayingPage(
+        onClose: _close,
+        initialLyrics: widget.initialLyrics,
+      );
     }
     final palette = ref.watch(albumPaletteSyncProvider);
     final dominant = ref.watch(albumDominantColorSyncProvider);
@@ -1532,9 +1544,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   child: LayoutBuilder(
                                     builder: (context, c) {
                                       if (LokalLayout.isTablet(context) &&
-                                          c.maxWidth >= 720 &&
-                                          (tabletCover ||
-                                              c.maxWidth > c.maxHeight)) {
+                                          c.maxWidth >= 720) {
                                         return AnimatedBuilder(
                                           animation: _lyricsProgress,
                                           builder: (context, _) =>
@@ -2100,6 +2110,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     required bool compact,
   }) {
     return LokalPlayerColumns(
+      preferColumns: true,
       key: fillCover ? const ValueKey('tablet-square-cover-player') : null,
       fillCover: fillCover,
       header: _spaceHidden(_topBar(song, isCasting, diagnostics)),
@@ -2110,39 +2121,30 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           compact,
           fullCover: fullCover,
           tabletCover: fillCover,
+          identityInControls: true,
         ),
       ),
-      controls: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _spaceHidden(
-            Text(
-              lokalText('Now playing').toUpperCase(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 11,
-                letterSpacing: 2,
-                color: FullPlayerVisuals.secondaryText,
-              ),
+      controls: LokalPlayerControls(
+        compact: compact,
+        heading: _spaceHidden(
+          Text(
+            lokalText('Now playing').toUpperCase(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              letterSpacing: 2,
+              color: FullPlayerVisuals.secondaryText,
             ),
           ),
-          if (fillCover) ...[
-            const SizedBox(height: 20),
-            _panelIdentity(song, compact, 0),
-          ],
-          const SizedBox(height: 32),
-          CompositedTransformTarget(
-            link: _seekbarSubtitleLink,
-            child: _spaceHidden(_seekRow()),
-          ),
-          const SizedBox(height: 28),
-          _spaceHidden(_transport(compact, _lyricsProgress.value)),
-          const SizedBox(height: 28),
-          _spaceHidden(_optionsStrip()),
-          const SizedBox(height: 24),
-          _spaceHidden(_chipRow()),
-        ],
+        ),
+        identity: _panelIdentity(song, compact, 0),
+        timeline: CompositedTransformTarget(
+          link: _seekbarSubtitleLink,
+          child: _spaceHidden(_seekRow()),
+        ),
+        transport: _spaceHidden(_transport(compact, _lyricsProgress.value)),
+        options: _spaceHidden(_optionsStrip()),
+        footer: _spaceHidden(_chipRow()),
       ),
     );
   }
@@ -2152,9 +2154,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     bool compact, {
     bool fullCover = false,
     bool tabletCover = false,
+    bool identityInControls = false,
   }) {
+    final separateIdentity = tabletCover || identityInControls;
     _spacePanelCompact = compact;
-    _spacePanelTabletCover = tabletCover;
+    _spacePanelTabletCover = separateIdentity;
     return LayoutBuilder(
       builder: (context, c) {
         _queue.travel = math.max(math.min(c.maxWidth, c.maxHeight) * .8, 200);
@@ -2163,12 +2167,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           lyricsProgress: _lyricsProgress,
           queueOpen: _queue.isOpen,
           lyricsOpen: _showLyrics,
-          artGap: tabletCover
+          artGap: separateIdentity
               ? 0
               : compact
               ? 10
               : 17,
-          infoReserve: tabletCover
+          infoReserve: separateIdentity
               ? 72 *
                     (_lyricsProgress.value + _queueProgress.value).clamp(
                       0.0,
@@ -2238,9 +2242,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ),
             );
           },
-          info: (context, p) => tabletCover && p == 0
+          info: (context, p) => separateIdentity && p == 0
               ? const SizedBox.shrink()
-              : _panelIdentity(song, compact, p, anchor: !tabletCover),
+              : _panelIdentity(song, compact, p, anchor: !separateIdentity),
           queue: const QueueList(embedded: true),
           lyrics: _lyricsArea(song),
         );
@@ -2421,7 +2425,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         current &&
         _videoActive &&
         song.id == (_videoOverrideSong ?? widget.videoSong)?.id;
-    final art = showVideo
+    Widget art = showVideo
         ? ClipRRect(
             borderRadius: _usesEmbeddedVideo ? BorderRadius.zero : radius,
             child: ColoredBox(
@@ -2453,6 +2457,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ),
             ),
           );
+    if (showVideo && LokalLayout.isTablet(context)) {
+      art = PlayerVideoFrame(child: art);
+    }
     final shown = _burst;
     return GestureDetector(
       onDoubleTap: current && progress == 0 && !_usesEmbeddedVideo
@@ -3246,13 +3253,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
   static const double _gap = 26;
   static const double _anchor = 0.28;
   static const double _introHeight = 44;
-  static const TextStyle _base = TextStyle(
-    fontFamily: _font,
-    fontSize: 31,
-    height: 1.2,
-    fontWeight: FontWeight.w800,
-    color: Colors.white,
-  );
+  static const TextStyle _base = playerLyricStyle;
   static const double _subGap = 6;
   static const TextStyle _backingStyle = TextStyle(
     fontFamily: _font,

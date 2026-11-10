@@ -293,8 +293,14 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
 
   static const _playerHero = 'konnekted-player-art';
 
-  Future<void> _openPlayer({double? from}) async {
-    if (from == null && _pull != null) {
+  Future<void> _openPlayer({double? from, bool initialLyrics = false}) async {
+    if (initialLyrics && _pull != null) {
+      _pull!.cancel();
+      _pull = null;
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    if (!initialLyrics && from == null && _pull != null) {
       _pull!.open();
       return;
     }
@@ -305,6 +311,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       initialProgress: from,
       sourceArtwork: _miniArtworkRect,
       playerKey: _playerPageKey,
+      initialLyrics: initialLyrics,
     );
     if (result != null && mounted) _legacyNavigate(result);
   }
@@ -538,6 +545,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         onOpenPanel: _showPlayerPanel,
                       ),
                       playerSidebar: KonnektedTabletPlayerSidebar(
+                        onOpenLyrics: () => _openPlayer(initialLyrics: true),
                         active:
                             LokalLayout.usesSidebar(
                               MediaQuery.sizeOf(context),

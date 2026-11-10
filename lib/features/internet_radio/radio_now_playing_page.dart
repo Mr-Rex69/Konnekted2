@@ -1,5 +1,9 @@
 import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/features/player/widgets/lokal_player_columns.dart';
+import 'package:flick/features/player/widgets/inline_lyrics_panel.dart';
+import 'package:flick/services/lyrics_service.dart';
+import 'package:flick/services/player_service.dart';
+import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -197,8 +201,13 @@ Future<void> openRadioCurrentAlbum(
 /// The live-radio transport shares FullPlayerScreen's player route, artwork
 /// morph, dismissal spring and appearance settings with local/remote playback.
 class RadioNowPlayingPage extends ConsumerStatefulWidget {
-  const RadioNowPlayingPage({super.key, required this.onClose});
+  const RadioNowPlayingPage({
+    super.key,
+    required this.onClose,
+    this.initialLyrics = false,
+  });
   final VoidCallback onClose;
+  final bool initialLyrics;
 
   @override
   ConsumerState<RadioNowPlayingPage> createState() =>
@@ -207,6 +216,9 @@ class RadioNowPlayingPage extends ConsumerStatefulWidget {
 
 class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
     with SingleTickerProviderStateMixin {
+  late bool _showLyrics = widget.initialLyrics;
+  final _lyricsPosition = ValueNotifier(Duration.zero);
+  final _lyricsService = LyricsService();
   late final AnimationController _queueController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 350),
@@ -254,6 +266,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
     _queue.removeListener(_queueChanged);
     _queue.dispose();
     _queueController.dispose();
+    _lyricsPosition.dispose();
     super.dispose();
   }
 
@@ -849,9 +862,13 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
     ];
     _queue.travel = MediaQuery.sizeOf(context).height * .7;
     return PopScope(
-      canPop: !_queue.engaged,
+      canPop: !_queue.engaged && !_showLyrics,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _queue.engaged) _setQueueOpen(false);
+        if (!didPop && _showLyrics) {
+          setState(() => _showLyrics = false);
+        } else if (!didPop && _queue.engaged) {
+          _setQueueOpen(false);
+        }
       },
       child: LokalPullToDismiss(
         onDismiss: widget.onClose,
@@ -860,7 +877,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
           velocity,
           animate: !MediaQuery.disableAnimationsOf(context),
         ),
-        isBlocked: () => _queue.engaged,
+        isBlocked: () => _queue.engaged || _showLyrics,
         child: Scaffold(
           backgroundColor: const Color(0xFF141318),
           body: Stack(
@@ -1214,6 +1231,53 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                 ),
               ),
               _queueOverlay(stationQueue, station),
+              if (_showLyrics)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: context.lokal.bg,
+                    child: SafeArea(
+                      child: Column(
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: IconButton(
+                              tooltip: lokalText('Back to player'),
+                              onPressed: () =>
+                                  setState(() => _showLyrics = false),
+                              icon: const Icon(Icons.arrow_back_rounded),
+                            ),
+                          ),
+                          Expanded(
+                            child:
+                                artist?.trim().isNotEmpty == true &&
+                                    title?.trim().isNotEmpty == true
+                                ? InlineLyricsPanel(
+                                    key: ValueKey(
+                                      'radio-lyrics:$artist|$title',
+                                    ),
+                                    playerService: PlayerService(),
+                                    lyricsService: _lyricsService,
+                                    song: song.copyWith(
+                                      id: '${song.id}:$artist|$title',
+                                    ),
+                                    positionNotifier: _lyricsPosition,
+                                    active: false,
+                                    // Live station metadata has no recording clock.
+                                    onSeek: (_) async {},
+                                  )
+                                : Center(
+                                    child: Text(
+                                      lokalText(
+                                        'Waiting for track information',
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

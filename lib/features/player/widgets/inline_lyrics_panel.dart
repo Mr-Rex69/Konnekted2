@@ -37,6 +37,7 @@ class InlineLyricsPanel extends ConsumerStatefulWidget {
 
   /// Minimal icon toolbar for the narrow tablet Now Playing sidebar.
   final bool compactControls;
+  final Future<void> Function(Duration)? onSeek;
 
   const InlineLyricsPanel({
     super.key,
@@ -47,6 +48,7 @@ class InlineLyricsPanel extends ConsumerStatefulWidget {
     this.positionNotifier,
     this.active = true,
     this.compactControls = false,
+    this.onSeek,
   });
 
   @override
@@ -541,6 +543,8 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
   Widget _buildSynchronizedLyricsView(LyricsData lyrics) {
     return Expanded(
       child: SyncedLyricsView(
+        onSeek: widget.onSeek,
+        fullPlayerTypography: widget.compactControls,
         playerService: widget.playerService,
         lyricsService: widget.lyricsService,
         lyrics: lyrics,
