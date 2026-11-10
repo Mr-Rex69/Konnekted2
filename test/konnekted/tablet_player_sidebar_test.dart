@@ -227,7 +227,7 @@ class _Service extends Fake implements PlayerService {
 }
 
 class _LyricsProbe extends StatefulWidget {
-  const _LyricsProbe();
+  const _LyricsProbe({super.key});
   @override
   State<_LyricsProbe> createState() => _LyricsProbeState();
 }
@@ -251,6 +251,7 @@ Widget _app(
   bool radio = false,
   bool remote = false,
   bool animate = false,
+  TargetPlatform? platform,
 }) => ProviderScope(
   overrides: [
     playerProvider.overrideWith(() => player ?? _Player()),
@@ -264,7 +265,7 @@ Widget _app(
   child: MaterialApp(
     theme: LokalTheme.build(
       LokalTokens.resolve(light ? LokalThemeId.light : LokalThemeId.dark),
-    ),
+    ).copyWith(platform: platform),
     home: Builder(
       builder: (context) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -628,6 +629,240 @@ void main() {
       }
     }
   });
+
+  testWidgets(
+    'reveals share live pane/footer geometry at 120 Hz without rebuilding panel content',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(
+        left: 24,
+        right: 18,
+        bottom: 34,
+      );
+      tester.view.viewPadding = const FakeViewPadding(
+        left: 24,
+        right: 18,
+        bottom: 34,
+      );
+      addTearDown(tester.view.reset);
+      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+        for (final width in [600.0, 768.0, 1024.0, 1366.0]) {
+          await tester.pumpWidget(const SizedBox.shrink());
+          tester.view.physicalSize = Size(width, 900);
+          var left = false, right = false, panelBuilds = 0;
+          late StateSetter change;
+          final page = const _LyricsProbe(key: ValueKey('reveal-page-state'));
+          final panel = Builder(
+            builder: (_) {
+              panelBuilds++;
+              return const _LyricsProbe(key: ValueKey('reveal-panel-state'));
+            },
+          );
+          await tester.pumpWidget(
+            _app(
+              StatefulBuilder(
+                builder: (context, setState) {
+                  change = setState;
+                  return KonnektedTabletWorkspace(
+                    selected: KonnektedTab.listen,
+                    route: null,
+                    onSelect: (_) {},
+                    onNavigate: (_) {},
+                    leftOpen: left,
+                    rightOpen: right,
+                    hasPlayer: true,
+                    onToggleLeft: () => setState(() => left = !left),
+                    onToggleRight: () => setState(() => right = !right),
+                    mobileDock: const SizedBox.shrink(),
+                    playerSidebar: panel,
+                    player: KonnektedTabletFooter(
+                      onOpenPlayer: () {},
+                      onOpenPanel: (_) {},
+                    ),
+                    child: page,
+                  );
+                },
+              ),
+              animate: true,
+              platform: platform,
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('reveal-page-state')));
+          await tester.pumpAndSettle();
+          final pageState = tester.state(
+            find.byKey(const ValueKey('reveal-page-state')),
+          );
+          final footerBefore = tester.getRect(
+            find.byKey(const ValueKey('tablet-footer-glass')),
+          );
+          final searchBefore = tester.getRect(
+            find.byKey(const ValueKey('tablet-header-search')),
+          );
+          change(() {
+            left = true;
+            right = true;
+          });
+          await tester.pump();
+          final leftSlot = find.byKey(
+            const ValueKey('tablet-navigation-reveal'),
+          );
+          final rightSlot = find.byKey(const ValueKey('tablet-player-reveal'));
+          expect(tester.getSize(leftSlot).width, 0);
+          expect(tester.getSize(rightSlot).width, 0);
+          expect(
+            tester.getRect(find.byKey(const ValueKey('tablet-footer-glass'))),
+            footerBefore,
+          );
+          expect(
+            tester.getRect(find.byKey(const ValueKey('tablet-header-search'))),
+            searchBefore,
+          );
+          final buildsAtReveal = panelBuilds;
+          var lastLeft = 0.0, lastRight = 0.0;
+          for (var frame = 0; frame < 44; frame++) {
+            await tester.pump(const Duration(microseconds: 8333));
+            final leftRect = tester.getRect(leftSlot);
+            final rightRect = tester.getRect(rightSlot);
+            final footer = tester.getRect(
+              find.byKey(const ValueKey('tablet-footer-glass')),
+            );
+            expect(leftRect.width, greaterThanOrEqualTo(lastLeft));
+            expect(rightRect.width, greaterThanOrEqualTo(lastRight));
+            expect(footer.left, greaterThanOrEqualTo(leftRect.right - .01));
+            expect(footer.right, lessThanOrEqualTo(rightRect.left + .01));
+            expect(
+              tester
+                  .getSize(find.byKey(const ValueKey('tablet-player-sidebar')))
+                  .width,
+              340,
+            );
+            expect(
+              tester
+                  .getSize(find.byKey(const ValueKey('reveal-page-state')))
+                  .width,
+              closeTo(
+                width - leftRect.width - (width >= 1000 ? rightRect.width : 0),
+                .01,
+              ),
+            );
+            expect(panelBuilds, buildsAtReveal);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$platform width=$width frame=$frame',
+            );
+            lastLeft = leftRect.width;
+            lastRight = rightRect.width;
+          }
+          expect(lastRight, 340);
+          expect(
+            identical(
+              tester.state(find.byKey(const ValueKey('reveal-page-state'))),
+              pageState,
+            ),
+            isTrue,
+          );
+          expect((pageState as _LyricsProbeState).count, 1);
+          change(() {
+            left = false;
+            right = false;
+          });
+          await tester.pump();
+          expect(leftSlot, findsNothing);
+          expect(rightSlot, findsNothing);
+          expect(
+            tester
+                .getSize(find.byKey(const ValueKey('reveal-page-state')))
+                .width,
+            width,
+          );
+          expect(
+            tester
+                .getRect(find.byKey(const ValueKey('tablet-player-bar')))
+                .left,
+            0,
+          );
+          expect(
+            tester
+                .getRect(find.byKey(const ValueKey('tablet-player-bar')))
+                .right,
+            width,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        }
+      }
+    },
+  );
+
+  testWidgets(
+    'a reveal can be interrupted, hidden instantly and disabled by reduced motion',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(1366, 900)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      var right = false, reduced = false;
+      late StateSetter change;
+      await tester.pumpWidget(
+        _app(
+          StatefulBuilder(
+            builder: (context, setState) {
+              change = setState;
+              return MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(disableAnimations: reduced),
+                child: KonnektedTabletWorkspace(
+                  selected: KonnektedTab.listen,
+                  route: null,
+                  onSelect: (_) {},
+                  onNavigate: (_) {},
+                  leftOpen: false,
+                  rightOpen: right,
+                  hasPlayer: true,
+                  onToggleLeft: () {},
+                  onToggleRight: () => setState(() => right = !right),
+                  mobileDock: const SizedBox.shrink(),
+                  playerSidebar: const _LyricsProbe(),
+                  player: KonnektedTabletFooter(
+                    onOpenPlayer: () {},
+                    onOpenPanel: (_) {},
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              );
+            },
+          ),
+          animate: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      change(() => right = true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      final slot = find.byKey(const ValueKey('tablet-player-reveal'));
+      expect(tester.getSize(slot).width, inExclusiveRange(0, 340));
+      change(() => right = false);
+      await tester.pump();
+      expect(slot, findsNothing);
+      change(() => right = true);
+      await tester.pump();
+      expect(tester.getSize(slot).width, 0);
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(tester.getSize(slot).width, inExclusiveRange(0, 340));
+      change(() => reduced = true);
+      await tester.pump();
+      expect(tester.getSize(slot).width, 340);
+      await tester.pumpAndSettle();
+      change(() => right = false);
+      await tester.pump();
+      change(() => right = true);
+      await tester.pump();
+      expect(tester.getSize(slot).width, 340);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'footer stays strictly between visible sidebars at every tablet size',
