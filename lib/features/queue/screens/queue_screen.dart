@@ -44,12 +44,16 @@ class QueueList extends ConsumerStatefulWidget {
   const QueueList({
     super.key,
     this.embedded = false,
+    this.themed = false,
     this.sheet = false,
     this.scrollController,
     this.onOpenPlayer,
   });
 
   final bool embedded;
+
+  /// Tablet panels use the app theme; immersive player panels stay dark.
+  final bool themed;
   final bool sheet;
   final ScrollController? scrollController;
   final VoidCallback? onOpenPlayer;
@@ -150,7 +154,7 @@ class _QueueListState extends ConsumerState<QueueList> {
     final songs = _optimisticSongs ?? (manualOnly ? manualQueue : upcoming);
     final ids = queueRowIdentities(songs, 'next');
     final t = context.lokal;
-    final palette = widget.embedded
+    final palette = widget.embedded && !widget.themed
         ? LokalTokens.resolve(LokalThemeId.dark)
         : t;
     final textColor = palette.text;
@@ -310,7 +314,7 @@ class _QueueListState extends ConsumerState<QueueList> {
                           song: playbackOrder[index],
                           index: index,
                           past: true,
-                          darkBackdrop: widget.embedded,
+                          darkBackdrop: widget.embedded && !widget.themed,
                           onTap: () async {
                             await ref
                                 .read(playerProvider.notifier)
@@ -369,7 +373,7 @@ class _QueueListState extends ConsumerState<QueueList> {
                             key: ValueKey(ids[i]),
                             song: songs[i],
                             index: i,
-                            darkBackdrop: widget.embedded,
+                            darkBackdrop: widget.embedded && !widget.themed,
                             selected: _selected.contains(ids[i]),
                             selecting: true,
                             onTap: () => setState(() {
@@ -400,7 +404,8 @@ class _QueueListState extends ConsumerState<QueueList> {
                                 child: _QueueRow(
                                   song: songs[i],
                                   index: i,
-                                  darkBackdrop: widget.embedded,
+                                  darkBackdrop:
+                                      widget.embedded && !widget.themed,
                                   onTap: () async {
                                     final player = ref.read(
                                       playerProvider.notifier,
@@ -431,7 +436,7 @@ class _QueueListState extends ConsumerState<QueueList> {
                   padding: EdgeInsets.all(h),
                   sliver: SliverToBoxAdapter(
                     child: _QueueEmpty(
-                      darkBackdrop: widget.embedded,
+                      darkBackdrop: widget.embedded && !widget.themed,
                       text: current == null
                           ? l10n.queueIsEmpty
                           : l10n.noUpcomingQueueItemsYet,
@@ -466,7 +471,7 @@ class _QueueListState extends ConsumerState<QueueList> {
                       key: ValueKey('autoplay-${autoplay[i].id}-$i'),
                       song: autoplay[i],
                       index: i,
-                      darkBackdrop: widget.embedded,
+                      darkBackdrop: widget.embedded && !widget.themed,
                       autoplay: true,
                       onTap: () async {
                         await ref

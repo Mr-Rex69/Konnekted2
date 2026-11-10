@@ -1,3 +1,5 @@
+import 'package:flick/core/utils/lokal_layout.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -40,9 +42,11 @@ class LokalDetailHeader extends StatelessWidget {
   final String? artistLogoPath;
   final double artistLogoAspect;
   final bool isArtist;
+
   /// When true, the artwork is painted behind the entire scroll view rather
   /// than inside this moving header. The header remains transparent.
   final bool fixedArtwork;
+
   /// True when the page draws its top controls above the scroll view.
   final bool controlsInOverlay;
   final Color background;
@@ -55,7 +59,21 @@ class LokalDetailHeader extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.8);
     return (size.height * .52 + (scale - 1) * 90)
-        .clamp(350.0, 580.0).toDouble();
+        .clamp(350.0, 580.0)
+        .toDouble();
+  }
+
+  static double height(BuildContext context, {required bool isArtist}) {
+    final size = MediaQuery.sizeOf(context);
+    if (LokalLayout.isTablet(context) && size.width >= 640 && !isArtist) {
+      final artSize = (size.width * .36).clamp(184.0, 314.0);
+      final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.8);
+      return artSize +
+          108 +
+          MediaQuery.paddingOf(context).top +
+          (scale - 1) * 120;
+    }
+    return artistHeight(context);
   }
 
   @override
@@ -65,9 +83,15 @@ class LokalDetailHeader extends StatelessWidget {
     final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.8);
     final topInset = MediaQuery.paddingOf(context).top;
     final fullBleed = isArtist || fixedArtwork;
-    final artSize = (size.width * (size.width > 620 ? .36 : .63))
-        .clamp(184.0, 314.0);
-    final heroHeight = fullBleed
+    final wideAlbum =
+        LokalLayout.isTablet(context) && size.width >= 640 && !isArtist;
+    final artSize = (size.width * (size.width > 620 ? .36 : .63)).clamp(
+      184.0,
+      314.0,
+    );
+    final heroHeight = wideAlbum
+        ? height(context, isArtist: isArtist)
+        : fullBleed
         ? artistHeight(context)
         : artSize + 268 + topInset + (scale - 1) * 230;
 
@@ -76,18 +100,19 @@ class LokalDetailHeader extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (!fixedArtwork) DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: isArtist
-                    ? const Alignment(0, -.5)
-                    : const Alignment(0, -.2),
-                radius: 1.15,
-                colors: [Color.lerp(background, t.accent, .10)!, background],
+          if (!fixedArtwork)
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: isArtist
+                      ? const Alignment(0, -.5)
+                      : const Alignment(0, -.2),
+                  radius: 1.15,
+                  colors: [Color.lerp(background, t.accent, .10)!, background],
+                ),
               ),
             ),
-          ),
-          if (fixedArtwork)
+          if (fixedArtwork && !wideAlbum)
             GestureDetector(
               onTap: onArtworkTap,
               behavior: HitTestBehavior.opaque,
@@ -129,8 +154,8 @@ class LokalDetailHeader extends StatelessWidget {
           ] else
             Positioned(
               top: topInset + 76,
-              left: 24,
-              right: 24,
+              left: wideAlbum ? 32 : 24,
+              right: wideAlbum ? null : 24,
               child: Center(
                 child: Container(
                   width: artSize,
@@ -148,82 +173,85 @@ class LokalDetailHeader extends StatelessWidget {
                   child: GestureDetector(
                     onTap: onArtworkTap,
                     child: ClipRRect(
-                    borderRadius: BorderRadius.circular(23),
-                    child: artworkHeroTag == null
-                        ? RepaintBoundary(child: artwork)
-                        : Hero(
-                            tag: artworkHeroTag!,
-                            child: RepaintBoundary(child: artwork),
-                          ),
+                      borderRadius: BorderRadius.circular(23),
+                      child: artworkHeroTag == null
+                          ? RepaintBoundary(child: artwork)
+                          : Hero(
+                              tag: artworkHeroTag!,
+                              child: RepaintBoundary(child: artwork),
+                            ),
                     ),
                   ),
                 ),
               ),
             ),
-          if (!controlsInOverlay) Positioned(
-            left: 20,
-            right: 20,
-            top: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Row(
-                  children: [
-                    _headerButton(
-                      context,
-                      Icons.arrow_back_rounded,
-                      l10n.back,
-                      onBack,
-                    ),
-                    const Spacer(),
-                    // The catalogue is a single icon-only toggle in the
-                    // header. Its state is exposed to assistive technology,
-                    // not as a separate label or description on the page.
-                    LokalGlassButton(
-                      semanticLabel: onlineEnabled
-                          ? lokalText('Disable online catalogue')
-                          : lokalText('Enable online catalogue'),
-                      onPressed: (onlineLoading || onlineDisabled) ? null : onOnline,
-                      tint: onlineEnabled
-                          ? t.accent.withValues(alpha: .28)
-                          : Colors.black.withValues(alpha: .16),
-                      child: onlineLoading
-                          ? SizedBox.square(
-                              dimension: 21,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: fullBleed ? Colors.white : t.text,
+          if (!controlsInOverlay)
+            Positioned(
+              left: 20,
+              right: 20,
+              top: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Row(
+                    children: [
+                      _headerButton(
+                        context,
+                        Icons.arrow_back_rounded,
+                        l10n.back,
+                        onBack,
+                      ),
+                      const Spacer(),
+                      // The catalogue is a single icon-only toggle in the
+                      // header. Its state is exposed to assistive technology,
+                      // not as a separate label or description on the page.
+                      LokalGlassButton(
+                        semanticLabel: onlineEnabled
+                            ? lokalText('Disable online catalogue')
+                            : lokalText('Enable online catalogue'),
+                        onPressed: (onlineLoading || onlineDisabled)
+                            ? null
+                            : onOnline,
+                        tint: onlineEnabled
+                            ? t.accent.withValues(alpha: .28)
+                            : Colors.black.withValues(alpha: .16),
+                        child: onlineLoading
+                            ? SizedBox.square(
+                                dimension: 21,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: fullBleed ? Colors.white : t.text,
+                                ),
+                              )
+                            : Icon(
+                                onlineEnabled
+                                    ? Icons.language_rounded
+                                    : Icons.language_outlined,
+                                // The active catalogue state must remain clear
+                                // on both dark artwork and light album headers.
+                                color: onlineEnabled
+                                    ? t.accent
+                                    : (fullBleed ? Colors.white : t.text),
+                                size: 23,
                               ),
-                            )
-                          : Icon(
-                              onlineEnabled
-                                  ? Icons.language_rounded
-                                  : Icons.language_outlined,
-                              // The active catalogue state must remain clear
-                              // on both dark artwork and light album headers.
-                              color: onlineEnabled
-                                  ? t.accent
-                                  : (fullBleed ? Colors.white : t.text),
-                              size: 23,
-                            ),
-                    ),
-                    const SizedBox(width: 10),
-                    _headerButton(
-                      context,
-                      Icons.more_horiz_rounded,
-                      lokalText('More'),
-                      onMore,
-                    ),
-                  ],
+                      ),
+                      const SizedBox(width: 10),
+                      _headerButton(
+                        context,
+                        Icons.more_horiz_rounded,
+                        lokalText('More'),
+                        onMore,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           Positioned(
-            left: 24,
-            right: 24,
-            bottom: 16,
+            left: wideAlbum ? artSize + 64 : 24,
+            right: wideAlbum ? 32 : 24,
+            bottom: wideAlbum ? 32 : 16,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -242,14 +270,18 @@ class LokalDetailHeader extends StatelessWidget {
 
                 Semantics(
                   header: true,
-                  label: isArtist && artistLogoPath?.isNotEmpty == true ? title : null,
+                  label: isArtist && artistLogoPath?.isNotEmpty == true
+                      ? title
+                      : null,
                   child: isArtist && artistLogoPath?.isNotEmpty == true
                       ? Image.file(
                           File(artistLogoPath!),
                           width: (size.width - 48) * .82,
-                          height: ((size.width - 48) * .82 /
-                                  artistLogoAspect.clamp(.4, 6))
-                              .clamp(64.0, heroHeight * .27),
+                          height:
+                              ((size.width - 48) *
+                                      .82 /
+                                      artistLogoAspect.clamp(.4, 6))
+                                  .clamp(64.0, heroHeight * .27),
                           fit: BoxFit.contain,
                           alignment: Alignment.centerLeft,
                           // Disk-backed logo: never flash plain text while
@@ -284,7 +316,6 @@ class LokalDetailHeader extends StatelessWidget {
     );
   }
 
-
   Widget _plainTitle(BuildContext context, bool fullBleed) {
     final t = context.lokal;
     return Text(
@@ -301,8 +332,8 @@ class LokalDetailHeader extends StatelessWidget {
         shadows: fixedArtwork
             ? null
             : (isArtist
-                ? const [Shadow(color: Color(0x55000000), blurRadius: 5)]
-                : null),
+                  ? const [Shadow(color: Color(0x55000000), blurRadius: 5)]
+                  : null),
       ),
     );
   }
@@ -316,6 +347,10 @@ class LokalDetailHeader extends StatelessWidget {
     semanticLabel: label,
     onPressed: onTap,
     tint: Colors.black.withValues(alpha: .16),
-    child: Icon(icon, color: isArtist || fixedArtwork ? Colors.white : context.lokal.text, size: 23),
+    child: Icon(
+      icon,
+      color: isArtist || fixedArtwork ? Colors.white : context.lokal.text,
+      size: 23,
+    ),
   );
 }

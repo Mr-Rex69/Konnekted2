@@ -186,7 +186,7 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
   void _updateHeroVisibility() {
     if (!mounted || !widget.isArtist || !_scrollController.hasClients) return;
     final visible =
-        _scrollController.offset < LokalDetailHeader.artistHeight(context);
+        _scrollController.offset < LokalDetailHeader.height(context, isArtist: widget.isArtist);
     if (_heroInView != visible) {
       setState(() => _heroInView = visible);
     }
@@ -791,7 +791,7 @@ class _LokalMusicDetailPageState extends ConsumerState<LokalMusicDetailPage> {
       // was redundant for verified editorial images and could cause jank.
       child: artistArtwork,
     );
-    final heroHeight = LokalDetailHeader.artistHeight(context);
+    final heroHeight = LokalDetailHeader.height(context, isArtist: widget.isArtist);
     final diskLogo = widget.isArtist
         ? AppleArtistLogoCache.instance.cachedFor(widget.artist)
         : null;

@@ -823,11 +823,13 @@ class LokalSettingsHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.showBack = true,
     this.actions = const [],
   });
 
   final String title;
   final String? subtitle;
+  final bool showBack;
 
   /// Small controls on the right of the back button's row.
   final List<Widget> actions;
@@ -835,7 +837,7 @@ class LokalSettingsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.lokal;
-    final canPop = Navigator.maybeOf(context)?.canPop() ?? false;
+    final canPop = showBack && (Navigator.maybeOf(context)?.canPop() ?? false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
@@ -1179,8 +1180,9 @@ class _MixShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.lokal;
+    final size = LokalLayout.isTablet(context) ? 190.0 : 136.0;
     return SizedBox(
-      height: 205,
+      height: size + MediaQuery.textScalerOf(context).scale(42) + 28,
       child: ListView.separated(
         key: PageStorageKey(storageKey),
         scrollDirection: Axis.horizontal,
@@ -1196,7 +1198,7 @@ class _MixShelf extends StatelessWidget {
             child: Icon(Icons.queue_music_rounded, color: t.accent, size: 32),
           );
           return SizedBox(
-            width: 136,
+            width: size,
             child: Semantics(
               button: true,
               label: lokalText('Play mix ') + mix.title,
@@ -1210,7 +1212,7 @@ class _MixShelf extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: SizedBox.square(
-                        dimension: 136,
+                        dimension: size,
                         child: busy
                             ? Container(
                                 color: t.surface3,
@@ -1224,8 +1226,8 @@ class _MixShelf extends StatelessWidget {
                                 title: mix.title,
                                 artist: mix.author,
                                 url: mix.artworkUrl,
-                                width: 136,
-                                height: 136,
+                                width: size,
+                                height: size,
                                 placeholder: placeholder,
                               ),
                       ),
@@ -1459,7 +1461,7 @@ class _AlbumShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.lokal;
-    const size = 148.0;
+    final size = LokalLayout.isTablet(context) ? 200.0 : 148.0;
     final scale = MediaQuery.textScalerOf(context);
     return SizedBox(
       height: size + scale.scale(14) * 1.4 + scale.scale(12) * 1.5 + 18,
@@ -1542,7 +1544,7 @@ class _ArtistShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.lokal;
-    const size = 96.0;
+    final size = LokalLayout.isTablet(context) ? 140.0 : 96.0;
     final scale = MediaQuery.textScalerOf(context);
     return SizedBox(
       height: size + scale.scale(13) * 1.4 + 14,

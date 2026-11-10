@@ -451,8 +451,11 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
           behavior: HitTestBehavior.opaque,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 chip(
                   lyrics.isSynchronized
@@ -461,10 +464,8 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
                   lyrics.isSynchronized ? l10n.synced : l10n.plain,
                   accent: lyrics.isSynchronized,
                 ),
-                const SizedBox(width: 8),
                 if (sourceLabel != null) ...[
                   chip(LucideIcons.badgeInfo, sourceLabel, marqueeLabel: true),
-                  const SizedBox(width: 8),
                 ],
                 AnimatedRotation(
                   turns: _isMetaCollapsed ? 0.0 : 0.5,
@@ -583,64 +584,76 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
     final lyrics = _sublineLyrics ?? _lyricsData;
     if (lyrics == null || lyrics.lines.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: Icon(
+                    LucideIcons.fileText,
+                    size: 24,
+                    color: Colors.white.withValues(alpha: 0.5),
                   ),
                 ),
-                child: Icon(
-                  LucideIcons.fileText,
-                  size: 24,
-                  color: Colors.white.withValues(alpha: 0.5),
+                const SizedBox(height: 18),
+                Text(
+                  l10n.noLyricsYet,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'GoogleSansFlex',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                l10n.noLyricsYet,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'GoogleSansFlex',
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white.withValues(alpha: 0.9),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.searchOnlineCreateYourOwnSynced,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'GoogleSansFlex',
+                    fontSize: 13,
+                    height: 1.5,
+                    color: Colors.white.withValues(alpha: 0.56),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                l10n.searchOnlineCreateYourOwnSynced,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'GoogleSansFlex',
-                  fontSize: 13,
-                  height: 1.5,
-                  color: Colors.white.withValues(alpha: 0.56),
-                ),
-              ),
-              _buildActionButtons(),
-            ],
+                _buildActionButtons(),
+              ],
+            ),
           ),
         ),
       );
     }
 
-    return Column(
-      children: [
-        _buildLyricsMeta(lyrics),
-        if (lyrics.isSynchronized)
-          _buildSynchronizedLyricsView(lyrics)
-        else
-          Expanded(child: _buildPlainLyricsView(lyrics)),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          // Sources and actions remain reachable without consuming the entire
+          // compact card at large text sizes. The lyric stage keeps its space.
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight * .45),
+            child: SingleChildScrollView(
+              primary: false,
+              child: _buildLyricsMeta(lyrics),
+            ),
+          ),
+          if (lyrics.isSynchronized)
+            _buildSynchronizedLyricsView(lyrics)
+          else
+            Expanded(child: _buildPlainLyricsView(lyrics)),
+        ],
+      ),
     );
   }
 }

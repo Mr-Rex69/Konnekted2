@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
@@ -217,7 +218,11 @@ class _Tiles extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 4),
       child: LayoutBuilder(
         builder: (context, c) {
-          final columns = c.maxWidth < 2 * 148 * scale + 12 ? 1 : 2;
+          final columns = LokalLayout.isTablet(context)
+              ? LokalLayout.columns(c.maxWidth, target: 180 * scale, min: 1)
+              : c.maxWidth < 2 * 148 * scale + 12
+              ? 1
+              : 2;
           final width = (c.maxWidth - 12 * (columns - 1)) / columns;
           return Wrap(
             spacing: 12,
@@ -299,8 +304,8 @@ class _MoreRows extends StatelessWidget {
   final ValueChanged<KonnektedDestination> onNavigate;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
+  Widget build(BuildContext context) {
+    final links = <Widget>[
       LokalNavRow(
         icon: Icons.music_note_rounded,
         label: lokalText('Songs'),
@@ -341,6 +346,20 @@ class _MoreRows extends StatelessWidget {
         label: lokalText('Stations'),
         onTap: () => pushLokal(context, const InternetRadioPage()),
       ),
-    ],
-  );
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            LokalLayout.isTablet(context) && constraints.maxWidth >= 700
+            ? 2
+            : 1;
+        return Wrap(
+          children: [
+            for (final link in links)
+              SizedBox(width: constraints.maxWidth / columns, child: link),
+          ],
+        );
+      },
+    );
+  }
 }

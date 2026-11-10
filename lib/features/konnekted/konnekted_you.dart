@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/core/utils/artist_credits.dart';
 
@@ -310,130 +311,158 @@ class _KonnektedYouState extends ConsumerState<KonnektedYou> {
         ? (ref.watch(youMilestonesProvider).value ?? const <MilestoneRecord>[])
         : const <MilestoneRecord>[];
     final navigate = widget.onNavigate;
+    final header = _YouHeader(
+      name: name,
+      avatarPath: local?.avatarPath ?? profile?.avatarPath,
+      username: local?.username ?? profile?.username,
+      onEdit: _editProfile,
+      weekMinutes:
+          recaps[ListeningRecapPeriod.weekly]?.totalListeningTime.inMinutes,
+      streak: streak,
+      onSettings: () => navigate(KonnektedDestination.settings),
+    );
+    const devices = LokalDevicesCard();
+    final recapSections = <Widget>[
+      _Label(lokalText('Recap')),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+        child: Text(
+          lokalText(
+            'Your week, month and year in music. Tap one for the story.',
+          ),
+          style: TextStyle(fontSize: 13, color: context.lokal.muted),
+        ),
+      ),
+      SizedBox(
+        height: math.max(
+          136,
+          40 +
+              MediaQuery.textScalerOf(context).scale(11) * 2 * 1.4 +
+              MediaQuery.textScalerOf(context).scale(20) * 1.4 +
+              MediaQuery.textScalerOf(context).scale(12) * 1.4,
+        ),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: youRecapPeriods.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (_, i) {
+            final period = youRecapPeriods[i];
+            return RepaintBoundary(
+              child: _RecapCard(
+                period: period,
+                recap: recaps[period],
+                onTap: () => _openRecap(period),
+              ),
+            );
+          },
+        ),
+      ),
+      _StatsSection(
+        period: _statsPeriod,
+        recap: recaps[_statsPeriod],
+        onPeriod: (period) => setState(() => _statsPeriod = period),
+        onHistory: () => navigate(KonnektedDestination.recentlyPlayed),
+      ),
+      _MilestonesSection(
+        milestones: milestones,
+        onOpen: () => _push(const MilestonesScreen()),
+      ),
+    ];
+    final accountSections = <Widget>[
+      _Label(lokalText('Accounts')),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _AccountChip(
+              label: lokalText('Last.fm'),
+              connected: accounts.lastFm != null,
+              onTap: () => navigate(_scrobblingSection),
+            ),
+            _AccountChip(
+              label: lokalText('ListenBrainz'),
+              connected: accounts.listenBrainz != null,
+              onTap: () => navigate(_scrobblingSection),
+            ),
+            _AccountChip(
+              label: lokalText('YouTube'),
+              connected: accounts.youtubeMusic,
+              onTap: () => navigate(_accountsSection),
+            ),
+          ],
+        ),
+      ),
+      LokalSettingsSection(
+        title: lokalText('More'),
+        children: [
+          LokalSettingLink(
+            label: lokalText('What’s new'),
+            description: lokalText('What changed in this version.'),
+            icon: Icons.auto_awesome_rounded,
+            onTap: () => unawaited(WhatsNewBottomSheet.show<void>(context)),
+          ),
+          LokalSettingLink(
+            label: lokalText('Help'),
+            description: lokalText('Every control, explained.'),
+            icon: Icons.help_outline_rounded,
+            onTap: () => _push(const ManualScreen()),
+          ),
+          LokalSettingLink(
+            label: lokalText('About'),
+            description: lokalText('Version, updates, licences and privacy.'),
+            icon: Icons.info_outline_rounded,
+            onTap: () => navigate(
+              const KonnektedDestination.settingsAt(
+                LokalSettingsGroup.about,
+                section: 'About',
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
     return SafeArea(
       bottom: false,
       child: NotificationListener<ScrollNotification>(
         onNotification: _onPageScroll,
-        child: ListView(
-          key: const PageStorageKey('konnekted-you'),
-          padding: EdgeInsets.only(
-            bottom: 28 + MediaQuery.paddingOf(context).bottom,
-          ),
-          children: [
-            _YouHeader(
-              name: name,
-              avatarPath: local?.avatarPath ?? profile?.avatarPath,
-              username: local?.username ?? profile?.username,
-              onEdit: _editProfile,
-              weekMinutes: recaps[ListeningRecapPeriod.weekly]
-                  ?.totalListeningTime
-                  .inMinutes,
-              streak: streak,
-              onSettings: () => navigate(KonnektedDestination.settings),
-            ),
-            const LokalDevicesCard(),
-            _Label(lokalText('Recap')),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-              child: Text(
-                lokalText(
-                  'Your week, month and year in music. Tap one for the story.',
-                ),
-                style: TextStyle(fontSize: 13, color: context.lokal.muted),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide =
+                LokalLayout.isTablet(context) && constraints.maxWidth >= 840;
+            return ListView(
+              key: const PageStorageKey('konnekted-you'),
+              padding: EdgeInsets.only(
+                bottom: 28 + MediaQuery.paddingOf(context).bottom,
               ),
-            ),
-            SizedBox(
-              height: math.max(
-                136,
-                40 +
-                    MediaQuery.textScalerOf(context).scale(11) * 2 * 1.4 +
-                    MediaQuery.textScalerOf(context).scale(20) * 1.4 +
-                    MediaQuery.textScalerOf(context).scale(12) * 1.4,
-              ),
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: youRecapPeriods.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
-                itemBuilder: (_, i) {
-                  final period = youRecapPeriods[i];
-                  return RepaintBoundary(
-                    child: _RecapCard(
-                      period: period,
-                      recap: recaps[period],
-                      onTap: () => _openRecap(period),
-                    ),
-                  );
-                },
-              ),
-            ),
-            _StatsSection(
-              period: _statsPeriod,
-              recap: recaps[_statsPeriod],
-              onPeriod: (period) => setState(() => _statsPeriod = period),
-              onHistory: () => navigate(KonnektedDestination.recentlyPlayed),
-            ),
-            _MilestonesSection(
-              milestones: milestones,
-              onOpen: () => _push(const MilestonesScreen()),
-            ),
-            _Label(lokalText('Accounts')),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _AccountChip(
-                    label: lokalText('Last.fm'),
-                    connected: accounts.lastFm != null,
-                    onTap: () => navigate(_scrobblingSection),
-                  ),
-                  _AccountChip(
-                    label: lokalText('ListenBrainz'),
-                    connected: accounts.listenBrainz != null,
-                    onTap: () => navigate(_scrobblingSection),
-                  ),
-                  _AccountChip(
-                    label: lokalText('YouTube'),
-                    connected: accounts.youtubeMusic,
-                    onTap: () => navigate(_accountsSection),
-                  ),
-                ],
-              ),
-            ),
-            LokalSettingsSection(
-              title: lokalText('More'),
-              children: [
-                LokalSettingLink(
-                  label: lokalText('What’s new'),
-                  description: lokalText('What changed in this version.'),
-                  icon: Icons.auto_awesome_rounded,
-                  onTap: () =>
-                      unawaited(WhatsNewBottomSheet.show<void>(context)),
-                ),
-                LokalSettingLink(
-                  label: lokalText('Help'),
-                  description: lokalText('Every control, explained.'),
-                  icon: Icons.help_outline_rounded,
-                  onTap: () => _push(const ManualScreen()),
-                ),
-                LokalSettingLink(
-                  label: lokalText('About'),
-                  description: lokalText(
-                    'Version, updates, licences and privacy.',
-                  ),
-                  icon: Icons.info_outline_rounded,
-                  onTap: () => navigate(
-                    const KonnektedDestination.settingsAt(
-                      LokalSettingsGroup.about,
-                      section: 'About',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+              children: wide
+                  ? [
+                      header,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: recapSections,
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [devices, ...accountSections],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ]
+                  : [header, devices, ...recapSections, ...accountSections],
+            );
+          },
         ),
       ),
     );
@@ -950,7 +979,7 @@ class _RecapCard extends StatelessWidget {
       ),
       excludeSemantics: true,
       child: SizedBox(
-        width: 156,
+        width: LokalLayout.isTablet(context) ? 192 : 156,
         child: LokalGlass(
           staticSurface: true,
           borderRadius: const BorderRadius.all(Radius.circular(20)),

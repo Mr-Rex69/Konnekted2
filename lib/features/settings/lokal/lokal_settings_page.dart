@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/core/navigation/lokal_page_motion.dart';
 import 'package:flick/l10n/l10n.dart';
 
@@ -126,6 +127,7 @@ class LokalSettingsPage extends ConsumerStatefulWidget {
 class _LokalSettingsPageState extends ConsumerState<LokalSettingsPage> {
   final _search = TextEditingController();
   String _query = '';
+  LokalSettingsGroup _tabletGroup = LokalSettingsGroup.appearance;
 
   @override
   void dispose() {
@@ -182,41 +184,71 @@ class _LokalSettingsPageState extends ConsumerState<LokalSettingsPage> {
               final results = searching
                   ? _results(context, liveRef)
                   : const <Widget>[];
-              return ListView(
-                key: const PageStorageKey('lokal-settings'),
-                padding: EdgeInsets.only(
-                  bottom: 32 + MediaQuery.paddingOf(context).bottom,
-                ),
-                children: [
-                  LokalSettingsHeader(title: lokalText('Settings')),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: LokalSettingsSearchField(
-                      controller: _search,
-                      onChanged: (value) => setState(() => _query = value),
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final split =
+                      !searching &&
+                      LokalLayout.isTablet(context) &&
+                      constraints.maxWidth >= 840;
+                  final index = ListView(
+                    key: const PageStorageKey('lokal-settings'),
+                    padding: EdgeInsets.only(
+                      bottom: 32 + MediaQuery.paddingOf(context).bottom,
                     ),
-                  ),
-                  if (!searching)
-                    LokalSettingsSection(
-                      title: lokalText('Settings'),
-                      heading: 'Groups',
-                      children: [
-                        for (final group in LokalSettingsGroup.listed)
-                          _GroupLink(group: group),
-                      ],
-                    )
-                  else if (results.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
-                      child: Text(
-                        lokalText('No settings match your search.'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 14, color: t.muted),
+                    children: [
+                      LokalSettingsHeader(title: lokalText('Settings')),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        child: LokalSettingsSearchField(
+                          controller: _search,
+                          onChanged: (value) => setState(() => _query = value),
+                        ),
                       ),
-                    )
-                  else
-                    ...results,
-                ],
+                      if (!searching)
+                        LokalSettingsSection(
+                          title: lokalText('Settings'),
+                          heading: 'Groups',
+                          children: [
+                            for (final group in LokalSettingsGroup.listed)
+                              _GroupLink(
+                                group: group,
+                                selected: split && _tabletGroup == group,
+                                onTap: split
+                                    ? () => setState(() => _tabletGroup = group)
+                                    : null,
+                              ),
+                          ],
+                        )
+                      else if (results.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
+                          child: Text(
+                            lokalText('No settings match your search.'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 14, color: t.muted),
+                          ),
+                        )
+                      else
+                        ...results,
+                    ],
+                  );
+                  if (!split) return index;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(width: 300, child: index),
+                      VerticalDivider(width: 1, color: t.border),
+                      Expanded(
+                        child: LokalSettingsGroupPage(
+                          key: ValueKey(_tabletGroup),
+                          group: _tabletGroup,
+                          embedded: true,
+                          sectionsBuilder: widget.sectionsBuilder,
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -237,19 +269,28 @@ class _Never extends Listenable {
 }
 
 class _GroupLink extends StatelessWidget implements LokalSearchable {
-  const _GroupLink({required this.group});
+  const _GroupLink({required this.group, this.onTap, this.selected = false});
 
   final LokalSettingsGroup group;
+  final VoidCallback? onTap;
+  final bool selected;
 
   @override
   String get searchText => '${group.label} ${group.description}';
 
   @override
-  Widget build(BuildContext context) => LokalSettingLink(
-    label: group.label,
-    description: group.description,
-    icon: group.icon,
-    onTap: () => unawaited(openLokalSettings(context, group: group)),
+  Widget build(BuildContext context) => Semantics(
+    selected: selected,
+    child: ColoredBox(
+      color: selected ? context.lokal.accentSoft : context.lokal.surface,
+      child: LokalSettingLink(
+        label: group.label,
+        description: group.description,
+        icon: group.icon,
+        onTap:
+            onTap ?? () => unawaited(openLokalSettings(context, group: group)),
+      ),
+    ),
   );
 }
 
@@ -258,11 +299,13 @@ class LokalSettingsGroupPage extends ConsumerStatefulWidget {
   const LokalSettingsGroupPage({
     super.key,
     required this.group,
+    this.embedded = false,
     this.section,
     this.sectionsBuilder,
   });
 
   final LokalSettingsGroup group;
+  final bool embedded;
 
   /// Replaces [lokalSettingsSections], for tests.
   @visibleForTesting
@@ -335,6 +378,7 @@ class _LokalSettingsGroupPageState
                   LokalSettingsHeader(
                     title: widget.group.label,
                     subtitle: widget.group.description,
+                    showBack: !widget.embedded,
                   ),
                   for (final section in sections)
                     if (wanted != null && section.title.toLowerCase() == wanted)

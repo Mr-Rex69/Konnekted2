@@ -65,7 +65,12 @@ class SongMetadataSheet extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => SongMetadataSheet(song: song),
+      builder: (context) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .85,
+        ),
+        child: SingleChildScrollView(child: SongMetadataSheet(song: song)),
+      ),
     );
   }
 

@@ -1,3 +1,6 @@
+import 'package:flick/core/utils/lokal_layout.dart';
+import 'package:flick/features/player/widgets/lokal_player_columns.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -306,9 +309,22 @@ class _DesktopRemoteFullPlayerState
                         // the controls. Prefer the same near-edge-to-edge footprint,
                         // shrinking only on genuinely short screens; scroll metrics
                         // still protect the seek/transport/volume rows.
+                        final wide =
+                            LokalLayout.isTablet(context) &&
+                            bounds.maxWidth >= 720 &&
+                            bounds.maxWidth > bounds.maxHeight;
                         final artworkSize = math.min(
-                          math.min(510.0, math.max(0.0, bounds.maxWidth - 48)),
-                          math.max(160.0, bounds.maxHeight - 345),
+                          math.min(
+                            510.0,
+                            math.max(
+                              0.0,
+                              bounds.maxWidth * (wide ? .46 : 1) - 48,
+                            ),
+                          ),
+                          math.max(
+                            160.0,
+                            bounds.maxHeight - (wide ? 130 : 345),
+                          ),
                         );
                         final compact = bounds.maxHeight < 700;
                         // Only let the inner scroll view claim vertical swipes
@@ -333,226 +349,417 @@ class _DesktopRemoteFullPlayerState
                               ),
                               child: Center(
                                 child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 510,
+                                  constraints: BoxConstraints(
+                                    maxWidth: wide ? double.infinity : 510,
                                   ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Row(
+                                  child: LokalPlayerColumns(
+                                    expandPortraitStage: false,
+                                    landscapeHeight: bounds.maxHeight,
+                                    header: Row(
+                                      children: [
+                                        IconButton(
+                                          tooltip: lokalText('Close'),
+                                          onPressed: widget.onClose,
+                                          icon: const Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            color: ink,
+                                            size: 30,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                lokalText(
+                                                  'CONTROLLING DESKTOP',
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: 1.6,
+                                                  color: secondary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                remote.desktopName,
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  color: ink,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: lokalText('Queue'),
+                                          onPressed: _openQueue,
+                                          icon: const Icon(
+                                            Icons.queue_music_rounded,
+                                            color: ink,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    stage: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          IconButton(
-                                            tooltip: lokalText('Close'),
-                                            onPressed: widget.onClose,
-                                            icon: const Icon(
-                                              Icons.keyboard_arrow_down_rounded,
-                                              color: ink,
-                                              size: 30,
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  lokalText(
-                                                    'CONTROLLING DESKTOP',
+                                          SizedBox(height: compact ? 12 : 18),
+                                          if (fullCover && song != null)
+                                            GestureDetector(
+                                              key: const ValueKey(
+                                                'remote-full-cover-spacer',
+                                              ),
+                                              behavior: HitTestBehavior.opaque,
+                                              onHorizontalDragStart: (_) =>
+                                                  _coverCarouselKey.currentState
+                                                      ?.startExternalDrag(),
+                                              onHorizontalDragUpdate:
+                                                  (details) => _coverCarouselKey
+                                                      .currentState
+                                                      ?.updateExternalDrag(
+                                                        details.delta.dx,
+                                                      ),
+                                              onHorizontalDragEnd: (details) {
+                                                _coverCarouselKey.currentState
+                                                    ?.endExternalDrag(
+                                                      details.primaryVelocity ??
+                                                          0,
+                                                    );
+                                              },
+                                              onHorizontalDragCancel: () =>
+                                                  _coverCarouselKey.currentState
+                                                      ?.cancelExternalDrag(),
+                                              child: SizedBox(
+                                                width: double.infinity,
+                                                height: artworkSize,
+                                              ),
+                                            )
+                                          else if (song != null)
+                                            LokalPlayerArtwork(
+                                              expandedRadius: 24,
+                                              child: SizedBox.square(
+                                                dimension: artworkSize,
+                                                child: SongStageCarousel(
+                                                  key: const ValueKey(
+                                                    'desktop-cover-carousel',
                                                   ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                    letterSpacing: 1.6,
-                                                    color: secondary,
-                                                  ),
+                                                  currentSong: song,
+                                                  nextSong: nextTrack,
+                                                  prevSong: previousTrack,
+                                                  onNext: _remoteNext,
+                                                  onPrevious: _remotePrevious,
+                                                  buttonDissolve: true,
+                                                  allowUnresolvedSwipe: true,
+                                                  stageBuilder: (track) =>
+                                                      PlayerArtworkImage(
+                                                        key: ValueKey(
+                                                          'desktop-cover:${track.id}',
+                                                        ),
+                                                        song: track,
+                                                        decodeWidth: 1024,
+                                                        radius: 24,
+                                                      ),
                                                 ),
-                                                const SizedBox(height: 3),
-                                                Text(
-                                                  remote.desktopName,
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    color: ink,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
+                                              ),
+                                            )
+                                          else
+                                            SizedBox.square(
+                                              dimension: artworkSize,
+                                              child: const DecoratedBox(
+                                                decoration: BoxDecoration(
+                                                  color: Color(0xFF222228),
+                                                  borderRadius:
+                                                      BorderRadius.all(
+                                                        Radius.circular(24),
+                                                      ),
                                                 ),
-                                              ],
+                                                child: Icon(
+                                                  Icons.music_note_rounded,
+                                                  size: 84,
+                                                  color: secondary,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                          IconButton(
-                                            tooltip: lokalText('Queue'),
-                                            onPressed: _openQueue,
-                                            icon: const Icon(
-                                              Icons.queue_music_rounded,
-                                              color: ink,
-                                            ),
-                                          ),
                                         ],
                                       ),
-                                      SizedBox(height: compact ? 12 : 18),
-                                      if (fullCover && song != null)
-                                        GestureDetector(
-                                          key: const ValueKey(
-                                            'remote-full-cover-spacer',
-                                          ),
-                                          behavior: HitTestBehavior.opaque,
-                                          onHorizontalDragStart: (_) =>
-                                              _coverCarouselKey.currentState
-                                                  ?.startExternalDrag(),
-                                          onHorizontalDragUpdate: (details) =>
-                                              _coverCarouselKey.currentState
-                                                  ?.updateExternalDrag(
-                                                    details.delta.dx,
-                                                  ),
-                                          onHorizontalDragEnd: (details) {
-                                            _coverCarouselKey.currentState
-                                                ?.endExternalDrag(
-                                                  details.primaryVelocity ?? 0,
-                                                );
-                                          },
-                                          onHorizontalDragCancel: () =>
-                                              _coverCarouselKey.currentState
-                                                  ?.cancelExternalDrag(),
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            height: artworkSize,
-                                          ),
-                                        )
-                                      else if (song != null)
-                                        LokalPlayerArtwork(
-                                          expandedRadius: 24,
-                                          child: SizedBox.square(
-                                            dimension: artworkSize,
-                                            child: SongStageCarousel(
-                                              key: const ValueKey(
-                                                'desktop-cover-carousel',
-                                              ),
-                                              currentSong: song,
-                                              nextSong: nextTrack,
-                                              prevSong: previousTrack,
-                                              onNext: _remoteNext,
-                                              onPrevious: _remotePrevious,
-                                              buttonDissolve: true,
-                                              allowUnresolvedSwipe: true,
-                                              stageBuilder: (track) =>
-                                                  PlayerArtworkImage(
-                                                    key: ValueKey(
-                                                      'desktop-cover:${track.id}',
-                                                    ),
-                                                    song: track,
-                                                    decodeWidth: 1024,
-                                                    radius: 24,
-                                                  ),
+                                    ),
+                                    controls: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(height: compact ? 14 : 20),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            song?.title ??
+                                                lokalText(
+                                                  'No song playing on desktop',
+                                                ),
+                                            key: const ValueKey(
+                                              'desktop-full-player-title',
                                             ),
-                                          ),
-                                        )
-                                      else
-                                        SizedBox.square(
-                                          dimension: artworkSize,
-                                          child: const DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              color: Color(0xFF222228),
-                                              borderRadius: BorderRadius.all(
-                                                Radius.circular(24),
-                                              ),
-                                            ),
-                                            child: Icon(
-                                              Icons.music_note_rounded,
-                                              size: 84,
-                                              color: secondary,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: ink,
+                                              fontSize: 23,
+                                              fontWeight: FontWeight.w700,
                                             ),
                                           ),
                                         ),
-                                      SizedBox(height: compact ? 14 : 20),
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          song?.title ??
-                                              lokalText(
-                                                'No song playing on desktop',
+                                        const SizedBox(height: 5),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                song?.artist ??
+                                                    remote.desktopName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: secondary,
+                                                  fontSize: 16,
+                                                ),
                                               ),
-                                          key: const ValueKey(
-                                            'desktop-full-player-title',
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: ink,
-                                            fontSize: 23,
-                                            fontWeight: FontWeight.w700,
+                                            ),
+                                            if (currentTrack != null)
+                                              IconButton(
+                                                tooltip: lokalText('Favorite'),
+                                                onPressed: () => _command(() async {
+                                                  await ref
+                                                      .read(
+                                                        lokalRemoteControllerProvider
+                                                            .notifier,
+                                                      )
+                                                      .toggleFavorite(
+                                                        'desktop:${currentTrack.id}',
+                                                      );
+                                                }),
+                                                icon: Icon(
+                                                  currentTrack.liked
+                                                      ? Icons.favorite_rounded
+                                                      : Icons
+                                                            .favorite_border_rounded,
+                                                  color: currentTrack.liked
+                                                      ? const Color(0xFFF27CA6)
+                                                      : ink,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        SizedBox(height: compact ? 6 : 10),
+                                        SliderTheme(
+                                          data: SliderTheme.of(context)
+                                              .copyWith(
+                                                trackHeight: 3.5,
+                                                activeTrackColor: ink,
+                                                inactiveTrackColor:
+                                                    Colors.white24,
+                                                thumbColor: ink,
+                                                overlayShape:
+                                                    SliderComponentShape
+                                                        .noOverlay,
+                                              ),
+                                          child: Slider(
+                                            value:
+                                                (_seekDrag ?? player.progress)
+                                                    .clamp(0.0, 1.0)
+                                                    .toDouble(),
+                                            onChangeStart: song == null
+                                                ? null
+                                                : (value) => setState(
+                                                    () => _seekDrag = value,
+                                                  ),
+                                            onChanged: song == null
+                                                ? null
+                                                : (value) => setState(
+                                                    () => _seekDrag = value,
+                                                  ),
+                                            onChangeEnd: song == null
+                                                ? null
+                                                : (value) {
+                                                    setState(
+                                                      () => _seekDrag = null,
+                                                    );
+                                                    _command(
+                                                      () => ref
+                                                          .read(
+                                                            playerProvider
+                                                                .notifier,
+                                                          )
+                                                          .seek(
+                                                            Duration(
+                                                              milliseconds:
+                                                                  (value *
+                                                                          player
+                                                                              .duration
+                                                                              .inMilliseconds)
+                                                                      .round(),
+                                                            ),
+                                                          ),
+                                                    );
+                                                  },
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 5),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              song?.artist ??
-                                                  remote.desktopName,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              _clock(
+                                                _seekDrag == null
+                                                    ? player.position
+                                                    : Duration(
+                                                        milliseconds:
+                                                            (_seekDrag! *
+                                                                    player
+                                                                        .duration
+                                                                        .inMilliseconds)
+                                                                .round(),
+                                                      ),
+                                              ),
                                               style: const TextStyle(
                                                 color: secondary,
-                                                fontSize: 16,
+                                                fontSize: 12,
                                               ),
                                             ),
-                                          ),
-                                          if (currentTrack != null)
-                                            IconButton(
-                                              tooltip: lokalText('Favorite'),
-                                              onPressed: () => _command(() async {
-                                                await ref
-                                                    .read(
-                                                      lokalRemoteControllerProvider
-                                                          .notifier,
-                                                    )
-                                                    .toggleFavorite(
-                                                      'desktop:${currentTrack.id}',
-                                                    );
-                                              }),
-                                              icon: Icon(
-                                                currentTrack.liked
-                                                    ? Icons.favorite_rounded
-                                                    : Icons
-                                                          .favorite_border_rounded,
-                                                color: currentTrack.liked
-                                                    ? const Color(0xFFF27CA6)
-                                                    : ink,
+                                            Text(
+                                              _clock(player.duration),
+                                              style: const TextStyle(
+                                                color: secondary,
+                                                fontSize: 12,
                                               ),
                                             ),
-                                        ],
-                                      ),
-                                      SizedBox(height: compact ? 6 : 10),
-                                      SliderTheme(
-                                        data: SliderTheme.of(context).copyWith(
-                                          trackHeight: 3.5,
-                                          activeTrackColor: ink,
-                                          inactiveTrackColor: Colors.white24,
-                                          thumbColor: ink,
-                                          overlayShape:
-                                              SliderComponentShape.noOverlay,
+                                          ],
                                         ),
-                                        child: Slider(
-                                          value: (_seekDrag ?? player.progress)
-                                              .clamp(0.0, 1.0)
-                                              .toDouble(),
-                                          onChangeStart: song == null
-                                              ? null
-                                              : (value) => setState(
-                                                  () => _seekDrag = value,
+                                        SizedBox(height: compact ? 6 : 10),
+                                        PlayerTransportControls(
+                                          playing: player.isPlaying,
+                                          compact: false,
+                                          tallerButtons: true,
+                                          lyricsProgress: 0,
+                                          accent: const Color(0xFFF0EBE9),
+                                          onAccent: Colors.black,
+                                          onPrevious: song == null
+                                              ? () {}
+                                              : () => _command(
+                                                  () => ref
+                                                      .read(
+                                                        playerProvider.notifier,
+                                                      )
+                                                      .previous(),
                                                 ),
-                                          onChanged: song == null
-                                              ? null
-                                              : (value) => setState(
-                                                  () => _seekDrag = value,
+                                          onNext: song == null
+                                              ? () {}
+                                              : () => _command(
+                                                  () => ref
+                                                      .read(
+                                                        playerProvider.notifier,
+                                                      )
+                                                      .next(),
                                                 ),
-                                          onChangeEnd: song == null
-                                              ? null
-                                              : (value) {
+                                          onPlayPause: song == null
+                                              ? () {}
+                                              : () => _command(
+                                                  () => ref
+                                                      .read(
+                                                        playerProvider.notifier,
+                                                      )
+                                                      .togglePlayPause(),
+                                                ),
+                                        ),
+                                        SizedBox(height: compact ? 4 : 10),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            IconButton(
+                                              tooltip: lokalText('Shuffle'),
+                                              onPressed: () => _command(
+                                                () => ref
+                                                    .read(
+                                                      playerProvider.notifier,
+                                                    )
+                                                    .toggleShuffle(),
+                                              ),
+                                              icon: Icon(
+                                                Icons.shuffle_rounded,
+                                                color: player.isShuffle
+                                                    ? ink
+                                                    : secondary,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 24),
+                                            IconButton(
+                                              tooltip: lokalText('Lyrics'),
+                                              onPressed: song == null
+                                                  ? null
+                                                  : () {
+                                                      _closeQueue();
+                                                      setState(
+                                                        () =>
+                                                            _showLyrics = true,
+                                                      );
+                                                    },
+                                              icon: const Icon(
+                                                Icons.lyrics_outlined,
+                                                color: ink,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 24),
+                                            IconButton(
+                                              tooltip: lokalText('Repeat'),
+                                              onPressed: () {
+                                                if (remote.controlsDesktop)
+                                                  ref
+                                                      .read(
+                                                        playerProvider.notifier,
+                                                      )
+                                                      .toggleLoopMode();
+                                              },
+                                              icon: Icon(
+                                                player.loopMode == LoopMode.one
+                                                    ? Icons.repeat_one_rounded
+                                                    : Icons.repeat_rounded,
+                                                color:
+                                                    player.loopMode !=
+                                                        LoopMode.off
+                                                    ? ink
+                                                    : secondary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        SizedBox(height: compact ? 3 : 8),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.volume_down_rounded,
+                                              color: secondary,
+                                            ),
+                                            Expanded(
+                                              child: Slider(
+                                                value:
+                                                    (_volumeDrag ??
+                                                            remote
+                                                                .snapshot
+                                                                ?.volume ??
+                                                            0.8)
+                                                        .clamp(0.0, 1.0)
+                                                        .toDouble(),
+                                                activeColor: ink,
+                                                inactiveColor: Colors.white24,
+                                                onChanged: (v) => setState(
+                                                  () => _volumeDrag = v,
+                                                ),
+                                                onChangeEnd: (v) {
                                                   setState(
-                                                    () => _seekDrag = null,
+                                                    () => _volumeDrag = null,
                                                   );
                                                   _command(
                                                     () => ref
@@ -560,190 +767,20 @@ class _DesktopRemoteFullPlayerState
                                                           playerProvider
                                                               .notifier,
                                                         )
-                                                        .seek(
-                                                          Duration(
-                                                            milliseconds:
-                                                                (value *
-                                                                        player
-                                                                            .duration
-                                                                            .inMilliseconds)
-                                                                    .round(),
-                                                          ),
-                                                        ),
+                                                        .setVolume(v),
                                                   );
                                                 },
+                                              ),
+                                            ),
+                                            const Icon(
+                                              Icons.volume_up_rounded,
+                                              color: secondary,
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            _clock(
-                                              _seekDrag == null
-                                                  ? player.position
-                                                  : Duration(
-                                                      milliseconds:
-                                                          (_seekDrag! *
-                                                                  player
-                                                                      .duration
-                                                                      .inMilliseconds)
-                                                              .round(),
-                                                    ),
-                                            ),
-                                            style: const TextStyle(
-                                              color: secondary,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          Text(
-                                            _clock(player.duration),
-                                            style: const TextStyle(
-                                              color: secondary,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      SizedBox(height: compact ? 6 : 10),
-                                      PlayerTransportControls(
-                                        playing: player.isPlaying,
-                                        compact: false,
-                                        tallerButtons: true,
-                                        lyricsProgress: 0,
-                                        accent: const Color(0xFFF0EBE9),
-                                        onAccent: Colors.black,
-                                        onPrevious: song == null
-                                            ? () {}
-                                            : () => _command(
-                                                () => ref
-                                                    .read(
-                                                      playerProvider.notifier,
-                                                    )
-                                                    .previous(),
-                                              ),
-                                        onNext: song == null
-                                            ? () {}
-                                            : () => _command(
-                                                () => ref
-                                                    .read(
-                                                      playerProvider.notifier,
-                                                    )
-                                                    .next(),
-                                              ),
-                                        onPlayPause: song == null
-                                            ? () {}
-                                            : () => _command(
-                                                () => ref
-                                                    .read(
-                                                      playerProvider.notifier,
-                                                    )
-                                                    .togglePlayPause(),
-                                              ),
-                                      ),
-                                      SizedBox(height: compact ? 4 : 10),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          IconButton(
-                                            tooltip: lokalText('Shuffle'),
-                                            onPressed: () => _command(
-                                              () => ref
-                                                  .read(playerProvider.notifier)
-                                                  .toggleShuffle(),
-                                            ),
-                                            icon: Icon(
-                                              Icons.shuffle_rounded,
-                                              color: player.isShuffle
-                                                  ? ink
-                                                  : secondary,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 24),
-                                          IconButton(
-                                            tooltip: lokalText('Lyrics'),
-                                            onPressed: song == null
-                                                ? null
-                                                : () {
-                                                    _closeQueue();
-                                                    setState(
-                                                      () => _showLyrics = true,
-                                                    );
-                                                  },
-                                            icon: const Icon(
-                                              Icons.lyrics_outlined,
-                                              color: ink,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 24),
-                                          IconButton(
-                                            tooltip: lokalText('Repeat'),
-                                            onPressed: () {
-                                              if (remote.controlsDesktop)
-                                                ref
-                                                    .read(
-                                                      playerProvider.notifier,
-                                                    )
-                                                    .toggleLoopMode();
-                                            },
-                                            icon: Icon(
-                                              player.loopMode == LoopMode.one
-                                                  ? Icons.repeat_one_rounded
-                                                  : Icons.repeat_rounded,
-                                              color:
-                                                  player.loopMode !=
-                                                      LoopMode.off
-                                                  ? ink
-                                                  : secondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      SizedBox(height: compact ? 3 : 8),
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.volume_down_rounded,
-                                            color: secondary,
-                                          ),
-                                          Expanded(
-                                            child: Slider(
-                                              value:
-                                                  (_volumeDrag ??
-                                                          remote
-                                                              .snapshot
-                                                              ?.volume ??
-                                                          0.8)
-                                                      .clamp(0.0, 1.0)
-                                                      .toDouble(),
-                                              activeColor: ink,
-                                              inactiveColor: Colors.white24,
-                                              onChanged: (v) => setState(
-                                                () => _volumeDrag = v,
-                                              ),
-                                              onChangeEnd: (v) {
-                                                setState(
-                                                  () => _volumeDrag = null,
-                                                );
-                                                _command(
-                                                  () => ref
-                                                      .read(
-                                                        playerProvider.notifier,
-                                                      )
-                                                      .setVolume(v),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                          const Icon(
-                                            Icons.volume_up_rounded,
-                                            color: secondary,
-                                          ),
-                                        ],
-                                      ),
-                                      SizedBox(height: compact ? 2 : 8),
-                                    ],
+                                        SizedBox(height: compact ? 2 : 8),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),

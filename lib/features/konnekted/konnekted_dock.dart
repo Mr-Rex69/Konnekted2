@@ -1,3 +1,5 @@
+import 'package:flick/core/utils/lokal_layout.dart';
+
 import 'dart:async';
 
 import 'package:flick/features/player/widgets/motion_art_widget.dart';
@@ -964,6 +966,18 @@ class KonnektedMiniPlayer extends ConsumerWidget {
           progress: Consumer(
             builder: (context, ref, _) {
               final value = ref.watch(progressProvider);
+              if (LokalLayout.isTablet(context)) {
+                final duration = ref.watch(durationProvider);
+                return _TabletSeekBar(
+                  key: ValueKey(song.id),
+                  value: value.isFinite ? value.clamp(0.0, 1.0) : 0,
+                  duration: duration,
+                  onSeek: (position) => _transport(
+                    context,
+                    () => ref.read(playerProvider.notifier).seek(position),
+                  ),
+                );
+              }
               return LinearProgressIndicator(
                 value: value.isFinite ? value.clamp(0.0, 1.0) : 0,
                 minHeight: 2,
@@ -1007,6 +1021,53 @@ class KonnektedMiniPlayer extends ConsumerWidget {
       }
     }
   }
+}
+
+/// Keep the thumb under the finger while engine position updates arrive.
+/// Commit one seek on release rather than flooding native playback on a drag.
+class _TabletSeekBar extends StatefulWidget {
+  const _TabletSeekBar({
+    super.key,
+    required this.value,
+    required this.duration,
+    required this.onSeek,
+  });
+  final double value;
+  final Duration duration;
+  final Future<void> Function(Duration) onSeek;
+
+  @override
+  State<_TabletSeekBar> createState() => _TabletSeekBarState();
+}
+
+class _TabletSeekBarState extends State<_TabletSeekBar> {
+  double? _drag;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 20,
+    child: Slider(
+      value: _drag ?? widget.value,
+      onChanged: widget.duration.inMilliseconds <= 0
+          ? null
+          : (value) => setState(() => _drag = value),
+      onChangeEnd: widget.duration.inMilliseconds <= 0
+          ? null
+          : (value) async {
+              await widget.onSeek(
+                Duration(
+                  milliseconds: (widget.duration.inMilliseconds * value)
+                      .round(),
+                ),
+              );
+              if (mounted) setState(() => _drag = null);
+            },
+      semanticFormatterCallback: (value) {
+        final seconds = (widget.duration.inSeconds * value).round();
+        return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+      },
+    ),
+  );
 }
 
 class KonnektedMiniPlayerContent extends StatelessWidget {
@@ -1061,7 +1122,130 @@ class KonnektedMiniPlayerContent extends StatelessWidget {
     );
   }
 
+  Widget _tabletBody(BuildContext context) {
+    final t = context.lokal;
+    return Row(
+      children: [
+        Expanded(
+          flex: 4,
+          child: Semantics(
+            button: true,
+            label: lokalText(
+              'Open player for {arg0} by {arg1}. Lyrics and playback controls.',
+              args: {'arg0': song.title, 'arg1': song.artist},
+            ),
+            child: InkWell(
+              onTap: onOpen,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Hero(
+                      tag: heroTag,
+                      createRectTween: (begin, end) =>
+                          LokalArtworkRectTween(begin: begin, end: end),
+                      flightShuttleBuilder: _flight,
+                      child: SizedBox.square(
+                        key: artworkKey,
+                        dimension: 56,
+                        child: _MiniMotionArtwork(
+                          song: song,
+                          playing: isPlaying,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: t.text,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: t.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 24),
+        Expanded(
+          flex: 5,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: lokalText('Previous'),
+                      onPressed: onPrevious,
+                      icon: const Icon(Icons.skip_previous_rounded),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      tooltip: isPlaying ? l10n.pause : l10n.play,
+                      onPressed: onPlayPause,
+                      icon: Icon(
+                        isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: lokalText('Next'),
+                      onPressed: onNext,
+                      icon: const Icon(Icons.skip_next_rounded),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  child: progress,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 24),
+        IconButton(
+          tooltip: lokalText('Queue'),
+          onPressed: onQueue,
+          icon: const Icon(Icons.queue_music_rounded),
+        ),
+        IconButton(
+          tooltip: lokalText('Now playing'),
+          onPressed: onOpen,
+          icon: const Icon(Icons.open_in_full_rounded, size: 20),
+        ),
+      ],
+    );
+  }
+
   Widget _body(BuildContext context) {
+    if (LokalLayout.isTablet(context)) return _tabletBody(context);
     final collapse = KonnektedMiniPlayerScope.progressOf(context);
     // BitChord keeps both title and artist in the narrow accessory. Lokal
     // previously deleted the artist and made the compact player look empty.

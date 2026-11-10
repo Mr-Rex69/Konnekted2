@@ -1,3 +1,6 @@
+import 'package:flick/features/player/widgets/lokal_player_columns.dart';
+import 'package:flick/core/utils/lokal_layout.dart';
+
 import 'desktop_remote_full_player.dart';
 
 import 'package:flick/providers/lokal_remote_provider.dart';
@@ -416,9 +419,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   @override
   void dispose() {
     if (_videoFullscreen) {
-      // Restore Lokal's default portrait orientation on every exit path.
+      // Restore the device's default rotation policy on every exit path.
       unawaited(
-        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+        SystemChrome.setPreferredOrientations(
+          LokalLayout.defaultOrientations(),
+        ),
       );
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
@@ -937,7 +942,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _refreshFavorite();
     if (wasFullscreen) {
       unawaited(
-        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+        SystemChrome.setPreferredOrientations(
+          LokalLayout.defaultOrientations(),
+        ),
       );
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
@@ -1086,7 +1093,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 DeviceOrientation.landscapeLeft,
                 DeviceOrientation.landscapeRight,
               ]
-            : [DeviceOrientation.portraitUp],
+            : LokalLayout.defaultOrientations(),
       ),
     );
     unawaited(
@@ -1506,6 +1513,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   ),
                                   child: LayoutBuilder(
                                     builder: (context, c) {
+                                      if (LokalLayout.isTablet(context) &&
+                                          c.maxWidth >= 720 &&
+                                          c.maxWidth > c.maxHeight) {
+                                        return AnimatedBuilder(
+                                          animation: _lyricsProgress,
+                                          builder: (context, _) =>
+                                              _tabletPlayerChrome(
+                                                song,
+                                                isCasting,
+                                                diagnostics,
+                                                fullCover: fullCover,
+                                                compact: c.maxHeight < 600,
+                                              ),
+                                        );
+                                      }
                                       final compact = c.maxHeight < 640;
                                       return AnimatedBuilder(
                                         animation: _lyricsProgress,
@@ -2045,6 +2067,52 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   'UNKNOWN')
             : 'UNKNOWN',
     };
+  }
+
+  /// Landscape tablets give artwork and the transport their own columns.
+  /// The existing panel still owns lyrics, queue, carousel and their gestures.
+  Widget _tabletPlayerChrome(
+    Song song,
+    bool isCasting,
+    AudioOutputDiagnostics? diagnostics, {
+    required bool fullCover,
+    required bool compact,
+  }) {
+    return LokalPlayerColumns(
+      header: _spaceHidden(_topBar(song, isCasting, diagnostics)),
+      stage: SizedBox.expand(
+        key: _spacePanelKey,
+        child: _panelStage(song, compact, fullCover: fullCover),
+      ),
+      controls: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _spaceHidden(
+            Text(
+              lokalText('Now playing').toUpperCase(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                letterSpacing: 2,
+                color: FullPlayerVisuals.secondaryText,
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          CompositedTransformTarget(
+            link: _seekbarSubtitleLink,
+            child: _spaceHidden(_seekRow()),
+          ),
+          const SizedBox(height: 28),
+          _spaceHidden(_transport(compact, _lyricsProgress.value)),
+          const SizedBox(height: 28),
+          _spaceHidden(_optionsStrip()),
+          const SizedBox(height: 24),
+          _spaceHidden(_chipRow()),
+        ],
+      ),
+    );
   }
 
   Widget _panelStage(Song song, bool compact, {bool fullCover = false}) {
