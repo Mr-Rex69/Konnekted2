@@ -19,9 +19,11 @@ import 'package:flick/features/konnekted/library/lokal_detail_scroll_chrome.dart
 import 'package:flick/features/konnekted/library/lokal_genres.dart';
 import 'package:flick/features/konnekted/library/lokal_music_detail_page.dart';
 import 'package:flick/features/konnekted/library/lokal_online_catalogue.dart';
+import 'package:flick/features/discovery/lastfm_discovery.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/player_provider.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/queue_pre_resolver.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +73,44 @@ class _PendingPlayPlayer extends _Player {
     return pending!.future;
   }
 }
+
+class _AlbumQueuePlayer extends _Player {
+  final queued = <Song>[];
+  final played = <List<Song>>[];
+  final starts = <int?>[];
+
+  @override
+  Future<int> addToQueue(Song song) async {
+    queued.add(song);
+    return queued.length - 1;
+  }
+
+  @override
+  Future<void> play(Song song, {
+    List<Song>? playlist, int? playlistIndex, PlaybackContext? context,
+  }) async {
+    played.add(List.of(playlist ?? [song]));
+    starts.add(playlistIndex);
+  }
+}
+
+class _AlbumCatalogue extends LokalOnlineCatalogue {
+  final result = Completer<LokalCataloguePage>();
+
+  @override
+  Future<LokalCataloguePage> album(String title, String artist, {
+    LokalCatalogueAlbum? release, bool refresh = false,
+  }) => result.future;
+}
+
+const _fullAlbum = LokalCataloguePage(
+  completeAlbum: true,
+  tracks: [
+    LokalCatalogueTrack(LokalDiscoveryTrack(title: 'First', artist: 'Artist', album: 'Album'), number: 1),
+    LokalCatalogueTrack(LokalDiscoveryTrack(title: 'Song', artist: 'Artist', album: 'Album'), number: 2),
+    LokalCatalogueTrack(LokalDiscoveryTrack(title: 'Last', artist: 'Artist', album: 'Album'), number: 3),
+  ],
+);
 
 class _PlayerService extends Fake implements PlayerService {
   @override
@@ -133,14 +173,108 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     AppConstants.setAnimationsEnabled(true);
+    QueuePreResolver.sharedForTesting = QueuePreResolver();
   });
-  tearDown(() => AppConstants.setAnimationsEnabled(true));
+  tearDown(() {
+    AppConstants.setAnimationsEnabled(true);
+    QueuePreResolver.sharedForTesting = null;
+  });
 
   test('album duration requires every displayed row to be owned', () {
     expect(lokalAlbumRunningTime([]), isNull);
     expect(lokalAlbumRunningTime([_song, null]), isNull);
     expect(lokalAlbumRunningTime([_song, _duplicate]), '10 min');
   });
+
+  testWidgets('online Add to queue waits for the full album, preserving its owned song', (tester) async {
+    final catalogue = _AlbumCatalogue();
+    final player = _AlbumQueuePlayer();
+    await tester.pumpWidget(_app(
+      LokalMusicDetailPage.album(title: 'Album', artist: 'Artist', localSongs: const [_song],
+        initialOnline: true, catalogue: catalogue),
+      library: const [_song], playerFactory: () => player,
+    ));
+    await tester.pump();
+    tester.widget<LokalDetailHeader>(find.byType(LokalDetailHeader)).onMore();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Add to queue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(player.queued, isEmpty, reason: 'never queue only the downloaded subset during catalogue loading');
+    catalogue.result.complete(_fullAlbum);
+    await tester.pumpAndSettle();
+    expect(player.queued.map((song) => song.title), ['First', 'Song', 'Last']);
+    expect(player.queued[1], same(_song));
+    expect(player.queued.first.isPending, isTrue);
+    expect(player.queued.last.isPending, isTrue);
+    expect(player.played, isEmpty, reason: 'adding an album does not replace current playback');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 30));
+  }, variant: TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
+
+  testWidgets('online album Play waits for all rows and starts at the beginning', (tester) async {
+    final catalogue = _AlbumCatalogue();
+    final player = _AlbumQueuePlayer();
+    await tester.pumpWidget(_app(
+      LokalMusicDetailPage.album(title: 'Album', artist: 'Artist', localSongs: const [_song],
+        initialOnline: true, catalogue: catalogue),
+      library: const [_song], playerFactory: () => player,
+    ));
+    await tester.pump();
+    await tester.tap(find.byType(FilledButton).first);
+    await tester.pump();
+    expect(player.played, isEmpty);
+    catalogue.result.complete(_fullAlbum);
+    await tester.pumpAndSettle();
+    expect(player.played.single.map((song) => song.title), ['First', 'Song', 'Last']);
+    expect(player.starts.single, 0);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 30));
+  }, variant: TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
+
+  testWidgets('a downloaded row keeps its selected position when the full album arrives', (tester) async {
+    final catalogue = _AlbumCatalogue();
+    final player = _AlbumQueuePlayer();
+    await tester.pumpWidget(_app(
+      LokalMusicDetailPage.album(title: 'Album', artist: 'Artist', localSongs: const [_song],
+        initialOnline: true, catalogue: catalogue),
+      library: const [_song], playerFactory: () => player,
+    ));
+    await tester.pump();
+    await tester.tap(find.text('Song').first);
+    await tester.pump();
+    expect(player.played, isEmpty);
+    catalogue.result.complete(_fullAlbum);
+    await tester.pumpAndSettle();
+    expect(player.played.single.map((song) => song.title), ['First', 'Song', 'Last']);
+    expect(player.played.single[1], same(_song));
+    expect(player.starts.single, 1, reason: 'a local-only row index must not select the wrong online track');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 30));
+  }, variant: TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
+
+  testWidgets('an empty online catalogue cannot silently queue just the local subset', (tester) async {
+    final catalogue = _AlbumCatalogue();
+    final player = _AlbumQueuePlayer();
+    await tester.pumpWidget(_app(
+      LokalMusicDetailPage.album(title: 'Album', artist: 'Artist', localSongs: const [_song],
+        initialOnline: true, catalogue: catalogue),
+      library: const [_song], playerFactory: () => player,
+    ));
+    await tester.pump();
+    tester.widget<LokalDetailHeader>(find.byType(LokalDetailHeader)).onMore();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Add to queue'));
+    await tester.pump();
+    catalogue.result.complete(const LokalCataloguePage());
+    await tester.pumpAndSettle();
+    expect(player.queued, isEmpty);
+    expect(find.text('No online tracks found.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 30));
+  }, variant: TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
 
   testWidgets(
     'platform reduced motion and preference select clamping physics',

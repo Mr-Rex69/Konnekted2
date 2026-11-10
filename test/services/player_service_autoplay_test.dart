@@ -15,6 +15,18 @@ void main() {
   );
 
   group('Repeat All without rebuilding active audio', () {
+    test('ordinary queued playback advances on native and Rust paths independently of queue-end Autoplay', () {
+      for (final rust in [false, true]) {
+        for (final single in [false, true]) {
+          expect(shouldHandleManualCompletion(
+            usingRustBackend: rust,
+            loopMode: LoopMode.off,
+            androidSingleTrackOnly: single,
+          ), isTrue);
+        }
+      }
+    });
+
     test('single-source Android must manually advance logical playlist', () {
       expect(shouldHandleManualCompletion(
         usingRustBackend: false,

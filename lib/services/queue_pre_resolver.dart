@@ -119,6 +119,14 @@ class QueuePreResolver {
 
   static QueuePreResolver? _shared;
 
+  /// Widget tests can register pending rows without starting native playback.
+  @visibleForTesting
+  static set sharedForTesting(QueuePreResolver? resolver) {
+    _shared?.reset();
+    _shared?.detach();
+    _shared = resolver;
+  }
+
   /// The app's pre-resolver, attached to the [PlayerService] on first use.
   static QueuePreResolver get shared =>
       _shared ??= QueuePreResolver()
