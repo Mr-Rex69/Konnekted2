@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/widgets/lokal/lokal_quality.dart';
 import 'package:flick/widgets/lokal/lokal_page_geometry.dart';
 
@@ -234,7 +235,9 @@ class LokalLibraryPage extends StatelessWidget {
               ...slivers,
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 150 + MediaQuery.paddingOf(context).bottom,
+                  height:
+                      (LokalLayout.isTablet(context) ? 32 : 150) +
+                      MediaQuery.paddingOf(context).bottom,
                 ),
               ),
             ],
@@ -258,7 +261,9 @@ class LokalLibraryPage extends StatelessWidget {
             ...slivers,
             SliverToBoxAdapter(
               child: SizedBox(
-                height: 150 + MediaQuery.paddingOf(context).bottom,
+                height:
+                    (LokalLayout.isTablet(context) ? 32 : 150) +
+                    MediaQuery.paddingOf(context).bottom,
               ),
             ),
           ],
@@ -777,7 +782,16 @@ class LokalCardGrid extends StatelessWidget {
     sliver: SliverLayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.crossAxisExtent;
-        final columns = width > 600 ? 4 : (width > 420 ? 3 : 2);
+        final columns = LokalLayout.isTablet(context)
+            ? LokalLayout.columns(
+                width,
+                target:
+                    180 *
+                    MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6),
+              )
+            : width > 420
+            ? 3
+            : 2;
         final cell = (width - 16 * (columns - 1)) / columns;
         final scale = MediaQuery.textScalerOf(context).scale(1);
         return SliverGrid(

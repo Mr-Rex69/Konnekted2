@@ -1,3 +1,4 @@
+import 'package:flick/features/player/widgets/lokal_player_columns.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
@@ -67,7 +68,12 @@ class _Appearance extends LokalAppearanceNotifier {
   );
 }
 
-Widget app(bool fullCover, {VoidCallback? onClose}) => ProviderScope(
+Widget app(
+  bool fullCover, {
+  VoidCallback? onClose,
+  Size size = const Size(430, 940),
+  double textScale = 1,
+}) => ProviderScope(
   overrides: [
     radioPlayerProvider.overrideWith(_Radio.new),
     lokalAppearanceProvider.overrideWith(() => _Appearance(fullCover)),
@@ -75,8 +81,9 @@ Widget app(bool fullCover, {VoidCallback? onClose}) => ProviderScope(
   child: MaterialApp(
     theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
     home: MediaQuery(
-      data: const MediaQueryData(
-        size: Size(430, 940),
+      data: MediaQueryData(
+        size: size,
+        textScaler: TextScaler.linear(textScale),
         disableAnimations: true,
       ),
       child: RadioNowPlayingPage(onClose: onClose ?? () {}),
@@ -122,14 +129,19 @@ void main() {
       routeLabel: 'Pixel 7',
     );
     expect(radioOutputRouteLabel(unnamedWired), 'Wired headphones');
-    expect(radioOutputRouteLabel(const AndroidPlaybackDeviceInfo(
-      hasUsbDac: true,
-      hasAttachedUac2Device: false,
-      manufacturer: 'Google',
-      model: 'Pixel 7',
-      routeType: 'usb',
-      routeLabel: 'Pixel 7',
-    )), 'USB audio');
+    expect(
+      radioOutputRouteLabel(
+        const AndroidPlaybackDeviceInfo(
+          hasUsbDac: true,
+          hasAttachedUac2Device: false,
+          manufacturer: 'Google',
+          model: 'Pixel 7',
+          routeType: 'usb',
+          routeLabel: 'Pixel 7',
+        ),
+      ),
+      'USB audio',
+    );
   });
 
   test('radio album navigation requires exact artist, title and release', () {
@@ -149,16 +161,22 @@ void main() {
       album: 'Wrong Album',
       duration: const Duration(minutes: 3),
     );
-    expect(radioMatchingLocalAlbum(
-      [other, known],
-      title: 'Current Track',
-      artist: 'Artist Name',
-    )?.id, known.id);
-    expect(radioMatchingLocalAlbum(
-      [other],
-      title: 'Current Track',
-      artist: 'Artist Name',
-    ), isNull);
+    expect(
+      radioMatchingLocalAlbum(
+        [other, known],
+        title: 'Current Track',
+        artist: 'Artist Name',
+      )?.id,
+      known.id,
+    );
+    expect(
+      radioMatchingLocalAlbum(
+        [other],
+        title: 'Current Track',
+        artist: 'Artist Name',
+      ),
+      isNull,
+    );
     const matches = [
       GlobalCatalogueSong(
         catalogueId: 'a',
@@ -173,28 +191,67 @@ void main() {
         album: 'Wrong Album',
       ),
     ];
-    expect(radioMatchingCatalogueAlbum(
-      matches,
-      title: 'Current Track',
-      artist: 'Artist Name',
-    )?.album, 'Actual Album');
-    expect(radioMatchingCatalogueAlbum(
-      [matches.first,
-       const GlobalCatalogueSong(
-         catalogueId: 'c',
-         title: 'Current Track',
-         artist: 'Artist Name',
-         album: 'Other Album',
-       )],
-      title: 'Current Track',
-      artist: 'Artist Name',
-    ), isNull);
+    expect(
+      radioMatchingCatalogueAlbum(
+        matches,
+        title: 'Current Track',
+        artist: 'Artist Name',
+      )?.album,
+      'Actual Album',
+    );
+    expect(
+      radioMatchingCatalogueAlbum(
+        [
+          matches.first,
+          const GlobalCatalogueSong(
+            catalogueId: 'c',
+            title: 'Current Track',
+            artist: 'Artist Name',
+            album: 'Other Album',
+          ),
+        ],
+        title: 'Current Track',
+        artist: 'Artist Name',
+      ),
+      isNull,
+    );
   });
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('Radio player has normal transport, metadata links and menu',
-      (tester) async {
+  testWidgets('radio uses artwork and control columns on landscape tablets', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final size in [const Size(1024, 768), const Size(1366, 1024)]) {
+      tester.view.physicalSize = size;
+      for (final fullCover in [false, true]) {
+        for (final scale in [1.0, 2.0]) {
+          await tester.pumpWidget(app(fullCover, size: size, textScale: scale));
+          await tester.pumpAndSettle();
+          expect(find.byType(LokalPlayerColumns), findsOneWidget);
+          expect(find.byType(PlayerTransportControls), findsOneWidget);
+          final columns = tester.widget<LokalPlayerColumns>(
+            find.byType(LokalPlayerColumns),
+          );
+          expect(
+            tester.getRect(find.byWidget(columns.stage)).right,
+            lessThan(tester.getRect(find.byWidget(columns.controls)).left),
+          );
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: '$size full=$fullCover text=$scale',
+          );
+        }
+      }
+    }
+  });
+
+  testWidgets('Radio player has normal transport, metadata links and menu', (
+    tester,
+  ) async {
     tester.view
       ..physicalSize = const Size(430, 940)
       ..devicePixelRatio = 1;
@@ -209,14 +266,19 @@ void main() {
     expect(find.text('AAC · 320 kbps'), findsOneWidget);
     expect(find.byType(PlayerTransportControls), findsOneWidget);
     expect(find.byType(LokalPullToDismiss), findsOneWidget);
-    expect(find.byKey(const ValueKey('radio-player-song-title')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('radio-player-song-artist')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('radio-player-song-title')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('radio-player-song-artist')),
+      findsOneWidget,
+    );
     expect(find.byIcon(Icons.north_east_rounded), findsNothing);
 
     // Radio shows the actual Android route, not a hard-coded placeholder.
-    final deviceInfo = AndroidAudioDeviceService.instance.mediaOutputInfoNotifier;
+    final deviceInfo =
+        AndroidAudioDeviceService.instance.mediaOutputInfoNotifier;
     final previousRoute = deviceInfo.value;
     addTearDown(() => deviceInfo.value = previousRoute);
     deviceInfo.value = const AndroidPlaybackDeviceInfo(
@@ -243,8 +305,9 @@ void main() {
     expect(find.text('Copy station URL'), findsOneWidget);
   });
 
-  testWidgets('Full Cover uses the same appearance flag and artwork anchor',
-      (tester) async {
+  testWidgets('Full Cover uses the same appearance flag and artwork anchor', (
+    tester,
+  ) async {
     tester.view
       ..physicalSize = const Size(430, 940)
       ..devicePixelRatio = 1;
@@ -253,15 +316,16 @@ void main() {
 
     await tester.pumpWidget(app(true));
     await tester.pump();
-    final anchors = tester.widgetList<LokalPlayerArtwork>(
-        find.byType(LokalPlayerArtwork)).toList();
+    final anchors = tester
+        .widgetList<LokalPlayerArtwork>(find.byType(LokalPlayerArtwork))
+        .toList();
     expect(anchors, isNotEmpty);
     expect(anchors.any((anchor) => anchor.expandedRadius == 0), isTrue);
     // Radio now uses the same partial banner and blurred ambient surface as
     // the ordinary Fullcover player, not a stretched full-screen image.
-    final poster = tester.widgetList<FullBleedArtworkFrame>(
-      find.byType(FullBleedArtworkFrame),
-    ).toList();
+    final poster = tester
+        .widgetList<FullBleedArtworkFrame>(find.byType(FullBleedArtworkFrame))
+        .toList();
     expect(poster, isNotEmpty);
     expect(poster.every((frame) => !frame.canvas), isTrue);
     expect(find.byType(ArtworkMeshBlurBackdrop), findsOneWidget);
@@ -275,8 +339,9 @@ void main() {
     expect(find.byKey(const ValueKey('radio-player-queue')), findsOneWidget);
   });
 
-  testWidgets('Station queue opens in place and Back returns to player',
-      (tester) async {
+  testWidgets('Station queue opens in place and Back returns to player', (
+    tester,
+  ) async {
     tester.view
       ..physicalSize = const Size(430, 940)
       ..devicePixelRatio = 1;

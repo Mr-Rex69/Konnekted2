@@ -1,11 +1,14 @@
+import 'package:flick/core/utils/lokal_layout.dart';
+import 'package:flick/features/queue/screens/queue_screen.dart';
+
+import 'konnekted_tablet_workspace.dart';
+
 import 'package:flick/services/artwork_gate.dart';
 import 'package:flick/features/appearance/lokal_performance_advisor.dart';
-import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'dart:async';
 
-import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/navigation/root_navigator.dart';
 import 'package:flick/core/navigation/lokal_navigation_switcher.dart';
 import 'package:flick/core/navigation/lokal_page_motion.dart';
@@ -91,6 +94,13 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   final _dockCollapsed = ValueNotifier(false);
   final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
+  final _route = ValueNotifier<String?>(null);
+  final _queueVisible = ValueNotifier(true);
+  late final _routeObserver = _WorkspaceRouteObserver((name) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _route.value = name == '/' ? null : name ?? '@detail';
+    });
+  });
   DateTime? _lastBack;
   bool _nestedSystemBackHandled = false;
 
@@ -123,9 +133,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       // before Library in KonnektedTab.
       _tabMotionDirection =
           KonnektedTab.dockOrder.indexOf(tab) >
-                  KonnektedTab.dockOrder.indexOf(_tab.value)
-              ? 1
-              : -1;
+              KonnektedTab.dockOrder.indexOf(_tab.value)
+          ? 1
+          : -1;
       _tab.value = tab;
     }
     _dockScroll.reset();
@@ -153,6 +163,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       );
     }
 
+    if (LokalLayout.usesSidebar(MediaQuery.sizeOf(context))) return false;
     if (n is ScrollEndNotification ||
         (n is UserScrollNotification && n.direction == ScrollDirection.idle)) {
       _dockScroll.reset();
@@ -165,10 +176,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       delta = n.overscroll;
     }
     if (delta != null) {
-      final next = _dockScroll.push(
-        delta,
-        collapsed: _dockCollapsed.value,
-      );
+      final next = _dockScroll.push(delta, collapsed: _dockCollapsed.value);
       if (next != null) _dockCollapsed.value = next;
     }
     return false;
@@ -204,7 +212,12 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   void _navigate(KonnektedDestination destination) {
     LokalPerformanceAdvisor.noteNavigation();
     if (destination == KonnektedDestination.queue) {
-      unawaited(NavigationHelper.navigateToQueue<void>(context, onOpenPlayer: _openPlayer));
+      unawaited(
+        NavigationHelper.navigateToQueue<void>(
+          context,
+          onOpenPlayer: _openPlayer,
+        ),
+      );
       return;
     }
     final navigator = nestedNavigatorKey.currentState;
@@ -322,7 +335,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       if (!mounted) return;
       LokalToast.show(
         context,
-        lokalText('Couldn’t play this song. Check that its file or server is available.'),
+        lokalText(
+          'Couldn’t play this song. Check that its file or server is available.',
+        ),
       );
     }
   }
@@ -362,10 +377,23 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     }
   }
 
-  Widget _runtime(Widget child) => widget.runtimeBuilder?.call(child) ??
+  void _queueFromMiniPlayer() {
+    final size = MediaQuery.sizeOf(context);
+    if (LokalLayout.usesSidebar(size) &&
+        size.width >= 1180 &&
+        ref.read(currentSongProvider) != null &&
+        ref.read(radioPlayerProvider).station == null) {
+      _queueVisible.value = !_queueVisible.value;
+    } else {
+      _navigate(KonnektedDestination.queue);
+    }
+  }
+
+  Widget _runtime(Widget child) =>
+      widget.runtimeBuilder?.call(child) ??
       KonnektedRuntime(
         onOpenPlayer: _openPlayer,
-        onOpenQueue: () => _navigate(KonnektedDestination.queue),
+        onOpenQueue: _queueFromMiniPlayer,
         child: child,
       );
 
@@ -373,6 +401,8 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   void dispose() {
     _pull?.cancel();
     disposeArtworkGate();
+    _route.dispose();
+    _queueVisible.dispose();
     _tab.dispose();
     _searchFocusRequests.dispose();
     _dockCollapsed.dispose();
@@ -410,111 +440,128 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
               // refract; pages get its height as bottom padding instead.
               child: Consumer(
                 builder: (context, ref, _) {
-                  final hasRadio = ref.watch(radioPlayerProvider.select(
-                    (state) => state.station != null,
-                  ));
-                  final hasSong = hasRadio || ref.watch(
-                    currentSongProvider.select((song) => song != null),
+                  final hasRadio = ref.watch(
+                    radioPlayerProvider.select(
+                      (state) => state.station != null,
+                    ),
                   );
-                  final media = MediaQuery.of(context);
-                  return Stack(
-                    children: [
-                      MediaQuery(
-                        data: media.copyWith(
-                          padding: media.padding.copyWith(
-                            bottom: KonnektedDock.reservedHeight(
-                              hasMiniPlayer: hasSong,
-                              systemInset: media.padding.bottom,
-                            ),
-                          ),
-                        ),
-                        child: NotificationListener<ScrollNotification>(
-                          onNotification: _onScroll,
-                          child: RepaintBoundary(
-                            child: NavigatorPopHandler<void>(
-                              onPopWithResult: (_) => _popNestedRoute(),
-                              child: Navigator(
-                                key: nestedNavigatorKey,
+                  final hasSong =
+                      hasRadio ||
+                      ref.watch(
+                        currentSongProvider.select((song) => song != null),
+                      );
+                  final miniPlayer = hasRadio
+                      ? KonnektedRadioMiniPlayer(
+                          key: _miniPlayerKey,
+                          artworkKey: _miniArtworkKey,
+                          onOpen: () => unawaited(_openPlayer()),
+                          onQueue: () {
+                            ref
+                                .read(radioPlayerProvider.notifier)
+                                .requestStationQueue();
+                            unawaited(_openPlayer());
+                          },
+                          onPullUpStart: _pullPlayerStart,
+                          onPullUpUpdate: (dy) => _pull?.dragBy(dy),
+                          onPullUpEnd: _pullPlayerEnd,
+                        )
+                      : KonnektedMiniPlayer(
+                          key: _miniPlayerKey,
+                          artworkKey: _miniArtworkKey,
+                          onOpen: _openPlayer,
+                          onPullUpStart: _pullPlayerStart,
+                          onPullUpUpdate: (dy) => _pull?.dragBy(dy),
+                          onPullUpEnd: _pullPlayerEnd,
+                          onQueue: _queueFromMiniPlayer,
+                        );
+                  return ListenableBuilder(
+                    listenable: Listenable.merge([
+                      _tab,
+                      _dockCollapsed,
+                      _route,
+                      _queueVisible,
+                    ]),
+                    builder: (context, _) => KonnektedTabletWorkspace(
+                      selected: _tab.value,
+                      route: _route.value,
+                      onSelect: _select,
+                      onNavigate: (destination) {
+                        // Sidebar links are peers, rather than an ever-growing
+                        // stack of Library pages. Detail pushes still use Back.
+                        nestedNavigatorKey.currentState?.popUntil(
+                          (route) => route.isFirst,
+                        );
+                        _navigate(destination);
+                      },
+                      hasPlayer: hasSong,
+                      supportsQueuePanel: !hasRadio,
+                      player: miniPlayer,
+                      queueOpen: !hasRadio && _queueVisible.value,
+                      onToggleQueue: () =>
+                          _queueVisible.value = !_queueVisible.value,
+                      queue: QueueList(
+                        embedded: true,
+                        themed: true,
+                        onOpenPlayer: _openPlayer,
+                      ),
+                      mobileDock: KonnektedDock(
+                        selected: _tab.value,
+                        onSelect: _select,
+                        hasMiniPlayer: hasSong,
+                        collapsed: _dockCollapsed.value,
+                        onExpand: () => _dockCollapsed.value = false,
+                        miniPlayer: miniPlayer,
+                      ),
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _onScroll,
+                        child: RepaintBoundary(
+                          child: NavigatorPopHandler<void>(
+                            onPopWithResult: (_) => _popNestedRoute(),
+                            child: Navigator(
+                              key: nestedNavigatorKey,
+                              observers: [_routeObserver],
                               onGenerateRoute: (_) => MaterialPageRoute<void>(
                                 settings: const RouteSettings(name: '/'),
                                 builder: (_) => PageStorage(
                                   bucket: _storage,
                                   child: ValueListenableBuilder<KonnektedTab>(
                                     valueListenable: _tab,
-                                    builder: (_, tab, _) => LokalNavigationSwitcher(
-                                      direction: _tabMotionDirection,
-                                      // Preserve the directional, edge-to-edge
-                                      // screen slide when changing root tabs.
-                                      // Recently visited pages stay cached offstage
-                                      // without sacrificing the transition.
-                                      retainVisitedTabs: true,
-                                      child: KeyedSubtree(
-                                        key: ValueKey(tab),
-                                        child: switch (tab) {
-                                          KonnektedTab.listen => KonnektedHome(
-                                            onNavigate: _navigate,
-                                            onPlay: _play,
+                                    builder: (_, tab, _) =>
+                                        LokalNavigationSwitcher(
+                                          direction: _tabMotionDirection,
+                                          retainVisitedTabs: true,
+                                          child: KeyedSubtree(
+                                            key: ValueKey(tab),
+                                            child: switch (tab) {
+                                              KonnektedTab.listen =>
+                                                KonnektedHome(
+                                                  onNavigate: _navigate,
+                                                  onPlay: _play,
+                                                ),
+                                              KonnektedTab.explore =>
+                                                SearchScreen(
+                                                  footerFocusRequests:
+                                                      _searchFocusRequests,
+                                                ),
+                                              KonnektedTab.library =>
+                                                KonnektedLibrary(
+                                                  onNavigate: _navigate,
+                                                ),
+                                              KonnektedTab.settings =>
+                                                KonnektedYou(
+                                                  onNavigate: _navigate,
+                                                ),
+                                            },
                                           ),
-                                          KonnektedTab.explore => SearchScreen(
-                                            footerFocusRequests: _searchFocusRequests,
-                                          ),
-                                          KonnektedTab.library => KonnektedLibrary(
-                                            onNavigate: _navigate,
-                                          ),
-                                          KonnektedTab.settings => KonnektedYou(
-                                            onNavigate: _navigate,
-                                          ),
-                                        },
-                                      ),
-                                    ),
+                                        ),
+                                  ),
                                 ),
                               ),
                             ),
-                            ),
                           ),
                         ),
                       ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: ListenableBuilder(
-                          listenable: Listenable.merge([_tab, _dockCollapsed]),
-                          builder: (_, _) => KonnektedDock(
-                            selected: _tab.value,
-                            onSelect: _select,
-                            hasMiniPlayer: hasSong,
-                            collapsed: _dockCollapsed.value,
-                            onExpand: () => _dockCollapsed.value = false,
-                            miniPlayer: hasRadio
-                                ? KonnektedRadioMiniPlayer(
-                                    key: _miniPlayerKey,
-                                    artworkKey: _miniArtworkKey,
-                                    onOpen: () => unawaited(_openPlayer()),
-                                    onQueue: () {
-                                      ref.read(radioPlayerProvider.notifier)
-                                          .requestStationQueue();
-                                      unawaited(_openPlayer());
-                                    },
-                                    onPullUpStart: _pullPlayerStart,
-                                    onPullUpUpdate: (dy) => _pull?.dragBy(dy),
-                                    onPullUpEnd: _pullPlayerEnd,
-                                  )
-                                : KonnektedMiniPlayer(
-                              key: _miniPlayerKey,
-                              artworkKey: _miniArtworkKey,
-                              onOpen: _openPlayer,
-                              onPullUpStart: _pullPlayerStart,
-                              onPullUpUpdate: (dy) => _pull?.dragBy(dy),
-                              onPullUpEnd: _pullPlayerEnd,
-                              onQueue: () =>
-                                  _navigate(KonnektedDestination.queue),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   );
                 },
               ),
@@ -524,4 +571,18 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       ),
     );
   }
+}
+
+class _WorkspaceRouteObserver extends NavigatorObserver {
+  _WorkspaceRouteObserver(this.onChanged);
+  final ValueChanged<String?> onChanged;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onChanged(route.settings.name);
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onChanged(previousRoute?.settings.name);
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      onChanged(newRoute?.settings.name);
 }

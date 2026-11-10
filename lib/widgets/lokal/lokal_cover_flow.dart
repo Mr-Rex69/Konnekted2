@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/core/theme/lokal_performance_scope.dart';
 import 'package:flick/l10n/l10n.dart';
 
@@ -355,11 +356,12 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
     final coverSong = album.coverSong;
     return LayoutBuilder(
       builder: (context, constraints) {
+        final tablet = LokalLayout.isTablet(context);
         final size = math.min(
-          250.0,
+          tablet ? 380.0 : 250.0,
           math.min(
-            constraints.maxWidth * .60,
-            MediaQuery.sizeOf(context).height * .30,
+            constraints.maxWidth * (tablet ? .46 : .60),
+            MediaQuery.sizeOf(context).height * (tablet ? .46 : .30),
           ),
         );
         _albumWidth = size * .55;
@@ -412,38 +414,64 @@ class _LokalCoverFlowState extends State<LokalCoverFlow>
                 ),
               ),
             ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOutCubic,
-              child: Column(
-                key: ValueKey(album.key),
-                children: [
-                  Text(
-                    coverSong?.title ?? album.albumName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: LokalTheme.sans,
-                      fontSize: context.responsiveText(17),
-                      fontWeight: FontWeight.w600,
-                      color: t.text,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                child: Column(
+                  key: ValueKey(album.key),
+                  children: [
+                    Text(
+                      coverSong?.title ?? album.albumName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: LokalTheme.sans,
+                        fontSize: context.responsiveText(17),
+                        fontWeight: FontWeight.w600,
+                        color: t.text,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    coverSong?.artist ?? album.albumArtist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: context.responsiveText(14),
-                      color: t.muted,
+                    const SizedBox(height: 2),
+                    Text(
+                      coverSong?.artist ?? album.albumArtist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: context.responsiveText(14),
+                        color: t.muted,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
+            if (tablet)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: lokalText('Previous'),
+                      onPressed: _index > 0 ? () => goTo(_index - 1) : null,
+                      icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                    ),
+                    Text(
+                      '${_index + 1} / ${widget.albums.length}',
+                      style: LokalTheme.label(t, size: 10),
+                    ),
+                    IconButton(
+                      tooltip: lokalText('Next'),
+                      onPressed: _index < _last ? () => goTo(_index + 1) : null,
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 20),
+                    ),
+                  ],
+                ),
+              ),
           ],
         );
       },

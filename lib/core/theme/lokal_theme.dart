@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+
 import 'package:flick/core/navigation/lokal_page_motion.dart';
+
 import 'lokal_tokens.dart';
 
 /// Builds the app's [ThemeData] from Lokal tokens.
@@ -150,6 +152,7 @@ abstract final class LokalTheme {
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
+        constraints: const BoxConstraints(maxWidth: 640),
         backgroundColor: t.surface,
         surfaceTintColor: Colors.transparent,
         dragHandleColor: t.muted,

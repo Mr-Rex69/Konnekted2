@@ -1,3 +1,5 @@
+import 'lokal_layout.dart';
+
 import 'package:flutter/widgets.dart';
 
 /// Breakpoints for responsive design.
@@ -67,6 +69,8 @@ class Responsive {
   /// Scale a value proportionally based on screen width.
   /// Uses 375 (iPhone SE/8) as the base width.
   static double scale(BuildContext context, double value) {
+    // Tablet type is deliberately sized, rather than zoomed with the window.
+    if (LokalLayout.isTablet(context)) return value * 1.1;
     const baseWidth = 375.0;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final scaleFactor = (screenWidth / baseWidth).clamp(0.85, 1.5);

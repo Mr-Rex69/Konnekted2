@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/data/repositories/song_repository.dart';
@@ -39,7 +40,10 @@ AlbumGroup _album(String name, List<Song> songs) =>
 
 Widget _app(Widget child) => MaterialApp(
   theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-  home: Scaffold(body: Center(child: child)),
+  home: LokalContentScope(
+    tablet: false,
+    child: Scaffold(body: Center(child: child)),
+  ),
 );
 
 /// The transparent Cover Flow stage is the direct AnimatedBuilder child of

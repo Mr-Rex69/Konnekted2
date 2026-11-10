@@ -1,3 +1,5 @@
+import 'package:flick/features/player/widgets/lokal_player_columns.dart';
+
 import '../widgets/android_output_chooser.dart';
 
 import 'package:flutter/services.dart';
@@ -1109,292 +1111,297 @@ class _ClassicFullPlayerScreenState
       children: [
         Positioned.fill(child: background),
         SafeArea(
-          child: Column(
-            children: [
-              const Uac2ErrorNotification(),
-              _buildTopChrome(context, song, albumColor, colorMode, appPrefs),
-              SizedBox(height: context.responsive(8.0, 10.0, 12.0)),
-              Expanded(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ValueListenableBuilder<List<Song>>(
-                        valueListenable: _playerService.upNextNotifier,
-                        builder: (context, upNext, _) {
-                          return ValueListenableBuilder<int>(
-                            valueListenable:
-                                _playerService.currentIndexNotifier,
-                            builder: (context, idx, _) {
-                              final prev = _playerService.peekPrevious;
-                              final next = _playerService.peekNext;
-                              // Precache adjacent artwork for buttery peek
-                              final nextArt = next?.albumArt;
-                              if (nextArt != null) {
-                                precacheImage(
-                                  FileImage(File(nextArt)),
-                                  context,
-                                  onError: (_, __) {},
-                                );
-                              }
-                              return SongStageCarousel(
-                                key: _carouselKey,
-                                currentSong: song,
-                                prevSong: prev,
-                                nextSong: next,
-                                enabled: !_isVinylRotationActive,
-                                onDragStateChanged: (v) =>
-                                    _isCarouselDragging = v,
-                                onNext: _handleCarouselNext,
-                                onPrevious: _handleCarouselPrevious,
-                                stageBuilder: (s) {
-                                  final isCurrent = s.id == song.id;
-                                  return SongStage(
-                                    key: ValueKey('song-stage-${s.id}'),
-                                    song: s,
-                                    lyricsMode: _isLyricsMode,
-                                    visualizationMode: visualizationMode,
-                                    immersiveFullView: false,
-                                    playerScreenMode: _playerScreenMode,
-                                    albumColorMode: colorMode,
-                                    albumColor: albumColor,
-                                    playerService: _playerService,
-                                    lyricsService: _lyricsService,
-                                    positionNotifier: isCurrent
-                                        ? _throttledPositionNotifier
-                                        : _zeroPosition,
-                                    formatDuration: formatDuration,
-                                    onNavigateToArtistDetail: (s) => _navigation
-                                        .openArtistFromSong(context, s),
-                                    onNavigateToArtistName: (s, name) =>
-                                        _navigation.openArtistFromSong(
-                                          context,
-                                          s,
-                                          artistName: name,
-                                        ),
-                                    onNavigateToAlbumDetail: (s) => _navigation
-                                        .openAlbumFromSong(context, s),
-                                    buildFileInfoRow: fileInfoBuilder,
-                                    fileInfoRowVisible: false,
-                                    visualizerAnimationStyle: visStyle,
-                                    visualizerFrequencyMode: visFreq,
-                                    visualizerMovementMode: visMove,
-                                    motionArtEnabled:
-                                        isCurrent &&
-                                        _playerScreenMode !=
-                                            PlayerScreenMode.artworkCard,
-                                    artworkCardArtworkScale:
-                                        appPrefs.artworkCardArtworkScale,
-                                    artworkCardTextScale:
-                                        appPrefs.artworkCardTextScale,
-                                    artworkCardVerticalOffset:
-                                        appPrefs.artworkCardVerticalOffset,
-                                    artworkCardArtworkOffset:
-                                        appPrefs.artworkCardArtworkOffset,
-                                    artworkCardShowTitle:
-                                        appPrefs.artworkCardShowTitle,
-                                    artworkCardShowArtist:
-                                        appPrefs.artworkCardShowArtist,
-                                    artworkCardShowAlbum:
-                                        appPrefs.artworkCardShowAlbum,
-                                    artworkCardShowFileInfo:
-                                        appPrefs.artworkCardShowFileInfo,
-                                    artworkCardShowFrame: false,
-                                    immersiveTextScale:
-                                        appPrefs.immersiveTextScale,
-                                    immersiveVerticalOffset:
-                                        appPrefs.immersiveVerticalOffset,
-                                    immersiveFullViewScale:
-                                        appPrefs.immersiveFullViewScale,
-                                    immersiveShowTitle:
-                                        appPrefs.immersiveShowTitle,
-                                    immersiveShowArtist:
-                                        appPrefs.immersiveShowArtist,
-                                    immersiveShowFileInfo:
-                                        appPrefs.immersiveShowFileInfo,
-                                    onRotationEnabledChanged: (enabled) {
-                                      _isVinylRotationActive = enabled;
-                                    },
-                                    vinylMode: _isVinylMode,
-                                    onVinylChanged: (v) => _isVinylMode = v,
-                                    onToggleLyrics: () =>
-                                        _setLyricsMode(!_isLyricsMode),
-                                    showWaveform: false,
-                                    active: isCurrent,
-                                  );
+          child: LokalPlayerColumns(
+            header: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Uac2ErrorNotification(),
+                _buildTopChrome(context, song, albumColor, colorMode, appPrefs),
+                SizedBox(height: context.responsive(8.0, 10.0, 12.0)),
+              ],
+            ),
+            stage: Stack(
+              children: [
+                Positioned.fill(
+                  child: ValueListenableBuilder<List<Song>>(
+                    valueListenable: _playerService.upNextNotifier,
+                    builder: (context, upNext, _) {
+                      return ValueListenableBuilder<int>(
+                        valueListenable: _playerService.currentIndexNotifier,
+                        builder: (context, idx, _) {
+                          final prev = _playerService.peekPrevious;
+                          final next = _playerService.peekNext;
+                          // Precache adjacent artwork for buttery peek
+                          final nextArt = next?.albumArt;
+                          if (nextArt != null) {
+                            precacheImage(
+                              FileImage(File(nextArt)),
+                              context,
+                              onError: (_, __) {},
+                            );
+                          }
+                          return SongStageCarousel(
+                            key: _carouselKey,
+                            currentSong: song,
+                            prevSong: prev,
+                            nextSong: next,
+                            enabled: !_isVinylRotationActive,
+                            onDragStateChanged: (v) => _isCarouselDragging = v,
+                            onNext: _handleCarouselNext,
+                            onPrevious: _handleCarouselPrevious,
+                            stageBuilder: (s) {
+                              final isCurrent = s.id == song.id;
+                              return SongStage(
+                                key: ValueKey('song-stage-${s.id}'),
+                                song: s,
+                                lyricsMode: _isLyricsMode,
+                                visualizationMode: visualizationMode,
+                                immersiveFullView: false,
+                                playerScreenMode: _playerScreenMode,
+                                albumColorMode: colorMode,
+                                albumColor: albumColor,
+                                playerService: _playerService,
+                                lyricsService: _lyricsService,
+                                positionNotifier: isCurrent
+                                    ? _throttledPositionNotifier
+                                    : _zeroPosition,
+                                formatDuration: formatDuration,
+                                onNavigateToArtistDetail: (s) =>
+                                    _navigation.openArtistFromSong(context, s),
+                                onNavigateToArtistName: (s, name) =>
+                                    _navigation.openArtistFromSong(
+                                      context,
+                                      s,
+                                      artistName: name,
+                                    ),
+                                onNavigateToAlbumDetail: (s) =>
+                                    _navigation.openAlbumFromSong(context, s),
+                                buildFileInfoRow: fileInfoBuilder,
+                                fileInfoRowVisible: false,
+                                visualizerAnimationStyle: visStyle,
+                                visualizerFrequencyMode: visFreq,
+                                visualizerMovementMode: visMove,
+                                motionArtEnabled:
+                                    isCurrent &&
+                                    _playerScreenMode !=
+                                        PlayerScreenMode.artworkCard,
+                                artworkCardArtworkScale:
+                                    appPrefs.artworkCardArtworkScale,
+                                artworkCardTextScale:
+                                    appPrefs.artworkCardTextScale,
+                                artworkCardVerticalOffset:
+                                    appPrefs.artworkCardVerticalOffset,
+                                artworkCardArtworkOffset:
+                                    appPrefs.artworkCardArtworkOffset,
+                                artworkCardShowTitle:
+                                    appPrefs.artworkCardShowTitle,
+                                artworkCardShowArtist:
+                                    appPrefs.artworkCardShowArtist,
+                                artworkCardShowAlbum:
+                                    appPrefs.artworkCardShowAlbum,
+                                artworkCardShowFileInfo:
+                                    appPrefs.artworkCardShowFileInfo,
+                                artworkCardShowFrame: false,
+                                immersiveTextScale: appPrefs.immersiveTextScale,
+                                immersiveVerticalOffset:
+                                    appPrefs.immersiveVerticalOffset,
+                                immersiveFullViewScale:
+                                    appPrefs.immersiveFullViewScale,
+                                immersiveShowTitle: appPrefs.immersiveShowTitle,
+                                immersiveShowArtist:
+                                    appPrefs.immersiveShowArtist,
+                                immersiveShowFileInfo:
+                                    appPrefs.immersiveShowFileInfo,
+                                onRotationEnabledChanged: (enabled) {
+                                  _isVinylRotationActive = enabled;
                                 },
+                                vinylMode: _isVinylMode,
+                                onVinylChanged: (v) => _isVinylMode = v,
+                                onToggleLyrics: () =>
+                                    _setLyricsMode(!_isLyricsMode),
+                                showWaveform: false,
+                                active: isCurrent,
                               );
                             },
                           );
                         },
-                      ),
-                    ),
-                    if (showPinnedActionRow)
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: pinnedActionRowPadding,
-                          ),
-                          child: fileInfoBuilder(
-                            song,
-                            _isLyricsMode,
-                            _playerScreenMode,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              // Pinned waveform — not sliding, lazy-loads current song only.
-              // Mirrors the gap SongStage previously had before its waveform.
-              Builder(
-                builder: (context) {
-                  final isImmersive =
-                      _playerScreenMode == PlayerScreenMode.immersive;
-                  double topGap;
-                  if (_isLyricsMode && isImmersive) {
-                    topGap = context.responsive(10.0, 12.0, 14.0);
-                  } else if (isImmersive) {
-                    topGap = context.responsive(12.0, 14.0, 16.0);
-                  } else {
-                    // artworkCard gap before waveform (playbackSpacing)
-                    final isVeryShort = MediaQuery.sizeOf(context).height < 540;
-                    topGap = appPrefs.artworkCardShowFileInfo
-                        ? (isVeryShort
-                              ? 10.0
-                              : context.responsive(18.0, 22.0, 26.0))
-                        : context.responsive(8.0, 10.0, 12.0);
-                  }
-                  final timeLabelsPadding = isImmersive
-                      ? context.responsive(18.0, 24.0, 30.0)
-                      : context.responsive(16.0, 20.0, 24.0);
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeInOut,
-                        height: topGap,
-                      ),
-                      _buildPinnedWaveform(context, song, _playerScreenMode),
-                      // Unified default: when lyrics are on, keep single time
-                      // labels under waveform for BOTH immersive and artworkCard.
-                      // This replaces the duplicated labels previously inside
-                      // PlayerControls and (for immersive) inside the strip.
-                      // AnimatedSize so the waveform lowers/raises smoothly.
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeInOut,
-                        alignment: Alignment.topCenter,
-                        child: _isLyricsMode
-                            ? Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    height: context.responsive(8.0, 10.0, 12.0),
-                                  ),
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: timeLabelsPadding,
-                                    ),
-                                    child: ValueListenableBuilder<Duration>(
-                                      valueListenable:
-                                          _playerService.positionNotifier,
-                                      builder: (context, position, _) {
-                                        return ValueListenableBuilder<Duration>(
-                                          valueListenable:
-                                              _playerService.durationNotifier,
-                                          builder:
-                                              (context, engineDuration, _) {
-                                                final duration =
-                                                    engineDuration
-                                                            .inMilliseconds >
-                                                        0
-                                                    ? engineDuration
-                                                    : (song.duration);
-                                                return PlaybackTimeLabels(
-                                                  position: position,
-                                                  duration: duration,
-                                                  formatDuration:
-                                                      formatDuration,
-                                                  horizontalPadding:
-                                                      timeLabelsPadding,
-                                                );
-                                              },
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              // Gap between pinned waveform/time-labels and controls.
-              // When lyrics are open we keep only the one under the waveform,
-              // so tighten the gap and hide the duplicate inside PlayerControls.
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeInOut,
-                height: _isLyricsMode
-                    ? context.responsive(8.0, 10.0, 12.0)
-                    : context.responsive(10.0, 12.0, 14.0),
-              ),
-              // Pinned controls — do not slide. Deduplicate time labels:
-              // immersive lyrics keeps strip's labels, artworkCard lyrics keeps
-              // the pinned labels just above (under waveform). Hide duplicate
-              // inside PlayerControls when lyrics are open.
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: _playerScreenMode == PlayerScreenMode.immersive
-                      ? context.responsive(18.0, 24.0, 30.0)
-                      : context.responsive(16.0, 20.0, 24.0),
-                ),
-                child: PlayerControls(
-                  playerService: _playerService,
-                  formatDuration: formatDuration,
-                  currentSong: song,
-                  onPrevious: _animateToPreviousSong,
-                  onNext: _animateToNextSong,
-                  timelineHorizontalPadding:
-                      _playerScreenMode == PlayerScreenMode.immersive
-                      ? context.responsive(18.0, 24.0, 30.0)
-                      : context.responsive(16.0, 20.0, 24.0),
-                  albumColorMode: colorMode,
-                  albumColor: albumColor,
-                  showTimeLabels:
-                      _playerScreenMode == PlayerScreenMode.immersive &&
-                      !_isLyricsMode,
-                  targetLayout:
-                      _playerScreenMode == PlayerScreenMode.artworkCard,
-                  favoritesService: _favoritesService,
-                ),
-              ),
-              // Keep Pitch reachable in every classic full-player layout;
-              // immersive uses only the three sound-transform chips to avoid
-              // duplicating its other on-artwork controls.
-              ...[
-                SizedBox(height: context.responsive(6.0, 8.0, 10.0)),
-                FullPlayerActionChipRow(
-                  playerService: _playerService,
-                  compactTransformsOnly:
-                      _playerScreenMode == PlayerScreenMode.immersive,
-                  lyricsActive: _isLyricsMode,
-                  onOpenQueue: () => _navigation.openQueue(context),
-                  onToggleLyrics: () => _setLyricsMode(!_isLyricsMode),
-                  onOpenEqualizer: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const EqualizerScreen(),
-                    ),
+                      );
+                    },
                   ),
                 ),
+                if (showPinnedActionRow)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: pinnedActionRowPadding,
+                      ),
+                      child: fileInfoBuilder(
+                        song,
+                        _isLyricsMode,
+                        _playerScreenMode,
+                      ),
+                    ),
+                  ),
               ],
-              // Original bottom spacing: immersive 24-40, artworkCard directorySpacing 24-40
-              SizedBox(height: context.responsive(8.0, 12.0, 16.0)),
-            ],
+            ),
+            controls: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Pinned waveform — not sliding, lazy-loads current song only.
+                // Mirrors the gap SongStage previously had before its waveform.
+                Builder(
+                  builder: (context) {
+                    final isImmersive =
+                        _playerScreenMode == PlayerScreenMode.immersive;
+                    double topGap;
+                    if (_isLyricsMode && isImmersive) {
+                      topGap = context.responsive(10.0, 12.0, 14.0);
+                    } else if (isImmersive) {
+                      topGap = context.responsive(12.0, 14.0, 16.0);
+                    } else {
+                      // artworkCard gap before waveform (playbackSpacing)
+                      final isVeryShort =
+                          MediaQuery.sizeOf(context).height < 540;
+                      topGap = appPrefs.artworkCardShowFileInfo
+                          ? (isVeryShort
+                                ? 10.0
+                                : context.responsive(18.0, 22.0, 26.0))
+                          : context.responsive(8.0, 10.0, 12.0);
+                    }
+                    final timeLabelsPadding = isImmersive
+                        ? context.responsive(18.0, 24.0, 30.0)
+                        : context.responsive(16.0, 20.0, 24.0);
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeInOut,
+                          height: topGap,
+                        ),
+                        _buildPinnedWaveform(context, song, _playerScreenMode),
+                        // Unified default: when lyrics are on, keep single time
+                        // labels under waveform for BOTH immersive and artworkCard.
+                        // This replaces the duplicated labels previously inside
+                        // PlayerControls and (for immersive) inside the strip.
+                        // AnimatedSize so the waveform lowers/raises smoothly.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeInOut,
+                          alignment: Alignment.topCenter,
+                          child: _isLyricsMode
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      height: context.responsive(
+                                        8.0,
+                                        10.0,
+                                        12.0,
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: timeLabelsPadding,
+                                      ),
+                                      child: ValueListenableBuilder<Duration>(
+                                        valueListenable:
+                                            _playerService.positionNotifier,
+                                        builder: (context, position, _) {
+                                          return ValueListenableBuilder<
+                                            Duration
+                                          >(
+                                            valueListenable:
+                                                _playerService.durationNotifier,
+                                            builder:
+                                                (context, engineDuration, _) {
+                                                  final duration =
+                                                      engineDuration
+                                                              .inMilliseconds >
+                                                          0
+                                                      ? engineDuration
+                                                      : (song.duration);
+                                                  return PlaybackTimeLabels(
+                                                    position: position,
+                                                    duration: duration,
+                                                    formatDuration:
+                                                        formatDuration,
+                                                    horizontalPadding:
+                                                        timeLabelsPadding,
+                                                  );
+                                                },
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    );
+                  },
+                ), // Gap between pinned waveform/time-labels and controls.
+                // When lyrics are open we keep only the one under the waveform,
+                // so tighten the gap and hide the duplicate inside PlayerControls.
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
+                  height: _isLyricsMode
+                      ? context.responsive(8.0, 10.0, 12.0)
+                      : context.responsive(10.0, 12.0, 14.0),
+                ), // Pinned controls — do not slide. Deduplicate time labels:
+                // immersive lyrics keeps strip's labels, artworkCard lyrics keeps
+                // the pinned labels just above (under waveform). Hide duplicate
+                // inside PlayerControls when lyrics are open.
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: _playerScreenMode == PlayerScreenMode.immersive
+                        ? context.responsive(18.0, 24.0, 30.0)
+                        : context.responsive(16.0, 20.0, 24.0),
+                  ),
+                  child: PlayerControls(
+                    playerService: _playerService,
+                    formatDuration: formatDuration,
+                    currentSong: song,
+                    onPrevious: _animateToPreviousSong,
+                    onNext: _animateToNextSong,
+                    timelineHorizontalPadding:
+                        _playerScreenMode == PlayerScreenMode.immersive
+                        ? context.responsive(18.0, 24.0, 30.0)
+                        : context.responsive(16.0, 20.0, 24.0),
+                    albumColorMode: colorMode,
+                    albumColor: albumColor,
+                    showTimeLabels:
+                        _playerScreenMode == PlayerScreenMode.immersive &&
+                        !_isLyricsMode,
+                    targetLayout:
+                        _playerScreenMode == PlayerScreenMode.artworkCard,
+                    favoritesService: _favoritesService,
+                  ),
+                ), // Keep Pitch reachable in every classic full-player layout;
+                // immersive uses only the three sound-transform chips to avoid
+                // duplicating its other on-artwork controls.
+                ...[
+                  SizedBox(height: context.responsive(6.0, 8.0, 10.0)),
+                  FullPlayerActionChipRow(
+                    playerService: _playerService,
+                    compactTransformsOnly:
+                        _playerScreenMode == PlayerScreenMode.immersive,
+                    lyricsActive: _isLyricsMode,
+                    onOpenQueue: () => _navigation.openQueue(context),
+                    onToggleLyrics: () => _setLyricsMode(!_isLyricsMode),
+                    onOpenEqualizer: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const EqualizerScreen(),
+                      ),
+                    ),
+                  ),
+                ], // Original bottom spacing: immersive 24-40, artworkCard directorySpacing 24-40
+                SizedBox(height: context.responsive(8.0, 12.0, 16.0)),
+              ],
+            ),
           ),
         ),
       ],

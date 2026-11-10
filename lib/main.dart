@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
 import 'package:flick/services/apple_music/apple_artist_logo_cache.dart';
 
@@ -116,7 +117,9 @@ Future<void> _bootstrapApp({
   // an opaque system-colored strip above the hero. Individual pages continue
   // to apply SafeArea to controls, not to their full-bleed backgrounds.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await SystemChrome.setPreferredOrientations(
+    LokalLayout.defaultOrientations(),
+  );
 
   await AppLog.instance.initializePersistence();
   await Uac2PreferencesService().initializeDeveloperModeCache();

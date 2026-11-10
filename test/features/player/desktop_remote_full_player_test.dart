@@ -1,3 +1,4 @@
+import 'package:flick/features/player/widgets/lokal_player_columns.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
@@ -219,6 +220,50 @@ void main() {
     );
     expect(paired.copyWith(clearArtworkServer: true).artworkServerId, isNull);
   });
+
+  testWidgets(
+    'remote tablet keeps controls beside the cover and scrolls large text',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final size in [const Size(1024, 768), const Size(1366, 1024)]) {
+        tester.view.physicalSize = size;
+        for (final scale in [1.0, 2.0]) {
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                playerProvider.overrideWith(_RemotePlayer.new),
+                lokalRemoteControllerProvider.overrideWith(
+                  _RemoteController.new,
+                ),
+              ],
+              child: MaterialApp(
+                theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+                home: Builder(
+                  builder: (context) => MediaQuery(
+                    data: MediaQuery.of(context)
+                        .copyWith(textScaler: TextScaler.linear(scale)),
+                    child: DesktopRemoteFullPlayer(onClose: () {}),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          final columns = tester.widget<LokalPlayerColumns>(
+            find.byType(LokalPlayerColumns),
+          );
+          expect(
+            tester.getRect(find.byWidget(columns.stage)).right,
+            lessThan(tester.getRect(find.byWidget(columns.controls)).left),
+          );
+          expect(find.byType(PlayerTransportControls), findsOneWidget);
+          expect(tester.takeException(), isNull, reason: '$size text=$scale');
+        }
+      }
+    },
+  );
 
   testWidgets('scrolling follows rendered overflow and text scale', (
     tester,

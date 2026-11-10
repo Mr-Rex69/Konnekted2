@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/features/flow/flow_screen.dart';
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
@@ -635,7 +636,12 @@ class KonnektedSongShelf extends StatelessWidget {
             return KonnektedMessage(title: emptyTitle, message: emptyMessage);
           }
           final scale = MediaQuery.textScalerOf(context);
-          final width = MediaQuery.sizeOf(context).width < 360 ? 142.0 : 164.0;
+          final paneWidth = MediaQuery.sizeOf(context).width;
+          final width = LokalLayout.isTablet(context)
+              ? ((paneWidth - 48) / 3.4).clamp(172.0, 220.0)
+              : paneWidth < 360
+              ? 142.0
+              : 164.0;
           final height =
               width + scale.scale(14) * 2.6 + scale.scale(12) * 1.5 + 24;
           return SizedBox(
@@ -777,7 +783,11 @@ class KonnektedYourMixes extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final width = (constraints.maxWidth - 14) / 2;
+              final columns = LokalLayout.isTablet(context)
+                  ? LokalLayout.columns(constraints.maxWidth, target: 180)
+                  : 2;
+              final width =
+                  (constraints.maxWidth - 14 * (columns - 1)) / columns;
               return Wrap(
                 spacing: 14,
                 runSpacing: 18,
