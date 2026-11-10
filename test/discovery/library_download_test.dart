@@ -446,6 +446,42 @@ void main() {
     expect(registered, isEmpty);
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    test('$platform download falls back to prepared cached artwork before indexing', () async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final image = File(p.join(root.path, 'cache', 'cover.jpg'));
+      await image.writeAsBytes([1, 2, 3]);
+      final events = <String>[];
+      final seen = <String>[];
+      final song = prepared().copyWith(albumArt: image.path);
+      final saver = LibraryDownloader(
+        folders: () async => [], fallbackRoot: p.join(root.path, 'Music'),
+        registerFolder: (_, _) async {},
+        upsert: (_) async => events.add('upsert'),
+        tag: (_, _, _) async => true,
+        readTags: (_) async => const rust_metadata.TagReadResult(),
+        lyricsLookup: (_) async => null,
+        cover: (path, target, location) async {
+          expect(target.filePath, path);
+          expect(target.isExternal, isFalse, reason: 'embed into the library copy, not the online cache');
+          expect(target.folderUri, isNotNull);
+          seen.add(location);
+          if (location.startsWith('https:')) throw const FileSystemException('CDN unavailable');
+          events.add('cover');
+        },
+        indexMedia: (_) async => events.add('index'),
+      );
+      final saved = await saver.save(song, artwork: 'https://covers.example/broken.jpg');
+      expect(seen, ['https://covers.example/broken.jpg', image.path]);
+      expect(events, ['upsert', 'cover', 'index']);
+      expect(await File(saved.path).readAsBytes(), await cached.readAsBytes());
+      seen.clear();
+      await saver.save(song);
+      expect(seen, [image.path], reason: 'an explicit artwork argument is optional');
+    });
+  }
+
   test(
     'a second copy gets a numbered name; untagged keeps its names',
     () async {

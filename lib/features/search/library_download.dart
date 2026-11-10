@@ -4,7 +4,6 @@ import 'package:flick/services/link/link_download_outbox.dart';
 
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -20,6 +19,7 @@ import 'package:flick/services/album_art_import_service.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/music_library_path.dart';
 import 'package:flick/src/rust/api/metadata_editor.dart' as rust_metadata;
+import 'library_download_artwork.dart';
 
 /// A library folder, with where it is on disk when Android says.
 class LibraryDownloadFolder {
@@ -188,14 +188,14 @@ class LibraryDownloader {
     );
   }
 
-  static Future<void> _applyCover(String path, Song song, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme != 'https') return;
-    final response = await http.get(uri).timeout(const Duration(seconds: 15));
-    if (response.statusCode < 200 || response.statusCode >= 300) return;
+  static Future<void> _applyCover(String path, Song song, String location) async {
+    final bytes = await readLibraryDownloadArtwork(location);
+    if (bytes == null) {
+      throw const AlbumArtImportException('The download cover is unavailable.');
+    }
     await AlbumArtImportService.instance.applyImageBytesToSong(
       song: _withPath(song, path),
-      bytes: Uint8List.fromList(response.bodyBytes),
+      bytes: bytes,
     );
   }
 
@@ -207,6 +207,7 @@ class LibraryDownloader {
     duration: song.duration,
     fileType: song.fileType,
     filePath: path,
+    folderUri: song.folderUri,
   );
 
   /// A file name for [song]: "Artist - Title.ext", without characters file
@@ -389,15 +390,30 @@ class LibraryDownloader {
           // Untagged: keep these names over the file's when rescanned.
           ..hasLocalEdits = !tagged,
       );
-      await _indexMedia([copy.path]);
       // For JOC, do not embed artwork by rewriting the downloaded MP4.
-      if (!prepared.atmosEncoded && artwork != null && artwork.isNotEmpty) {
-        try {
-          await _cover(copy.path, prepared, artwork);
-        } catch (_) {
-          // The song is saved; the cover can be added later.
+      // Try explicit metadata first, then the prepared song's cached image.
+      // Import copies that image to durable artwork storage before Android
+      // indexes the file; iOS receives its persistent artwork path as well.
+      if (!prepared.atmosEncoded) {
+        final images = <String>{
+          if (artwork?.trim().isNotEmpty == true) artwork!.trim(),
+          if (prepared.albumArt?.trim().isNotEmpty == true)
+            prepared.albumArt!.trim(),
+        };
+        for (final image in images) {
+          try {
+            await _cover(
+              copy.path,
+              _withPath(prepared, copy.path).copyWith(folderUri: target.uri),
+              image,
+            );
+            break;
+          } catch (_) {
+            // A failed remote cover must not discard a valid cached one.
+          }
         }
       }
+      await _indexMedia([copy.path]);
       unawaited(LinkDownloadOutbox.enqueue(copy.path));
       if (prepared.atmosEncoded) {
         AtmosDiagnostics.record('library_save_complete', {
