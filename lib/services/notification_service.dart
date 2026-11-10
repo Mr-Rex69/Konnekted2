@@ -399,6 +399,7 @@ class NotificationService {
         'isPlaying': isPlaying,
         'duration': duration?.inMilliseconds ?? 0,
         'position': position?.inMilliseconds ?? 0,
+        'isRemotePlayback': false,
         'isLive': false,
       };
 

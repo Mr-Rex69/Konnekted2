@@ -313,7 +313,7 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
   }
 
   private func publish(_ args: [String: Any]) {
-    if args.keys.contains("title") {
+    if args.keys.contains("title") || args.keys.contains("isRemotePlayback") || args.keys.contains("isCasting") {
       remotePlayback = (args["isRemotePlayback"] as? Bool ?? false) || (args["isCasting"] as? Bool ?? false)
     }
     if !receivingRemoteEvents {

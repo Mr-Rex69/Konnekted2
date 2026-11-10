@@ -412,6 +412,10 @@ void main() {
     // Reproduce the video plugin changing the shared audio category while
     // music owns playback. Keep actual audio progress and system controls.
     await const MethodChannel('lokal/ios').invokeMethod('mixAudioSessionForIntegrationTest');
+    await tester.pump(const Duration(milliseconds: 250));
+    final categoryRecovery = await const MethodChannel('lokal/ios')
+      .invokeMapMethod<String, dynamic>('nowPlayingMetadataState');
+    expect(categoryRecovery?['mixesWithOthers'], false);
     await NotificationService().updateNotification(song: song, isPlaying: true,
       duration: song.duration, position: player.positionNotifier.value);
     await tester.pump(const Duration(milliseconds: 250));

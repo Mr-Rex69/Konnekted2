@@ -117,5 +117,8 @@ void main() {
     expect((update.arguments as Map)['position'], 14000);
     expect((update.arguments as Map)['isPlaying'], isTrue);
     expect(service.isClaimed, isTrue);
+    service.release(owner);
+    await service.updateNotification(song: firstSong, isPlaying: true);
+    expect((calls.last.arguments as Map)['isRemotePlayback'], false);
   });
 }
