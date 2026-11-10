@@ -157,6 +157,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   List<double> _lineTops = const [];
   double? _estimatesForWidth;
   LyricsData? _estimatesForLyrics;
+  Object? _estimatesEnvironment;
 
   int _activeLineIndex = -1;
   Duration _lastTickPosition = Duration.zero;
@@ -265,8 +266,15 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
 
   // --- geometry ---------------------------------------------------------
 
-  void _ensureEstimates(double listWidth) {
+  void _ensureEstimates(double listWidth, bool karaokeEnabled) {
+    final environment = Object.hash(
+      MediaQuery.textScalerOf(context),
+      Directionality.of(context),
+      widget.fullPlayerTypography,
+      karaokeEnabled,
+    );
     if (_estimatesForWidth == listWidth &&
+        _estimatesEnvironment == environment &&
         identical(_estimatesForLyrics, widget.lyrics)) {
       return;
     }
@@ -286,7 +294,11 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
       // the active line. Do not leave an empty subline under inactive rows.
       inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth));
       active.add(
-        28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth) + bgHeight,
+        28 +
+            _estimateTextHeight(line.text, 22, 1.18, 3, textWidth) +
+            // LyricMotionLine reserves eight pixels for the syllable lift.
+            (karaokeEnabled && line.words?.isNotEmpty == true ? 8 : 0) +
+            bgHeight,
       );
     }
     _inactiveEstimates = inactive;
@@ -295,6 +307,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     _lineTops = List<double>.filled(lines.length, 0);
     _estimatesForWidth = listWidth;
     _estimatesForLyrics = widget.lyrics;
+    _estimatesEnvironment = environment;
     _recomputeTops();
   }
 
@@ -308,7 +321,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: widget.fullPlayerTypography
+        style: widget.fullPlayerTypography && (fontSize == 22 || fontSize == 17)
             ? _textStyle(maxLines == 3, 1)
             : TextStyle(
                 fontFamily: 'GoogleSansFlex',
@@ -743,7 +756,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _ensureEstimates(constraints.maxWidth);
+        _ensureEstimates(constraints.maxWidth, karaokeEnabled);
         if (_needsInitialJump) {
           _needsInitialJump = false;
           WidgetsBinding.instance.addPostFrameCallback((_) {
