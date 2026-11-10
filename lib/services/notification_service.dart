@@ -20,6 +20,7 @@ class MediaNotificationOwner {
     this.onSeek,
     this.onToggleFavorite,
     this.onToggleShuffle,
+    this.onSetVolume,
   });
 
   final VoidCallback onTogglePlayPause;
@@ -31,6 +32,7 @@ class MediaNotificationOwner {
   final void Function(Duration)? onSeek;
   final VoidCallback? onToggleFavorite;
   final VoidCallback? onToggleShuffle;
+  final void Function(double)? onSetVolume;
 }
 
 /// Flutter service to communicate with native Android notification service.
@@ -45,8 +47,16 @@ class NotificationService {
   final NotificationArtworkResolver _artwork = NotificationArtworkResolver();
 
   String? _artworkPath(Song song, {MediaNotificationOwner? owner}) {
-    final identity = (owner == null ? 'library' : 'owner:' + identityHashCode(owner).toString()) +
-        ':' + song.id + ':' + song.title + ':' + song.artist;
+    final identity =
+        (owner == null
+            ? 'library'
+            : 'owner:' + identityHashCode(owner).toString()) +
+        ':' +
+        song.id +
+        ':' +
+        song.title +
+        ':' +
+        song.artist;
     return _artwork.pathFor(
       identity: identity,
       artwork: song.albumArt,
@@ -62,9 +72,7 @@ class NotificationService {
   Future<void> _publishResolvedArtwork(String path) async {
     try {
       // Metadata-only update: preserve the current play state and position.
-      await _channel.invokeMethod('updateNotification', {
-        'albumArtPath': path,
-      });
+      await _channel.invokeMethod('updateNotification', {'albumArtPath': path});
     } on PlatformException {
       // A subsequent metadata update can still publish the cached path.
     } on MissingPluginException {
@@ -101,6 +109,8 @@ class NotificationService {
     MediaNotificationOwner owner, {
     required Song song,
     String? outputName,
+    bool isRemotePlayback = false,
+    double remoteVolume = 1,
     required bool isPlaying,
     bool isLive = true,
     bool isFavorite = false,
@@ -113,6 +123,8 @@ class NotificationService {
       await _channel.invokeMethod('showNotification', <String, dynamic>{
         'title': song.title,
         'outputName': outputName,
+        'isRemotePlayback': isRemotePlayback,
+        'castVolume': (remoteVolume.clamp(0, 1) * 100).round(),
         'artist': song.artist,
         'albumArtPath': artworkPath,
         'isPlaying': isPlaying,
@@ -136,6 +148,7 @@ class NotificationService {
     required Duration position,
     required bool isPlaying,
     Duration? duration,
+    double? remoteVolume,
   }) async {
     if (!identical(_owner, owner)) return;
     try {
@@ -146,6 +159,8 @@ class NotificationService {
         // duration settles. Later progress updates must repair Android's
         // MediaMetadata duration rather than retaining the previous song.
         if (duration != null) 'duration': duration.inMilliseconds,
+        if (remoteVolume != null)
+          'castVolume': (remoteVolume.clamp(0, 1) * 100).round(),
         if (_accentColor != null) 'color': _accentColor,
       });
     } on PlatformException {
@@ -232,6 +247,11 @@ class NotificationService {
             owner.onToggleFavorite?.call();
           case 'toggleShuffle':
             owner.onToggleShuffle?.call();
+          case 'setCastVolume':
+            final raw = call.arguments;
+            final value = raw is Map ? raw['volume'] : raw;
+            if (value is num)
+              owner.onSetVolume?.call(value.toDouble().clamp(0, 1));
           case 'seek':
             final raw = call.arguments;
             final value = raw is Map ? raw['position'] : raw;
@@ -288,9 +308,9 @@ class NotificationService {
     // Release its pending browse requests only after the Dart catalog and
     // playback command handler are ready to receive calls.
     unawaited(
-      _channel.invokeMethod<void>('androidAutoReady').onError(
-        (Object _, StackTrace __) {},
-      ),
+      _channel
+          .invokeMethod<void>('androidAutoReady')
+          .onError((Object _, StackTrace __) {}),
     );
   }
 
@@ -321,6 +341,7 @@ class NotificationService {
         'isShuffle': isShuffle,
         'isFavorite': isFavorite,
         'isCasting': isCasting,
+        'isRemotePlayback': false,
         'isLive': false,
       };
       if (castDeviceName != null) args['castDeviceName'] = castDeviceName;

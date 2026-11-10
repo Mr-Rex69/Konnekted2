@@ -171,6 +171,8 @@ test/services/album_art_service_test.dart
 test/services/playback_secure_storage_test.dart
 test/providers/lokal_remote_provider_test.dart
 test/services/lokal_remote_service_test.dart
+test/services/remote_notification_duration_test.dart
+test/services/notification_artwork_resolver_test.dart
 test/discovery/online_song_save_test.dart
 test/features/whats_new
 test/providers/whats_new_provider_test.dart

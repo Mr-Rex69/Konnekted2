@@ -8,6 +8,96 @@ import 'package:http/testing.dart';
 
 void main() {
   test(
+    'PC artwork loads with remote credentials and no mobile library',
+    () async {
+      final credentials = LokalRemoteCredentials(
+        origin: Uri.parse('http://desktop:3421'),
+        remoteToken: 'paired-token',
+        apiKey: 'api-key',
+      );
+      final requests = <http.Request>[];
+      final service = LokalRemoteService(
+        client: MockClient((request) async {
+          requests.add(request);
+          if (request.url.host == 'desktop') {
+            return http.Response(
+              '',
+              302,
+              headers: {'location': 'https://covers.example/cover.png'},
+            );
+          }
+          return http.Response.bytes([137, 80, 78, 71], 200);
+        }),
+      );
+      addTearDown(service.close);
+      expect(await service.fetchArtwork(credentials, 'track/a'), [
+        137,
+        80,
+        78,
+        71,
+      ]);
+      expect(requests.first.url.pathSegments, ['api', 'artwork', 'track/a']);
+      expect(requests.first.url.queryParameters, {'full': '1'});
+      expect(requests.first.headers['x-remote-token'], 'paired-token');
+      expect(requests.last.headers.containsKey('x-remote-token'), isFalse);
+      expect(requests.last.headers.containsKey('x-api-key'), isFalse);
+      expect(requests.last.followRedirects, isFalse);
+    },
+  );
+
+  test('PC artwork rejects credential-bearing or insecure redirects', () async {
+    for (final target in [
+      'http://covers.example/a',
+      'https://secret@covers.example/a',
+      '/other',
+    ]) {
+      var requests = 0;
+      final service = LokalRemoteService(
+        client: MockClient((request) async {
+          requests++;
+          return http.Response('', 302, headers: {'location': target});
+        }),
+      );
+      addTearDown(service.close);
+      await expectLater(
+        service.fetchArtwork(
+          LokalRemoteCredentials(
+            origin: Uri.parse('http://desktop'),
+            remoteToken: 'token',
+          ),
+          'one',
+        ),
+        throwsA(isA<LokalRemoteProtocolException>()),
+      );
+      expect(requests, 1);
+    }
+  });
+
+  test(
+    'PC artwork can recover on a later request after an unavailable cover',
+    () async {
+      var requests = 0;
+      final service = LokalRemoteService(
+        client: MockClient(
+          (_) async => ++requests == 1
+              ? http.Response('', 404)
+              : http.Response.bytes([1, 2, 3], 200),
+        ),
+      );
+      addTearDown(service.close);
+      final credentials = LokalRemoteCredentials(
+        origin: Uri.parse('http://desktop'),
+        remoteToken: 'token',
+      );
+      await expectLater(
+        service.fetchArtwork(credentials, 'one'),
+        throwsA(isA<LokalRemoteProtocolException>()),
+      );
+      expect(await service.fetchArtwork(credentials, 'one'), [1, 2, 3]);
+    },
+  );
+
+  test(
     'normalizes desktop origins and /remote links without query secrets',
     () {
       expect(

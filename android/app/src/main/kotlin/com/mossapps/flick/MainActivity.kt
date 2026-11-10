@@ -887,6 +887,7 @@ class MainActivity: FlutterActivity() {
                         putExtra("isShuffle", isShuffle)
                         putExtra("isFavorite", isFavorite)
                         putExtra("isCasting", isCasting)
+                        putExtra("isRemotePlayback", call.argument<Boolean>("isRemotePlayback") ?: false)
                         putExtra("isLive", isLive)
                         castDeviceName?.let { putExtra("castDeviceName", it) }
                         castVolume?.let { putExtra("castVolume", it) }
@@ -945,6 +946,7 @@ class MainActivity: FlutterActivity() {
                         isShuffle?.let { putExtra("isShuffle", it) }
                         isFavorite?.let { putExtra("isFavorite", it) }
                         isCasting?.let { putExtra("isCasting", it) }
+                        call.argument<Boolean>("isRemotePlayback")?.let { putExtra("isRemotePlayback", it) }
                         isLive?.let { putExtra("isLive", it) }
                         castDeviceName?.let { putExtra("castDeviceName", it) }
                         castVolume?.let { putExtra("castVolume", it) }

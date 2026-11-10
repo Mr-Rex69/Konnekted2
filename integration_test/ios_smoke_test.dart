@@ -409,6 +409,22 @@ void main() {
     final systemProgress = await _expectPlaybackProgress(tester, player);
     expect(player.currentEngineType, AudioEngineType.iosSystem);
     binding.reportData!['system_wav_progress_ms'] = systemProgress;
+    // Reproduce the video plugin changing the shared audio category while
+    // music owns playback. Keep actual audio progress and system controls.
+    await const MethodChannel('lokal/ios').invokeMethod('mixAudioSessionForIntegrationTest');
+    await NotificationService().updateNotification(song: song, isPlaying: true,
+      duration: song.duration, position: player.positionNotifier.value);
+    await tester.pump(const Duration(milliseconds: 250));
+    final primaryMedia = await const MethodChannel('lokal/ios')
+      .invokeMapMethod<String, dynamic>('nowPlayingMetadataState');
+    expect(primaryMedia?['mixesWithOthers'], false);
+    expect(primaryMedia?['receivingRemoteEvents'], true);
+    expect(primaryMedia?['playCommandEnabled'], true);
+    expect(primaryMedia?['remotePlayback'], false);
+    expect(primaryMedia?['playbackRate'], 1);
+    await _expectPlaybackProgress(tester, player);
+    binding.reportData!['primary_now_playing_after_motion_art'] = 'passed';
+
     await probeIosMediaReset(tester, binding, player,
       engine: AudioEngineType.iosSystem, song: song,
       expectProgress: () => _expectPlaybackProgress(tester, player));
