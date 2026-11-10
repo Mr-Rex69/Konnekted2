@@ -1,3 +1,9 @@
+import 'package:flick/features/konnekted/konnekted_shell.dart';
+import 'package:flick/widgets/lokal/lokal_glass.dart';
+import 'package:flick/l10n/l10n.dart';
+import 'package:flick/features/player/widgets/lyrics_source_button.dart';
+import 'package:flick/features/player/widgets/online_lyrics_search_sheet.dart';
+
 import 'dart:io';
 import 'dart:convert';
 
@@ -188,6 +194,8 @@ class _History extends Fake implements RecentlyPlayedRepository {
 
 class _Service extends Fake implements PlayerService {
   @override
+  final isPlayingNotifier = ValueNotifier(false);
+  @override
   final audioOutputDiagnosticsNotifier = ValueNotifier<AudioOutputDiagnostics?>(
     null,
   );
@@ -236,6 +244,7 @@ Widget _app(
   _Player? player,
   bool radio = false,
   bool remote = false,
+  bool animate = false,
 }) => ProviderScope(
   overrides: [
     playerProvider.overrideWith(() => player ?? _Player()),
@@ -253,7 +262,7 @@ Widget _app(
     home: Builder(
       builder: (context) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
-          disableAnimations: true,
+          disableAnimations: !animate,
           textScaler: TextScaler.linear(scale),
         ),
         child: Scaffold(body: child),
@@ -465,6 +474,7 @@ void main() {
                 playerService: _Service(),
                 lyricsService: LyricsService(),
                 song: lyricSong,
+                compactControls: true,
               ),
             ),
           ),
@@ -478,8 +488,25 @@ void main() {
       expect(find.byType(SyncedLyricsView), findsOneWidget);
       expect(
         tester.getSize(find.byType(SyncedLyricsView)).height,
-        greaterThan(60),
+        greaterThan(350),
       );
+      final toolbar = find.byKey(const ValueKey('compact-lyrics-toolbar'));
+      expect(tester.getSize(toolbar).height, lessThanOrEqualTo(48));
+      expect(find.text(l10n.useExistingFile), findsNothing);
+      expect(find.text(l10n.searchOnline), findsNothing);
+      expect(find.byTooltip(l10n.useExistingFile), findsOneWidget);
+      expect(find.byTooltip(l10n.searchOnline), findsOneWidget);
+      final source = tester.widget<LyricsSourceButton>(
+        find.byType(LyricsSourceButton),
+      );
+      expect(source.iconOnly, isTrue);
+      expect(source.onResetManual, isNotNull);
+      await tester.tap(find.byTooltip(l10n.searchOnline));
+      await tester.pumpAndSettle();
+      expect(find.byType(OnlineLyricsSearchSheet), findsOneWidget);
+      expect(find.widgetWithText(TextField, lyricSong.title), findsOneWidget);
+      Navigator.of(tester.element(find.byType(OnlineLyricsSearchSheet))).pop();
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       // Flush the existing embedded-reader timeout after disposing the card.
@@ -500,49 +527,54 @@ void main() {
           const Size(1024, 768),
           const Size(1366, 1024),
         ]) {
-          tester.view.physicalSize = size;
-          await tester.pumpWidget(
-            _app(
-              KonnektedTabletWorkspace(
-                selected: KonnektedTab.listen,
-                route: null,
-                onSelect: (_) {},
-                onNavigate: (_) {},
-                leftOpen: true,
-                rightOpen: size.width >= 1000,
-                hasPlayer: true,
-                onToggleLeft: () {},
-                onToggleRight: () {},
-                mobileDock: const SizedBox.shrink(),
-                player: KonnektedTabletFooter(
-                  onOpenPlayer: () {},
-                  onOpenPanel: (_) {},
+          for (final collapsed in [false, true]) {
+            tester.view.physicalSize = size;
+            await tester.pumpWidget(
+              _app(
+                KonnektedTabletWorkspace(
+                  selected: KonnektedTab.listen,
+                  route: null,
+                  onSelect: (_) {},
+                  onNavigate: (_) {},
+                  leftOpen: true,
+                  rightOpen: size.width >= 1000,
+                  hasPlayer: true,
+                  playerCollapsed: collapsed,
+                  onToggleLeft: () {},
+                  onToggleRight: () {},
+                  mobileDock: const SizedBox.shrink(),
+                  player: KonnektedTabletFooter(
+                    collapsed: collapsed,
+                    onExpand: () {},
+                    onOpenPlayer: () {},
+                    onOpenPanel: (_) {},
+                  ),
+                  playerSidebar: KonnektedTabletPlayerSidebar(
+                    active: size.width >= 1000,
+                    tab: TabletPlayerTab.details,
+                    onTabChanged: (_) {},
+                    onClose: () {},
+                    onOpenPlayer: () {},
+                    lyricsBuilder: (_, _, _) => const _LyricsProbe(),
+                  ),
+                  child: const Center(child: Text('Library content')),
                 ),
-                playerSidebar: KonnektedTabletPlayerSidebar(
-                  active: size.width >= 1000,
-                  tab: TabletPlayerTab.details,
-                  onTabChanged: (_) {},
-                  onClose: () {},
-                  onOpenPlayer: () {},
-                  lyricsBuilder: (_, _, _) => const _LyricsProbe(),
-                ),
-                child: const Center(child: Text('Library content')),
+                scale: scale,
+                light: light,
               ),
-              scale: scale,
-              light: light,
-            ),
-          );
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(const ValueKey('tablet-player-bar')),
-            findsOneWidget,
-          );
-          expect(find.byType(KonnektedTabletFooter), findsOneWidget);
-          expect(
-            tester.takeException(),
-            isNull,
-            reason: '$size text=$scale light=$light',
-          );
+            );
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(const ValueKey('tablet-player-bar')),
+              findsOneWidget,
+            );
+            expect(find.byType(KonnektedTabletFooter), findsOneWidget);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$size text=$scale light=$light collapsed=$collapsed',
+            );
+          }
         }
       }
     }
@@ -622,6 +654,121 @@ void main() {
   );
 
   testWidgets(
+    'floating glass footer folds on scroll and stays clear of system/navigation',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(1366, 1024)
+        ..devicePixelRatio = 1
+        ..padding = const FakeViewPadding(bottom: 34)
+        ..viewPadding = const FakeViewPadding(bottom: 34);
+      addTearDown(tester.view.reset);
+      final scroll = DockScrollHysteresis();
+      var collapsed = false;
+      late StateSetter update;
+      EdgeInsets? clearance;
+      await tester.pumpWidget(
+        _app(
+          StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return KonnektedTabletWorkspace(
+                selected: KonnektedTab.listen,
+                route: null,
+                onSelect: (_) {},
+                onNavigate: (_) {},
+                leftOpen: true,
+                rightOpen: false,
+                hasPlayer: true,
+                playerCollapsed: collapsed,
+                onToggleLeft: () {},
+                onToggleRight: () {},
+                mobileDock: const SizedBox.shrink(),
+                playerSidebar: const SizedBox.shrink(),
+                player: KonnektedTabletFooter(
+                  collapsed: collapsed,
+                  onExpand: () => setState(() => collapsed = false),
+                  onOpenPlayer: () {},
+                  onOpenPanel: (_) {},
+                ),
+                child: Builder(
+                  builder: (context) {
+                    clearance = MediaQuery.paddingOf(context);
+                    return NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification is ScrollEndNotification)
+                          scroll.reset();
+                        if (notification is ScrollUpdateNotification &&
+                            notification.dragDetails != null) {
+                          final next = scroll.push(
+                            notification.scrollDelta ?? 0,
+                            collapsed: collapsed,
+                          );
+                          if (next != null) setState(() => collapsed = next);
+                        }
+                        return false;
+                      },
+                      child: ListView.builder(
+                        key: const ValueKey('browsing-page'),
+                        itemExtent: 80,
+                        itemCount: 100,
+                        itemBuilder: (_, index) => Text('Album $index'),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+          animate: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final glass = find.byKey(const ValueKey('tablet-footer-glass'));
+      expect(tester.getSize(glass), const Size(1200, 80));
+      expect(tester.getRect(glass).bottom, 990);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('browsing-page'))).bottom,
+        1024,
+      );
+      expect(clearance!.bottom, 122);
+      final optics = tester.widget<LokalGlass>(glass);
+      expect(optics.singlePassLens, isTrue);
+      expect(optics.backdropBlurSigma, 2);
+      expect(optics.pronouncedRim, isTrue);
+      final settings = find.text('Settings');
+      expect(
+        tester.getRect(settings).bottom,
+        lessThan(tester.getRect(glass).top),
+      );
+      await tester.drag(
+        find.byKey(const ValueKey('browsing-page')),
+        const Offset(0, -160),
+      );
+      await tester.pumpAndSettle();
+      expect(collapsed, isTrue);
+      expect(tester.getSize(glass), const Size(760, 56));
+      expect(clearance!.bottom, 98);
+      await tester.tap(find.byTooltip('Expand player'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final middle = tester.getSize(glass);
+      expect(middle.height, inExclusiveRange(56, 80));
+      update(
+        () => collapsed = true,
+      ); // Reverse while the pill is still expanding.
+      await tester.pumpAndSettle();
+      expect(tester.getSize(glass), const Size(760, 56));
+      await tester.tap(find.byTooltip('Expand player'));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(glass), const Size(1200, 80));
+      await tester.tap(find.byTooltip('Volume'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tablet-volume')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'footer controls dispatch to music and panel views; seek commits once',
     (tester) async {
       tester.view
@@ -669,7 +816,10 @@ void main() {
         TabletPlayerTab.queue,
         TabletPlayerTab.details,
       ]);
-      await tester.tap(find.byTooltip('Full screen'));
+      await tester.tap(find.byTooltip('Playback options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Full screen'));
+      await tester.pumpAndSettle();
       expect(opened, 1);
       final slider = find.byKey(const ValueKey('tablet-seek'));
       final rect = tester.getRect(slider);

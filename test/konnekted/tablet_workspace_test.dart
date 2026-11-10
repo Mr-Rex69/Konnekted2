@@ -1,3 +1,5 @@
+import 'package:flick/features/konnekted/konnekted_tablet_footer.dart';
+
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -162,7 +164,12 @@ void main() {
               find.byKey(const ValueKey('tablet-player-sidebar')),
               findsNothing,
             );
-            expect(clearance!.bottom, wide ? 0 : greaterThan(0));
+            expect(
+              clearance!.bottom,
+              wide
+                  ? KonnektedTabletFooter.reservedHeight(collapsed: false)
+                  : greaterThan(0),
+            );
             if (wide) expect(typeSize, closeTo(22, .01));
             expect(
               tester.takeException(),

@@ -825,11 +825,13 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
         ),
       );
     }
-    final fullCover = ref.watch(
+    final coverPreference = ref.watch(
       lokalAppearanceProvider.select(
         (appearance) => appearance.fullscreenCover,
       ),
     );
+    final tabletCover = LokalLayout.isTablet(context) && coverPreference;
+    final fullCover = !LokalLayout.isTablet(context) && coverPreference;
     final artist = radio.trackMetadata?.artist;
     final title = radio.trackMetadata?.title ?? radio.nowPlaying;
     final artwork = radio.trackMetadata?.cover ?? station.icon;
@@ -865,7 +867,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
             fit: StackFit.expand,
             children: [
               ArtworkGradientBackdrop(colors: colors, vibrant: true),
-              if (fullCover)
+              if (fullCover || tabletCover)
                 ArtworkMeshBlurBackdrop(
                   song: song,
                   preserveArtworkContrast: true,
@@ -907,12 +909,14 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                       final wide =
                           LokalLayout.isTablet(context) &&
                           bounds.maxWidth >= 720 &&
-                          bounds.maxWidth > bounds.maxHeight;
+                          (tabletCover || bounds.maxWidth > bounds.maxHeight);
                       final compact = bounds.maxHeight < 710;
                       final artSize = math.min(
                         math.min(
-                          bounds.maxWidth * (wide ? .46 : 1) - 44.0,
-                          520.0,
+                          bounds.maxWidth *
+                                  (wide ? (tabletCover ? .54 : .46) : 1) -
+                              44.0,
+                          tabletCover ? double.infinity : 520.0,
                         ),
                         math.max(
                           160.0,
@@ -922,6 +926,10 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(22, 8, 22, 12),
                         child: LokalPlayerColumns(
+                          key: tabletCover
+                              ? const ValueKey('tablet-square-cover-player')
+                              : null,
+                          fillCover: tabletCover,
                           header: SizedBox(
                             height: 50,
                             child: Row(

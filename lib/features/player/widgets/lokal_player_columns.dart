@@ -13,11 +13,13 @@ class LokalPlayerColumns extends StatelessWidget {
     required this.controls,
     this.expandPortraitStage = true,
     this.landscapeHeight,
+    this.fillCover = false,
   });
 
   final Widget header, stage, controls;
   final bool expandPortraitStage;
   final double? landscapeHeight;
+  final bool fillCover;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -26,7 +28,7 @@ class LokalPlayerColumns extends StatelessWidget {
       final wide =
           LokalLayout.isTablet(context) &&
           constraints.maxWidth >= 720 &&
-          media.size.width > media.size.height;
+          (fillCover || media.size.width > media.size.height);
       if (!wide) {
         return Column(
           mainAxisSize: expandPortraitStage
@@ -51,7 +53,9 @@ class LokalPlayerColumns extends StatelessWidget {
                   Expanded(
                     flex: 6,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 28, 20),
+                      padding: fillCover
+                          ? const EdgeInsets.only(right: 24)
+                          : const EdgeInsets.fromLTRB(16, 8, 28, 20),
                       child: _pane(context, stage),
                     ),
                   ),

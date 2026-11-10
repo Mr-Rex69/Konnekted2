@@ -1,3 +1,5 @@
+import 'konnekted_tablet_footer.dart';
+
 import 'package:flutter/material.dart';
 
 import 'package:flick/core/theme/lokal_theme.dart';
@@ -28,10 +30,12 @@ class KonnektedTabletWorkspace extends StatefulWidget {
     required this.rightOpen,
     required this.onToggleLeft,
     required this.onToggleRight,
+    this.playerCollapsed = false,
   });
 
   final Widget child, mobileDock, player, playerSidebar;
   final bool hasPlayer, leftOpen, rightOpen;
+  final bool playerCollapsed;
   final KonnektedTab selected;
   final String? route;
   final ValueChanged<KonnektedTab> onSelect;
@@ -70,6 +74,12 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
         300.0,
         (size.width - 32).clamp(300.0, 420.0),
       );
+      final playerClearance = tablet && widget.hasPlayer
+          ? KonnektedTabletFooter.reservedHeight(
+              collapsed: widget.playerCollapsed,
+              systemInset: media.padding.bottom,
+            )
+          : media.padding.bottom;
       final t = context.lokal;
       final panel = KeyedSubtree(
         key: _panelKey,
@@ -91,7 +101,7 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                         size: panelBounds.biggest,
                         padding: media.padding.copyWith(
                           left: 0,
-                          bottom: widget.hasPlayer ? 0 : media.padding.bottom,
+                          bottom: playerClearance,
                         ),
                       ),
                       child: widget.playerSidebar,
@@ -136,12 +146,19 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                       if (tablet && widget.leftOpen)
                         SizedBox(
                           width: leftWidth,
-                          child: _Sidebar(
-                            extended: extended,
-                            selected: widget.selected,
-                            route: widget.route,
-                            onSelect: widget.onSelect,
-                            onNavigate: widget.onNavigate,
+                          child: MediaQuery(
+                            data: media.copyWith(
+                              padding: media.padding.copyWith(
+                                bottom: playerClearance,
+                              ),
+                            ),
+                            child: _Sidebar(
+                              extended: extended,
+                              selected: widget.selected,
+                              route: widget.route,
+                              onSelect: widget.onSelect,
+                              onNavigate: widget.onNavigate,
+                            ),
                           ),
                         ),
                       Expanded(
@@ -216,9 +233,7 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                                           ? 0
                                           : media.padding.right,
                                       bottom: tablet
-                                          ? (widget.hasPlayer
-                                                ? 0
-                                                : media.padding.bottom)
+                                          ? playerClearance
                                           : KonnektedDock.reservedHeight(
                                               hasMiniPlayer: widget.hasPlayer,
                                               systemInset: media.padding.bottom,
@@ -265,18 +280,21 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                     ),
                     Positioned(top: 0, right: 0, bottom: 0, child: panel),
                   ],
+                  if (tablet && widget.hasPlayer)
+                    Positioned(
+                      key: const ValueKey('tablet-player-bar'),
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: SafeArea(
+                        top: false,
+                        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: widget.player,
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (tablet && widget.hasPlayer)
-              Container(
-                key: const ValueKey('tablet-player-bar'),
-                decoration: BoxDecoration(
-                  color: t.surface,
-                  border: Border(top: BorderSide(color: t.border)),
-                ),
-                child: SafeArea(top: false, child: widget.player),
-              ),
           ],
         ),
       );

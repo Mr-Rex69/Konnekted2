@@ -142,6 +142,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   bool _spaceWaitingForQueue = false;
   final GlobalKey _spacePanelKey = GlobalKey(debugLabel: 'space-player-panel');
   bool _spacePanelCompact = false;
+  bool _spacePanelTabletCover = false;
 
   /// Resolve the current artwork bounds without reparenting media surfaces.
   Rect? _spaceArtworkBounds(bool fullCover) {
@@ -164,8 +165,20 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (panel is RenderBox && panel.attached && panel.hasSize) {
       final local = playerPanelArtworkRect(
         panel.size,
-        artGap: _spacePanelCompact ? 10 : 17,
-        infoReserve: MediaQuery.textScalerOf(context).scale(72),
+        artGap: _spacePanelTabletCover
+            ? 0
+            : _spacePanelCompact
+            ? 10
+            : 17,
+        infoReserve: MediaQuery.textScalerOf(context).scale(
+          _spacePanelTabletCover
+              ? 72 *
+                    (_lyricsProgress.value + _queueProgress.value).clamp(
+                      0.0,
+                      1.0,
+                    )
+              : 72,
+        ),
         queue: _queueProgress.value,
         lyrics: _lyricsProgress.value,
       );
@@ -633,6 +646,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (!_immersiveLyrics &&
         !_spaceWaitingForQueue &&
         _animate &&
+        !LokalLayout.isTablet(context) &&
         ref.read(lokalAppearanceProvider).fullscreenCover &&
         _queueProgress.value > .005) {
       _spaceWaitingForQueue = true;
@@ -664,7 +678,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         _videoOverrideSong ??
         widget.videoSong ??
         _player.currentSongNotifier.value;
-    final fullCover = ref.read(lokalAppearanceProvider).fullscreenCover;
+    final fullCover =
+        !LokalLayout.isTablet(context) &&
+        ref.read(lokalAppearanceProvider).fullscreenCover;
     _spaceFullCover = fullCover;
     // Canvas fills the art plane, so the wave leaves its centre clear.
     _spaceCanvasMode =
@@ -1426,9 +1442,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (_videoFullscreen && videoSong != null && videoId != null) {
       return _videoScaffold(videoSong, videoId);
     }
-    final fullCover = ref.watch(
+    final coverPreference = ref.watch(
       lokalAppearanceProvider.select((look) => look.fullscreenCover),
     );
+    final tabletCover = LokalLayout.isTablet(context) && coverPreference;
+    final fullCover = !LokalLayout.isTablet(context) && coverPreference;
     return Scaffold(
       backgroundColor: Colors.black,
       body:
@@ -1465,7 +1483,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       PlayerSongBlurBackground(
                         song: song,
                         colors: colors,
-                        fullCover: fullCover,
+                        fullCover: fullCover || tabletCover,
                       ),
                       if (fullCover)
                         FadeTransition(
@@ -1515,7 +1533,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                     builder: (context, c) {
                                       if (LokalLayout.isTablet(context) &&
                                           c.maxWidth >= 720 &&
-                                          c.maxWidth > c.maxHeight) {
+                                          (tabletCover ||
+                                              c.maxWidth > c.maxHeight)) {
                                         return AnimatedBuilder(
                                           animation: _lyricsProgress,
                                           builder: (context, _) =>
@@ -1524,6 +1543,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                                 isCasting,
                                                 diagnostics,
                                                 fullCover: fullCover,
+                                                fillCover: tabletCover,
                                                 compact: c.maxHeight < 600,
                                               ),
                                         );
@@ -2076,13 +2096,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     bool isCasting,
     AudioOutputDiagnostics? diagnostics, {
     required bool fullCover,
+    bool fillCover = false,
     required bool compact,
   }) {
     return LokalPlayerColumns(
+      key: fillCover ? const ValueKey('tablet-square-cover-player') : null,
+      fillCover: fillCover,
       header: _spaceHidden(_topBar(song, isCasting, diagnostics)),
       stage: SizedBox.expand(
         key: _spacePanelKey,
-        child: _panelStage(song, compact, fullCover: fullCover),
+        child: _panelStage(
+          song,
+          compact,
+          fullCover: fullCover,
+          tabletCover: fillCover,
+        ),
       ),
       controls: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2099,6 +2127,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ),
             ),
           ),
+          if (fillCover) ...[
+            const SizedBox(height: 20),
+            _panelIdentity(song, compact, 0),
+          ],
           const SizedBox(height: 32),
           CompositedTransformTarget(
             link: _seekbarSubtitleLink,
@@ -2115,9 +2147,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
   }
 
-  Widget _panelStage(Song song, bool compact, {bool fullCover = false}) {
+  Widget _panelStage(
+    Song song,
+    bool compact, {
+    bool fullCover = false,
+    bool tabletCover = false,
+  }) {
     _spacePanelCompact = compact;
-    final titleSize = compact ? 25.0 : 29.0;
+    _spacePanelTabletCover = tabletCover;
     return LayoutBuilder(
       builder: (context, c) {
         _queue.travel = math.max(math.min(c.maxWidth, c.maxHeight) * .8, 200);
@@ -2126,7 +2163,18 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           lyricsProgress: _lyricsProgress,
           queueOpen: _queue.isOpen,
           lyricsOpen: _showLyrics,
-          artGap: compact ? 10 : 17,
+          artGap: tabletCover
+              ? 0
+              : compact
+              ? 10
+              : 17,
+          infoReserve: tabletCover
+              ? 72 *
+                    (_lyricsProgress.value + _queueProgress.value).clamp(
+                      0.0,
+                      1.0,
+                    )
+              : 72,
           onQueueHeaderTap: () => _setQueueOpen(false),
           onLyricsCoverReturn: _toggleLyrics,
           onQueueHeaderDrag: _queue.dragBy,
@@ -2190,141 +2238,152 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ),
             );
           },
-          info: (context, p) => _spaceHidden(
-            SizedBox(
-              key: _infoAnchorKey,
-              width: double.infinity,
-              child: AnimatedSwitcher(
-                duration: _animate
-                    ? const Duration(milliseconds: 420)
-                    : Duration.zero,
-                // Keep both tracks anchored to the same origin. AnimatedSwitcher\'s
-                // default ScaleTransition subtly moves title, credits and quality
-                // pill as their intrinsic widths differ between providers.
-                transitionBuilder: (child, animation) =>
-                    FadeTransition(opacity: animation, child: child),
-                layoutBuilder: (current, previous) => Stack(
-                  alignment: Alignment.topLeft,
-                  children: [...previous, if (current != null) current],
-                ),
-                child: FullPlayerIdentityLayout(
-                  key: ValueKey(song.id),
-                  titleFontSize: lerpDouble(titleSize, 18, p)!,
-                  titleToArtistGap: lerpDouble(3, 1, p)!,
-                  title: Semantics(
-                    button: true,
-                    label: 'Open album for ${song.title}',
-                    child: InkWell(
-                      onTap: () => openLokalAlbumForSong(context, song),
-                      borderRadius: BorderRadius.circular(8),
-                      child: OverflowMarqueeTitle(
-                        key: ValueKey('full-title:${song.id}'),
-                        title: song.title,
-                        style: TextStyle(
-                          fontFamily: _font,
-                          fontSize: lerpDouble(titleSize, 18, p),
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -.55,
-                          color: FullPlayerVisuals.primaryText,
-                        ),
-                      ),
-                    ),
-                  ),
-                  artist: ArtistCreditLinks(
-                    credit: song.artist,
-                    onArtistTap: (name) =>
-                        openLokalArtist(context, name: name, song: song),
-                    style: TextStyle(
-                      fontFamily: _font,
-                      fontSize: lerpDouble(13, 12, p),
-                      fontWeight: FontWeight.w500,
-                      color: FullPlayerVisuals.secondaryText,
-                    ),
-                  ),
-                  trailing: [
-                    if (song.year != null && song.year! > 0) ...[
-                      const _MetadataDot(),
-                      Text(
-                        '${song.year}',
-                        style: TextStyle(
-                          fontFamily: _font,
-                          fontSize: lerpDouble(11, 10, p),
-                          color: FullPlayerVisuals.tertiaryText,
-                        ),
-                      ),
-                    ],
-                    if (_videoActive) ...[
-                      const SizedBox(width: 12),
-                      Text(
-                        lokalText('Video').toUpperCase(),
-                        style: const TextStyle(
-                          fontFamily: _font,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: FullPlayerVisuals.secondaryText,
-                          letterSpacing: .6,
-                        ),
-                      ),
-                    ],
-                    if (!_videoActive && song.atmosEncoded) ...[
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => SongMetadataSheet.show(context, song),
-                        child: const LokalAtmosStreamPill(),
-                      ),
-                    ],
-                    if (LokalQualityTier.of(song) case final tier?
-                        when !_videoActive && !song.atmosEncoded) ...[
-                      const SizedBox(width: 12),
-                      InkWell(
-                        onTap: () => SongMetadataSheet.show(context, song),
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: FullPlayerVisuals.secondaryText,
-                            ),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child: Tooltip(
-                            message: _fullPlayerAudioLabel(song, tier),
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    (MediaQuery.sizeOf(context).width * .52)
-                                        .clamp(110.0, 210.0)
-                                        .toDouble(),
-                              ),
-                              child: Text(
-                                _fullPlayerAudioLabel(song, tier),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: _font,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: .6,
-                                  color: FullPlayerVisuals.primaryText,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
+          info: (context, p) => tabletCover && p == 0
+              ? const SizedBox.shrink()
+              : _panelIdentity(song, compact, p, anchor: !tabletCover),
           queue: const QueueList(embedded: true),
           lyrics: _lyricsArea(song),
         );
       },
+    );
+  }
+
+  Widget _panelIdentity(
+    Song song,
+    bool compact,
+    double p, {
+    bool anchor = true,
+  }) {
+    final titleSize = compact ? 25.0 : 29.0;
+    return _spaceHidden(
+      SizedBox(
+        key: anchor ? _infoAnchorKey : null,
+        width: double.infinity,
+        child: AnimatedSwitcher(
+          duration: _animate
+              ? const Duration(milliseconds: 420)
+              : Duration.zero,
+          // Keep both tracks anchored to the same origin. AnimatedSwitcher\'s
+          // default ScaleTransition subtly moves title, credits and quality
+          // pill as their intrinsic widths differ between providers.
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          layoutBuilder: (current, previous) => Stack(
+            alignment: Alignment.topLeft,
+            children: [...previous, if (current != null) current],
+          ),
+          child: FullPlayerIdentityLayout(
+            key: ValueKey(song.id),
+            titleFontSize: lerpDouble(titleSize, 18, p)!,
+            titleToArtistGap: lerpDouble(3, 1, p)!,
+            title: Semantics(
+              button: true,
+              label: 'Open album for ${song.title}',
+              child: InkWell(
+                onTap: () => openLokalAlbumForSong(context, song),
+                borderRadius: BorderRadius.circular(8),
+                child: OverflowMarqueeTitle(
+                  key: ValueKey('full-title:${song.id}'),
+                  title: song.title,
+                  style: TextStyle(
+                    fontFamily: _font,
+                    fontSize: lerpDouble(titleSize, 18, p),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -.55,
+                    color: FullPlayerVisuals.primaryText,
+                  ),
+                ),
+              ),
+            ),
+            artist: ArtistCreditLinks(
+              credit: song.artist,
+              onArtistTap: (name) =>
+                  openLokalArtist(context, name: name, song: song),
+              style: TextStyle(
+                fontFamily: _font,
+                fontSize: lerpDouble(13, 12, p),
+                fontWeight: FontWeight.w500,
+                color: FullPlayerVisuals.secondaryText,
+              ),
+            ),
+            trailing: [
+              if (song.year != null && song.year! > 0) ...[
+                const _MetadataDot(),
+                Text(
+                  '${song.year}',
+                  style: TextStyle(
+                    fontFamily: _font,
+                    fontSize: lerpDouble(11, 10, p),
+                    color: FullPlayerVisuals.tertiaryText,
+                  ),
+                ),
+              ],
+              if (_videoActive) ...[
+                const SizedBox(width: 12),
+                Text(
+                  lokalText('Video').toUpperCase(),
+                  style: const TextStyle(
+                    fontFamily: _font,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: FullPlayerVisuals.secondaryText,
+                    letterSpacing: .6,
+                  ),
+                ),
+              ],
+              if (!_videoActive && song.atmosEncoded) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => SongMetadataSheet.show(context, song),
+                  child: const LokalAtmosStreamPill(),
+                ),
+              ],
+              if (LokalQualityTier.of(song) case final tier?
+                  when !_videoActive && !song.atmosEncoded) ...[
+                const SizedBox(width: 12),
+                InkWell(
+                  onTap: () => SongMetadataSheet.show(context, song),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: FullPlayerVisuals.secondaryText,
+                      ),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Tooltip(
+                      message: _fullPlayerAudioLabel(song, tier),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: (MediaQuery.sizeOf(context).width * .52)
+                              .clamp(110.0, 210.0)
+                              .toDouble(),
+                        ),
+                        child: Text(
+                          _fullPlayerAudioLabel(song, tier),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: _font,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: .6,
+                            color: FullPlayerVisuals.primaryText,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 

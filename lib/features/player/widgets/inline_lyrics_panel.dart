@@ -35,6 +35,9 @@ class InlineLyricsPanel extends ConsumerStatefulWidget {
   final ValueNotifier<Duration>? positionNotifier;
   final bool active;
 
+  /// Minimal icon toolbar for the narrow tablet Now Playing sidebar.
+  final bool compactControls;
+
   const InlineLyricsPanel({
     super.key,
     required this.playerService,
@@ -43,6 +46,7 @@ class InlineLyricsPanel extends ConsumerStatefulWidget {
     this.albumColor,
     this.positionNotifier,
     this.active = true,
+    this.compactControls = false,
   });
 
   @override
@@ -324,13 +328,22 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
     }
   }
 
-  Widget _buildActionButtons() {
+  List<Widget> _fileActions() {
     Widget action({
       required IconData icon,
       required String label,
       required VoidCallback onPressed,
       bool emphasized = false,
     }) {
+      if (widget.compactControls) {
+        return IconButton(
+          tooltip: label,
+          onPressed: onPressed,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          visualDensity: VisualDensity.standard,
+          icon: Icon(icon, size: 19),
+        );
+      }
       final fillColor = emphasized
           ? Colors.white.withValues(alpha: 0.16)
           : Colors.white.withValues(alpha: 0.08);
@@ -357,33 +370,37 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          action(
-            icon: LucideIcons.filePlus,
-            label: l10n.useExistingFile,
-            onPressed: () => unawaited(_importLyricsFile()),
-          ),
-          action(
-            icon: LucideIcons.globe,
-            label: l10n.searchOnline,
-            onPressed: () => unawaited(_searchOnlineLyrics()),
-          ),
-          if (_hasManualLyricsSelection)
-            action(
-              icon: LucideIcons.refreshCcw,
-              label: l10n.useAutoSource,
-              onPressed: () => unawaited(_resetManualLyricsSource()),
-            ),
-        ],
+    return [
+      action(
+        icon: LucideIcons.filePlus,
+        label: l10n.useExistingFile,
+        onPressed: () => unawaited(_importLyricsFile()),
       ),
-    );
+      action(
+        icon: LucideIcons.globe,
+        label: l10n.searchOnline,
+        onPressed: () => unawaited(_searchOnlineLyrics()),
+      ),
+      // The compact source chooser also contains the linked-file reset,
+      // keeping the toolbar to a single row of icons.
+      if (_hasManualLyricsSelection && !widget.compactControls)
+        action(
+          icon: LucideIcons.refreshCcw,
+          label: l10n.useAutoSource,
+          onPressed: () => unawaited(_resetManualLyricsSource()),
+        ),
+    ];
   }
+
+  Widget _buildActionButtons() => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+    child: Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: _fileActions(),
+    ),
+  );
 
   Widget _buildLyricsMeta(LyricsData lyrics) {
     final sourceLabel = _lyricsSourceLabel(lyrics.source);
@@ -535,42 +552,58 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (_lyricsData case final lyrics?
-              when hasUsableLyrics(_sublineLyrics ?? lyrics))
-            LyricsSaveButton(
-              key: const ValueKey('save-inline-lyrics-file'),
-              saving: _savingLyricsFile,
-              onSaveOriginal: _saveOriginalLyricsAction(lyrics),
-              onSaveWithTranslation: _saveTranslatedLyricsAction(),
-            ),
-          if (_lyricsData case final lyrics?)
-            LyricsSublineButtons(
-              lyrics: lyrics,
-              onChanged: (value) => setState(() => _sublineLyrics = value),
-            ),
-          LyricsSourceButton(
-            selected: _selectedLyricsSource,
-            lyrics: _lyricsData,
-            song: widget.song,
-            lyricsService: widget.lyricsService,
-            busy: _isLoading,
-            onSelected: (source) {
-              setState(() => _selectedLyricsSource = source);
-              unawaited(_loadLyricsForSong(widget.song));
-            },
-            onRefresh: () =>
-                unawaited(_loadLyricsForSong(widget.song, refreshOnline: true)),
-          ),
-        ],
+  Widget build(BuildContext context) {
+    final controls = <Widget>[
+      if (_lyricsData case final lyrics?
+          when hasUsableLyrics(_sublineLyrics ?? lyrics))
+        LyricsSaveButton(
+          key: const ValueKey('save-inline-lyrics-file'),
+          saving: _savingLyricsFile,
+          onSaveOriginal: _saveOriginalLyricsAction(lyrics),
+          onSaveWithTranslation: _saveTranslatedLyricsAction(),
+        ),
+      if (_lyricsData case final lyrics?)
+        LyricsSublineButtons(
+          lyrics: lyrics,
+          onChanged: (value) => setState(() => _sublineLyrics = value),
+        ),
+      LyricsSourceButton(
+        iconOnly: widget.compactControls,
+        onResetManual: widget.compactControls && _hasManualLyricsSelection
+            ? () => unawaited(_resetManualLyricsSource())
+            : null,
+        selected: _selectedLyricsSource,
+        lyrics: _lyricsData,
+        song: widget.song,
+        lyricsService: widget.lyricsService,
+        busy: _isLoading,
+        onSelected: (source) {
+          setState(() => _selectedLyricsSource = source);
+          unawaited(_loadLyricsForSong(widget.song));
+        },
+        onRefresh: () =>
+            unawaited(_loadLyricsForSong(widget.song, refreshOnline: true)),
       ),
-      Expanded(child: _buildLyricsBody(context)),
-    ],
-  );
+      if (widget.compactControls) ..._fileActions(),
+    ];
+    return Column(
+      children: [
+        if (widget.compactControls)
+          Padding(
+            key: const ValueKey('compact-lyrics-toolbar'),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: controls,
+            ),
+          )
+        else
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: controls),
+        Expanded(child: _buildLyricsBody(context)),
+      ],
+    );
+  }
 
   Widget _buildLyricsBody(BuildContext context) {
     return _buildBody(context);
@@ -628,7 +661,7 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
                     color: Colors.white.withValues(alpha: 0.56),
                   ),
                 ),
-                _buildActionButtons(),
+                if (!widget.compactControls) _buildActionButtons(),
               ],
             ),
           ),
@@ -641,13 +674,16 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
         children: [
           // Sources and actions remain reachable without consuming the entire
           // compact card at large text sizes. The lyric stage keeps its space.
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: constraints.maxHeight * .45),
-            child: SingleChildScrollView(
-              primary: false,
-              child: _buildLyricsMeta(lyrics),
+          if (!widget.compactControls)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * .45,
+              ),
+              child: SingleChildScrollView(
+                primary: false,
+                child: _buildLyricsMeta(lyrics),
+              ),
             ),
-          ),
           if (lyrics.isSynchronized)
             _buildSynchronizedLyricsView(lyrics)
           else

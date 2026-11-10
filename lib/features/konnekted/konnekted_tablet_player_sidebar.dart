@@ -520,6 +520,7 @@ class _KonnektedTabletPlayerSidebarState
                     lyricsService: _lyricsService,
                     song: song,
                     active: active,
+                    compactControls: true,
                   )),
       ),
     );

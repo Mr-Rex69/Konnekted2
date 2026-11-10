@@ -1,3 +1,4 @@
+import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/features/appearance/lokal_performance_selector.dart';
 
 import 'dart:async';
@@ -129,7 +130,9 @@ List<LokalSettingsSection> appearanceSettings(
         LokalSettingRow.toggle(
           label: lokalText('Fullscreen cover'),
           description: lokalText(
-            'Extend album covers behind the header and fade them into the player. Spotify Canvas fills the screen.',
+            LokalLayout.isTablet(context)
+                ? 'A large square cover beside the controls, with artwork blur behind the player.'
+                : 'Extend album covers behind the header and fade them into the player. Spotify Canvas fills the screen.',
           ),
           value: appearance.fullscreenCover,
           onChanged: look.setFullscreenCover,

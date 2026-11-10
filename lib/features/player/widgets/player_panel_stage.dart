@@ -18,6 +18,7 @@ class PlayerPanelStage extends StatelessWidget {
     required this.queue,
     required this.lyrics,
     this.artGap = 16,
+    this.infoReserve = 72,
     this.onQueueHeaderTap,
     this.onLyricsCoverReturn,
     this.onQueueHeaderDrag,
@@ -29,6 +30,7 @@ class PlayerPanelStage extends StatelessWidget {
   final Widget Function(BuildContext, double) info;
   final Widget queue, lyrics;
   final double artGap;
+  final double infoReserve;
   final VoidCallback? onQueueHeaderTap, onLyricsCoverReturn;
   final ValueChanged<double>? onQueueHeaderDrag, onQueueHeaderRelease;
   @override
@@ -57,7 +59,7 @@ class PlayerPanelStage extends StatelessWidget {
             queue: q,
             lyrics: l,
             artGap: artGap,
-            infoReserve: MediaQuery.textScalerOf(context).scale(72),
+            infoReserve: MediaQuery.textScalerOf(context).scale(infoReserve),
           ),
           children: [
             LayoutId(
@@ -125,12 +127,7 @@ Rect playerPanelRestArtworkRect(
     height - artGap - math.min(height, infoReserve) - 6,
   );
   final side = math.min(width, room);
-  return Rect.fromLTWH(
-    (width - side) / 2,
-    (room - side) / 2,
-    side,
-    side,
-  );
+  return Rect.fromLTWH((width - side) / 2, (room - side) / 2, side, side);
 }
 
 /// Artwork rectangle at any point in the existing queue/lyrics transition.
@@ -247,8 +244,10 @@ class _PanelLayout extends MultiChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_PanelLayout old) =>
-      old.queue != queue || old.lyrics != lyrics || old.artGap != artGap ||
-    old.infoReserve != infoReserve;
+      old.queue != queue ||
+      old.lyrics != lyrics ||
+      old.artGap != artGap ||
+      old.infoReserve != infoReserve;
 }
 
 /// A compact cover exits lyrics on tap or an upward swipe, without stealing

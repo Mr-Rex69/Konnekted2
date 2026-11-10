@@ -1,3 +1,8 @@
+import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
+
+import 'konnekted_dock_glass.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -25,18 +30,100 @@ import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 
 import 'tablet_playback.dart';
 
-/// Desktop composition: track identity, centered transport/timeline and
-/// utilities. No glass capsule and no scrolling-dependent collapse.
+Widget _foldControl(Widget child, double progress, {bool reverse = false}) {
+  final visible = reverse ? progress : 1 - progress;
+  return ClipRect(
+    child: Align(
+      widthFactor: visible,
+      heightFactor: 1,
+      child: ExcludeSemantics(
+        excluding: visible < .5,
+        child: IgnorePointer(
+          ignoring: visible < .5,
+          child: Opacity(opacity: visible, child: child),
+        ),
+      ),
+    ),
+  );
+}
+
+/// A floating glass player that folds into one compact row while browsing.
 class KonnektedTabletFooter extends ConsumerWidget {
   const KonnektedTabletFooter({
     super.key,
     required this.onOpenPlayer,
     required this.onOpenPanel,
     this.artworkKey,
+    this.collapsed = false,
+    this.onExpand,
   });
   final VoidCallback onOpenPlayer;
   final ValueChanged<TabletPlayerTab> onOpenPanel;
   final Key? artworkKey;
+  final bool collapsed;
+  final VoidCallback? onExpand;
+
+  static const expandedHeight = 80.0;
+  static const collapsedHeight = 56.0;
+  static double reservedHeight({
+    required bool collapsed,
+    double systemInset = 0,
+  }) =>
+      (collapsed ? collapsedHeight : expandedHeight) +
+      math.max(12, systemInset) +
+      8;
+
+  void _openOutput(BuildContext context, TabletPlayback playback) {
+    if (playback.remote) {
+      unawaited(
+        Navigator.of(context, rootNavigator: true).push(
+          LokalPageRoute<void>(builder: (_) => const LokalDesktopLinkScreen()),
+        ),
+      );
+    } else if (Platform.isAndroid) {
+      unawaited(openAndroidOutputChooser(context));
+    } else {
+      unawaited(
+        Navigator.of(
+          context,
+          rootNavigator: true,
+        ).push(lokalSettingsRoute(context, group: LokalSettingsGroup.output)),
+      );
+    }
+  }
+
+  void _openVolume(BuildContext context, TabletPlayback playback) {
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(lokalText('Volume')),
+                TabletVolumeControl(playback: playback),
+                if (playback.remote) const LokalOutputPill(),
+                ListTile(
+                  leading: const Icon(Icons.speaker_rounded),
+                  title: Text(lokalText('Output')),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openOutput(context, playback);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,7 +138,7 @@ class KonnektedTabletFooter extends ConsumerWidget {
     final playing = playback.isRadio ? playback.radio!.playing : flags.$1;
     Future<void> command(Future<void> Function() action) =>
         tabletPlaybackAction(context, action);
-    final identity = Row(
+    Widget identity(double progress, bool wide) => Row(
       children: [
         InkWell(
           onTap: onOpenPlayer,
@@ -62,7 +149,7 @@ class KonnektedTabletFooter extends ConsumerWidget {
                 LokalArtworkRectTween(begin: begin, end: end),
             child: SizedBox.square(
               key: artworkKey,
-              dimension: 48,
+              dimension: 40,
               child: PlayerArtworkImage(
                 song: song,
                 radius: 8,
@@ -85,6 +172,7 @@ class KonnektedTabletFooter extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
+                    height: 1.15,
                     fontWeight: FontWeight.w700,
                     color: t.text,
                   ),
@@ -94,41 +182,47 @@ class KonnektedTabletFooter extends ConsumerWidget {
                   song.artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: t.muted),
+                  style: TextStyle(fontSize: 11, height: 1.2, color: t.muted),
                 ),
               ],
             ),
           ),
         ),
-        TabletLikeButton(playback: playback),
+        if (wide) _foldControl(TabletLikeButton(playback: playback), progress),
       ],
     );
-    Widget transport({bool compact = false}) => Row(
+    Widget transport({bool compact = false, double progress = 0}) => Row(
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!compact)
+          _foldControl(
+            IconButton(
+              tooltip: lokalText(flags.$2 ? 'Shuffle on' : 'Shuffle off'),
+              onPressed: playback.isRadio
+                  ? null
+                  : () => unawaited(command(player.toggleShuffle)),
+              icon: Icon(
+                Icons.shuffle_rounded,
+                size: 18,
+                color: flags.$2 && !playback.isRadio ? t.accent : t.muted,
+              ),
+            ),
+            progress,
+          ),
+        _foldControl(
           IconButton(
-            tooltip: lokalText(flags.$2 ? 'Shuffle on' : 'Shuffle off'),
-            onPressed: playback.isRadio
-                ? null
-                : () => unawaited(command(player.toggleShuffle)),
-            icon: Icon(
-              Icons.shuffle_rounded,
-              size: 18,
-              color: flags.$2 && !playback.isRadio ? t.accent : t.muted,
+            tooltip: lokalText('Previous'),
+            icon: const Icon(Icons.skip_previous_rounded),
+            onPressed: () => unawaited(
+              command(
+                playback.isRadio
+                    ? ref.read(radioPlayerProvider.notifier).previousStation
+                    : player.previous,
+              ),
             ),
           ),
-        IconButton(
-          tooltip: lokalText('Previous'),
-          icon: const Icon(Icons.skip_previous_rounded),
-          onPressed: () => unawaited(
-            command(
-              playback.isRadio
-                  ? ref.read(radioPlayerProvider.notifier).previousStation
-                  : player.previous,
-            ),
-          ),
+          progress,
         ),
         IconButton.filled(
           tooltip: playing ? l10n.pause : l10n.play,
@@ -153,24 +247,27 @@ class KonnektedTabletFooter extends ConsumerWidget {
           ),
         ),
         if (!compact)
-          IconButton(
-            tooltip: lokalText(
-              flags.$3 == LoopMode.off
-                  ? 'Repeat off'
-                  : flags.$3 == LoopMode.one
-                  ? 'Repeat one'
-                  : 'Repeat all',
+          _foldControl(
+            IconButton(
+              tooltip: lokalText(
+                flags.$3 == LoopMode.off
+                    ? 'Repeat off'
+                    : flags.$3 == LoopMode.one
+                    ? 'Repeat one'
+                    : 'Repeat all',
+              ),
+              onPressed: playback.isRadio ? null : player.toggleLoopMode,
+              icon: Icon(
+                flags.$3 == LoopMode.one
+                    ? Icons.repeat_one_rounded
+                    : Icons.repeat_rounded,
+                size: 18,
+                color: flags.$3 != LoopMode.off && !playback.isRadio
+                    ? t.accent
+                    : t.muted,
+              ),
             ),
-            onPressed: playback.isRadio ? null : player.toggleLoopMode,
-            icon: Icon(
-              flags.$3 == LoopMode.one
-                  ? Icons.repeat_one_rounded
-                  : Icons.repeat_rounded,
-              size: 18,
-              color: flags.$3 != LoopMode.off && !playback.isRadio
-                  ? t.accent
-                  : t.muted,
-            ),
+            progress,
           ),
       ],
     );
@@ -216,154 +313,233 @@ class KonnektedTabletFooter extends ConsumerWidget {
               ),
             ),
           );
-    final utilities = Row(
-      mainAxisAlignment: MainAxisAlignment.end,
+    Widget utilities(bool wide, double progress) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          tooltip: l10n.lyrics,
-          icon: const Icon(Icons.lyrics_outlined, size: 20),
-          onPressed: () => onOpenPanel(TabletPlayerTab.lyrics),
-        ),
-        IconButton(
-          tooltip: l10n.queue,
-          icon: const Icon(Icons.queue_music_rounded, size: 20),
-          onPressed: () => onOpenPanel(TabletPlayerTab.queue),
-        ),
+        if (wide) ...[
+          _foldControl(
+            IconButton(
+              tooltip: l10n.lyrics,
+              icon: const Icon(Icons.lyrics_outlined, size: 20),
+              onPressed: () => onOpenPanel(TabletPlayerTab.lyrics),
+            ),
+            progress,
+          ),
+          _foldControl(
+            IconButton(
+              tooltip: l10n.queue,
+              icon: const Icon(Icons.queue_music_rounded, size: 20),
+              onPressed: () => onOpenPanel(TabletPlayerTab.queue),
+            ),
+            progress,
+          ),
+        ],
         IconButton(
           tooltip: lokalText('Now playing'),
           icon: const Icon(Icons.view_sidebar_outlined, size: 20),
           onPressed: () => onOpenPanel(TabletPlayerTab.details),
         ),
-        IconButton(
-          tooltip: lokalText('Full screen'),
-          onPressed: onOpenPlayer,
-          icon: const Icon(Icons.open_in_full_rounded, size: 19),
+        if (wide)
+          _foldControl(
+            IconButton(
+              tooltip: lokalText('Volume'),
+              icon: const Icon(Icons.volume_up_rounded, size: 20),
+              onPressed: () => _openVolume(context, playback),
+            ),
+            progress,
+          ),
+        _foldControl(
+          IconButton(
+            tooltip: lokalText('Expand player'),
+            icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 22),
+            onPressed: onExpand,
+          ),
+          progress,
+          reverse: true,
         ),
-        IconButton(
-          tooltip: lokalText('Output'),
-          icon: const Icon(Icons.speaker_rounded, size: 19),
-          onPressed: () {
-            if (playback.remote) {
-              unawaited(
-                Navigator.of(context, rootNavigator: true).push(
-                  LokalPageRoute<void>(
-                    builder: (_) => const LokalDesktopLinkScreen(),
+        SizedBox.square(
+          dimension: 44,
+          child: PopupMenuButton<String>(
+            tooltip: lokalText('Playback options'),
+            icon: const Icon(Icons.more_horiz_rounded, size: 20),
+            onSelected: (action) {
+              final service = ref.read(playerServiceProvider);
+              switch (action) {
+                case 'lyrics':
+                  onOpenPanel(TabletPlayerTab.lyrics);
+                case 'queue':
+                  onOpenPanel(TabletPlayerTab.queue);
+                case 'output':
+                  _openOutput(context, playback);
+                case 'volume':
+                  _openVolume(context, playback);
+                case 'shuffle':
+                  unawaited(command(player.toggleShuffle));
+                case 'repeat':
+                  player.toggleLoopMode();
+                case 'fullscreen':
+                  onOpenPlayer();
+                case 'sleep':
+                  unawaited(SleepTimerBottomSheet.show(context, service));
+                case 'speed':
+                  unawaited(SpeedBottomSheet.show(context, service));
+                case 'pitch':
+                  unawaited(PitchBottomSheet.show(context, service));
+                case 'eq':
+                  unawaited(
+                    Navigator.of(context, rootNavigator: true).push(
+                      LokalPageRoute<void>(
+                        builder: (_) => const EqualizerScreen(),
+                      ),
+                    ),
+                  );
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'lyrics', child: Text(l10n.lyrics)),
+              PopupMenuItem(value: 'queue', child: Text(l10n.queue)),
+              PopupMenuItem(value: 'volume', child: Text(lokalText('Volume'))),
+              PopupMenuItem(value: 'output', child: Text(lokalText('Output'))),
+              if (!playback.isRadio) ...[
+                PopupMenuItem(
+                  value: 'shuffle',
+                  child: Text(
+                    lokalText(flags.$2 ? 'Shuffle on' : 'Shuffle off'),
                   ),
                 ),
-              );
-            } else if (Platform.isAndroid) {
-              unawaited(openAndroidOutputChooser(context));
-            } else {
-              unawaited(
-                Navigator.of(context, rootNavigator: true).push(
-                  lokalSettingsRoute(context, group: LokalSettingsGroup.output),
-                ),
-              );
-            }
-          },
-        ),
-        PopupMenuButton<String>(
-          tooltip: lokalText('Playback options'),
-          icon: const Icon(Icons.more_horiz_rounded, size: 20),
-          onSelected: (action) {
-            final service = ref.read(playerServiceProvider);
-            switch (action) {
-              case 'fullscreen':
-                onOpenPlayer();
-              case 'sleep':
-                unawaited(SleepTimerBottomSheet.show(context, service));
-              case 'speed':
-                unawaited(SpeedBottomSheet.show(context, service));
-              case 'pitch':
-                unawaited(PitchBottomSheet.show(context, service));
-              case 'eq':
-                unawaited(
-                  Navigator.of(context, rootNavigator: true).push(
-                    LokalPageRoute<void>(
-                      builder: (_) => const EqualizerScreen(),
+                PopupMenuItem(
+                  value: 'repeat',
+                  child: Text(
+                    lokalText(
+                      flags.$3 == LoopMode.off
+                          ? 'Repeat off'
+                          : flags.$3 == LoopMode.one
+                          ? 'Repeat one'
+                          : 'Repeat all',
                     ),
                   ),
-                );
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'fullscreen',
-              child: Text(lokalText('Full screen')),
-            ),
-            if (!playback.isRadio && !playback.remote) ...[
-              PopupMenuItem(value: 'sleep', child: Text(l10n.sleepTimer)),
-              PopupMenuItem(value: 'speed', child: Text(l10n.speedUp)),
-              PopupMenuItem(value: 'pitch', child: Text(l10n.pitch)),
-              PopupMenuItem(value: 'eq', child: Text(l10n.equalizer)),
+                ),
+              ],
+              PopupMenuItem(
+                value: 'fullscreen',
+                child: Text(lokalText('Full screen')),
+              ),
+              if (!playback.isRadio && !playback.remote) ...[
+                PopupMenuItem(value: 'sleep', child: Text(l10n.sleepTimer)),
+                PopupMenuItem(value: 'speed', child: Text(l10n.speedUp)),
+                PopupMenuItem(value: 'pitch', child: Text(l10n.pitch)),
+                PopupMenuItem(value: 'eq', child: Text(l10n.equalizer)),
+              ],
             ],
-          ],
+          ),
         ),
       ],
     );
     return LayoutBuilder(
-      builder: (context, c) {
-        final wide = c.maxWidth >= 1100;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: wide
-              ? Row(
-                  children: [
-                    Expanded(flex: 3, child: identity),
-                    const SizedBox(width: 24),
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [transport(), timeline],
-                      ),
-                    ),
-                    const SizedBox(width: 24),
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          utilities,
-                          SizedBox(
-                            width: 220,
-                            child: TabletVolumeControl(playback: playback),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: identity),
-                        const SizedBox(width: 12),
-                        transport(),
-                      ],
-                    ),
-                    timeline,
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 200,
-                          child: TabletVolumeControl(playback: playback),
+      builder: (context, bounds) => TweenAnimationBuilder<double>(
+        tween: Tween(end: collapsed ? 1 : 0),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 250),
+        curve: Curves.easeInOutCubic,
+        builder: (context, progress, _) {
+          final width = lerpDouble(
+            math.min(bounds.maxWidth, 1200),
+            math.min(bounds.maxWidth, 760),
+            progress,
+          )!;
+          final folded = progress >= .5;
+          final wide = bounds.maxWidth >= 1000;
+          final timelineHeight = 24 * (1 - progress);
+          return Center(
+            heightFactor: 1,
+            child: SizedBox(
+              width: width,
+              height: lerpDouble(expandedHeight, collapsedHeight, progress),
+              child: konnektedDockGlass(
+                context,
+                key: const ValueKey('tablet-footer-glass'),
+                progress: progress,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: IconButtonTheme(
+                      data: IconButtonThemeData(
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: const Size(44, 44),
+                          maximumSize: const Size(44, 44),
+                          padding: const EdgeInsets.all(8),
+                          visualDensity: VisualDensity.standard,
                         ),
-                        if (playback.remote)
-                          const Expanded(child: LokalOutputPill())
-                        else
-                          const Spacer(),
-                        utilities,
-                      ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: identity(progress, wide),
+                                ),
+                                const SizedBox(width: 8),
+                                if (wide)
+                                  Expanded(
+                                    flex: 4,
+                                    child: transport(progress: progress),
+                                  )
+                                else
+                                  transport(compact: true, progress: progress),
+                                const SizedBox(width: 8),
+                                if (wide)
+                                  Expanded(
+                                    flex: 3,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: utilities(wide, progress),
+                                    ),
+                                  )
+                                else
+                                  utilities(wide, progress),
+                              ],
+                            ),
+                            SizedBox(
+                              height: timelineHeight,
+                              child: ClipRect(
+                                child: OverflowBox(
+                                  alignment: Alignment.topCenter,
+                                  minHeight: 24,
+                                  maxHeight: 24,
+                                  child: ExcludeSemantics(
+                                    excluding: folded,
+                                    child: IgnorePointer(
+                                      ignoring: folded,
+                                      child: Opacity(
+                                        opacity: 1 - progress,
+                                        child: timeline,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
+                  ),
                 ),
-        );
-      },
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

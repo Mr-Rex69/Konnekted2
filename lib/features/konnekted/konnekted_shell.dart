@@ -168,7 +168,6 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
       );
     }
 
-    if (LokalLayout.usesSidebar(MediaQuery.sizeOf(context))) return false;
     if (n is ScrollEndNotification ||
         (n is UserScrollNotification && n.direction == ScrollDirection.idle)) {
       _dockScroll.reset();
@@ -524,6 +523,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                         _navigate(destination);
                       },
                       hasPlayer: hasSong,
+                      playerCollapsed: _dockCollapsed.value,
                       leftOpen: _leftVisible.value,
                       rightOpen: _rightOpen,
                       onToggleLeft: () =>
@@ -532,6 +532,8 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
                       player: KonnektedTabletFooter(
                         key: _miniPlayerKey,
                         artworkKey: _miniArtworkKey,
+                        collapsed: _dockCollapsed.value,
+                        onExpand: () => _dockCollapsed.value = false,
                         onOpenPlayer: _openPlayer,
                         onOpenPanel: _showPlayerPanel,
                       ),

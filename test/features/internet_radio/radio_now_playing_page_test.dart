@@ -74,6 +74,7 @@ Widget app(
   Size size = const Size(430, 940),
   double textScale = 1,
 }) => ProviderScope(
+  key: ValueKey('radio-$fullCover-$size-$textScale'),
   overrides: [
     radioPlayerProvider.overrideWith(_Radio.new),
     lokalAppearanceProvider.overrideWith(() => _Appearance(fullCover)),
@@ -231,6 +232,15 @@ void main() {
           await tester.pumpWidget(app(fullCover, size: size, textScale: scale));
           await tester.pumpAndSettle();
           expect(find.byType(LokalPlayerColumns), findsOneWidget);
+          expect(find.byType(FullBleedArtworkFrame), findsNothing);
+          expect(
+            find.byKey(const ValueKey('tablet-square-cover-player')),
+            fullCover ? findsOneWidget : findsNothing,
+          );
+          expect(
+            find.byType(ArtworkMeshBlurBackdrop),
+            fullCover ? findsOneWidget : findsNothing,
+          );
           expect(find.byType(PlayerTransportControls), findsOneWidget);
           final columns = tester.widget<LokalPlayerColumns>(
             find.byType(LokalPlayerColumns),

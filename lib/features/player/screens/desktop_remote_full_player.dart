@@ -186,9 +186,11 @@ class _DesktopRemoteFullPlayerState
           ];
     // Match the local full player: remote control changes the transport,
     // not the listener's chosen artwork presentation.
-    final fullCover = ref.watch(
+    final coverPreference = ref.watch(
       lokalAppearanceProvider.select((look) => look.fullscreenCover),
     );
+    final tabletCover = LokalLayout.isTablet(context) && coverPreference;
+    final fullCover = !LokalLayout.isTablet(context) && coverPreference;
     final playlist = remote.snapshot?.queue ?? const <LokalRemoteTrack>[];
     final reportedIndex = remote.snapshot?.currentIndex ?? -1;
     // Reject stale shuffle/queue indices after a desktop reorder and locate
@@ -253,7 +255,7 @@ class _DesktopRemoteFullPlayerState
                 if (song != null)
                   ArtworkMeshBlurBackdrop(
                     song: song,
-                    preserveArtworkContrast: fullCover,
+                    preserveArtworkContrast: fullCover || tabletCover,
                   ),
                 if (fullCover && song != null)
                   SongStageCarousel(
@@ -312,13 +314,15 @@ class _DesktopRemoteFullPlayerState
                         final wide =
                             LokalLayout.isTablet(context) &&
                             bounds.maxWidth >= 720 &&
-                            bounds.maxWidth > bounds.maxHeight;
+                            (tabletCover || bounds.maxWidth > bounds.maxHeight);
                         final artworkSize = math.min(
                           math.min(
-                            510.0,
+                            tabletCover ? double.infinity : 510.0,
                             math.max(
                               0.0,
-                              bounds.maxWidth * (wide ? .46 : 1) - 48,
+                              bounds.maxWidth *
+                                      (wide ? (tabletCover ? .54 : .46) : 1) -
+                                  48,
                             ),
                           ),
                           math.max(
@@ -353,6 +357,12 @@ class _DesktopRemoteFullPlayerState
                                     maxWidth: wide ? double.infinity : 510,
                                   ),
                                   child: LokalPlayerColumns(
+                                    key: tabletCover
+                                        ? const ValueKey(
+                                            'tablet-square-cover-player',
+                                          )
+                                        : null,
+                                    fillCover: tabletCover,
                                     expandPortraitStage: false,
                                     landscapeHeight: bounds.maxHeight,
                                     header: Row(
@@ -409,7 +419,13 @@ class _DesktopRemoteFullPlayerState
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          SizedBox(height: compact ? 12 : 18),
+                                          SizedBox(
+                                            height: tabletCover
+                                                ? 0
+                                                : compact
+                                                ? 12
+                                                : 18,
+                                          ),
                                           if (fullCover && song != null)
                                             GestureDetector(
                                               key: const ValueKey(
