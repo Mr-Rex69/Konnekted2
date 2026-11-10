@@ -3,6 +3,8 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flick/core/theme/lokal_theme.dart';
+import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flick/services/automatic_backup_service.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
@@ -140,46 +142,93 @@ class _AutomaticBackupSettingsTileState extends State<AutomaticBackupSettingsTil
 
   @override
   Widget build(BuildContext context) {
-    final last = _last == null ? 'Never' : _last!.toLocal().toString().split('.').first;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(child: Text('Frequency', style: TextStyle(fontSize: 13))),
-            DropdownButton<String>(
-              value: const ['off', 'daily', 'weekly'].contains(_frequency) ? _frequency : 'off',
-              onChanged: _busy ? null : _changeFrequency,
-              items: const [
-                DropdownMenuItem(value: 'off', child: Text('Off')),
-                DropdownMenuItem(value: 'daily', child: Text('Daily')),
-                DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
-              ],
+    final t = context.lokal;
+    final last = _last == null
+        ? 'Never'
+        : MaterialLocalizations.of(context).formatMediumDate(_last!.toLocal()) +
+              ' · ' +
+              MaterialLocalizations.of(context)
+                  .formatTimeOfDay(TimeOfDay.fromDateTime(_last!.toLocal()));
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Automatic backup',
+            style: TextStyle(
+              fontFamily: LokalTheme.sans,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: t.text,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Save your library metadata, playlists, preferences and listening history. Music files and sign-ins are not included.',
+            style: TextStyle(fontSize: 12.5, height: 1.4, color: t.muted),
+          ),
+          const SizedBox(height: 20),
+          DropdownButtonFormField<String>(
+            key: ValueKey(_frequency),
+            initialValue: const ['off', 'daily', 'weekly'].contains(_frequency)
+                ? _frequency
+                : 'off',
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Frequency'),
+            onChanged: _busy ? null : _changeFrequency,
+            items: const [
+              DropdownMenuItem(value: 'off', child: Text('Off')),
+              DropdownMenuItem(value: 'daily', child: Text('Daily')),
+              DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Last successful backup',
+            style: TextStyle(fontSize: 12.5, height: 1.4, color: t.muted),
+          ),
+          const SizedBox(height: 4),
+          Text(last, style: TextStyle(fontSize: 14, color: t.text)),
+          const SizedBox(height: 20),
+          for (final action in [
+            LokalSettingsActionButton(
+              label: _busy ? 'Working…' : 'Back up now',
+              onPressed: _busy ? null : _backupNow,
+              expand: true,
+            ),
+            LokalSettingsActionButton(
+              label: 'Share latest',
+              onPressed: _busy || _latest == null ? null : _share,
+              primary: false,
+              expand: true,
+            ),
+            LokalSettingsActionButton(
+              label: 'Restore file',
+              onPressed: _busy ? null : _restore,
+              primary: false,
+              expand: true,
+            ),
+          ]) ...[
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: action,
+            ),
+            const SizedBox(height: 10),
+          ],
+          const SizedBox(height: 6),
+          const LokalSettingsNotice(
+            text: 'Automatic backups run when Lokal opens or returns to the foreground. The latest 10 copies stay on this device. Share a copy to Files or cloud storage to protect it against app deletion or phone loss. Backups are not encrypted.',
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(fontSize: 12.5, height: 1.4, color: t.red),
             ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            LokalSettingButton(label: _busy ? 'Working…' : 'Back up now', onPressed: _busy ? null : _backupNow),
-            LokalSettingButton(label: 'Share latest', onPressed: _busy || _latest == null ? null : _share),
-            LokalSettingButton(label: 'Restore file', onPressed: _busy ? null : _restore),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text('Last successful backup: $last', style: const TextStyle(fontSize: 12)),
-        const SizedBox(height: 4),
-        const Text(
-          'Backups run automatically when Lokal opens or returns to the foreground. Up to 10 copies are kept privately on this device. Share a copy to Files or cloud storage to protect it against app deletion or phone loss. Backups are not encrypted.',
-          style: TextStyle(fontSize: 12),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Text(_error!, style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
         ],
-      ],
+      ),
     );
   }
 }

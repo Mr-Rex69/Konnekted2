@@ -8,6 +8,7 @@ on:
       - 'lib/main.dart'
       - 'lib/app/app.dart'
       - 'test/services/automatic_backup_service_test.dart'
+      - 'test/features/settings/automatic_backup_settings_tile_test.dart'
       - '.github/workflows/automatic-backups.yml'
   workflow_dispatch:
 
@@ -29,4 +30,4 @@ jobs:
       - name: Analyze backup service and settings widget
         run: dart analyze lib/services/automatic_backup_service.dart lib/features/settings/widgets/automatic_backup_settings_tile.dart
       - name: Run automatic backup regressions
-        run: flutter test test/services/automatic_backup_service_test.dart
+        run: flutter test test/services/automatic_backup_service_test.dart test/features/settings/automatic_backup_settings_tile_test.dart
