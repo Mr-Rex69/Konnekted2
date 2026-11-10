@@ -38,11 +38,12 @@ Widget _app(
   Widget child, {
   double scale = 1,
   bool light = false,
+  TargetPlatform? platform,
 }) => ProviderScope(
   child: MaterialApp(
     theme: LokalTheme.build(
       LokalTokens.resolve(light ? LokalThemeId.light : LokalThemeId.dark),
-    ),
+    ).copyWith(platform: platform),
     home: MediaQuery(
       data: MediaQueryData.fromView(
         TestWidgetsFlutterBinding.instance.platformDispatcher.views.first,
@@ -58,6 +59,7 @@ Widget _workspace({
   bool leftOpen = true,
   VoidCallback? toggleLeft,
   bool hasPlayer = true,
+  Widget? mobileDock,
   VoidCallback? toggleQueue,
   ValueChanged<KonnektedDestination>? navigate,
 }) => KonnektedTabletWorkspace(
@@ -76,7 +78,8 @@ Widget _workspace({
     onQueue: () {},
     progress: const LinearProgressIndicator(value: .4),
   ),
-  mobileDock: const SizedBox(key: ValueKey('phone-dock'), height: 120),
+  mobileDock:
+      mobileDock ?? const SizedBox(key: ValueKey('phone-dock'), height: 120),
   playerSidebar: const Center(child: Text('Player sidebar slot')),
   leftOpen: leftOpen,
   rightOpen: queueOpen,
@@ -171,6 +174,82 @@ void main() {
       }
     },
   );
+
+  testWidgets('phone dock uses system insets once on Android and iOS', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+      for (final (height, bottom, keyboard) in [
+        (844.0, 0.0, 0.0),
+        (844.0, 24.0, 0.0),
+        (932.0, 34.0, 0.0),
+        (844.0, 0.0, 300.0),
+      ]) {
+        tester.view
+          ..physicalSize = Size(390, height)
+          ..padding = FakeViewPadding(top: 44, bottom: bottom)
+          ..viewPadding = FakeViewPadding(
+            top: 44,
+            bottom: keyboard > 0 ? 34 : bottom,
+          )
+          ..viewInsets = FakeViewPadding(bottom: keyboard);
+        for (final hasPlayer in [false, true]) {
+          for (final collapsed in [false, true]) {
+            EdgeInsets? contentPadding;
+            EdgeInsets? dockPadding;
+            await tester.pumpWidget(
+              _app(
+                _workspace(
+                  hasPlayer: hasPlayer,
+                  mobileDock: Builder(
+                    builder: (context) {
+                      dockPadding = MediaQuery.paddingOf(context);
+                      return KonnektedDock(
+                        selected: KonnektedTab.listen,
+                        onSelect: (_) {},
+                        hasMiniPlayer: hasPlayer,
+                        collapsed: collapsed,
+                        miniPlayer: const SizedBox.expand(),
+                      );
+                    },
+                  ),
+                  child: Builder(
+                    builder: (context) {
+                      contentPadding = MediaQuery.paddingOf(context);
+                      return const SizedBox.expand();
+                    },
+                  ),
+                ),
+                platform: platform,
+              ),
+            );
+            await tester.pumpAndSettle();
+            final reason =
+                '$platform bottom=$bottom keyboard=$keyboard player=$hasPlayer collapsed=$collapsed';
+            expect(dockPadding!.bottom, bottom, reason: reason);
+            expect(
+              contentPadding!.bottom,
+              KonnektedDock.reservedHeight(
+                hasMiniPlayer: hasPlayer,
+                systemInset: bottom,
+              ),
+              reason: reason,
+            );
+            expect(
+              tester
+                  .getBottomLeft(find.byKey(const ValueKey('dock-tab-glass')))
+                  .dy,
+              closeTo(height - keyboard - (bottom > 8 ? bottom : 8), .01),
+              reason: reason,
+            );
+            expect(tester.takeException(), isNull, reason: reason);
+          }
+        }
+      }
+    }
+  });
 
   testWidgets('tablet without playback retains the bottom system inset', (
     tester,
