@@ -1,5 +1,6 @@
 import 'animated_lyric_subline.dart';
 import 'lyrics_focus_timing.dart';
+import 'player_lyric_style.dart';
 
 import 'dart:async';
 
@@ -19,7 +20,9 @@ import 'package:flick/services/player_service.dart';
 /// their independent word windows visible with the current lead, instead of
 /// making the background singer disappear when the parent row loses focus.
 List<int> overlappingBackgroundVocalIndices(
-  LyricsData lyrics, Duration position, int focusedIndex,
+  LyricsData lyrics,
+  Duration position,
+  int focusedIndex,
 ) {
   final active = <int>[];
   for (var i = 0; i < lyrics.lines.length; i++) {
@@ -27,8 +30,7 @@ List<int> overlappingBackgroundVocalIndices(
     final voice = lyrics.lines[i];
     final words = voice.backgroundWords;
     if (words == null || words.isEmpty) continue;
-    if (words.any((word) =>
-        word.start <= position && position < word.end)) {
+    if (words.any((word) => word.start <= position && position < word.end)) {
       active.add(i);
     }
   }
@@ -42,7 +44,8 @@ List<int> visibleLeadLyricIndices(LyricsData lyrics) {
       if (lyrics.lines[i].voice != 'bg') i,
   ];
   return lead.isNotEmpty
-      ? lead : List<int>.generate(lyrics.lines.length, (i) => i);
+      ? lead
+      : List<int>.generate(lyrics.lines.length, (i) => i);
 }
 
 /// The index here refers to the visible rows, not the backing-only source rows.
@@ -61,7 +64,9 @@ class ActiveSupportingVocal {
 /// Attach any concurrent background singer visually to the *current* lead,
 /// including a singer whose original parent lead has already scrolled away.
 List<ActiveSupportingVocal> activeSupportingVocals(
-  LyricsData lyrics, Duration position, int focusedLineIndex,
+  LyricsData lyrics,
+  Duration position,
+  int focusedLineIndex,
 ) {
   if (focusedLineIndex < 0) return const [];
   final hasLead = lyrics.lines.any((l) => l.voice != 'bg');
@@ -109,12 +114,14 @@ class SyncedLyricsView extends ConsumerStatefulWidget {
   /// carousel peek stages pass a static source so only the playing song's
   /// lyrics run.
   final ValueNotifier<Duration>? positionNotifier;
+
   /// Remote transports can seek without touching the Android audio engine.
   final Future<void> Function(Duration)? onSeek;
   final ValueNotifier<bool>? playingNotifier;
 
   /// False for peek stages: renders statically without following playback.
   final bool active;
+  final bool fullPlayerTypography;
 
   const SyncedLyricsView({
     super.key,
@@ -126,6 +133,7 @@ class SyncedLyricsView extends ConsumerStatefulWidget {
     this.onSeek,
     this.playingNotifier,
     this.active = true,
+    this.fullPlayerTypography = false,
   });
 
   @override
@@ -173,6 +181,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     if (!identical(oldNotifier, _positionNotifier)) {
       oldNotifier.removeListener(_onPositionChanged);
       _positionNotifier.addListener(_onPositionChanged);
+    }
+    if (oldWidget.fullPlayerTypography != widget.fullPlayerTypography) {
+      _estimatesForWidth = null;
     }
     if (!identical(oldWidget.lyrics, widget.lyrics)) {
       _estimatesForWidth = null;
@@ -274,7 +285,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
       // Background vocals occupy space only while actually singing beneath
       // the active line. Do not leave an empty subline under inactive rows.
       inactive.add(32 + _estimateTextHeight(line.text, 17, 1.24, 2, textWidth));
-      active.add(28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth) + bgHeight);
+      active.add(
+        28 + _estimateTextHeight(line.text, 22, 1.18, 3, textWidth) + bgHeight,
+      );
     }
     _inactiveEstimates = inactive;
     _activeEstimates = active;
@@ -295,16 +308,19 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(
-          fontFamily: 'GoogleSansFlex',
-          fontFamilyFallback: AppTheme.fontFamilyFallback,
-          fontSize: fontSize,
-          height: heightFactor,
-          fontWeight: maxLines == 3 ? FontWeight.w700 : FontWeight.w500,
-        ),
+        style: widget.fullPlayerTypography
+            ? _textStyle(maxLines == 3, 1)
+            : TextStyle(
+                fontFamily: 'GoogleSansFlex',
+                fontFamilyFallback: AppTheme.fontFamilyFallback,
+                fontSize: fontSize,
+                height: heightFactor,
+                fontWeight: maxLines == 3 ? FontWeight.w700 : FontWeight.w500,
+              ),
       ),
-      textDirection: TextDirection.ltr,
-      maxLines: maxLines,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: widget.fullPlayerTypography ? null : maxLines,
     );
     painter.layout(maxWidth: maxWidth);
     final height = painter.height;
@@ -454,6 +470,12 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   }
 
   TextStyle _textStyle(bool isActive, double opacity) {
+    if (widget.fullPlayerTypography) {
+      return playerLyricStyle.copyWith(
+        fontSize: isActive ? 31 : 28,
+        color: Colors.white.withValues(alpha: opacity),
+      );
+    }
     return TextStyle(
       fontFamily: 'GoogleSansFlex',
       fontSize: isActive ? 22 : 17,
@@ -464,6 +486,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
   }
 
   StrutStyle _strutStyle(bool isActive) {
+    if (widget.fullPlayerTypography) {
+      return StrutStyle.fromTextStyle(_textStyle(isActive, 1));
+    }
     return StrutStyle(
       fontFamily: 'GoogleSansFlex',
       fontSize: isActive ? 22 : 17,
@@ -501,12 +526,14 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
               lineIndex: lyricIndex,
               textAlign: alignment.textAlign,
               style: isSupportingVoice
-                  ? _textStyle(true, 1).copyWith(
-                      fontSize: 16, fontStyle: FontStyle.italic,
-                    )
+                  ? _textStyle(
+                      true,
+                      1,
+                    ).copyWith(fontSize: 16, fontStyle: FontStyle.italic)
                   : _textStyle(true, 1),
               sungColor: isSupportingVoice
-                  ? _sungColor.withValues(alpha: .83) : _sungColor,
+                  ? _sungColor.withValues(alpha: .83)
+                  : _sungColor,
               unsungColor: Colors.white.withValues(alpha: 0.30),
               positionNotifier: _positionNotifier,
               playingNotifier: widget.playingNotifier,
@@ -520,16 +547,17 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
             ),
             child: Text(
               line.text,
-              maxLines: 2,
+              maxLines: widget.fullPlayerTypography ? null : 2,
               overflow: TextOverflow.fade,
               textAlign: alignment.textAlign,
-              style: _textStyle(
-                isActive,
-                isActive ? 1 : _opacityForIndex(index),
-              ).copyWith(
-                fontSize: isSupportingVoice ? 16 : null,
-                fontStyle: isSupportingVoice ? FontStyle.italic : null,
-              ),
+              style:
+                  _textStyle(
+                    isActive,
+                    isActive ? 1 : _opacityForIndex(index),
+                  ).copyWith(
+                    fontSize: isSupportingVoice ? 16 : null,
+                    fontStyle: isSupportingVoice ? FontStyle.italic : null,
+                  ),
               strutStyle: _strutStyle(isActive),
             ),
           );
@@ -551,96 +579,124 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                 // The backing singer sits immediately below the playing
                 // lead, never in a separate large lyric row.
                 ValueListenableBuilder<Duration>(
-                    valueListenable: _positionNotifier,
-                    builder: (context, position, _) {
-                      final backing = isActive && widget.active
-                          ? activeSupportingVocals(
-                              widget.lyrics, position, lyricIndex,
-                            )
-                          : const <ActiveSupportingVocal>[];
-                      final reduceMotion = MediaQuery.disableAnimationsOf(context);
-                      return lyricSizeTransition(
-                        context,
-                        duration: const Duration(milliseconds: 340),
-                        child: AnimatedSwitcher(
-                          duration: reduceMotion
-                              ? Duration.zero
-                              : const Duration(milliseconds: 300),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) =>
-                              FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0, .14),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              ),
-                          child: backing.isEmpty
-                              ? const SizedBox(
-                                  key: ValueKey('no-active-bg'),
-                                  width: double.infinity,
-                                )
-                              : Column(
-                                  key: ValueKey(
-                                    backing.map((voice) =>
-                                        voice.lineIndex.toString() + ':' +
-                                        voice.standalone.toString()).join('|'),
-                                  ),
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final voice in backing)
-                            Padding(
-                              key: ValueKey(
-                                'active-bg-${voice.lineIndex}-${voice.standalone}',
-                              ),
-                              padding: const EdgeInsets.only(
-                                left: 12, right: 12, top: 2, bottom: 5,
-                              ),
-                              child: karaokeEnabled
-                                  ? KaraokeLyricLine(
-                                      playerService: widget.playerService,
-                                      lyricsService: widget.lyricsService,
-                                      lyrics: widget.lyrics,
-                                      lineIndex: voice.lineIndex,
-                                      backgroundVoice: !voice.standalone,
-                                      textAlign: alignment.textAlign,
-                                      style: const TextStyle(
-                                        fontFamily: 'GoogleSansFlex',
-                                        fontSize: 16,
-                                        height: 1.25,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      sungColor: _sungColor.withValues(alpha: .84),
-                                      unsungColor: Colors.white.withValues(alpha: .38),
-                                      positionNotifier: _positionNotifier,
-                                      playingNotifier: widget.playingNotifier,
-                                      active: widget.active,
-                                    )
-                                  : Text(
-                                      voice.standalone
-                                          ? widget.lyrics.lines[voice.lineIndex].text
-                                          : widget.lyrics.lines[voice.lineIndex]
-                                              .backgroundText ?? '',
-                                      textAlign: alignment.textAlign,
-                                      style: TextStyle(
-                                        fontFamily: 'GoogleSansFlex',
-                                        fontSize: 16,
-                                        height: 1.25,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white.withValues(alpha: .78),
-                                      ),
-                                    ),
-                            ),
-                        ],
-                              ),
+                  valueListenable: _positionNotifier,
+                  builder: (context, position, _) {
+                    final backing = isActive && widget.active
+                        ? activeSupportingVocals(
+                            widget.lyrics,
+                            position,
+                            lyricIndex,
+                          )
+                        : const <ActiveSupportingVocal>[];
+                    final reduceMotion = MediaQuery.disableAnimationsOf(
+                      context,
+                    );
+                    return lyricSizeTransition(
+                      context,
+                      duration: const Duration(milliseconds: 340),
+                      child: AnimatedSwitcher(
+                        duration: reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 300),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, .14),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
                         ),
-                      );
-                    },
-                  ),
+                        child: backing.isEmpty
+                            ? const SizedBox(
+                                key: ValueKey('no-active-bg'),
+                                width: double.infinity,
+                              )
+                            : Column(
+                                key: ValueKey(
+                                  backing
+                                      .map(
+                                        (voice) =>
+                                            voice.lineIndex.toString() +
+                                            ':' +
+                                            voice.standalone.toString(),
+                                      )
+                                      .join('|'),
+                                ),
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (final voice in backing)
+                                    Padding(
+                                      key: ValueKey(
+                                        'active-bg-${voice.lineIndex}-${voice.standalone}',
+                                      ),
+                                      padding: const EdgeInsets.only(
+                                        left: 12,
+                                        right: 12,
+                                        top: 2,
+                                        bottom: 5,
+                                      ),
+                                      child: karaokeEnabled
+                                          ? KaraokeLyricLine(
+                                              playerService:
+                                                  widget.playerService,
+                                              lyricsService:
+                                                  widget.lyricsService,
+                                              lyrics: widget.lyrics,
+                                              lineIndex: voice.lineIndex,
+                                              backgroundVoice:
+                                                  !voice.standalone,
+                                              textAlign: alignment.textAlign,
+                                              style: const TextStyle(
+                                                fontFamily: 'GoogleSansFlex',
+                                                fontSize: 16,
+                                                height: 1.25,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              sungColor: _sungColor.withValues(
+                                                alpha: .84,
+                                              ),
+                                              unsungColor: Colors.white
+                                                  .withValues(alpha: .38),
+                                              positionNotifier:
+                                                  _positionNotifier,
+                                              playingNotifier:
+                                                  widget.playingNotifier,
+                                              active: widget.active,
+                                            )
+                                          : Text(
+                                              voice.standalone
+                                                  ? widget
+                                                        .lyrics
+                                                        .lines[voice.lineIndex]
+                                                        .text
+                                                  : widget
+                                                            .lyrics
+                                                            .lines[voice
+                                                                .lineIndex]
+                                                            .backgroundText ??
+                                                        '',
+                                              textAlign: alignment.textAlign,
+                                              style: TextStyle(
+                                                fontFamily: 'GoogleSansFlex',
+                                                fontSize: 16,
+                                                height: 1.25,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.white.withValues(
+                                                  alpha: .78,
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                ],
+                              ),
+                      ),
+                    );
+                  },
+                ),
                 AnimatedLyricSubline(
                   text: line.translation,
                   textAlign: alignment.textAlign,
@@ -649,7 +705,9 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                     height: 1.3,
                     color: Colors.white.withValues(alpha: isActive ? .72 : .35),
                   ),
-                  motionChild: isActive && karaokeEnabled &&
+                  motionChild:
+                      isActive &&
+                          karaokeEnabled &&
                           line.words?.isNotEmpty == true &&
                           line.translation?.trim().isNotEmpty == true
                       ? KaraokeLyricLine(

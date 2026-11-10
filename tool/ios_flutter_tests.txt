@@ -86,6 +86,7 @@ test/services/rust_audio_engine_pause_test.dart
 test/features/music_videos
 test/features/player/space_video_overlay_test.dart
 test/features/player/video_space_layout_test.dart
+test/features/player/tablet_player_presentation_test.dart
 test/features/player/immersive_lyrics_stage_test.dart
 test/services/casting/cast_content_server_test.dart
 test/services/lyricsplus_normalizer_test.dart

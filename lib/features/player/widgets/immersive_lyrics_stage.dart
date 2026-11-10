@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:flick/features/player/widgets/lyric_motion_line.dart';
 import 'package:flick/features/player/widgets/lyrics_subline_timing.dart';
+
+import 'player_lyric_style.dart';
+
 import 'package:flick/services/lyrics_service.dart';
 
 /// Space is available only for genuinely timestamped lyrics.
@@ -28,13 +32,13 @@ class SeekbarAlignedSpaceSubtitle extends StatelessWidget {
     child: IgnorePointer(
       child: Align(
         alignment: Alignment.topCenter,
-        child: FractionallySizedBox(
-          widthFactor: 1,
-          child: CompositedTransformFollower(
+        child: CompositedTransformFollower(
+          link: seekbarLink,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.center,
+          followerAnchor: Alignment.center,
+          child: _SeekbarSubtitleWidth(
             link: seekbarLink,
-            showWhenUnlinked: false,
-            targetAnchor: Alignment.center,
-            followerAnchor: Alignment.center,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: subtitle,
@@ -44,6 +48,45 @@ class SeekbarAlignedSpaceSubtitle extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The leader is laid out before the overlay in the player Stack. Matching
+/// its width keeps tablet subtitles inside the controls pane as well as
+/// following its position through rotation and panel transitions.
+class _SeekbarSubtitleWidth extends SingleChildRenderObjectWidget {
+  const _SeekbarSubtitleWidth({required this.link, required super.child});
+  final LayerLink link;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSeekbarSubtitleWidth(link);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderSeekbarSubtitleWidth renderObject,
+  ) {
+    renderObject.link = link;
+    renderObject.markNeedsLayout();
+  }
+}
+
+class _RenderSeekbarSubtitleWidth extends RenderProxyBox {
+  _RenderSeekbarSubtitleWidth(this.link);
+  LayerLink link;
+
+  @override
+  void performLayout() {
+    final width = (link.leaderSize?.width ?? constraints.maxWidth).clamp(
+      constraints.minWidth,
+      constraints.maxWidth,
+    );
+    child!.layout(
+      constraints.copyWith(minWidth: width, maxWidth: width),
+      parentUsesSize: true,
+    );
+    size = constraints.constrain(child!.size);
+  }
 }
 
 /// Identical line selection and resolved syllable timing to Lyrics mode.
@@ -114,13 +157,7 @@ class ImmersiveLyricsSubtitle extends StatefulWidget {
 class _ImmersiveLyricsSubtitleState extends State<ImmersiveLyricsSubtitle>
     with SingleTickerProviderStateMixin {
   static const _font = 'GoogleSansFlex';
-  static const _lyricStyle = TextStyle(
-    fontFamily: _font,
-    color: Colors.white,
-    fontSize: 31,
-    fontWeight: FontWeight.w800,
-    height: 1.2,
-  );
+  static const _lyricStyle = playerLyricStyle;
 
   LyricsData? _preparedSource;
   List<LyricsLine> _preparedLines = const [];

@@ -25,6 +25,40 @@ class _PlayerMarkerState extends State<_PlayerMarker> {
 }
 
 void main() {
+  testWidgets('tablet Space keeps widescreen video beside its lyrics', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final size in [
+      const Size(768, 1024),
+      const Size(1024, 768),
+      const Size(1366, 1024),
+    ]) {
+      tester.view.physicalSize = size;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VideoSpaceLayout(
+            player: const SizedBox.expand(key: ValueKey('tablet-video')),
+            subtitles: const Text(
+              'Syllable lyrics',
+              key: ValueKey('tablet-caption'),
+            ),
+            onExit: () {},
+            onOptions: () {},
+          ),
+        ),
+      );
+      final video = tester.getRect(find.byKey(const ValueKey('tablet-video')));
+      final caption = tester.getRect(
+        find.byKey(const ValueKey('tablet-caption')),
+      );
+      expect(video.width / video.height, closeTo(16 / 9, .01));
+      expect(caption.left, greaterThan(video.right));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   for (final size in [
     const Size(320, 280),
     const Size(393, 852),

@@ -47,6 +47,7 @@ class NavigationHelper {
     double? initialProgress,
     Rect? Function()? sourceArtwork,
     Key? playerKey,
+    bool initialLyrics = false,
   }) async {
     // Prevent multiple simultaneous navigations
     if (_isNavigating || _isFullPlayerOpen) {
@@ -93,8 +94,11 @@ class NavigationHelper {
           ? null
           : LokalArtworkSource(sourceArtwork);
       final route = LokalPlayerRoute<int>(
-        builder: (context) =>
-            FullPlayerScreen(key: playerKey, heroTag: heroTag),
+        builder: (context) => FullPlayerScreen(
+          key: playerKey,
+          heroTag: heroTag,
+          initialLyrics: initialLyrics,
+        ),
         startTop: startTop,
         initialProgress: initialProgress,
         sourceArtwork: artworkSource?.current,

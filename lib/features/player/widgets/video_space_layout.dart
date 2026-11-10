@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flick/l10n/l10n.dart';
+import 'package:flick/core/utils/lokal_layout.dart';
 
 import 'full_player_visuals.dart';
+import 'player_video_frame.dart';
 
 /// Keep captions and Lokal gestures outside the official embedded player.
 /// The caller reparents its existing keyed video surface into [player].
@@ -23,6 +25,35 @@ class VideoSpaceLayout extends StatelessWidget {
   Widget build(BuildContext context) => SafeArea(
     child: LayoutBuilder(
       builder: (context, constraints) {
+        if (LokalLayout.isTablet(context) && constraints.maxWidth >= 720) {
+          return Row(
+            children: [
+              Expanded(
+                flex: 6,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: PlayerVideoFrame(child: player),
+                ),
+              ),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: subtitles,
+                        ),
+                      ),
+                    ),
+                    _exitControls(),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
         final captionHeight = math.min(
           180.0,
           math.max(72.0, constraints.maxHeight * .25),
@@ -48,40 +79,7 @@ class VideoSpaceLayout extends StatelessWidget {
                 child: Center(child: SingleChildScrollView(child: subtitles)),
               ),
             ),
-            SizedBox(
-              height: 60,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: TextButton.icon(
-                      key: const ValueKey('embedded-space-exit'),
-                      onPressed: onExit,
-                      icon: const Icon(
-                        Icons.close_fullscreen,
-                        color: FullPlayerVisuals.primaryText,
-                      ),
-                      label: Text(
-                        lokalText('Exit Space'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: FullPlayerVisuals.primaryText,
-                        ),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onOptions,
-                    tooltip: l10n.lyrics,
-                    icon: const Icon(
-                      Icons.more_horiz,
-                      color: FullPlayerVisuals.primaryText,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _exitControls(),
           ],
         );
         // Keep the embedded player at least 200px high on short/rotated windows.
@@ -89,6 +87,39 @@ class VideoSpaceLayout extends StatelessWidget {
             ? SingleChildScrollView(child: content)
             : content;
       },
+    ),
+  );
+
+  Widget _exitControls() => SizedBox(
+    height: 60,
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Expanded(
+          child: TextButton.icon(
+            key: const ValueKey('embedded-space-exit'),
+            onPressed: onExit,
+            icon: const Icon(
+              Icons.close_fullscreen,
+              color: FullPlayerVisuals.primaryText,
+            ),
+            label: Text(
+              lokalText('Exit Space'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: FullPlayerVisuals.primaryText),
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: onOptions,
+          tooltip: l10n.lyrics,
+          icon: const Icon(
+            Icons.more_horiz,
+            color: FullPlayerVisuals.primaryText,
+          ),
+        ),
+      ],
     ),
   );
 }

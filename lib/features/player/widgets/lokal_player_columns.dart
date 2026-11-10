@@ -14,12 +14,14 @@ class LokalPlayerColumns extends StatelessWidget {
     this.expandPortraitStage = true,
     this.landscapeHeight,
     this.fillCover = false,
+    this.preferColumns = false,
   });
 
   final Widget header, stage, controls;
   final bool expandPortraitStage;
   final double? landscapeHeight;
   final bool fillCover;
+  final bool preferColumns;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -28,7 +30,7 @@ class LokalPlayerColumns extends StatelessWidget {
       final wide =
           LokalLayout.isTablet(context) &&
           constraints.maxWidth >= 720 &&
-          (fillCover || media.size.width > media.size.height);
+          (preferColumns || fillCover || media.size.width > media.size.height);
       if (!wide) {
         return Column(
           mainAxisSize: expandPortraitStage
@@ -88,5 +90,41 @@ class LokalPlayerColumns extends StatelessWidget {
         child: child,
       ),
     ),
+  );
+}
+
+/// Metadata belongs with the transport in either tablet artwork mode. Short
+/// windows tighten the rhythm; the containing column remains scrollable.
+class LokalPlayerControls extends StatelessWidget {
+  const LokalPlayerControls({
+    super.key,
+    required this.heading,
+    required this.identity,
+    required this.timeline,
+    required this.transport,
+    required this.options,
+    required this.footer,
+    required this.compact,
+  });
+  final Widget heading, identity, timeline, transport, options, footer;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      heading,
+      SizedBox(height: compact ? 12 : 20),
+      identity,
+      SizedBox(height: compact ? 16 : 24),
+      timeline,
+      SizedBox(height: compact ? 16 : 24),
+      transport,
+      SizedBox(height: compact ? 16 : 24),
+      options,
+      SizedBox(height: compact ? 12 : 20),
+      footer,
+    ],
   );
 }
