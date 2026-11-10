@@ -1,3 +1,5 @@
+import 'package:flick/features/search/screens/search_screen.dart';
+
 import 'dart:async';
 import 'dart:ui' as ui;
 
@@ -447,7 +449,9 @@ void main() {
     expect(tester.widget<FilledButton>(play).onPressed, isNotNull);
     _PendingPlayPlayer.pending!.complete();
     await tester.pump();
-    for (var i = 0; i < 3; i++) { await tester.pump(const Duration(seconds: 30)); }
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 30));
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -570,7 +574,9 @@ void main() {
       find.byType(CustomScrollView).first,
       const Offset(0, -400),
     );
-    for (var i = 0; i < 3; i++) { await tester.pump(const Duration(seconds: 30)); }
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 30));
+    }
 
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
     expect(scaffold.backgroundColor, LokalTokens.resolve(LokalThemeId.dark).bg);
@@ -590,6 +596,41 @@ void main() {
     expect(find.byType(DecoratedSliver), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'tablet header Search opens and refocuses the actual Search page',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({'app_auto_focus_search': false});
+      tester.view
+        ..physicalSize = const Size(1366, 900)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _app(KonnektedShell(runtimeBuilder: (child) => child)),
+      );
+      await tester.pumpAndSettle();
+      final search = find.byKey(const ValueKey('tablet-header-search'));
+      await tester.tap(search);
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchScreen), findsOneWidget);
+      final field = find
+          .descendant(
+            of: find.byType(SearchScreen),
+            matching: find.byType(TextField),
+          )
+          .first;
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      await tester.enterText(field, 'Miles');
+      tester.testTextInput.hide();
+      await tester.pump();
+      await tester.tap(search);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).controller!.text, 'Miles');
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('main glass shell retains animated root tab navigation', (
     tester,

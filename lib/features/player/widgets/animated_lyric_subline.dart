@@ -1,5 +1,20 @@
 import 'package:flutter/material.dart';
 
+/// Reduced motion lays out immediately, including when a sidebar is resized.
+/// A zero-duration AnimatedSize can re-enter layout while its child changes.
+Widget lyricSizeTransition(
+  BuildContext context, {
+  required Duration duration,
+  required Widget child,
+}) => MediaQuery.disableAnimationsOf(context)
+    ? child
+    : AnimatedSize(
+        duration: duration,
+        curve: Curves.easeInOutCubic,
+        alignment: Alignment.topCenter,
+        child: child,
+      );
+
 class AnimatedLyricSubline extends StatelessWidget {
   const AnimatedLyricSubline({
     super.key,
@@ -10,16 +25,14 @@ class AnimatedLyricSubline extends StatelessWidget {
   });
   final String? text;
   final TextStyle style;
+
   /// Uses the existing karaoke clock when the original lyrics have timings.
   final Widget? motionChild;
   final TextAlign textAlign;
   @override
-  Widget build(BuildContext context) => AnimatedSize(
-    duration: MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 280),
-    curve: Curves.easeInOutCubic,
-    alignment: Alignment.topCenter,
+  Widget build(BuildContext context) => lyricSizeTransition(
+    context,
+    duration: const Duration(milliseconds: 280),
     child: AnimatedSwitcher(
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
@@ -49,7 +62,9 @@ class AnimatedLyricSubline extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
               child: SizedBox(
                 width: double.infinity,
-                child: motionChild ?? Text(text!, textAlign: textAlign, style: style),
+                child:
+                    motionChild ??
+                    Text(text!, textAlign: textAlign, style: style),
               ),
             )
           : const SizedBox(width: double.infinity, key: ValueKey('empty')),

@@ -7,9 +7,7 @@ import 'package:flick/features/player/widgets/online_lyrics_search_sheet.dart';
 import 'dart:io';
 import 'dart:convert';
 
-import 'package:flick/features/player/widgets/inline_lyrics_panel.dart';
 import 'package:flick/features/player/widgets/synced_lyrics_view.dart';
-import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/lyrics_playback_prefetch.dart';
 
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
@@ -72,10 +70,12 @@ const station = RadioStation(
 );
 
 class _Player extends PlayerNotifier {
+  _Player([this.initialSong = song]);
+  final Song initialSong;
   final actions = <String>[];
   @override
-  PlayerState build() => const PlayerState(
-    currentSong: song,
+  PlayerState build() => PlayerState(
+    currentSong: initialSong,
     duration: Duration(minutes: 4),
     position: Duration(seconds: 60),
     playlist: [song, nextSong],
@@ -113,6 +113,12 @@ class _Player extends PlayerNotifier {
   Future<void> seek(Duration position) async {
     actions.add('seek:${position.inSeconds}');
     state = state.copyWith(position: position);
+  }
+
+  @override
+  Future<void> playFromUpNextIndex(int index) async {
+    actions.add('queue-play:$index');
+    state = state.copyWith(currentSong: nextSong);
   }
 
   @override
@@ -274,6 +280,11 @@ Widget _app(
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+          (_) async => null,
+        );
     for (final (family, asset) in [
       (LokalTheme.sans, 'assets/fonts/DMSans-Regular.ttf'),
       (LokalTheme.mono, 'assets/fonts/DMMono-Regular.ttf'),
@@ -326,6 +337,7 @@ void main() {
         ..devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       var tab = TabletPlayerTab.details;
+      var opened = 0;
       await tester.pumpWidget(
         _app(
           StatefulBuilder(
@@ -334,7 +346,7 @@ void main() {
               tab: tab,
               onTabChanged: (next) => setState(() => tab = next),
               onClose: () {},
-              onOpenPlayer: () {},
+              onOpenPlayer: () => opened++,
               lyricsBuilder: (_, _, _) => const _LyricsProbe(),
             ),
           ),
@@ -354,9 +366,22 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('player-sidebar-tab-lyrics')));
       await tester.pumpAndSettle();
       expect(find.text('Lyric selection 1'), findsOneWidget);
+      expect(tester.getSize(find.byType(_LyricsProbe)).width, greaterThan(280));
       await tester.tap(find.byKey(const ValueKey('player-sidebar-tab-queue')));
       await tester.pumpAndSettle();
       expect(find.text('Open Water'), findsOneWidget);
+      expect(tester.getRect(find.text('Open Water')).width, greaterThan(40));
+      expect(find.text('Open Water').hitTestable(), findsOneWidget);
+      await tester.tap(find.text('Open Water'));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(KonnektedTabletPlayerSidebar)),
+      );
+      expect(
+        (container.read(playerProvider.notifier) as _Player).actions,
+        contains('queue-play:0'),
+      );
+      expect(opened, 0);
       expect(find.text('Lyric selection 1'), findsNothing);
       await tester.tap(
         find.byKey(const ValueKey('player-sidebar-tab-details')),
@@ -464,20 +489,19 @@ void main() {
       );
       expect(prefetched?.isSynchronized, isTrue);
       addTearDown(() => LyricsPlaybackPrefetch.instance.invalidate(lyricSong));
+      var tab = TabletPlayerTab.lyrics;
       await tester.pumpWidget(
         _app(
-          Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              height: 420,
-              child: InlineLyricsPanel(
-                playerService: _Service(),
-                lyricsService: LyricsService(),
-                song: lyricSong,
-                compactControls: true,
-              ),
+          StatefulBuilder(
+            builder: (context, setState) => KonnektedTabletPlayerSidebar(
+              active: true,
+              tab: tab,
+              onTabChanged: (value) => setState(() => tab = value),
+              onClose: () {},
+              onOpenPlayer: () {},
             ),
           ),
+          player: _Player(lyricSong),
           scale: 2,
         ),
       );
@@ -507,6 +531,31 @@ void main() {
       expect(find.widgetWithText(TextField, lyricSong.title), findsOneWidget);
       Navigator.of(tester.element(find.byType(OnlineLyricsSearchSheet))).pop();
       await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('player-sidebar-tab-details')),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('below-cover-lyrics')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('below-cover-lyrics')).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('below-cover-lyrics')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(SyncedLyricsView));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(SyncedLyricsView)).width,
+        greaterThan(250),
+      );
+      expect(tester.getSize(toolbar).height, lessThanOrEqualTo(48));
+      expect(
+        tester.getSize(find.byType(SyncedLyricsView)).height,
+        greaterThan(350),
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       // Flush the existing embedded-reader timeout after disposing the card.
@@ -578,6 +627,161 @@ void main() {
         }
       }
     }
+  });
+
+  testWidgets(
+    'footer stays strictly between visible sidebars at every tablet size',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final width in [600.0, 768.0, 1024.0, 1366.0]) {
+        tester.view.physicalSize = Size(width, 900);
+        for (final left in [false, true]) {
+          for (final right in [false, true]) {
+            for (final collapsed in [false, true]) {
+              await tester.pumpWidget(
+                _app(
+                  KonnektedTabletWorkspace(
+                    selected: KonnektedTab.listen,
+                    route: null,
+                    onSelect: (_) {},
+                    onNavigate: (_) {},
+                    leftOpen: left,
+                    rightOpen: right,
+                    hasPlayer: true,
+                    playerCollapsed: collapsed,
+                    onToggleLeft: () {},
+                    onToggleRight: () {},
+                    mobileDock: const SizedBox.shrink(),
+                    playerSidebar: const SizedBox.expand(),
+                    player: KonnektedTabletFooter(
+                      collapsed: collapsed,
+                      onExpand: () {},
+                      onOpenPlayer: () {},
+                      onOpenPanel: (_) {},
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                  scale: 2,
+                ),
+              );
+              await tester.pumpAndSettle();
+              final footer = tester.getRect(
+                find.byKey(const ValueKey('tablet-footer-glass')),
+              );
+              if (left) {
+                expect(
+                  footer.left,
+                  greaterThanOrEqualTo(
+                    tester
+                        .getRect(
+                          find.byKey(const ValueKey('tablet-navigation-list')),
+                        )
+                        .right,
+                  ),
+                );
+              }
+              if (right) {
+                expect(
+                  footer.right,
+                  lessThanOrEqualTo(
+                    tester
+                        .getRect(
+                          find.byKey(const ValueKey('tablet-player-sidebar')),
+                        )
+                        .left,
+                  ),
+                );
+              }
+              expect(footer.width, greaterThan(0));
+              expect(find.byTooltip('Play').hitTestable(), findsOneWidget);
+              expect(
+                tester.takeException(),
+                isNull,
+                reason: '$width left=$left right=$right folded=$collapsed',
+              );
+            }
+          }
+        }
+      }
+    },
+  );
+
+  testWidgets('footer follows sidebar resizing and safe-area boundaries', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1366, 900)
+      ..devicePixelRatio = 1
+      ..padding = const FakeViewPadding(left: 24, right: 18, bottom: 34)
+      ..viewPadding = const FakeViewPadding(left: 24, right: 18, bottom: 34);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _app(
+        KonnektedTabletWorkspace(
+          selected: KonnektedTab.listen,
+          route: null,
+          onSelect: (_) {},
+          onNavigate: (_) {},
+          leftOpen: true,
+          rightOpen: true,
+          hasPlayer: true,
+          onToggleLeft: () {},
+          onToggleRight: () {},
+          mobileDock: const SizedBox.shrink(),
+          playerSidebar: const SizedBox.expand(),
+          player: KonnektedTabletFooter(
+            onOpenPlayer: () {},
+            onOpenPanel: (_) {},
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final footer = find.byKey(const ValueKey('tablet-footer-glass'));
+    final before = tester.getRect(footer);
+    await tester.drag(
+      find.byKey(const ValueKey('resize-player-sidebar')),
+      const Offset(-80, 0),
+    );
+    await tester.pumpAndSettle();
+    final after = tester.getRect(footer);
+    final right = tester.getRect(
+      find.byKey(const ValueKey('tablet-player-sidebar')),
+    );
+    final left = tester.getRect(
+      find.byKey(const ValueKey('tablet-navigation-list')),
+    );
+    expect(right.width, 420);
+    expect(after, isNot(before));
+    expect(after.left, greaterThanOrEqualTo(left.right));
+    expect(after.right, lessThanOrEqualTo(right.left));
+    expect(after.bottom, 866);
+    tester.view.physicalSize = const Size(600, 900);
+    await tester.pumpAndSettle();
+    final small = tester.getRect(footer);
+    expect(
+      small.right,
+      lessThanOrEqualTo(
+        tester
+            .getRect(find.byKey(const ValueKey('tablet-player-sidebar')))
+            .left,
+      ),
+    );
+    expect(
+      small.left,
+      greaterThanOrEqualTo(
+        tester
+            .getRect(find.byKey(const ValueKey('tablet-navigation-list')))
+            .right,
+      ),
+    );
+    expect(small.size, const Size(60, 56));
+    await tester.tap(find.byTooltip('Play'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Pause').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -724,7 +928,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       final glass = find.byKey(const ValueKey('tablet-footer-glass'));
-      expect(tester.getSize(glass), const Size(1200, 80));
+      expect(tester.getSize(glass), const Size(1118, 80));
       expect(tester.getRect(glass).bottom, 990);
       expect(
         tester.getRect(find.byKey(const ValueKey('browsing-page'))).bottom,
@@ -760,7 +964,7 @@ void main() {
       expect(tester.getSize(glass), const Size(760, 56));
       await tester.tap(find.byTooltip('Expand player'));
       await tester.pumpAndSettle();
-      expect(tester.getSize(glass), const Size(1200, 80));
+      expect(tester.getSize(glass), const Size(1118, 80));
       await tester.tap(find.byTooltip('Volume'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('tablet-volume')), findsOneWidget);
