@@ -234,7 +234,13 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace> {
                                           left: 0,
                                           right: 0,
                                           bottom: 0,
-                                          child: widget.mobileDock,
+                                          // Page clearance is not a system
+                                          // inset: the dock's SafeArea needs
+                                          // the original window padding.
+                                          child: MediaQuery(
+                                            data: media,
+                                            child: widget.mobileDock,
+                                          ),
                                         ),
                                     ],
                                   ),
