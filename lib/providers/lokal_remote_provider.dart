@@ -113,6 +113,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   String? _notificationArtworkKey;
   String? _notificationArtwork;
   String? _loadingArtworkKey;
+  int _artworkAttempts = 0;
   DateTime _artworkRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
   LinkSyncCoordinator? _linkSync;
   final _downloadOutbox = LinkDownloadOutbox();
@@ -1156,6 +1157,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       track.title,
       track.artist,
       track.artworkPath,
+      track.hasArtwork,
     ]);
     if (_notificationArtworkKey != artworkKey) {
       _notificationArtworkKey = artworkKey;
@@ -1165,9 +1167,11 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       if (state.remoteArtworkPath != null) {
         state = state.copyWith(clearRemoteArtwork: true);
       }
+      _artworkAttempts = 0;
       _artworkRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
     }
     if (_notificationArtwork == null &&
+        _artworkAttempts < 3 &&
         _loadingArtworkKey != artworkKey &&
         DateTime.now().isAfter(_artworkRetryAfter)) {
       unawaited(_loadNotificationArtwork(artworkKey, track.id));
@@ -1220,6 +1224,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     final credentials = _credentials;
     if (credentials == null || trackId == null) return;
     _loadingArtworkKey = key;
+    _artworkAttempts++;
     try {
       final bytes = await ref
           .read(lokalRemoteServiceProvider)
@@ -1242,7 +1247,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     } catch (_) {
       // A transient failure must not strand this recording without artwork.
       if (_notificationArtworkKey == key) {
-        _artworkRetryAfter = DateTime.now().add(const Duration(seconds: 5));
+        _artworkRetryAfter = DateTime.now().add(
+          Duration(seconds: 5 * _artworkAttempts),
+        );
       }
     } finally {
       if (_loadingArtworkKey == key) _loadingArtworkKey = null;

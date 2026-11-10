@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flick/services/android_auto_catalog.dart';
+import 'package:flick/services/album_art_service.dart';
 import 'package:flick/services/notification_artwork_resolver.dart';
 
 import 'package:flutter/services.dart';
@@ -44,7 +45,10 @@ class NotificationService {
 
   static const _channel = MethodChannel('com.mossapps.flick/player');
 
-  final NotificationArtworkResolver _artwork = NotificationArtworkResolver();
+  final NotificationArtworkResolver _artwork = NotificationArtworkResolver(
+    sourceFetcher: (source, artwork) => AlbumArtService.instance
+        .resolveArtworkPath(existingPath: artwork, audioSourcePath: source),
+  );
 
   String? _artworkPath(Song song, {MediaNotificationOwner? owner}) {
     final identity =
@@ -60,6 +64,7 @@ class NotificationService {
     return _artwork.pathFor(
       identity: identity,
       artwork: song.albumArt,
+      audioSourcePath: song.filePath,
       onResolved: (path) {
         // A delayed cover request must not overwrite the next track, a radio
         // takeover, or a notification that has already been dismissed.
