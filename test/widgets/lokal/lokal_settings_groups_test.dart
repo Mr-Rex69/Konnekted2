@@ -1,3 +1,5 @@
+import 'package:flick/core/utils/lokal_layout.dart';
+import 'package:flick/features/settings/lokal/groups/appearance_group.dart';
 import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/features/settings/lokal/lokal_settings_group.dart';
@@ -83,6 +85,38 @@ void main() {
     },
   );
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('full-cover setting describes the tablet square layout', (
+    tester,
+  ) async {
+    for (final tablet in [false, true]) {
+      List<LokalSettingRow> rows = [];
+      await tester.pumpWidget(
+        _app(
+          LokalContentScope(
+            tablet: tablet,
+            child: Consumer(
+              builder: (context, ref, _) {
+                rows = appearanceSettings(context, ref)
+                    .expand((section) => section.children)
+                    .whereType<LokalSettingRow>()
+                    .toList();
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final cover = rows.singleWhere(
+        (row) => row.label == lokalText('Fullscreen cover'),
+      );
+      expect(
+        cover.description,
+        contains(tablet ? 'square cover' : 'Extend album covers'),
+      );
+    }
+  });
 
   for (final group in [
     LokalSettingsGroup.playback,

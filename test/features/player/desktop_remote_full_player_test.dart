@@ -234,6 +234,9 @@ void main() {
             ProviderScope(
               overrides: [
                 playerProvider.overrideWith(_RemotePlayer.new),
+                lokalInitialAppearanceProvider.overrideWithValue(
+                  const LokalAppearance(fullscreenCover: true),
+                ),
                 lokalRemoteControllerProvider.overrideWith(
                   _RemoteController.new,
                 ),
@@ -259,6 +262,16 @@ void main() {
             lessThan(tester.getRect(find.byWidget(columns.controls)).left),
           );
           expect(find.byType(PlayerTransportControls), findsOneWidget);
+          expect(find.byType(FullBleedArtworkFrame), findsNothing);
+          expect(
+            find.byKey(const ValueKey('tablet-square-cover-player')),
+            findsOneWidget,
+          );
+          final square = tester.getSize(
+            find.byKey(const ValueKey('desktop-cover:desktop:desktop-id-123')),
+          );
+          expect(square.width, closeTo(square.height, .01));
+          expect(square.width, greaterThan(size.width * .4));
           expect(tester.takeException(), isNull, reason: '$size text=$scale');
         }
       }

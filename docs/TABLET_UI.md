@@ -11,9 +11,13 @@ Android tablets, foldables and iPads use a shared Flutter workspace inspired by 
 - The central navigator and player-panel state remain mounted across collapse, rotation, overlay/docked changes and split view. Panel choices last for the current session. The keyboard does not change navigation mode.
 - Content receives its actual pane dimensions and system insets, including when playback is absent. Home artwork, grids, mixes and shelves adapt independently; tablet text uses bounded sizing rather than viewport zoom.
 
-## Desktop-style playback footer
+## Floating glass playback footer
 
-The tablet footer is a flat, full-width desktop composition, not a floating pill. It contains artwork and identity, Like, previous/play/next, shuffle/repeat, a seekable timeline with timestamps, route-aware volume/mute, output selection, Lyrics/Queue/Now Playing shortcuts, fullscreen, and additional playback actions. It rearranges into rows on narrower tablets.
+The tablet player floats over the content in a centered capsule, using exactly the phone dock's shared refraction lens, blur, translucent tint, rim and performance-mode fallback. Its expanded size is at most 1200 × 80 logical pixels. Meaningful downward browsing scroll folds it to at most 760 × 56; upward scroll or its expand icon restores it. The 250ms transition is reversible, honors reduced motion and fades secondary controls within the same glass surface.
+
+Artwork, identity, play/pause, next, sidebar access and playback options stay within reach when folded. Expanded wide layouts add previous, shuffle/repeat, Like, lyrics, queue and volume shortcuts. Narrow layouts and the folded pill expose secondary actions through the playback menu; the seek timeline with timestamps returns on expansion. Volume/mute and output selection live in a compact on-demand sheet. Fullscreen, local sleep timer, speed, pitch and EQ remain in playback options.
+
+The central page retains its full viewport behind the glass. Its bottom clearance, both sidebar clearances and system safe areas keep final rows and navigation controls reachable without feeding that clearance back into the dock's own SafeArea. Collapsing the pill changes clearance rather than resizing the navigator.
 
 Local playback uses `PlayerVolumeControl`, preserving system, casting and exclusive-output volume behavior. Remote playback dispatches through the existing desktop controller. Live radio uses its station transport and volume, displays live state and never exposes a fabricated seek position. Local sleep timer, speed, pitch and EQ remain accessible through the playback menu.
 
@@ -33,7 +37,7 @@ Local playback uses `PlayerVolumeControl`, preserving system, casting and exclus
 | Lyrics | Existing source, search, translation, save, word/line synchronization and seek controls; remote lyrics follow the desktop clock |
 | Sidebar visualizer | Deliberately excluded |
 
-The compact and full-height lyric views share one renderer instance so source selection and browsing survive tab changes. Source/action controls wrap and scroll within a bounded header at large text sizes, leaving room for the lyrics themselves. Metadata sheets also scroll on short screens.
+The compact and full-height lyric views share one renderer instance so source selection and browsing survive tab changes. The sidebar uses one compact icon toolbar for save, translation/romanization, source selection, file import and online search, with tooltips and accessible labels. Timing/source details and linked-file reset live in the source chooser instead of badge rows or large action pills. At 300 logical pixels wide and 200% text, the toolbar remains one row and the lyric stage retains more than 350 pixels of a 420-pixel card. Metadata sheets also scroll on short screens.
 
 Radio lyrics wait for real artist/title metadata and use a recording-specific identity, so changing songs on one station does not retain the previous song's lyrics.
 
@@ -41,7 +45,7 @@ Metadata is shown only when known. File bitrate comes from the scanner's persist
 
 ## Other tablet screens
 
-Local home uses a larger carousel with bounded artwork up to 380 pixels and previous/next browsing controls. Mixes, collection tiles, album grids and discovery shelves adapt their density to the content pane. Landscape modern, classic, radio and desktop-controlled players place the stage beside controls. Wide album headers, Settings and You use wider compositions. Standard modal sheets are bounded to 640 pixels and all chrome uses Lokal theme tokens.
+The Home mode selector is capped at 420 logical pixels instead of stretching across the pane; utility actions stay at the trailing edge. Local home uses a larger carousel with bounded artwork up to 380 pixels and previous/next browsing controls. Mixes, collection tiles, album grids and discovery shelves adapt their density to the content pane. Landscape modern, classic, radio and desktop-controlled players place the stage beside controls. Full-cover mode has a tablet-specific composition: a large square cover on the left, track identity and controls on the right, and the existing mobile artwork blur behind it. Local, radio and desktop-controlled players retain square artwork instead of the phone poster overlay. Narrow split views retain a vertical fallback. Phones retain their existing full-cover behavior. Wide album headers, Settings and You use wider compositions. Standard modal sheets are bounded to 640 pixels and all chrome uses Lokal theme tokens.
 
 ## Rotation
 
@@ -58,6 +62,6 @@ flutter test --no-pub
 
 The tablet tests exercise dark/light themes, 200% text, keyboard and safe-area insets, pane geometry, independent collapse/reopen, resizing/overlay state retention, navigation and scroll retention, carousel selection, Settings search, real compact lyric rendering, below-cover card selection, full-height lyric/queue switching, likes, moving-art preferences and footer transport/seek routing. Radio and desktop-controlled playback have landscape regressions as well.
 
-The sidebar/footer revision passed the full Flutter suite: **3,122 tests passed, 4 skipped**. The final sidebar/workspace regressions passed **17 tests**, including the recording-specific radio lyric guard. Flutter analysis reported no errors; existing repository warnings and Flutter prerelease deprecation notices remain.
+The tablet refinement passed the full Flutter suite: **3,128 tests passed, 4 skipped**. This includes the shared phone/tablet glass optics, expanded/collapsed layout matrix, scroll folding and reversal, real compact synchronized lyrics, source-picker actions, square-cover geometry and settings descriptions. Flutter analysis reported no errors; existing repository warnings and Flutter prerelease deprecation notices remain.
 
 Widget rendering is not physical-device certification. The debug APK attempt stopped with **No Android SDK found** in this Linux workspace. APK installation, iPad builds, real-device rotation/multitasking, hardware keyboard/pointer behavior and native USB/casting playback remain device checks. This UI work does not establish new audio hardware capabilities.

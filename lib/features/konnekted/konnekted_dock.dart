@@ -1,3 +1,5 @@
+import 'konnekted_dock_glass.dart';
+
 import 'package:flick/core/utils/lokal_layout.dart';
 
 import 'dart:async';
@@ -20,7 +22,6 @@ import 'package:flick/models/song.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/widgets/common/overflow_marquee_title.dart';
 import 'package:flick/providers/player_provider.dart';
-import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flick/widgets/lokal/lokal_player_artwork.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -53,30 +54,6 @@ enum KonnektedTab {
   /// than the enum declaration order (where Search comes before Library).
   static const dockOrder = [...capsule, explore];
 }
-
-// BitChord supplies the *interaction* physics. Apple's Music glass is much
-// gentler optically: a small centre magnification, low-displacement bezel,
-// almost neutral chroma and no strong refractive rainbow at rest. Applying
-// BitChord's 24/24/1.0 lens wholesale yielded the user's vivid RGB artifacts.
-const _dockGlassLens = LokalLens(
-  height: 13,
-  amount: 8,
-  fraction: .5,
-  depth: .18,
-  dispersion: .10,
-  magnification: .023,
-  profile: LokalLensProfile.circular,
-);
-
-const _dockBlurRadius = 1.2;
-
-// Apple's floating Music controls let the underlying content remain visible:
-// the frost should barely soften detail, not turn the dock into opaque acrylic.
-// Keep one small, clipped Gaussian pass for all three footer surfaces, including
-// Performance Mode, without introducing any extra shader.
-const _dockBackdropBlurSigma = 2.0;
-const _dockPerformanceDarkTint = .28;
-const _dockPerformanceLightTint = .40;
 
 /// Compress the selected icon *toward the screen's left edge* only while
 /// the footer is closing. The icon's left edge stays anchored: its right edge
@@ -265,21 +242,11 @@ class _KonnektedDockState extends State<KonnektedDock>
                     onPointerCancel: (_) => _miniPressed.value = false,
                     // Fixed outer glass dimensions, layer and shader origins.
                     // Only the content inside responds to touch.
-                    child: LokalGlass.capsule(
+                    child: konnektedDockGlass(
+                      context,
                       key: const ValueKey('dock-mini-glass'),
                       grouped: true,
-                      lens: _dockGlassLens,
-                      liquidTintOpacity: lerpDouble(.09, .13, t)!,
-                      liquidBlurRadius: _dockBlurRadius,
-                      singlePassLens: true,
-                      fallbackTintOpacity: lerpDouble(.16, .20, t)!,
-                      fallbackBlurSigma: 2,
-                      backdropBlurSigma: _dockBackdropBlurSigma,
-                      performanceTintOpacity: context.lokal.isLight
-                          ? _dockPerformanceLightTint
-                          : _dockPerformanceDarkTint,
-                      pronouncedRim: true,
-                      rimStrength: .82,
+                      progress: t,
                       child: ValueListenableBuilder<bool>(
                         valueListenable: _miniPressed,
                         child: KonnektedMiniPlayerScope(
@@ -497,21 +464,11 @@ class _TabCapsuleState extends State<_TabCapsule>
                         0.0,
                         (_tabs.length - 1).toDouble(),
                       );
-        return LokalGlass.capsule(
+        return konnektedDockGlass(
+          context,
           key: const ValueKey('dock-tab-glass'),
           grouped: true,
-          lens: _dockGlassLens,
-          liquidTintOpacity: lerpDouble(.09, .13, widget.collapse)!,
-          liquidBlurRadius: _dockBlurRadius,
-          singlePassLens: true,
-          fallbackTintOpacity: lerpDouble(.16, .20, widget.collapse)!,
-          fallbackBlurSigma: 2,
-          backdropBlurSigma: _dockBackdropBlurSigma,
-          performanceTintOpacity: context.lokal.isLight
-              ? _dockPerformanceLightTint
-              : _dockPerformanceDarkTint,
-          pronouncedRim: true,
-          rimStrength: .82,
+          progress: widget.collapse,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -797,21 +754,11 @@ class _SearchCircle extends StatelessWidget {
       child: Tooltip(
         message: tab.localizedLabel,
         excludeFromSemantics: true,
-        child: LokalGlass.capsule(
+        child: konnektedDockGlass(
+          context,
           key: const ValueKey('dock-search-glass'),
           grouped: true,
-          lens: _dockGlassLens,
-          liquidTintOpacity: lerpDouble(.09, .13, collapse)!,
-          liquidBlurRadius: _dockBlurRadius,
-          singlePassLens: true,
-          fallbackTintOpacity: lerpDouble(.16, .20, collapse)!,
-          fallbackBlurSigma: 2,
-          backdropBlurSigma: _dockBackdropBlurSigma,
-          performanceTintOpacity: context.lokal.isLight
-              ? _dockPerformanceLightTint
-              : _dockPerformanceDarkTint,
-          pronouncedRim: true,
-          rimStrength: .82,
+          progress: collapse,
           child: Stack(
             fit: StackFit.expand,
             children: [

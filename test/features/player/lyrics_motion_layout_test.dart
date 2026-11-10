@@ -6,6 +6,52 @@ import 'package:flick/features/player/widgets/player_panel_stage.dart';
 
 void main() {
   testWidgets(
+    'tablet square stage fills its pane and keeps queue/lyrics cover transitions',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(1024, 768)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final (queue, lyrics) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]) {
+        final compact = queue + lyrics > 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Center(
+              child: SizedBox(
+                width: 620,
+                height: 620,
+                child: PlayerPanelStage(
+                  artGap: 0,
+                  infoReserve: compact ? 72 : 0,
+                  queueProgress: AlwaysStoppedAnimation(queue),
+                  lyricsProgress: AlwaysStoppedAnimation(lyrics),
+                  queueOpen: queue > 0,
+                  lyricsOpen: lyrics > 0,
+                  artwork: (_, _, _) => const ColoredBox(
+                    key: ValueKey('tablet-square-cover'),
+                    color: Colors.blue,
+                  ),
+                  info: (_, _) => compact
+                      ? const SizedBox(height: 44, child: Text('Recording'))
+                      : const SizedBox.shrink(),
+                  queue: const SizedBox.expand(),
+                  lyrics: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        );
+        final size = tester.getSize(
+          find.byKey(const ValueKey('tablet-square-cover')),
+        );
+        expect(size.width, closeTo(size.height, .01));
+        expect(size.width, compact ? 52 : greaterThan(600));
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
+  testWidgets(
     'lyrics cover returns by tap or swipe up, without stealing list gestures',
     (tester) async {
       var returns = 0;

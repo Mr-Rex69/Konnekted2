@@ -17,6 +17,38 @@ void main() {
     }
   });
 
+  testWidgets('tablet Home selector stays compact with actions at the edge', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1366, 1024)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    KonnektedHomeTab? selected;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+          home: Scaffold(
+            body: KonnektedHomeTopBar(
+              onSettings: () {},
+              onAppearance: () {},
+              onTabChanged: (tab) => selected = tab,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('home-mode-selector'))).width,
+      420,
+    );
+    await tester.tap(find.text('DISCOVERY'));
+    expect(selected, KonnektedHomeTab.discovery);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('all Home modes remain readable and reachable in every locale', (
     tester,
   ) async {

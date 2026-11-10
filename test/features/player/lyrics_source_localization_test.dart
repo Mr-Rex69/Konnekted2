@@ -54,6 +54,56 @@ void main() {
     await font.load();
   });
 
+  testWidgets('compact source icon opens source options and manual reset', (
+    tester,
+  ) async {
+    final service = _Providers();
+    const song = Song(
+      id: 'compact-picker',
+      fileType: 'FLAC',
+      title: 'Fixture',
+      artist: 'Artist',
+      duration: Duration(minutes: 3),
+    );
+    await service.probeSourceHits(song);
+    var resets = 0;
+    final selected = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
+        home: Scaffold(
+          body: LyricsSourceButton(
+            iconOnly: true,
+            selected: 'lyricsplus',
+            lyrics: _lyrics,
+            song: song,
+            lyricsService: service,
+            onSelected: selected.add,
+            onRefresh: () {},
+            onResetManual: () => resets++,
+          ),
+        ),
+      ),
+    );
+    expect(find.text(lyricsTimingLabel(_lyrics)), findsNothing);
+    final icon = find.byTooltip(
+      '${lokalText('Lyrics source')}: LyricsPlus · ${lyricsTimingLabel(_lyrics)}',
+    );
+    expect(icon, findsOneWidget);
+    await tester.tap(icon);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.useAutoSource));
+    await tester.pumpAndSettle();
+    expect(resets, 1);
+    await tester.tap(icon);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('LyricsPlus'), 120);
+    await tester.tap(find.text('LyricsPlus'));
+    await tester.pumpAndSettle();
+    expect(selected, ['lyricsplus']);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final width in [320.0, 393.0]) {
     testWidgets(
       'lyrics picker keeps provider identity at 200% on ${width.toInt()}px',

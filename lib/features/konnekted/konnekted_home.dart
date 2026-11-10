@@ -262,9 +262,16 @@ class KonnektedHomeTopBar extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _HomeModeSelector(
-                    selectedTab: selectedTab,
-                    onTabChanged: onTabChanged,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ConstrainedBox(
+                      key: const ValueKey('home-mode-selector'),
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: _HomeModeSelector(
+                        selectedTab: selectedTab,
+                        onTabChanged: onTabChanged,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

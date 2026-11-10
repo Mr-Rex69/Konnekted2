@@ -48,12 +48,16 @@ class LyricsSourceButton extends StatelessWidget {
     required this.onSelected,
     required this.onRefresh,
     this.busy = false,
+    this.iconOnly = false,
+    this.onResetManual,
   });
   final String selected;
   final LyricsData? lyrics;
   final Song song;
   final LyricsService lyricsService;
   final bool busy;
+  final bool iconOnly;
+  final VoidCallback? onResetManual;
   final ValueChanged<String> onSelected;
   final VoidCallback onRefresh;
   Future<void> _show(BuildContext context) async {
@@ -126,6 +130,13 @@ class LyricsSourceButton extends StatelessWidget {
                   enabled: !busy,
                   onTap: () => Navigator.pop(context, '__refresh'),
                 ),
+                if (onResetManual != null)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.settings_backup_restore_rounded),
+                    title: Text(l10n.useAutoSource),
+                    onTap: () => Navigator.pop(context, '__reset_manual'),
+                  ),
                 const Divider(),
                 for (final source in {
                   'auto': lokalText('Automatic'),
@@ -192,7 +203,9 @@ class LyricsSourceButton extends StatelessWidget {
       ),
     );
     if (!context.mounted) return;
-    if (choice == '__refresh') {
+    if (choice == '__reset_manual') {
+      onResetManual?.call();
+    } else if (choice == '__refresh') {
       onRefresh();
     } else if (choice != null) {
       onSelected(choice);
@@ -200,21 +213,35 @@ class LyricsSourceButton extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => TextButton.icon(
-    onPressed: () => _show(context),
-    style: TextButton.styleFrom(
-      foregroundColor: context.lokal.text,
-      visualDensity: VisualDensity.compact,
-    ),
-    icon: busy
-        ? const SizedBox.square(
-            dimension: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.tune_rounded, size: 19),
-    label: Text(
-      lyricsTimingLabel(lyrics),
-      style: const TextStyle(fontSize: 12),
-    ),
-  );
+  Widget build(BuildContext context) => iconOnly
+      ? IconButton(
+          tooltip:
+              '${lokalText('Lyrics source')}: ${lyricsSourceLabel(lyrics, selected)} · ${lyricsTimingLabel(lyrics)}',
+          onPressed: () => _show(context),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          visualDensity: VisualDensity.standard,
+          icon: busy
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.tune_rounded, size: 19),
+        )
+      : TextButton.icon(
+          onPressed: () => _show(context),
+          style: TextButton.styleFrom(
+            foregroundColor: context.lokal.text,
+            visualDensity: VisualDensity.compact,
+          ),
+          icon: busy
+              ? const SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.tune_rounded, size: 19),
+          label: Text(
+            lyricsTimingLabel(lyrics),
+            style: const TextStyle(fontSize: 12),
+          ),
+        );
 }
