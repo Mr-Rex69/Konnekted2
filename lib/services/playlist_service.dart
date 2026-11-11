@@ -952,6 +952,55 @@ class PlaylistService {
     return _ResolvedM3uImport(ids: ids, unmatchedEntries: unmatched);
   }
 
+  /// Match portable M3U metadata when the scanned path is an opaque URI.
+  /// Ambiguous titles/editions are not guessed.
+  Song? _matchEntryByMetadata(_M3uEntry entry, _SongLookup lookup) {
+    final metadata = entry.extInfTitle?.trim() ?? '';
+    if (metadata.isNotEmpty) {
+      final separator = RegExp(r'\s+[-–—]\s+').firstMatch(metadata);
+      final title = separator == null
+          ? metadata
+          : metadata.substring(separator.end).trim();
+      final artist = separator == null
+          ? null
+          : metadata.substring(0, separator.start).trim();
+      final found = _uniqueTitleMatch(lookup, title, artist: artist);
+      if (found != null) return found;
+    }
+    final filename = _extractFileName(entry.pathOrUri)
+        .replaceFirst(RegExp(r'\.[^.]+$'), '');
+    if (filename.isEmpty) return null;
+    final found = _uniqueTitleMatch(lookup, filename);
+    if (found != null) return found;
+    // Plain M3U without EXTINF can use "Artist - Title.mp3" even when
+    // the imported library has a FLAC or a SAF-backed document URI.
+    final separator = RegExp(r'\s+[-–—]\s+').firstMatch(filename);
+    if (separator == null) return null;
+    return _uniqueTitleMatch(
+      lookup,
+      filename.substring(separator.end),
+      artist: filename.substring(0, separator.start),
+    );
+  }
+
+  Song? _uniqueTitleMatch(
+    _SongLookup lookup,
+    String title, {
+    String? artist,
+  }) {
+    final candidates =
+        lookup.byTitle[_normalizeSearchText(title)] ?? const <Song>[];
+    if (candidates.isEmpty) return null;
+    final normalizedArtist = artist == null ? '' : _normalizeSearchText(artist);
+    if (normalizedArtist.isNotEmpty) {
+      final sameArtist = candidates
+          .where((song) => _normalizeSearchText(song.artist) == normalizedArtist)
+          .toList();
+      return sameArtist.length == 1 ? sameArtist.single : null;
+    }
+    return candidates.length == 1 ? candidates.single : null;
+  }
+
   Playlist? _findPlaylistBySourcePath(String sourcePath) {
     try {
       return _playlists.firstWhere(
@@ -1229,6 +1278,11 @@ class _ResolvedM3uImport {
 class _SongLookup {
   final Map<String, List<Song>> byPath;
   final Map<String, List<Song>> byFileName;
+  final Map<String, List<Song>> byTitle;
 
-  const _SongLookup({required this.byPath, required this.byFileName});
+  const _SongLookup({
+    required this.byPath,
+    required this.byFileName,
+    required this.byTitle,
+  });
 }
