@@ -1,3 +1,4 @@
+import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/models/progress_bar_style.dart';
 import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
 import 'package:flick/core/utils/lokal_layout.dart';
@@ -146,30 +147,38 @@ List<LokalSettingsSection> appearanceSettings(
                 },
               ),
               ExcludeSemantics(
-                child: IgnorePointer(
-                  child: FullPlayerSeekBar(
-                    style: ref.watch(progressBarStyleProvider),
-                    value: .55,
-                    // Illustration only; the player reads actual audio peaks.
-                    peaks: const [
-                      .1,
-                      .25,
-                      .4,
-                      .32,
-                      .6,
-                      .5,
-                      .8,
-                      .7,
-                      .95,
-                      .6,
-                      .45,
-                      .7,
-                      .5,
-                      .2,
-                      .3,
-                      .1,
-                    ],
-                    onChanged: (_) {},
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: LokalTokens.resolve(LokalThemeId.dark).surface2,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IgnorePointer(
+                    child: FullPlayerSeekBar(
+                      style: ref.watch(progressBarStyleProvider),
+                      value: .55,
+                      // Illustration only; the player reads actual audio peaks.
+                      peaks: const [
+                        .1,
+                        .25,
+                        .4,
+                        .32,
+                        .6,
+                        .5,
+                        .8,
+                        .7,
+                        .95,
+                        .6,
+                        .45,
+                        .7,
+                        .5,
+                        .2,
+                        .3,
+                        .1,
+                      ],
+                      onChanged: (_) {},
+                    ),
                   ),
                 ),
               ),

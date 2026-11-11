@@ -38,6 +38,7 @@ class _WaveformLayerState extends State<WaveformLayer>
   late final Animation<double> _appearAnimation;
   String? _lastSongId;
   List<double>? _cachedPeaks;
+  double? _wavyDrag;
 
   @override
   void initState() {
@@ -62,6 +63,7 @@ class _WaveformLayerState extends State<WaveformLayer>
       _lastSongId = widget.currentSong?.id;
       _appearController.forward(from: 0.0);
       _cachedPeaks = null;
+      _wavyDrag = null;
       _loadCachedPeaks();
     }
   }
@@ -115,22 +117,21 @@ class _WaveformLayerState extends State<WaveformLayer>
                       ProgressBarStyle.wavy => FullPlayerSeekBar(
                         style: style,
                         value:
+                            _wavyDrag ??
                             (position.inMilliseconds / duration.inMilliseconds)
                                 .clamp(0.0, 1.0),
-                        onChanged: (value) {
-                          widget.positionNotifier.value = Duration(
+                        onChangeStart: (value) =>
+                            setState(() => _wavyDrag = value),
+                        onChanged: (value) => setState(() => _wavyDrag = value),
+                        onChangeEnd: (value) {
+                          final target = Duration(
                             milliseconds: (value * duration.inMilliseconds)
                                 .round(),
                           );
+                          setState(() => _wavyDrag = null);
+                          widget.positionNotifier.value = target;
+                          unawaited(widget.playerService.seek(target));
                         },
-                        onChangeEnd: (value) => unawaited(
-                          widget.playerService.seek(
-                            Duration(
-                              milliseconds: (value * duration.inMilliseconds)
-                                  .round(),
-                            ),
-                          ),
-                        ),
                       ),
                       ProgressBarStyle.line => LineSeekBar(
                         position: position,

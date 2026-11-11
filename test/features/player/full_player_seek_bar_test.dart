@@ -1,10 +1,70 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flick/features/player/widgets/waveform_layer.dart';
+import 'package:flick/services/player_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
 import 'package:flick/models/progress_bar_style.dart';
 
+class _SeekPlayer extends Fake implements PlayerService {
+  @override
+  final durationNotifier = ValueNotifier(const Duration(minutes: 3));
+  final seeks = <Duration>[];
+  @override
+  Future<void> seek(Duration position) async {
+    seeks.add(position);
+  }
+}
+
 void main() {
+  testWidgets(
+    'classic Wavy drag stays under the finger during engine updates',
+    (tester) async {
+      final player = _SeekPlayer();
+      final position = ValueNotifier(const Duration(seconds: 10));
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 320,
+                  child: WaveformLayer(
+                    playerService: player,
+                    positionNotifier: position,
+                    currentSong: null,
+                    styleOverride: ProgressBarStyle.wavy,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(find.byType(Slider));
+      final gesture = await tester.startGesture(
+        Offset(rect.left + 60, rect.center.dy),
+      );
+      await gesture.moveTo(Offset(rect.left + 240, rect.center.dy));
+      await tester.pump();
+      final dragged = tester.widget<Slider>(find.byType(Slider)).value;
+      expect(dragged, greaterThan(.6));
+      position.value = const Duration(seconds: 11);
+      await tester.pump();
+      expect(tester.widget<Slider>(find.byType(Slider)).value, dragged);
+      expect(player.seeks, isEmpty);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(player.seeks, hasLength(1));
+      expect(player.seeks.single.inMilliseconds, closeTo(dragged * 180000, 1));
+      await tester.pumpWidget(const SizedBox.shrink());
+      position.dispose();
+      player.durationNotifier.dispose();
+    },
+  );
+
   for (final style in ProgressBarStyle.values) {
     for (final rtl in [false, true]) {
       testWidgets(
