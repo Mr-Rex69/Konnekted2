@@ -157,4 +157,38 @@ void main() {
       }
     });
   });
+
+  test(
+    'encoded upstream bytes cannot corrupt the receiver range framing',
+    () async {
+      await binding.runAsync(() async {
+        final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        upstream.listen((request) async {
+          request.response.headers.set('Content-Encoding', 'gzip');
+          request.response.headers.contentType = ContentType('audio', 'flac');
+          request.response.add(gzip.encode(List.filled(100, 1)));
+          await request.response.close();
+        });
+        final relay = CastContentServer.instance;
+        final client = HttpClient();
+        try {
+          final url = await relay.relay(
+            'http://127.0.0.1:${upstream.port}/song',
+            filename: 'track.flac',
+            headers: {},
+          );
+          final response = await (await client.getUrl(
+            Uri.parse(url).replace(host: '127.0.0.1'),
+          )).close();
+          expect(response.statusCode, 502);
+          expect(await bytes(response), isEmpty);
+          expect(response.headers.value('Content-Encoding'), isNull);
+        } finally {
+          client.close(force: true);
+          await relay.stop();
+          await upstream.close(force: true);
+        }
+      });
+    },
+  );
 }

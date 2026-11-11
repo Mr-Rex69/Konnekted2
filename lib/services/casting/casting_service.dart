@@ -63,6 +63,7 @@ class CastingService {
   String? currentCastLoadId;
   int _loadRevision = 0;
   int _sourceRevision = 0;
+  int _sourcePreparations = 0;
   String? _pendingCastLoadId;
   Map<String, dynamic>? _lastCcStatus;
   int _presentationRevision = 0;
@@ -600,6 +601,9 @@ class CastingService {
 
   Future<void> delegateSeek(Duration position) async {
     if (_activeDevice == null) return;
+    // The displayed recording is changing. In particular, reloading a finished
+    // previous track here would invalidate the pending replacement source.
+    if (_sourcePreparations > 0 || _pendingCastLoadId != null) return;
     if (_activeDevice!.backend == CastBackend.dlna) {
       await _dlna.seek(_activeDevice!.controlUrl!, position);
     } else if (_lastCcStatus?['finished'] == true && _currentSong != null) {
@@ -817,6 +821,7 @@ class CastingService {
 
   Future<String?> _receiverCastUrl(Song song) async {
     final revision = ++_sourceRevision;
+    _sourcePreparations++;
     bool current() => revision == _sourceRevision && !_tearingDown;
     try {
       final source = _resolveReceiverCastUrl(song, current);
@@ -827,6 +832,8 @@ class CastingService {
       throw TimeoutException(
         'The Cast source did not become available. Retry this song.',
       );
+    } finally {
+      _sourcePreparations--;
     }
   }
 

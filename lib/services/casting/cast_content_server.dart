@@ -288,6 +288,7 @@ class CastContentServer {
     ({Uri uri, Map<String, String> headers}) remote,
   ) async {
     final client = HttpClient()
+      ..autoUncompress = false
       ..connectionTimeout = const Duration(seconds: 10);
     _clients.add(client);
     var finished = false;
@@ -315,6 +316,15 @@ class CastContentServer {
       final upstream = await upstreamRequest.close().timeout(
         const Duration(seconds: 15),
       );
+      final encoding = upstream.headers.value(
+        HttpHeaders.contentEncodingHeader,
+      );
+      if (encoding != null && encoding.trim().toLowerCase() != 'identity') {
+        // A byte-range relay must keep the PC's representation unchanged.
+        request.response.statusCode = HttpStatus.badGateway;
+        request.response.contentLength = 0;
+        return;
+      }
       final allowed = {200, 206, 404, 416};
       if (!allowed.contains(upstream.statusCode)) {
         request.response.statusCode = HttpStatus.badGateway;

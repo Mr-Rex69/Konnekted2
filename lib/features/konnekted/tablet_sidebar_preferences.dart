@@ -15,6 +15,8 @@ class TabletSidebarPreferences {
 
   static const leftKey = 'lokal.tablet.left_sidebar_open';
   static const rightKey = 'lokal.tablet.right_sidebar_open';
+  static final _writeRevisions = <String, int>{};
+  static Future<void> _platformWrites = Future.value();
   final leftOpen = ValueNotifier(true);
   final rightOpen = ValueNotifier<bool?>(null);
   final Future<SharedPreferences> _preferences;
@@ -52,10 +54,24 @@ class TabletSidebarPreferences {
   }
 
   void _save(String key, bool value) {
+    final revision = (_writeRevisions[key] ?? 0) + 1;
+    _writeRevisions[key] = revision;
     _writes = _writes
         .then((_) async {
           final prefs = await _preferences;
-          await prefs.setBool(key, value);
+          // A disposed shell may still be waiting for storage. Its old choice
+          // cannot overwrite a newer shell's tap once that future resolves.
+          final write = _platformWrites.then((_) async {
+            if (_writeRevisions[key] != revision) return;
+            if (!await prefs.setBool(key, value)) {
+              if (_writeRevisions[key] != revision) return;
+              if (!await prefs.setBool(key, value)) {
+                throw StateError('Tablet sidebar preference write failed.');
+              }
+            }
+          });
+          _platformWrites = write.catchError((Object _) {});
+          await write;
         })
         .catchError((Object _) {
           debugPrint('Tablet sidebar preference could not be saved.');
