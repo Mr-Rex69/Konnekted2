@@ -23,6 +23,20 @@ class CastPendingReplyTest {
         override fun notImplemented() { fail("Unexpected unsupported channel") }
     }
 
+    @Test fun receiverGetsConcreteTypePausedStartAndMillisecondPosition() {
+        val load = castMediaLoad("http://192.0.2.1:5000/token/track.flac", "Track", "Artist", "audio/flac", false, 17250)
+        assertEquals("audio/flac", load.mediaInfo!!.contentType)
+        assertEquals(false, load.autoplay)
+        assertEquals(17250L, load.currentTime)
+    }
+
+    @Test fun contentGrantIsNeverSentAsAReceiverUrl() {
+        try {
+            castMediaLoad("content://library/track", null, null, "audio/flac", true, 0)
+            fail("SAF grants must be served through HTTP")
+        } catch (_: IllegalArgumentException) { }
+    }
+
     @Test fun routeSelectionDoesNotCompleteAConnectionBeforeReceiverAcknowledgement() {
         val reply = Reply()
         val request = CastPendingReply(reply, Handler(Looper.getMainLooper()))

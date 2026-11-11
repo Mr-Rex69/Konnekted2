@@ -7,10 +7,8 @@ import android.os.Looper
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
-import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.MediaSeekOptions
-import com.google.android.gms.cast.MediaInfo
-import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -205,6 +203,7 @@ class CastController(private val context: Context) {
                 "position" to client.approximateStreamPosition,
                 "duration" to client.streamDuration,
                 "playing" to client.isPlaying,
+                "sourceError" to (client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_ERROR),
             )
         )
     }
@@ -297,19 +296,10 @@ class CastController(private val context: Context) {
 
     fun load(url: String, title: String?, artist: String?, contentType: String?, autoplay: Boolean,
              positionMs: Long, result: MethodChannel.Result) {
-        val uri = android.net.Uri.parse(url)
-        if (uri.scheme !in listOf("http", "https") || uri.host.isNullOrEmpty()) {
+        val request = try { castMediaLoad(url, title, artist, contentType, autoplay, positionMs) }
+        catch (_: IllegalArgumentException) {
             result.error("CAST_SOURCE", "The receiver needs a reachable HTTP audio source.", null); return
         }
-        val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK)
-        if (title != null) meta.putString(MediaMetadata.KEY_TITLE, title)
-        if (artist != null) meta.putString(MediaMetadata.KEY_ARTIST, artist)
-        val info = MediaInfo.Builder(url)
-            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType(contentType ?: "application/octet-stream")
-            .setMetadata(meta).build()
-        val request = MediaLoadRequestData.Builder().setMediaInfo(info)
-            .setAutoplay(autoplay).setCurrentTime(positionMs.coerceAtLeast(0)).build()
         command(result) { it.load(request) }
     }
 

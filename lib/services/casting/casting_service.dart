@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../models/song.dart';
 import '../player_service.dart';
 import '../remote_source_service.dart';
+import '../sources/local_network_access.dart';
 import 'cast_content_server.dart';
 import 'cast_device.dart';
 import 'dlna_backend.dart';
@@ -386,6 +387,7 @@ class CastingService {
         contentType: castAudioContentType(url, song.fileType),
       );
     }
+    errorNotifier.value = null;
     _currentSong = song;
     ps.currentSongNotifier.value = song;
     ps.durationNotifier.value = song.duration;
@@ -541,6 +543,12 @@ class CastingService {
   void _handleCcStatus(Map<String, dynamic> e) {
     if (_activeDevice?.backend != CastBackend.chromecast) return;
     final ps = PlayerService();
+    if (e['sourceError'] == true) {
+      errorNotifier.value =
+          'The receiver could not play this audio format or reach its source.';
+      ps.isPlayingNotifier.value = false;
+      return;
+    }
     final position = (e['position'] as num?)?.toInt();
     final duration = (e['duration'] as num?)?.toInt();
     final playing = e['playing'] as bool?;
@@ -594,6 +602,11 @@ class CastingService {
       return await CastContentServer.instance.serve(
         path,
         filename: '${title.isEmpty ? 'track' : title}.$ext',
+      );
+    } on NetworkAccessDenied catch (error) {
+      throw PlatformException(
+        code: 'CAST_NETWORK_PERMISSION',
+        message: error.message,
       );
     } catch (_) {
       return null;

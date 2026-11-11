@@ -23,8 +23,8 @@ Future<String?> castLocalFile(
               'maxStagingBytes': limit,
             }) ??
         '';
-  } else if (uri?.scheme == 'file') {
-    path = uri!.toFilePath();
+  } else if (uri != null && uri.scheme == 'file') {
+    path = uri.toFilePath();
   }
   if (path.isEmpty || !await File(path).exists()) return null;
   return path;
