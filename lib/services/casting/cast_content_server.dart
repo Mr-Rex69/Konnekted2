@@ -14,16 +14,40 @@ class CastContentServer {
   static final instance = CastContentServer._();
 
   HttpServer? _server;
+  int _epoch = 0;
   final Map<String, String> _paths = {};
+  final Map<String, ContentType> _types = {};
   final _rand = Random.secure();
 
   /// Serve [filePath] and return a LAN-reachable URL for it.
-  Future<String> serve(String filePath, {required String filename}) async {
+  Future<String> serve(
+    String filePath, {
+    required String filename,
+    ContentType? contentType,
+  }) async {
+    final epoch = _epoch;
     final ip = await _lanIp();
     await NetworkLocalAccess.ensure(Uri(scheme: 'http', host: ip));
-    final server = _server ??= await _bind();
+    if (epoch != _epoch) throw StateError('Cast session ended.');
+    var server = _server;
+    if (server == null) {
+      final opened = await _bind();
+      if (epoch != _epoch) {
+        await opened.close(force: true);
+        throw StateError('Cast session ended.');
+      }
+      if (_server != null) {
+        await opened.close(force: true);
+        if (epoch != _epoch || _server == null)
+          throw StateError('Cast session ended.');
+        server = _server!;
+      } else {
+        _server = server = opened;
+      }
+    }
     final token = _token();
     _paths[token] = filePath;
+    if (contentType != null) _types[token] = contentType;
     final safe = Uri.encodeComponent(
       filename.replaceAll(RegExp(r'[^A-Za-z0-9._\- ]'), ''),
     );
@@ -31,7 +55,9 @@ class CastContentServer {
   }
 
   Future<void> stop() async {
+    ++_epoch;
     _paths.clear();
+    _types.clear();
     final server = _server;
     _server = null;
     await server?.close(force: true);
@@ -170,7 +196,7 @@ class CastContentServer {
 
     final length = end - start + 1;
     req.response.statusCode = status;
-    req.response.headers.contentType = _contentTypeFor(path);
+    req.response.headers.contentType = _types[token] ?? _contentTypeFor(path);
     req.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
     req.response.headers.set(HttpHeaders.contentLengthHeader, '$length');
     if (status == HttpStatus.partialContent) {
@@ -211,6 +237,10 @@ ContentType _contentTypeFor(String path) {
       ? ''
       : path.substring(path.lastIndexOf('.') + 1).toLowerCase();
   return switch (ext) {
+    'jpg' || 'jpeg' => ContentType.parse('image/jpeg'),
+    'png' => ContentType.parse('image/png'),
+    'webp' => ContentType.parse('image/webp'),
+    'gif' => ContentType.parse('image/gif'),
     'mp3' => ContentType.parse('audio/mpeg'),
     'flac' => ContentType.parse('audio/flac'),
     'wav' => ContentType.parse('audio/wav'),

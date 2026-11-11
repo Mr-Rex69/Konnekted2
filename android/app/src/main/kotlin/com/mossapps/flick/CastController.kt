@@ -34,6 +34,7 @@ class CastController(private val context: Context) {
             null
         }
     }
+    private val receiverNamespace = "urn:x-cast:app.lokal.cast"
     private val handler = Handler(Looper.getMainLooper())
 
     /** Called on the main thread for every cast event destined for Dart. */
@@ -44,6 +45,7 @@ class CastController(private val context: Context) {
     private var attachedClient: RemoteMediaClient? = null
     private var lastVolume: Double? = null
     private var statusTicker: Runnable? = null
+    private val reportedIdentity = CastMediaIdentity()
 
     private var pendingConnect: CastPendingReply? = null
     private var pendingDisconnect: CastPendingReply? = null
@@ -61,6 +63,9 @@ class CastController(private val context: Context) {
         connectedSession = session
         connectionMayBeStarting = false
         attachMediaClientListener(session)
+        session.setMessageReceivedCallbacks(receiverNamespace) { _, _, message ->
+            try { emit(mapOf("event" to "receiverMessage", "data" to message)) } catch (_: Exception) { }
+        }
         pendingConnect?.succeed()
         emit(mapOf("event" to event))
     }
@@ -137,7 +142,7 @@ class CastController(private val context: Context) {
     }
 
     private val routeSelector: MediaRouteSelector = MediaRouteSelector.Builder()
-        .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+        .addControlCategory(CastMediaControlIntent.categoryForCast("2060B9B3"))
         .build()
 
     fun start() {
@@ -166,6 +171,7 @@ class CastController(private val context: Context) {
     }
 
     private fun detachMediaClientListener() {
+        reportedIdentity.clear()
         stopStatusTicker()
         val cb = mediaClientCallback
         if (cb != null) attachedClient?.unregisterCallback(cb)
@@ -197,12 +203,18 @@ class CastController(private val context: Context) {
     }
 
     private fun emitStatus(client: RemoteMediaClient) {
+        reportedIdentity.update(client.mediaStatus?.mediaInfo)
+        // CAF may omit media information on terminal IDLE/FINISHED status.
+        // Preserve the last reported load's identity for that completion only.
         emit(
             mapOf(
                 "event" to "status",
                 "position" to client.approximateStreamPosition,
                 "duration" to client.streamDuration,
                 "playing" to client.isPlaying,
+                "loadId" to reportedIdentity.loadId,
+                "trackId" to reportedIdentity.trackId,
+                "finished" to (client.mediaStatus?.playerState == MediaStatus.PLAYER_STATE_IDLE && client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_FINISHED),
                 "sourceError" to (client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_ERROR),
             )
         )
@@ -238,7 +250,7 @@ class CastController(private val context: Context) {
         val existing = manager.currentCastSession
         if (existing?.isConnected == true && mediaRouter.selectedRoute.id == deviceId) {
             connectedSession = existing
-            attachMediaClientListener(existing)
+            sessionReady(existing, "sessionResumed")
             result.success(null)
             return
         }
@@ -274,6 +286,38 @@ class CastController(private val context: Context) {
     private fun client(): RemoteMediaClient? = connectedSession?.remoteMediaClient
         ?: castContext?.sessionManager?.currentCastSession?.takeIf { it.isConnected }?.remoteMediaClient
 
+    fun sessionInfo(): Map<String, Any?> {
+        val client = connectedSession?.remoteMediaClient
+        val status = client?.mediaStatus
+        reportedIdentity.update(status?.mediaInfo)
+        return mapOf(
+            "name" to (connectedSession?.castDevice?.friendlyName ?: mediaRouter.selectedRoute.name.toString()),
+            "trackId" to reportedIdentity.trackId,
+            "loadId" to reportedIdentity.loadId,
+            "position" to client?.approximateStreamPosition,
+            "duration" to client?.streamDuration,
+            "playing" to client?.isPlaying,
+            "finished" to (status?.playerState == MediaStatus.PLAYER_STATE_IDLE && status?.idleReason == MediaStatus.IDLE_REASON_FINISHED),
+            "sourceError" to (status?.idleReason == MediaStatus.IDLE_REASON_ERROR),
+        )
+    }
+
+    fun sendCustom(data: Map<String, Any?>, result: MethodChannel.Result) {
+        val session = connectedSession
+        if (session == null) { result.error("CAST_NOT_CONNECTED", "Connect to a receiver first.", null); return }
+        lateinit var reply: CastPendingReply
+        reply = CastPendingReply(result, handler, onFinished = { mediaReplies.remove(reply) })
+        mediaReplies.add(reply)
+        try {
+            session.sendMessage(receiverNamespace, org.json.JSONObject(data).toString()).setResultCallback { status ->
+                if (status.isSuccess) reply.succeed()
+                else reply.fail("CAST_RECEIVER", "The receiver could not accept this view.")
+            }
+        } catch (_: Exception) {
+            reply.fail("CAST_RECEIVER", "The receiver could not accept this view.")
+        }
+    }
+
     private fun failMediaReplies() {
         for (reply in mediaReplies.toList()) reply.fail("CAST_ENDED", "The Cast session is no longer available.")
     }
@@ -295,8 +339,8 @@ class CastController(private val context: Context) {
     }
 
     fun load(url: String, title: String?, artist: String?, contentType: String?, autoplay: Boolean,
-             positionMs: Long, result: MethodChannel.Result) {
-        val request = try { castMediaLoad(url, title, artist, contentType, autoplay, positionMs) }
+             positionMs: Long, result: MethodChannel.Result, album: String? = null, artwork: String? = null, trackId: String? = null, loadId: String? = null) {
+        val request = try { castMediaLoad(url, title, artist, contentType, autoplay, positionMs, album, artwork, trackId, loadId) }
         catch (_: IllegalArgumentException) {
             result.error("CAST_SOURCE", "The receiver needs a reachable HTTP audio source.", null); return
         }

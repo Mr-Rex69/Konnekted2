@@ -54,6 +54,10 @@ class ChromecastBackend {
     bool? autoplay,
     Duration? position,
     String? contentType,
+    String? album,
+    String? artworkUrl,
+    String? trackId,
+    String? loadId,
   }) => _invoke('load', {
     'url': url,
     'title': title,
@@ -61,7 +65,19 @@ class ChromecastBackend {
     'autoplay': ?autoplay,
     if (position != null) 'position': position.inMilliseconds,
     'contentType': ?contentType,
+    'album': ?album,
+    'artworkUrl': ?artworkUrl,
+    'trackId': ?trackId,
+    'loadId': ?loadId,
   });
+
+  Future<Map<String, dynamic>> sessionInfo() async {
+    final value = await _call<Map>('sessionInfo');
+    return value?.cast<String, dynamic>() ?? {};
+  }
+
+  Future<void> sendCustom(Map<String, dynamic> data) =>
+      _invoke('sendCustom', {'protocol': 1, ...data});
 
   Future<void> play() => _invoke('play');
   Future<void> pause() => _invoke('pause');

@@ -11,6 +11,7 @@ import 'package:flick/widgets/lokal/settings/lokal_settings_kit.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/services/casting/cast_device.dart';
 import 'package:flick/services/casting/chromecast_backend.dart';
+import 'package:flick/services/casting/casting_service.dart';
 import 'package:flick/l10n/l10n.dart';
 
 class CastingSettingsScreen extends ConsumerStatefulWidget {
@@ -132,6 +133,40 @@ class _CastingSettingsScreenState extends ConsumerState<CastingSettingsScreen> {
                 enabled: !castState.isChangingOutput,
                 onTap: () => _runCastAction(
                   () => ref.read(castProvider.notifier).disconnect(),
+                ),
+              ),
+            ],
+          ),
+        if (active?.backend == CastBackend.chromecast)
+          LokalSettingsSection(
+            title: lokalText('On the receiving device'),
+            children: [
+              ValueListenableBuilder<String>(
+                valueListenable: CastingService.instance.receiverViewNotifier,
+                builder: (context, view, _) => Column(
+                  children: [
+                    for (final item in [
+                      (
+                        'nowplaying',
+                        lokalText('Now playing'),
+                        Icons.album_outlined,
+                      ),
+                      ('lyrics', l10n.lyrics, Icons.lyrics_outlined),
+                      ('video', lokalText('Video'), Icons.music_video_outlined),
+                    ])
+                      LokalSettingRow.option(
+                        label: item.$2,
+                        icon: item.$3,
+                        selected: view == item.$1,
+                        onTap: castState.isChangingOutput
+                            ? null
+                            : () => _runCastAction(
+                                () => CastingService.instance.setReceiverView(
+                                  item.$1,
+                                ),
+                              ),
+                      ),
+                  ],
                 ),
               ),
             ],

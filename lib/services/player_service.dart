@@ -4823,6 +4823,31 @@ class PlayerService {
     await _showFloatingPlayerOverlay();
   }
 
+  /// The receiver owns its clock. Its completion bypasses the paused local
+  /// engine's gapless/crossfade flags and advances the logical queue once.
+  Future<void> castTrackFinished(String trackId, String loadId) =>
+      _enqueuePlaybackRequest(() async {
+        if (!_castingService.isActive ||
+            _castingService.currentCastLoadId != loadId ||
+            currentSongNotifier.value?.id != trackId)
+          return;
+        if (loopModeNotifier.value == LoopMode.stopAfterCurrent) {
+          final song = currentSongNotifier.value;
+          if (song != null) {
+            await _castingService.delegatePlay(song, autoplay: false);
+            positionNotifier.value = Duration.zero;
+            isPlayingNotifier.value = false;
+          }
+          return;
+        }
+        if (loopModeNotifier.value == LoopMode.one) {
+          final song = currentSongNotifier.value;
+          if (song != null) await _playInternal(song);
+        } else {
+          await _nextInternal();
+        }
+      }, remoteOutput: true);
+
   Future<void> _onSongFinished({String? endedPath}) {
     return _enqueuePlaybackRequest(
       () => _onSongFinishedInternal(endedPath: endedPath),
@@ -4830,6 +4855,7 @@ class PlayerService {
   }
 
   Future<void> _onSongFinishedInternal({String? endedPath}) async {
+    if (_castingService.isActive) return;
     _debugLog(
       '_onSongFinished: loopMode=${loopModeNotifier.value}, currentIndex=$_currentIndex, playlistLength=${_playlist.length}, usingRustBackend=$_usingRustBackend, endedPath=$endedPath',
     );
@@ -4890,6 +4916,7 @@ class PlayerService {
   /// instead of waiting for the outgoing track's TrackEnded event (which now
   /// only queues the following successor).
   Future<void> _onCrossfadeStarted(String fromPath, String toPath) async {
+    if (_castingService.isActive) return;
     if (_playlist.isEmpty || _currentIndex < 0) return;
     if (_crossfadeUiHandoffFromPath == fromPath) return;
 
@@ -6719,11 +6746,14 @@ class PlayerService {
           return;
         }
         final generation = _pendingPlaybackGeneration;
+        final selectedSongId = currentSongNotifier.value?.id;
         final local = PlaybackOutputTransition(
           song: currentSongNotifier.value,
           position: positionNotifier.value,
           wasPlaying: isPlayingNotifier.value,
-          isCurrent: () => generation == _pendingPlaybackGeneration,
+          isCurrent: () =>
+              generation == _pendingPlaybackGeneration &&
+              currentSongNotifier.value?.id == selectedSongId,
           pauseLocal: () => IosLocalAudioRequests.run(() async {
             // Deliberately address the attached local engine directly: publishing
             // remote ownership first would make pause() pause the receiver instead.
@@ -7083,6 +7113,14 @@ class PlayerService {
         'on ${currentEngineType.logLabel}: $e',
       );
       debugPrintStack(stackTrace: stackTrace);
+      if (_castingService.isActive) {
+        final confirmed = _castingService.currentSong;
+        if (confirmed != null) {
+          _selectPlaybackSong(confirmed);
+          durationNotifier.value = confirmed.duration;
+          _castingService.replayConfirmedStatus();
+        }
+      }
       rethrow;
     } finally {
       // Only the most-recent play request is allowed to clear the loading

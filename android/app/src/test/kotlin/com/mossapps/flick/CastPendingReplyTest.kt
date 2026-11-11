@@ -30,6 +30,40 @@ class CastPendingReplyTest {
         assertEquals(17250L, load.currentTime)
     }
 
+    @Test fun artworkAndIdentityReachTheBrandedReceiver() {
+        val load = castMediaLoad("http://192.0.2.1/track.flac", "Track", "Artist", "audio/flac", false, 0,
+            "Album", "http://192.0.2.1/cover.jpg", "recording", "load-2")
+        val info = load.mediaInfo!!
+        assertEquals("Album", info.metadata!!.getString(com.google.android.gms.cast.MediaMetadata.KEY_ALBUM_TITLE))
+        assertEquals("http://192.0.2.1/cover.jpg", info.metadata!!.images.first().url.toString())
+        assertEquals("recording", info.customData!!.getString("trackId"))
+        assertEquals("load-2", info.customData!!.getString("loadId"))
+    }
+
+    @Test fun terminalStatusRetainsIdentityButAnotherSendersMediaClearsIt() {
+        val identity = CastMediaIdentity()
+        val mobile = castMediaLoad("http://192.0.2.1/mobile.flac", null, null, "audio/flac", true, 0,
+            trackId = "mobile-track", loadId = "mobile-load").mediaInfo
+        identity.update(mobile)
+        identity.update(null) // CAF terminal status may omit media information.
+        assertEquals("mobile-load", identity.loadId)
+        assertEquals("mobile-track", identity.trackId)
+        val replacement = castMediaLoad("http://192.0.2.1/desktop.flac", null, null, "audio/flac", true, 0).mediaInfo
+        identity.update(replacement)
+        identity.update(null)
+        assertNull(identity.loadId)
+        assertNull(identity.trackId)
+        identity.update(mobile)
+        identity.update(com.google.android.gms.cast.MediaInfo.Builder("http://192.0.2.1/other.flac")
+            .setStreamType(com.google.android.gms.cast.MediaInfo.STREAM_TYPE_BUFFERED)
+            .setContentType("audio/flac").build())
+        assertNull(identity.loadId)
+        assertNull(identity.trackId)
+        identity.update(mobile)
+        identity.clear()
+        assertNull(identity.loadId)
+    }
+
     @Test fun contentGrantIsNeverSentAsAReceiverUrl() {
         try {
             castMediaLoad("content://library/track", null, null, "audio/flac", true, 0)

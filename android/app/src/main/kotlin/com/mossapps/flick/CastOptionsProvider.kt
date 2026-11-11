@@ -6,12 +6,12 @@ import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.framework.SessionProvider
 import android.content.Context
 
-// ponytail: default media receiver app — no custom Cast app registration needed.
+// Lokal receiver, shared with desktop: artwork, lyrics and synchronized video.
 // Referenced by AndroidManifest OPTIONS_PROVIDER_CLASS_NAME metadata.
 class CastOptionsProvider : OptionsProvider {
     override fun getCastOptions(context: Context): CastOptions {
         return CastOptions.Builder()
-            .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+            .setReceiverApplicationId("2060B9B3")
             .build()
     }
 
