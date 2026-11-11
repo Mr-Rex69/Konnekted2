@@ -13,6 +13,7 @@ import 'ios_smb_probe.dart';
 import 'ios_soulseek_probe.dart';
 
 import 'package:flick/app/app.dart';
+import 'package:flick/services/ios_now_playing_session.dart';
 import 'package:flick/features/konnekted/konnekted_shell.dart';
 import 'package:flick/features/konnekted/konnekted_library.dart';
 import 'package:flick/features/konnekted/konnekted_you.dart';
@@ -421,6 +422,9 @@ void main() {
     expect(beforeMotion?['remotePlayback'], false);
     binding.reportData!['before_motion_audio_session'] = beforeMotion;
     await const MethodChannel('lokal/ios').invokeMethod('mixAudioSessionForIntegrationTest');
+    // Options-only changes need not emit a route-change notification. Use
+    // the same production completion hook as artwork video initialization.
+    await restoreIosNowPlayingAfterSilentVideo();
     Map<String, dynamic>? categoryRecovery;
     for (var attempt = 0; attempt < 20; attempt++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -442,6 +446,32 @@ void main() {
     expect(primaryMedia?['playbackRate'], 1);
     await _expectPlaybackProgress(tester, player);
     binding.reportData!['primary_now_playing_after_motion_art'] = 'passed';
+    await player.pause();
+    await NotificationService().updateNotification(song: song, isPlaying: false,
+      duration: song.duration, position: player.positionNotifier.value);
+    await const MethodChannel('lokal/ios').invokeMethod('mixAudioSessionForIntegrationTest');
+    await restoreIosNowPlayingAfterSilentVideo();
+    final pausedMotion = await const MethodChannel('lokal/ios')
+      .invokeMapMethod<String, dynamic>('nowPlayingMetadataState');
+    expect(pausedMotion?['mixesWithOthers'], true);
+    expect(pausedMotion?['playbackRate'], 0);
+    final pcOwner = MediaNotificationOwner(onTogglePlayPause: () {}, onPlay: () {},
+      onPause: () {}, onStop: () {});
+    try {
+      await NotificationService().showFor(pcOwner, song: song, isPlaying: true,
+        isRemotePlayback: true, isLive: false);
+      await restoreIosNowPlayingAfterSilentVideo();
+      final remoteMotion = await const MethodChannel('lokal/ios')
+        .invokeMapMethod<String, dynamic>('nowPlayingMetadataState');
+      expect(remoteMotion?['mixesWithOthers'], true);
+      expect(remoteMotion?['remotePlayback'], true);
+    } finally { NotificationService().release(pcOwner); }
+    await player.resume();
+    await NotificationService().updateNotification(song: song, isPlaying: true,
+      duration: song.duration, position: player.positionNotifier.value);
+    await _expectPlaybackProgress(tester, player);
+    binding.reportData!['motion_art_preserves_paused_and_remote_owners'] = 'passed';
+
 
     await probeIosMediaReset(tester, binding, player,
       engine: AudioEngineType.iosSystem, song: song,

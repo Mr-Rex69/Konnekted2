@@ -11,6 +11,7 @@ import 'package:flick/services/motion_art/motion_art_offline_cache.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
 import 'package:flick/features/spotify/spotify_storage.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/ios_now_playing_session.dart';
 import 'package:flick/services/playback_source_priority.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -114,8 +115,10 @@ class _MotionArtViewState extends State<MotionArtView>
       final uri = Uri.parse(url);
       final options = VideoPlayerOptions(mixWithOthers: true);
       final controller = uri.scheme == 'file'
-          ? VideoPlayerController.file(File.fromUri(uri),
-              videoPlayerOptions: options)
+          ? VideoPlayerController.file(
+              File.fromUri(uri),
+              videoPlayerOptions: options,
+            )
           : VideoPlayerController.networkUrl(
               uri,
               formatHint: uri.path.toLowerCase().endsWith('.m3u8')
@@ -133,6 +136,8 @@ class _MotionArtViewState extends State<MotionArtView>
           await controller.dispose().timeout(const Duration(seconds: 4));
         } catch (_) {}
         rethrow;
+      } finally {
+        await restoreIosNowPlayingAfterSilentVideo();
       }
     },
     activate: (controller, active) =>
@@ -464,8 +469,7 @@ class _MotionArtViewState extends State<MotionArtView>
       // active. Reuse an already-decoded local file where possible.
       final lease = _playbackPool.acquireExisting(
         key,
-        allow: (controller) =>
-            !_ecoActive || _cachedSource[controller] != null,
+        allow: (controller) => !_ecoActive || _cachedSource[controller] != null,
       );
       if (lease != null) {
         _timer?.cancel();
@@ -658,6 +662,8 @@ class _MotionArtViewState extends State<MotionArtView>
         _scheduleRetry();
       }
       return;
+    } finally {
+      await restoreIosNowPlayingAfterSilentVideo();
     }
 
     if (!mounted || generation != _generation) {
@@ -671,15 +677,17 @@ class _MotionArtViewState extends State<MotionArtView>
     } else if (widget.serviceOverride == null && artwork != null) {
       // The streamed first frame is already playing. Cache asynchronously so
       // revisiting this song (including after restart) works without network.
-      unawaited(MovingCoverService.instance.cachePlayedClip(
-        title: widget.albumMode
-            ? widget.representativeSongTitle ?? widget.title
-            : widget.title,
-        artist: widget.artist,
-        album: widget.albumMode ? widget.album ?? widget.title : widget.album,
-        artwork: artwork,
-        preferVertical: widget.preferVertical,
-      ));
+      unawaited(
+        MovingCoverService.instance.cachePlayedClip(
+          title: widget.albumMode
+              ? widget.representativeSongTitle ?? widget.title
+              : widget.title,
+          artist: widget.artist,
+          album: widget.albumMode ? widget.album ?? widget.title : widget.album,
+          artwork: artwork,
+          preferVertical: widget.preferVertical,
+        ),
+      );
     }
     _spotifyCanvas[controller] = artwork!.albumId.startsWith('spotify:');
     final previous = _controller;

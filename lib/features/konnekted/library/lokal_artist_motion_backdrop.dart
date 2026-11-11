@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/ios_now_playing_session.dart';
 import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
 
 /// A silent editorial HLS clip above an always-available static portrait.
@@ -114,6 +115,8 @@ class _ArtistVideoLayerState extends State<_ArtistVideoLayer>
       // A missing or unsupported Apple rendition must never hide the photo.
       if (identical(_controller, controller)) _controller = null;
       unawaited(controller.dispose());
+    } finally {
+      await restoreIosNowPlayingAfterSilentVideo();
     }
   }
 
@@ -150,10 +153,8 @@ class _ArtistVideoLayerState extends State<_ArtistVideoLayer>
   Widget build(BuildContext context) {
     final controller = _controller;
     final size = controller?.value.size;
-    final hasFrame = _ready &&
-        size != null &&
-        size.width > 0 &&
-        size.height > 0;
+    final hasFrame =
+        _ready && size != null && size.width > 0 && size.height > 0;
     return Stack(
       fit: StackFit.expand,
       children: [
