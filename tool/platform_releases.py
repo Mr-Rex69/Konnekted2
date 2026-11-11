@@ -140,7 +140,10 @@ def move_tag(github, tag, sha):
 def release_fields(platform, metadata, body):
     return {'tag_name': platform, 'target_commitish': metadata['sha'],
             'name': title(platform, metadata), 'body': marker(platform, metadata) + '\n\n' + body,
-            'draft': False, 'prerelease': platform == 'ios',
+            # Both rolling platform releases are stable GitHub Releases.
+            # Only Android owns GitHub's singular "Latest" designation;
+            # iOS remains a standard, non-prerelease entry under tag "ios".
+            'draft': False, 'prerelease': False,
             'make_latest': 'true' if platform == 'android' else 'false'}
 
 

@@ -29,9 +29,9 @@ Lokal's **About → Updates → Set up store updates** also offers **Add to AltS
 2. In **My Apps**, choose **Update** for Lokal. The store downloads the package and signs/installs it using its normal process.
 3. Open Lokal again. Keep the same Apple account and app identity to preserve the existing library and settings. Do not uninstall Lokal as an update step. Switching signing accounts, changing the bundle identifier or moving between stores can change app identity; back up your data before doing that.
 
-New Lokal builds check the dedicated iOS release when online and show an update prompt if its build number is higher. **Open AltStore** / **Open SideStore** takes you to your chosen store; finish the update there. You can also check manually in **About → Updates**, and disable automatic checks there. The check includes iOS prereleases and never offers an Android APK.
+New Lokal builds check the dedicated iOS release when online and show an update prompt if its build number is higher. **Open AltStore** / **Open SideStore** takes you to your chosen store; finish the update there. You can also check manually in **About → Updates**, and disable automatic checks there. The check follows the dedicated, standard iOS GitHub release and never offers an Android APK.
 
-Build numbers matter: `1.0.0` build `162` is newer than `1.0.0` build `161`. Both stores receive the real version and build from the IPA. A changed GitHub title or prerelease label is not an app update.
+Build numbers matter: `1.0.0` build `162` is newer than `1.0.0` build `161`. Both stores receive the real version and build from the IPA. A changed GitHub release title or status is not an app update.
 
 ## 4. Keep signing current
 
@@ -43,7 +43,7 @@ If a store will not open from Lokal, install/configure it first using the offici
 
 ## Release maintenance
 
-`tool/ios_sideload_release.py` runs only after the existing build, simulator and independent audit gates. It copies the audited package to the public `Lokal.ipa` filename without changing its bytes, generates `altstore-source.json` from the package's own Info.plist and executable entitlements, and prepares the installation preamble and release notes. Publication validates the source against that package before upload; the source is uploaded after the IPA and metadata.
+`tool/ios_sideload_release.py` runs only after the mandatory IPA build, Flutter regressions, first launch and independent package audit. The full two-runtime native simulator suite is an opt-in publication gate; `qualification.json` records whether it ran. It copies the audited package to the public `Lokal.ipa` filename without changing its bytes, generates `altstore-source.json` from the package's own Info.plist and executable entitlements, and prepares the installation preamble and release notes. Publication validates the source against that package before upload; the source is uploaded after the IPA and metadata.
 
 The source publishes only the current build, matching the two-release policy. Its IPA URL includes the build number to distinguish successive downloads at the permanent release URL. Its permissions are extracted from the IPA, including privacy descriptions; unhandled extension or entitlement formats fail publication instead of inventing permissions. Technical audit, source and symbols assets remain attached to each current release.
 

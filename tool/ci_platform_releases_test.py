@@ -116,7 +116,8 @@ class PlatformReleases(unittest.TestCase):
         self.assertEqual(self.ios['assets'], expected_ios)
         self.assertEqual(set(self.github.refs), {'refs/tags/android', 'refs/tags/ios'})
         self.assertFalse(self.current['prerelease'])
-        self.assertTrue(self.ios['prerelease'])
+        self.assertFalse(self.ios['prerelease'])
+        self.assertEqual(self.ios['make_latest'], 'false')
         self.assertEqual(self.current['make_latest'], 'true')
         self.assertIn('lokal-platform:android version:7.5.2 build:201', self.current['body'])
 
