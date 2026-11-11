@@ -136,9 +136,9 @@ def main(*, allow_control_preflight=False):
                 booted = False
             if booted:
                 (output / 'bootstatus-deferred-to-control.txt').write_text(
-                    'bootstatus -b exceeded 300 seconds on the requested Booted iPhone.\\n'
+                    'bootstatus -b exceeded 300 seconds on the requested Booted iPhone.\n'
                     'Simulator readiness is NOT confirmed; the mandatory Flutter '\
-                    'control-app install, launch and Dart VM probe must pass.\\n')
+                    'control-app install, launch and Dart VM probe must pass.\n')
                 print('iPhone simulator is Booted but bootstatus timed out; '
                       'deferring readiness to the mandatory Flutter control-app probe',
                       flush=True)
