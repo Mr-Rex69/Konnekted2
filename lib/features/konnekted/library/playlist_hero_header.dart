@@ -7,6 +7,7 @@ import 'package:flick/core/theme/lokal_performance_scope.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/services/album_art_service.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
+import 'package:flick/widgets/lokal/lokal_page_geometry.dart';
 
 /// Album artwork sources for the shared local/Spotify/YouTube playlist hero.
 /// [audioSourcePath] supports local files with embedded, not-yet-extracted art.
@@ -62,6 +63,53 @@ Future<void> openPlaylistAfterFirstTap(
 /// dominates more than roughly a third of a phone's vertical viewport.
 double playlistHeroHeightForScreen(double height) =>
     math.min(height * .34, 370.0);
+
+/// One collapsing surface for artwork and navigation. The primary app bar
+/// owns the system inset, so subsequent pinned search headers stack below
+/// its toolbar rather than entering the status bar.
+class PlaylistSliverHeader extends StatelessWidget {
+  const PlaylistSliverHeader({
+    super.key,
+    required this.hero,
+    required this.navigation,
+  });
+
+  final Widget hero;
+  final Widget navigation;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final toolbarHeight =
+        LokalPageGeometry.barHeight + LokalPageGeometry.barPadding.vertical;
+    final expandedHeight = math.max(
+      playlistHeroHeightForScreen(media.size.height) - media.padding.top,
+      toolbarHeight + media.textScaler.scale(180),
+    );
+    return SliverAppBar(
+      pinned: true,
+      automaticallyImplyLeading: false,
+      toolbarHeight: toolbarHeight,
+      expandedHeight: expandedHeight,
+      titleSpacing: 0,
+      backgroundColor: context.lokal.bg,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      clipBehavior: Clip.hardEdge,
+      title: SizedBox(
+        key: const ValueKey('playlist-navigation'),
+        height: toolbarHeight,
+        child: navigation,
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        collapseMode: CollapseMode.pin,
+        background: hero,
+      ),
+    );
+  }
+}
 
 List<PlaylistHeroCover> playlistHeroCoversForSession(
   String playlistId,
@@ -254,36 +302,45 @@ class PlaylistHeroHeader extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          RepaintBoundary(child: image),
-          // The art keeps its color; only the lower edge blends into the page.
+          ColoredBox(color: theme.bg),
+          // Fade the image itself to zero alpha before the sliver boundary.
+          // Painting an opaque wash over an image at the same fractional
+          // edge leaves a one-pixel fringe from their separate coverage.
+          RepaintBoundary(
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (bounds) => const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0, .36, .84, 1],
+                colors: [
+                  Colors.white,
+                  Colors.white,
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ).createShader(bounds),
+              child: image,
+            ),
+          ),
+          // Contrast for the floating navigation; the lower surface is the
+          // page background, without an overpainted joining strip.
           IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  stops: const [0.0, .16, .43, .74, 1.0],
+                  stops: const [0.0, .16, .43, .84, 1.0],
                   colors: [
                     Colors.black.withValues(alpha: .38),
                     Colors.black.withValues(alpha: .08),
                     Colors.transparent,
-                    theme.bg.withValues(alpha: .73),
-                    theme.bg,
+                    Colors.transparent,
+                    Colors.transparent,
                   ],
                 ),
               ),
-            ),
-          ),
-          // Keep the last device pixels identical to the following search
-          // sliver. This hides fractional-pixel seams during scrolling.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 2,
-            child: ColoredBox(
-              key: const ValueKey('playlist-hero-seam-fill'),
-              color: theme.bg,
             ),
           ),
           Positioned(

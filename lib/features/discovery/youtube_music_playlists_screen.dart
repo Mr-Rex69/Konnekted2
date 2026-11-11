@@ -331,6 +331,13 @@ class _YoutubePlaylistDetailState
             ? Center(child: Text(_error!))
             : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
+                    headerActions: [
+                      LokalRoundAction(
+                        icon: Icons.refresh_rounded,
+                        label: 'Update playlist',
+                        onPressed: _updating ? null : () => unawaited(_refresh()),
+                      ),
+                    ],
                     header: ProviderPlaylistHeader(
                       playlistId: 'youtube:${widget.accountId}:${widget.playlist.id}',
                       title: widget.playlist.title,
@@ -347,6 +354,7 @@ class _YoutubePlaylistDetailState
                     onSongActions: _songActions,
                   ),
         ),
+        if ((_loading || _error != null) && _tracks.isEmpty)
         Positioned(
           top: MediaQuery.paddingOf(context).top,
           left: 0,

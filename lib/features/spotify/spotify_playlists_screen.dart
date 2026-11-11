@@ -437,6 +437,13 @@ class _SpotifyPlaylistDetailState
               ]))
             : ProviderPlaylistTrackBrowser(
                     tracks: _tracks,
+                    headerActions: [
+                      LokalRoundAction(
+                        icon: Icons.refresh_rounded,
+                        label: 'Refresh playlist',
+                        onPressed: _loading ? null : () => unawaited(_refresh()),
+                      ),
+                    ],
                     header: ProviderPlaylistHeader(
                       playlistId: 'spotify:${widget.accountId}:${widget.playlist.id}',
                       title: widget.playlist.name,
@@ -452,6 +459,7 @@ class _SpotifyPlaylistDetailState
                     onSongActions: _songActions,
                   ),
         ),
+        if (_loading || _error != null)
         Positioned(
           top: MediaQuery.paddingOf(context).top,
           left: 0,

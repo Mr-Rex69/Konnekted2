@@ -105,6 +105,8 @@ test/features/player/lyrics_save_button_test.dart
 test/features/player/lyrics_save_button_localization_test.dart
 test/konnekted/library_add_sheet_test.dart
 test/konnekted/library_occurrence_selection_test.dart
+test/konnekted/playlist_header_layout_test.dart
+test/konnekted/playlist_hero_header_test.dart
 test/widgets/motion_art_warm_preview_test.dart
 test/widgets/motion_art_loading_fallback_test.dart
 test/widgets/motion_art_gating_test.dart
