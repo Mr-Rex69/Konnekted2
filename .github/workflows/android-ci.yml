@@ -120,6 +120,7 @@ jobs:
           test/widgets/lokal test/features/appearance/lokal_frame_bottleneck_test.dart
           test/widgets/overflow_marquee_title_test.dart
           test/features/player/usb_dac_quick_status_sheet_test.dart
+          test/features/player/full_player_seek_bar_test.dart
           test/features/player/full_player_overflow_actions_test.dart
           test/features/link/lokal_ghost_availability_test.dart
           test/features/konnekted/library_fallback_selection_test.dart

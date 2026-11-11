@@ -1,3 +1,5 @@
+import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
+import 'package:flick/providers/progress_bar_style_provider.dart';
 import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/features/player/widgets/lokal_player_columns.dart';
 
@@ -575,58 +577,47 @@ class _DesktopRemoteFullPlayerState
                                           ],
                                         ),
                                         SizedBox(height: compact ? 6 : 10),
-                                        SliderTheme(
-                                          data: SliderTheme.of(context)
-                                              .copyWith(
-                                                trackHeight: 3.5,
-                                                activeTrackColor: ink,
-                                                inactiveTrackColor:
-                                                    Colors.white24,
-                                                thumbColor: ink,
-                                                overlayShape:
-                                                    SliderComponentShape
-                                                        .noOverlay,
-                                              ),
-                                          child: Slider(
-                                            value:
-                                                (_seekDrag ?? player.progress)
-                                                    .clamp(0.0, 1.0)
-                                                    .toDouble(),
-                                            onChangeStart: song == null
-                                                ? null
-                                                : (value) => setState(
-                                                    () => _seekDrag = value,
-                                                  ),
-                                            onChanged: song == null
-                                                ? null
-                                                : (value) => setState(
-                                                    () => _seekDrag = value,
-                                                  ),
-                                            onChangeEnd: song == null
-                                                ? null
-                                                : (value) {
-                                                    setState(
-                                                      () => _seekDrag = null,
-                                                    );
-                                                    _command(
-                                                      () => ref
-                                                          .read(
-                                                            playerProvider
-                                                                .notifier,
-                                                          )
-                                                          .seek(
-                                                            Duration(
-                                                              milliseconds:
-                                                                  (value *
-                                                                          player
-                                                                              .duration
-                                                                              .inMilliseconds)
-                                                                      .round(),
-                                                            ),
-                                                          ),
-                                                    );
-                                                  },
+                                        FullPlayerSeekBar(
+                                          style: ref.watch(
+                                            progressBarStyleProvider,
                                           ),
+                                          value: (_seekDrag ?? player.progress)
+                                              .clamp(0.0, 1.0)
+                                              .toDouble(),
+                                          onChangeStart: song == null
+                                              ? null
+                                              : (value) => setState(
+                                                  () => _seekDrag = value,
+                                                ),
+                                          onChanged: song == null
+                                              ? null
+                                              : (value) => setState(
+                                                  () => _seekDrag = value,
+                                                ),
+                                          onChangeEnd: song == null
+                                              ? null
+                                              : (value) {
+                                                  setState(
+                                                    () => _seekDrag = null,
+                                                  );
+                                                  _command(
+                                                    () => ref
+                                                        .read(
+                                                          playerProvider
+                                                              .notifier,
+                                                        )
+                                                        .seek(
+                                                          Duration(
+                                                            milliseconds:
+                                                                (value *
+                                                                        player
+                                                                            .duration
+                                                                            .inMilliseconds)
+                                                                    .round(),
+                                                          ),
+                                                        ),
+                                                  );
+                                                },
                                         ),
                                         Row(
                                           mainAxisAlignment:

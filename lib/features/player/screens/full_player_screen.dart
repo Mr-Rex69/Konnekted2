@@ -1,3 +1,6 @@
+import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
+import 'package:flick/models/progress_bar_style.dart';
+import 'package:flick/providers/full_player_waveform_provider.dart';
 import 'package:flick/features/player/widgets/lokal_player_columns.dart';
 import 'package:flick/features/player/widgets/player_video_frame.dart';
 import 'package:flick/features/player/widgets/player_lyric_style.dart';
@@ -2722,55 +2725,58 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             final value = _draggingSeek ? _seekDrag : live;
             return Column(
               children: [
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3.5,
-                    trackShape: const GappedSliderTrackShape(),
-                    trackGap: 5,
-                    thumbShape: const MaterialPlayerThumb(),
-                    overlayShape: SliderComponentShape.noOverlay,
-                    activeTrackColor: FullPlayerVisuals.primaryText,
-                    inactiveTrackColor: Colors.white.withValues(alpha: .30),
-                    thumbColor: Colors.white,
-                  ),
-                  child: Slider(
-                    value: value,
-                    onChangeStart:
-                        _videoActive &&
-                            !_videoController.timingAvailableNotifier.value
-                        ? null
-                        : (v) => setState(() {
-                            _draggingSeek = true;
-                            _seekDrag = v;
-                          }),
-                    onChanged:
-                        _videoActive &&
-                            !_videoController.timingAvailableNotifier.value
-                        ? null
-                        : (v) => setState(() => _seekDrag = v),
-                    onChangeEnd: (v) async {
-                      // One double-pulse on release, not on continuous drag updates.
-                      AppHaptics.doublePulse();
-                      final id = _player.currentSongNotifier.value?.id;
-                      try {
-                        final target = Duration(
-                          milliseconds: (v * totalMs).round(),
+                FullPlayerSeekBar(
+                  style: ref.watch(progressBarStyleProvider),
+                  peaks:
+                      !_videoActive &&
+                          ref.watch(progressBarStyleProvider) ==
+                              ProgressBarStyle.waveform &&
+                          _player.currentSongNotifier.value != null
+                      ? ref
+                            .watch(
+                              fullPlayerWaveformProvider(
+                                _player.currentSongNotifier.value!.id,
+                              ),
+                            )
+                            .asData
+                            ?.value
+                      : null,
+                  value: value,
+                  onChangeStart:
+                      _videoActive &&
+                          !_videoController.timingAvailableNotifier.value
+                      ? null
+                      : (v) => setState(() {
+                          _draggingSeek = true;
+                          _seekDrag = v;
+                        }),
+                  onChanged:
+                      _videoActive &&
+                          !_videoController.timingAvailableNotifier.value
+                      ? null
+                      : (v) => setState(() => _seekDrag = v),
+                  onChangeEnd: (v) async {
+                    // One double-pulse on release, not on continuous drag updates.
+                    AppHaptics.doublePulse();
+                    final id = _player.currentSongNotifier.value?.id;
+                    try {
+                      final target = Duration(
+                        milliseconds: (v * totalMs).round(),
+                      );
+                      if (_videoActive) {
+                        await _videoCommand(
+                          () => _videoController.seek(target),
                         );
-                        if (_videoActive) {
-                          await _videoCommand(
-                            () => _videoController.seek(target),
-                          );
-                        } else {
-                          await _player.seek(target);
-                        }
-                      } finally {
-                        if (mounted &&
-                            _player.currentSongNotifier.value?.id == id &&
-                            _seekDrag == v)
-                          setState(() => _draggingSeek = false);
+                      } else {
+                        await _player.seek(target);
                       }
-                    },
-                  ),
+                    } finally {
+                      if (mounted &&
+                          _player.currentSongNotifier.value?.id == id &&
+                          _seekDrag == v)
+                        setState(() => _draggingSeek = false);
+                    }
+                  },
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),

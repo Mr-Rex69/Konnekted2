@@ -1,5 +1,9 @@
 // Generated Lokal presentation phrases. Music metadata and route IDs are not localized here.
 const Map<String, String> _uifr = {
+  "Full player seekbar": "Barre de progression du lecteur",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Ligne, ondulée ou forme d’onde. La forme d’onde utilise l’audio du morceau si disponible, sinon une ligne.",
+  "Wavy": "Ondulée",
+  "A gentle wave along the played part of the track.": "Une onde douce sur la partie déjà lue du morceau.",
   "Forget": "Oublier",
   "Reverse song swipe actions": "Inverser les gestes sur les morceaux",
   "Swipe right to Play next, left to Add to queue.":
@@ -688,6 +692,10 @@ const Map<String, String> _uifr = {
   "“{arg0}” plays next": "\"{arg0}\" joue ensuite",
 };
 const Map<String, String> _uide = {
+  "Full player seekbar": "Fortschrittsleiste im Vollbildplayer",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Linie, Welle oder Wellenform. Die Wellenform nutzt, wenn verfügbar, die Audiodaten des Titels, sonst eine Linie.",
+  "Wavy": "Welle",
+  "A gentle wave along the played part of the track.": "Eine sanfte Welle im bereits abgespielten Teil des Titels.",
   "Forget": "Vergessen",
   "Reverse song swipe actions": "Wischaktionen für Titel umkehren",
   "Swipe right to Play next, left to Add to queue.": "Nach rechts wischen: Als Nächstes abspielen. Nach links: Zur Warteschlange hinzufügen.",
@@ -1367,6 +1375,10 @@ const Map<String, String> _uide = {
   "“{arg0}” plays next": "Als nächstes wird „{arg0}“ abgespielt",
 };
 const Map<String, String> _uies = {
+  "Full player seekbar": "Barra de progreso del reproductor completo",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Línea, ondulada o forma de onda. La forma de onda usa el audio de la canción cuando está disponible; si no, una línea.",
+  "Wavy": "Ondulada",
+  "A gentle wave along the played part of the track.": "Una onda suave en la parte ya reproducida de la canción.",
   "Forget": "Olvidar",
   "Reverse song swipe actions": "Invertir gestos de las canciones",
   "Swipe right to Play next, left to Add to queue.": "Desliza a la derecha para reproducir después y a la izquierda para añadir a la cola.",
@@ -2056,6 +2068,10 @@ const Map<String, String> _uies = {
   "“{arg0}” plays next": "“{arg0}” se reproduce a continuación",
 };
 const Map<String, String> _uiit = {
+  "Full player seekbar": "Barra di avanzamento del lettore completo",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Linea, ondulata o forma d’onda. La forma d’onda usa l’audio del brano quando disponibile, altrimenti una linea.",
+  "Wavy": "Ondulata",
+  "A gentle wave along the played part of the track.": "Un’onda delicata sulla parte già riprodotta del brano.",
   "Forget": "Dimentica",
   "Reverse song swipe actions": "Inverti i gesti sui brani",
   "Swipe right to Play next, left to Add to queue.": "Scorri a destra per riprodurre dopo, a sinistra per aggiungere alla coda.",
@@ -2749,6 +2765,10 @@ const Map<String, String> _uiit = {
   "“{arg0}” plays next": "Successivamente viene riprodotto “{arg0}”.",
 };
 const Map<String, String> _uiptBR = {
+  "Full player seekbar": "Barra de progresso do player completo",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Linha, ondulada ou forma de onda. A forma de onda usa o áudio da música quando disponível; caso contrário, uma linha.",
+  "Wavy": "Ondulada",
+  "A gentle wave along the played part of the track.": "Uma onda suave na parte já reproduzida da faixa.",
   "Forget": "Esquecer",
   "Reverse song swipe actions": "Inverter gestos nas músicas",
   "Swipe right to Play next, left to Add to queue.": "Deslize para a direita para tocar a seguir e para a esquerda para adicionar à fila.",
@@ -3436,6 +3456,10 @@ const Map<String, String> _uiptBR = {
   "“{arg0}” plays next": "“{arg0}” é reproduzido a seguir",
 };
 const Map<String, String> _uinl = {
+  "Full player seekbar": "Voortgangsbalk in de volledige speler",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Lijn, golvend of golfvorm. De golfvorm gebruikt de audio van het nummer als die beschikbaar is, anders een lijn.",
+  "Wavy": "Golvend",
+  "A gentle wave along the played part of the track.": "Een zachte golf over het afgespeelde deel van het nummer.",
   "Forget": "Vergeten",
   "Reverse song swipe actions": "Veegacties voor nummers omkeren",
   "Swipe right to Play next, left to Add to queue.": "Veeg naar rechts om hierna af te spelen, naar links om aan de wachtrij toe te voegen.",
@@ -4133,6 +4157,10 @@ const Map<String, String> _uinl = {
   "“{arg0}” plays next": "Vervolgens wordt “{arg0}” afgespeeld",
 };
 const Map<String, String> _uipl = {
+  "Full player seekbar": "Pasek postępu pełnego odtwarzacza",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Linia, fala lub przebieg fali. Przebieg wykorzystuje dźwięk utworu, jeśli jest dostępny; w przeciwnym razie wyświetla linię.",
+  "Wavy": "Fala",
+  "A gentle wave along the played part of the track.": "Łagodna fala w odtworzonej części utworu.",
   "Forget": "Zapomnij",
   "Reverse song swipe actions": "Odwróć gesty przesuwania utworów",
   "Swipe right to Play next, left to Add to queue.": "Przesuń w prawo, aby odtworzyć jako następny; w lewo, aby dodać do kolejki.",
@@ -4817,6 +4845,10 @@ const Map<String, String> _uipl = {
   "“{arg0}” plays next": "Następnie odtwarzany jest utwór „{arg0}”.",
 };
 const Map<String, String> _uisv = {
+  "Full player seekbar": "Förloppsreglage i helskärmsspelaren",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Linje, vågig eller vågform. Vågformen använder låtens ljud när det finns tillgängligt, annars visas en linje.",
+  "Wavy": "Vågig",
+  "A gentle wave along the played part of the track.": "En mjuk våg längs den spelade delen av låten.",
   "Forget": "Glöm",
   "Reverse song swipe actions": "Vänd på låtarnas svepåtgärder",
   "Swipe right to Play next, left to Add to queue.": "Svep åt höger för att spela härnäst, åt vänster för att lägga till i kön.",
@@ -5508,6 +5540,10 @@ const Map<String, String> _uisv = {
   "“{arg0}” plays next": "\"{arg0}\" spelas härnäst",
 };
 const Map<String, String> _uizh = {
+  "Full player seekbar": "完整播放器进度条",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "直线、波浪或波形。波形使用歌曲的音频数据；数据不可用时显示直线。",
+  "Wavy": "波浪",
+  "A gentle wave along the played part of the track.": "在歌曲已播放部分显示柔和的波浪。",
   "Forget": "忘记",
   "Reverse song swipe actions": "反转歌曲滑动操作",
   "Swipe right to Play next, left to Add to queue.": "向右滑动可下一首播放，向左滑动可添加到队列。",
@@ -6178,6 +6214,10 @@ const Map<String, String> _uizh = {
   "“{arg0}” plays next": "接下来播放“{arg0}”",
 };
 const Map<String, String> _uitr = {
+  "Full player seekbar": "Tam oynatıcı ilerleme çubuğu",
+  "Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.": "Çizgi, dalgalı veya dalga biçimi. Dalga biçimi, varsa parçanın ses verisini kullanır; yoksa çizgi gösterilir.",
+  "Wavy": "Dalgalı",
+  "A gentle wave along the played part of the track.": "Parçanın çalınan bölümünde yumuşak bir dalga.",
   "Forget": "Unut",
   "Reverse song swipe actions": "Şarkı kaydırma işlemlerini ters çevir",
   "Swipe right to Play next, left to Add to queue.":

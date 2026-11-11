@@ -5,11 +5,12 @@ import 'package:flick/services/progress_bar_style_preference_service.dart';
 
 final progressBarStylePreferenceServiceProvider =
     Provider<ProgressBarStylePreferenceService>((ref) {
-  return ProgressBarStylePreferenceService();
-});
+      return ProgressBarStylePreferenceService();
+    });
 
 class ProgressBarStyleNotifier extends Notifier<ProgressBarStyle> {
   bool _initialized = false;
+  bool _selected = false;
 
   @override
   ProgressBarStyle build() {
@@ -17,27 +18,26 @@ class ProgressBarStyleNotifier extends Notifier<ProgressBarStyle> {
       _initialized = true;
       Future<void>.microtask(_loadFromPreferences);
     }
-    return ProgressBarStyle.waveform;
+    return ProgressBarStyle.line;
   }
 
   Future<void> _loadFromPreferences() async {
-    final style =
-        await ref.read(progressBarStylePreferenceServiceProvider).getStyle();
-    if (ref.mounted && state != style) {
+    final style = await ref
+        .read(progressBarStylePreferenceServiceProvider)
+        .getStyle();
+    if (ref.mounted && !_selected && state != style) {
       state = style;
     }
   }
 
   Future<void> setStyle(ProgressBarStyle style) async {
-    if (state == style) return;
+    _selected = true;
     state = style;
-    await ref
-        .read(progressBarStylePreferenceServiceProvider)
-        .setStyle(style);
+    await ref.read(progressBarStylePreferenceServiceProvider).setStyle(style);
   }
 }
 
 final progressBarStyleProvider =
     NotifierProvider<ProgressBarStyleNotifier, ProgressBarStyle>(
-  ProgressBarStyleNotifier.new,
-);
+      ProgressBarStyleNotifier.new,
+    );

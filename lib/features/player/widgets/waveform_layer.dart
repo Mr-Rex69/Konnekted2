@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'full_player_seek_bar.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/services/player_service.dart';
@@ -109,7 +111,25 @@ class _WaveformLayerState extends State<WaveformLayer>
                 return ValueListenableBuilder<Duration>(
                   valueListenable: widget.positionNotifier,
                   builder: (context, position, _) {
+                    final songId = widget.currentSong?.id;
                     final seekBar = switch (style) {
+                      ProgressBarStyle.wavy => _WavyLayerSeekBar(
+                        key: ValueKey(widget.currentSong?.id),
+                        value:
+                            (position.inMilliseconds / duration.inMilliseconds)
+                                .clamp(0.0, 1.0),
+                        onSeek: (value) {
+                          if (!mounted || widget.currentSong?.id != songId) {
+                            return;
+                          }
+                          final target = Duration(
+                            milliseconds: (value * duration.inMilliseconds)
+                                .round(),
+                          );
+                          widget.positionNotifier.value = target;
+                          unawaited(widget.playerService.seek(target));
+                        },
+                      ),
                       ProgressBarStyle.line => LineSeekBar(
                         position: position,
                         duration: duration,
@@ -148,3 +168,32 @@ class _WaveformLayerState extends State<WaveformLayer>
 }
 
 /// Extracted player controls widget to reduce nesting and improve performance
+
+/// Drag state belongs to the keyed Wavy subtree. Changing song or style
+/// disposes its gesture and preview together, so neither can affect a new track.
+class _WavyLayerSeekBar extends StatefulWidget {
+  const _WavyLayerSeekBar({
+    super.key,
+    required this.value,
+    required this.onSeek,
+  });
+  final double value;
+  final ValueChanged<double> onSeek;
+  @override
+  State<_WavyLayerSeekBar> createState() => _WavyLayerSeekBarState();
+}
+
+class _WavyLayerSeekBarState extends State<_WavyLayerSeekBar> {
+  double? _drag;
+  @override
+  Widget build(BuildContext context) => FullPlayerSeekBar(
+    style: ProgressBarStyle.wavy,
+    value: _drag ?? widget.value,
+    onChangeStart: (value) => setState(() => _drag = value),
+    onChanged: (value) => setState(() => _drag = value),
+    onChangeEnd: (value) {
+      setState(() => _drag = null);
+      widget.onSeek(value);
+    },
+  );
+}
