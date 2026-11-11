@@ -176,7 +176,12 @@ class CastingService {
         await PlayerService().runOutputTransition((local) async {
           final shouldResume = resumeLocal && local.wasPlaying;
           await _disconnectChromecast();
-          if (shouldResume && local.isCurrent()) await local.resumeLocal();
+          if (shouldResume && local.isCurrent()) {
+            await local.resumeLocal();
+            // A paused attached engine can resume the same recording at its
+            // pre-Cast position. Restore the receiver's captured position too.
+            if (local.isCurrent()) await PlayerService().seek(local.position);
+          }
         });
       } catch (_) {
         errorNotifier.value = 'Receiver shutdown is unconfirmed. Retry Stop casting when the receiver is reachable.';
