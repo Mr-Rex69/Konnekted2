@@ -47,6 +47,7 @@ jobs:
           test/features/player/video_space_layout_test.dart
           test/widgets/lokal/lokal_settings_reskin_test.dart test/l10n
           test/features/player/motion_cover_blur_test.dart
+          test/features/player/full_player_header_test.dart
           test/features/player/player_song_blur_background_test.dart
           test/widgets/motion_art_warm_preview_test.dart
           test/widgets/motion_art_gating_test.dart

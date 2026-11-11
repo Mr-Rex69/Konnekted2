@@ -42,6 +42,7 @@ import 'package:flick/features/spotify/spotify_storage.dart';
 
 import '../widgets/player_transport_controls.dart';
 import '../widgets/player_song_blur_background.dart';
+import '../widgets/full_player_header.dart';
 import '../widgets/motion_art_frame_source.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
@@ -1814,74 +1815,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         : label == 'Device DAC'
         ? lokalText('Speaker')
         : label;
-    return SizedBox(
-      height: 58,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _roundIcon(LucideIcons.chevronLeft, _close),
-          ),
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 215),
-              child: _pill(
-                onTap: () => openAndroidOutputChooser(context),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      outputIcon,
-                      size: 17,
-                      color: FullPlayerVisuals.primaryText,
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        displayLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: _font,
-                          fontSize: 13,
-                          color: FullPlayerVisuals.primaryText,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _roundIcon(LucideIcons.cast, _openCasting, active: isCasting),
-                _roundIcon(Icons.more_vert, () => unawaited(_openMore(song))),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _roundIcon(IconData icon, VoidCallback onTap, {bool active = false}) {
-    return Material(
-      color: active ? Colors.white.withValues(alpha: 0.26) : Colors.transparent,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(icon, size: 22, color: Colors.white),
-        ),
-      ),
+    return FullPlayerHeader(
+      deviceLabel: displayLabel,
+      outputIcon: outputIcon,
+      isCasting: isCasting,
+      onClose: _close,
+      onOutput: () => openAndroidOutputChooser(context),
+      onCast: _openCasting,
+      onMore: () => unawaited(_openMore(song)),
     );
   }
 

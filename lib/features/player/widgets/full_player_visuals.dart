@@ -17,6 +17,9 @@ class FullPlayerVisuals {
   final Color top, middle, bottom, glow, play;
   static const surface = Color(0x15FFFFFF);
   static const scrim = Color(0xFF000000);
+  static const headerOpacity = .68;
+  static const headerSelectedOpacity = .78;
+  static const headerPerformanceOpacity = .84;
   static const border = Color(0x24FFFFFF);
   static const selectedSurface = Color(0x36FFFFFF);
   static const primaryText = Color(0xFFF8F0EB);
@@ -26,7 +29,9 @@ class FullPlayerVisuals {
   /// Interpolate already-selected gradients, avoiding discontinuous hue
   /// changes when competing album swatches cross during a track transition.
   static FullPlayerVisuals lerp(
-    FullPlayerVisuals from, FullPlayerVisuals to, double progress,
+    FullPlayerVisuals from,
+    FullPlayerVisuals to,
+    double progress,
   ) => FullPlayerVisuals(
     top: Color.lerp(from.top, to.top, progress)!,
     middle: Color.lerp(from.middle, to.middle, progress)!,
