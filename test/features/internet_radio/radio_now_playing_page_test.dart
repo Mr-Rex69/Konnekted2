@@ -259,6 +259,31 @@ void main() {
     }
   });
 
+  testWidgets('portrait tablet radio uses the mobile cover layout', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(768, 1024);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app(true, size: const Size(768, 1024)));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('tablet-square-cover-player')),
+      findsNothing,
+    );
+    expect(find.byType(FullBleedArtworkFrame), findsWidgets);
+    final columns = tester.widget<LokalPlayerColumns>(
+      find.byType(LokalPlayerColumns),
+    );
+    expect(
+      tester.getRect(find.byWidget(columns.controls)).top,
+      greaterThanOrEqualTo(
+        tester.getRect(find.byWidget(columns.stage)).bottom - 1,
+      ),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Radio player has normal transport, metadata links and menu', (
     tester,
   ) async {

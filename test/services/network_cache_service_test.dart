@@ -35,12 +35,57 @@ void main() {
     expect(await service.getPath(2, 'songA', extension: 'flac'), isNull);
   });
 
+  test(
+    'a PC prefetch part is not playable until the completed file is published',
+    () async {
+      final path = await service.pathFor(1, 'next-track', extension: 'flac');
+      final part = File('$path.part');
+      await part.writeAsBytes([1, 2]);
+      expect(await service.getPath(1, 'next-track'), isNull);
+      expect(await service.getPath(1, 'next-track', extension: 'flac'), isNull);
+      await part.writeAsBytes([1, 2, 3, 4]);
+      await part.rename(path);
+      expect(await service.getPath(1, 'next-track'), path);
+      expect(await File(path).readAsBytes(), [1, 2, 3, 4]);
+    },
+  );
+
+  test(
+    'a staged retry cannot shadow an existing complete cache entry',
+    () async {
+      final path = await service.pathFor(1, 'songA', extension: 'flac');
+      await File('$path.part').writeAsBytes([9]);
+      await service.stash(1, 'songA', [1, 2, 3], extension: 'flac');
+      expect(await service.getPath(1, 'songA'), path);
+      expect(await File((await service.getPath(1, 'songA'))!).readAsBytes(), [
+        1,
+        2,
+        3,
+      ]);
+    },
+  );
+
   test('cap is enforced and oldest entry is evicted first', () async {
-    final p1 = await service.stash(1, 'old', List.filled(40, 0), extension: 'flac');
+    final p1 = await service.stash(
+      1,
+      'old',
+      List.filled(40, 0),
+      extension: 'flac',
+    );
     await File(p1).setLastModified(base);
-    final p2 = await service.stash(1, 'mid', List.filled(40, 0), extension: 'flac');
+    final p2 = await service.stash(
+      1,
+      'mid',
+      List.filled(40, 0),
+      extension: 'flac',
+    );
     await File(p2).setLastModified(base.add(const Duration(seconds: 1)));
-    final p3 = await service.stash(1, 'new', List.filled(40, 0), extension: 'flac');
+    final p3 = await service.stash(
+      1,
+      'new',
+      List.filled(40, 0),
+      extension: 'flac',
+    );
     await File(p3).setLastModified(base.add(const Duration(seconds: 2)));
 
     await service.stash(1, 'trigger', [1], extension: 'flac');
@@ -51,9 +96,19 @@ void main() {
   });
 
   test('recently accessed entries survive eviction', () async {
-    final p1 = await service.stash(1, 'old', List.filled(40, 0), extension: 'flac');
+    final p1 = await service.stash(
+      1,
+      'old',
+      List.filled(40, 0),
+      extension: 'flac',
+    );
     await File(p1).setLastModified(base);
-    final p2 = await service.stash(1, 'fresh', List.filled(40, 0), extension: 'flac');
+    final p2 = await service.stash(
+      1,
+      'fresh',
+      List.filled(40, 0),
+      extension: 'flac',
+    );
     await File(p2).setLastModified(base.add(const Duration(seconds: 1)));
 
     expect(await service.getPath(1, 'old', extension: 'flac'), isNotNull);

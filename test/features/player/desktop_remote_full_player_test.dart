@@ -278,6 +278,48 @@ void main() {
     },
   );
 
+  testWidgets('portrait tablets use the mobile full-cover composition', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final size in [const Size(768, 1024), const Size(1024, 1366)]) {
+      tester.view.physicalSize = size;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            playerProvider.overrideWith(_RemotePlayer.new),
+            lokalInitialAppearanceProvider.overrideWithValue(
+              const LokalAppearance(fullscreenCover: true),
+            ),
+            lokalRemoteControllerProvider.overrideWith(_RemoteController.new),
+          ],
+          child: MaterialApp(
+            theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+            home: DesktopRemoteFullPlayer(onClose: () {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final columns = tester.widget<LokalPlayerColumns>(
+        find.byType(LokalPlayerColumns),
+      );
+      expect(
+        tester.getRect(find.byWidget(columns.controls)).top,
+        greaterThanOrEqualTo(
+          tester.getRect(find.byWidget(columns.stage)).bottom - 1,
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('tablet-square-cover-player')),
+        findsNothing,
+      );
+      expect(find.byType(FullBleedArtworkFrame), findsWidgets);
+      expect(tester.takeException(), isNull, reason: '$size');
+    }
+  });
+
   testWidgets('scrolling follows rendered overflow and text scale', (
     tester,
   ) async {

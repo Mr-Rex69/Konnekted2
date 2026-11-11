@@ -26,11 +26,8 @@ class LokalPlayerColumns extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final media = MediaQuery.of(context);
       final wide =
-          LokalLayout.isTablet(context) &&
-          constraints.maxWidth >= 720 &&
-          (preferColumns || fillCover || media.size.width > media.size.height);
+          LokalLayout.isLandscapeTablet(context) && constraints.maxWidth >= 720;
       if (!wide) {
         return Column(
           mainAxisSize: expandPortraitStage

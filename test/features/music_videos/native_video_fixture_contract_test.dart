@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flick/features/music_videos/music_video_surface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -88,6 +89,18 @@ void main() {
       expect(data.substring(4, 8), 'ftyp');
       expect(data, contains('avc1'));
       expect(data, contains('mp4a'));
+      final movie = data.indexOf('mvhd');
+      expect(movie, greaterThan(0));
+      final header = ByteData.sublistView(bytes);
+      expect(header.getUint8(movie + 4), 0);
+      final duration =
+          header.getUint32(movie + 20) / header.getUint32(movie + 16);
+      expect(duration, iosNativeVideoFixtureDuration.inSeconds);
+      expect(
+        duration,
+        greaterThanOrEqualTo(60),
+        reason: 'Reset and seek qualification must have real media headroom',
+      );
     },
   );
 }

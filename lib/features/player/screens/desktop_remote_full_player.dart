@@ -197,8 +197,10 @@ class _DesktopRemoteFullPlayerState
     final coverPreference = ref.watch(
       lokalAppearanceProvider.select((look) => look.fullscreenCover),
     );
-    final tabletCover = LokalLayout.isTablet(context) && coverPreference;
-    final fullCover = !LokalLayout.isTablet(context) && coverPreference;
+    final tabletCover =
+        LokalLayout.isLandscapeTablet(context) && coverPreference;
+    final fullCover =
+        !LokalLayout.isLandscapeTablet(context) && coverPreference;
     final playlist = remote.snapshot?.queue ?? const <LokalRemoteTrack>[];
     final reportedIndex = remote.snapshot?.currentIndex ?? -1;
     // Reject stale shuffle/queue indices after a desktop reorder and locate
@@ -320,7 +322,7 @@ class _DesktopRemoteFullPlayerState
                         // shrinking only on genuinely short screens; scroll metrics
                         // still protect the seek/transport/volume rows.
                         final wide =
-                            LokalLayout.isTablet(context) &&
+                            LokalLayout.isLandscapeTablet(context) &&
                             bounds.maxWidth >= 720 &&
                             (tabletCover || bounds.maxWidth > bounds.maxHeight);
                         final artworkSize = math.min(

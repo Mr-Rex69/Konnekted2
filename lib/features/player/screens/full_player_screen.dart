@@ -655,7 +655,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (!_immersiveLyrics &&
         !_spaceWaitingForQueue &&
         _animate &&
-        !LokalLayout.isTablet(context) &&
+        !LokalLayout.isLandscapeTablet(context) &&
         ref.read(lokalAppearanceProvider).fullscreenCover &&
         _queueProgress.value > .005) {
       _spaceWaitingForQueue = true;
@@ -688,7 +688,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         widget.videoSong ??
         _player.currentSongNotifier.value;
     final fullCover =
-        !LokalLayout.isTablet(context) &&
+        !LokalLayout.isLandscapeTablet(context) &&
         ref.read(lokalAppearanceProvider).fullscreenCover;
     _spaceFullCover = fullCover;
     // Canvas fills the art plane, so the wave leaves its centre clear.
@@ -1460,8 +1460,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final coverPreference = ref.watch(
       lokalAppearanceProvider.select((look) => look.fullscreenCover),
     );
-    final tabletCover = LokalLayout.isTablet(context) && coverPreference;
-    final fullCover = !LokalLayout.isTablet(context) && coverPreference;
+    final tabletCover =
+        LokalLayout.isLandscapeTablet(context) && coverPreference;
+    final fullCover =
+        !LokalLayout.isLandscapeTablet(context) && coverPreference;
     return Scaffold(
       backgroundColor: Colors.black,
       body:
@@ -1546,7 +1548,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   ),
                                   child: LayoutBuilder(
                                     builder: (context, c) {
-                                      if (LokalLayout.isTablet(context) &&
+                                      if (LokalLayout.isLandscapeTablet(
+                                            context,
+                                          ) &&
                                           c.maxWidth >= 720) {
                                         return AnimatedBuilder(
                                           animation: _lyricsProgress,
@@ -2463,7 +2467,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               ),
             ),
           );
-    if (showVideo && LokalLayout.isTablet(context)) {
+    if (showVideo && LokalLayout.isLandscapeTablet(context)) {
       art = PlayerVideoFrame(child: art);
     }
     final shown = _burst;
