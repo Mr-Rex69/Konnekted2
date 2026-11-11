@@ -214,6 +214,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
       desktopServerId: serverId,
     );
 
+    // A saved playlist can hold a catalogue reference or an old scan ID
+    // even when the recording exists in both libraries. Resolve its metadata
+    // with the same recording-level checks before requiring a new sync.
+    if (result == null && selected.sourceType == null) {
+      result = desktopLibrarySelection(
+        selected: selected,
+        playlist: playlist,
+        index: preferredLibrarySongIndex(
+          library.songs,
+          recordingReferences: [selected],
+        ),
+        desktopServerId: serverId,
+      );
+    }
+
     // Older catalogue merges deliberately skipped importing a separate PC
     // row when the song already existed on Android. #429's reverse index
     // cannot find a remote ID that was never stored. Resolve that selected
@@ -221,7 +236,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // another whole-library sync or title-only handoff.
     if (result == null &&
         selected.sourceType == null &&
-        selected.filePath?.isNotEmpty == true &&
+        selected.filePath?.startsWith('ghost://') != true &&
         selected.duration > Duration.zero) {
       final candidates = await ref
           .read(lokalRemoteServiceProvider)

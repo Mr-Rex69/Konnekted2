@@ -54,17 +54,17 @@ DesktopLibrarySelection? desktopLibrarySelection({
 }
 
 
-/// Resolve older overlapping libraries that were imported without saving a
-/// second desktop Song row. Query candidates come from the paired desktop's
-/// existing /api/remote/library/tracks endpoint. Only the same recording-level
-/// match used for library deduplication may authorize an exact desktop ID.
+/// Resolve shared recordings, including saved playlist metadata, when the
+/// phone has no desktop Song row. Query candidates come from the paired
+/// desktop's existing /api/remote/library/tracks endpoint. Only the same
+/// recording-level match used for library deduplication may authorize an ID.
 String? matchedDesktopIdFromCandidates({
   required Song selected,
   required List<Map<String, dynamic>> candidates,
   required int desktopServerId,
 }) {
   if (selected.sourceType != null ||
-      selected.filePath?.isNotEmpty != true ||
+      selected.filePath?.startsWith('ghost://') == true ||
       selected.duration <= Duration.zero) return null;
 
   final remoteSongs = <Song>[];
@@ -88,7 +88,10 @@ String? matchedDesktopIdFromCandidates({
       remoteServerId: desktopServerId,
     ));
   }
-  final indexed = preferredLibrarySongIndex([selected, ...remoteSongs]);
+  final indexed = preferredLibrarySongIndex(
+    remoteSongs,
+    recordingReferences: [selected],
+  );
   final copies = indexed.desktopCopiesByPhoneId[selected.id] ?? const <Song>[];
   // Zero matches and multiple matching desktop recordings are both unsafe.
   return copies.length == 1 ? copies.single.remoteId : null;

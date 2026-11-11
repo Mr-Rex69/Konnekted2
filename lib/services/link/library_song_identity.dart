@@ -47,7 +47,12 @@ class PreferredLibrarySongIndex {
 /// Recording-level matching, not fuzzy artwork matching: require a lead
 /// artist, normalized title, duration within two seconds, and compatible
 /// known album tags. Do not conflate different edits/masters.
-PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
+/// [recordingReferences] are temporary metadata-only selections for remote
+/// lookup; callers displaying the library should leave them empty.
+PreferredLibrarySongIndex preferredLibrarySongIndex(
+  List<Song> songs, {
+  List<Song> recordingReferences = const [],
+}) {
   // Most phone libraries have no desktop stream rows to reconcile. Avoid
   // normalizing every title/artist on every artwork or metadata update.
   if (!songs.any(
@@ -87,11 +92,15 @@ PreferredLibrarySongIndex preferredLibrarySongIndex(List<Song> songs) {
   // Android while desktop retains the album's lead artist. Index by title as
   // well so the unusually strong credit/album match below can reconcile them.
   final localByTitle = <String, List<Song>>{};
-  for (final song in songs) {
+  // Saved playlist entries can outlive their scanned ID or carry only
+  // catalogue metadata. Remote selection may compare those references to
+  // desktop recordings without treating them as locally playable files.
+  final referenceIds = recordingReferences.map((song) => song.id).toSet();
+  for (final song in recordingReferences.followedBy(songs)) {
     if (song.isNetworkSource ||
-        song.isPending ||
-        song.filePath?.isNotEmpty != true ||
-        song.filePath!.startsWith('ghost://')) {
+        (!referenceIds.contains(song.id) &&
+            (song.isPending || song.filePath?.isNotEmpty != true)) ||
+        song.filePath?.startsWith('ghost://') == true) {
       continue;
     }
     final key = recordingKey(song);
