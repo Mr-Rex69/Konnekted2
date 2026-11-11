@@ -54,6 +54,12 @@ class CastPendingReplyTest {
         assertNull(identity.loadId)
         assertNull(identity.trackId)
         identity.update(mobile)
+        identity.update(com.google.android.gms.cast.MediaInfo.Builder("http://192.0.2.1/other.flac")
+            .setStreamType(com.google.android.gms.cast.MediaInfo.STREAM_TYPE_BUFFERED)
+            .setContentType("audio/flac").build())
+        assertNull(identity.loadId)
+        assertNull(identity.trackId)
+        identity.update(mobile)
         identity.clear()
         assertNull(identity.loadId)
     }

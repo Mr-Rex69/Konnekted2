@@ -37,8 +37,8 @@ internal class CastMediaIdentity {
         private set
     fun update(info: MediaInfo?) {
         if (info == null) return
-        loadId = info.customData?.optString("loadId")?.takeIf { it.isNotBlank() }
-        trackId = if (loadId != null) info.customData?.optString("trackId")?.takeIf { it.isNotBlank() } else null
+        loadId = (info.customData?.opt("loadId") as? String)?.takeIf { it.isNotBlank() }
+        trackId = if (loadId != null) (info.customData?.opt("trackId") as? String)?.takeIf { it.isNotBlank() } else null
     }
     fun clear() { loadId = null; trackId = null }
 }
