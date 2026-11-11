@@ -27,6 +27,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/widgets/lokal/lokal_swipe_to_queue.dart';
 
 import 'replayable_stream_songs.dart';
+import 'playlist_hero_header.dart';
 
 /// Shared pieces of Lokal's Library screens: Apple Music's iOS layout on the
 /// theme's own solid background, glass only for the small round buttons.
@@ -202,8 +203,8 @@ class LokalLibraryPage extends StatelessWidget {
   final Widget? header;
   final bool showBack;
 
-  /// Place playlist artwork behind the status bar, with back/menu buttons
-  /// floating above it. Default library pages keep their current SafeArea.
+  /// Place playlist artwork behind the status bar and keep navigation pinned
+  /// inside the safe area. Default library pages retain their SafeArea.
   final bool edgeToEdgeHeader;
 
   @override
@@ -219,18 +220,9 @@ class LokalLibraryPage extends StatelessWidget {
           backgroundColor: context.lokal.bg,
           body: CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(
-                child: Stack(
-                  children: [
-                    header!,
-                    Positioned(
-                      top: MediaQuery.paddingOf(context).top,
-                      left: 0,
-                      right: 0,
-                      child: LokalPageBar(showBack: showBack, actions: actions),
-                    ),
-                  ],
-                ),
+              PlaylistSliverHeader(
+                hero: header!,
+                navigation: LokalPageBar(showBack: showBack, actions: actions),
               ),
               ...slivers,
               SliverToBoxAdapter(
@@ -874,7 +866,12 @@ class LokalPinnedHeader extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
-      ColoredBox(color: context.lokal.bg, child: child);
+      ColoredBox(
+        color: context.lokal.bg,
+        child: SizedBox.expand(
+          child: SafeArea(top: false, bottom: false, child: child),
+        ),
+      );
 
   @override
   bool shouldRebuild(LokalPinnedHeader old) =>

@@ -190,6 +190,7 @@ class ProviderPlaylistTrackBrowser extends ConsumerStatefulWidget {
     required this.onPlay,
     required this.onSongActions,
     this.header,
+    this.headerActions = const [],
   });
 
   final List<LokalDiscoveryTrack> tracks;
@@ -203,6 +204,7 @@ class ProviderPlaylistTrackBrowser extends ConsumerStatefulWidget {
   final void Function(List<int> orderedIndices, int startIndex) onPlay;
   final void Function(int sourceIndex) onSongActions;
   final Widget? header;
+  final List<Widget> headerActions;
 
   @override
   ConsumerState<ProviderPlaylistTrackBrowser> createState() =>
@@ -441,36 +443,45 @@ class _ProviderPlaylistTrackBrowserState
     return CustomScrollView(
       slivers: [
         if (widget.header != null)
-          SliverToBoxAdapter(child: widget.header!),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 8, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: LokalSearchField(
-                    controller: _search,
-                    hint: lokalText('Search songs'),
-                    onChanged: (query) => setState(() => _query = query),
+          PlaylistSliverHeader(
+            hero: widget.header!,
+            navigation: LokalPageBar(actions: widget.headerActions),
+          ),
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: LokalPinnedHeader(
+            height:
+                60 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: LokalSearchField(
+                      controller: _search,
+                      hint: lokalText('Search songs'),
+                      onChanged: (query) => setState(() => _query = query),
+                    ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Sort: ${_sort.label}',
-                  icon: const Icon(Icons.sort_rounded),
-                  onPressed: () => unawaited(_chooseSort()),
-                ),
-                IconButton(
-                  tooltip: _descending
-                      ? 'Descending · switch to ascending'
-                      : 'Ascending · switch to descending',
-                  icon: Icon(_descending
-                      ? Icons.arrow_downward_rounded
-                      : Icons.arrow_upward_rounded),
-                  onPressed: () => _updateOrder(
-                    () => _descending = !_descending,
+                  IconButton(
+                    tooltip: 'Sort: ${_sort.label}',
+                    icon: const Icon(Icons.sort_rounded),
+                    onPressed: () => unawaited(_chooseSort()),
                   ),
-                ),
-              ],
+                  IconButton(
+                    tooltip: _descending
+                        ? 'Descending · switch to ascending'
+                        : 'Ascending · switch to descending',
+                    icon: Icon(
+                      _descending
+                          ? Icons.arrow_downward_rounded
+                          : Icons.arrow_upward_rounded,
+                    ),
+                    onPressed: () =>
+                        _updateOrder(() => _descending = !_descending),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

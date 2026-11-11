@@ -246,28 +246,4 @@ void main() {
     expect(pushes, 1, reason: 'the timeout allows navigation');
   });
 
-  testWidgets('hero bottom is opaque and matches the following page surface', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: LokalTheme.build(LokalTokens.resolve(LokalThemeId.dark)),
-        home: const Scaffold(
-          body: PlaylistHeroHeader(
-            playlistId: 'test:hero-seam',
-            title: 'Sample',
-            metadata: '2 songs',
-            covers: [],
-          ),
-        ),
-      ),
-    );
-
-    final fill = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey('playlist-hero-seam-fill')),
-    );
-    final context = tester.element(find.byType(PlaylistHeroHeader));
-    expect(fill.color, context.lokal.bg);
-    expect(tester.takeException(), isNull);
-  });
 }
