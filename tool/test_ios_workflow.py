@@ -34,6 +34,27 @@ class IosWorkflowTests(unittest.TestCase):
             self.assertTrue(all(not step.get('continue-on-error', False)
                                 for step in self.jobs[job]['steps']))
 
+    def test_default_publication_skips_extended_acceptance_but_preserves_hard_gates(self):
+        inputs = self.workflow['on']['workflow_dispatch']['inputs']
+        self.assertFalse(inputs['native_acceptance']['default'])
+        self.assertFalse(inputs['live_video_probe']['default'])
+        for name in ('simulator_build', 'ios_acceptance'):
+            self.assertIn('inputs.native_acceptance', self.jobs[name]['if'])
+        publisher = self.jobs['publish_sideload_beta']
+        gate = publisher['if']
+        # The skipped optional dependency must not skip the publisher itself.
+        self.assertIn('always()', gate)
+        self.assertIn('!cancelled()', gate)
+        for name in ('checks', 'iphone', 'production_launch', 'ios_release_audit'):
+            self.assertIn(f"needs.{name}.result == 'success'", gate)
+        self.assertIn("!inputs.native_acceptance || needs.ios_acceptance.result == 'success'", gate)
+        self.assertIn('ios_acceptance', publisher['needs'])
+        self.assertIn('LOKAL_IOS_NATIVE_ACCEPTANCE', next(
+            step for step in publisher['steps'] if 'ios_sideload_release.py' in step.get('run', '')
+        )['env'])
+        # Skipped native acceptance is not permission to bypass build integrity.
+        self.assertNotIn('continue-on-error', publisher)
+
     def test_device_production_and_test_compilation_are_not_serialized(self):
         for name in ('checks', 'iphone', 'production_launch', 'simulator_build'):
             self.assertFalse(self.jobs[name].get('needs'))
