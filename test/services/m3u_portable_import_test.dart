@@ -39,7 +39,7 @@ void main() {
   ) async {
     final directory = await Directory.systemTemp.createTemp('lokal-m3u-test-');
     try {
-      final file = File('\${directory.path}/import.m3u8');
+      final file = File('${directory.path}/import.m3u8');
       await file.writeAsString(content);
       final service = PlaylistService(songRepository: _Songs(songs));
       final results = await service.syncPlaylistsFromSources([
