@@ -209,7 +209,7 @@ class CastController(private val context: Context) {
         val loadId = data?.optString("loadId")
         if (!loadId.isNullOrBlank()) {
             reportedLoadId = loadId
-            reportedTrackId = data.optString("trackId")
+            reportedTrackId = data?.optString("trackId")
         }
         // CAF may omit media information on terminal IDLE/FINISHED status.
         // Preserve the last reported load's identity for that completion only.
