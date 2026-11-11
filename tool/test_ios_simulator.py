@@ -24,6 +24,65 @@ DEVICES = json.dumps({'devices': {
 
 
 class SimulatorCoordinatorTest(unittest.TestCase):
+    def test_bootstatus_timeout_on_booted_phone_defers_only_to_control(self):
+        """A Booted runtime may skip bootstatus, not the required Flutter VM check."""
+        booted = json.dumps({'devices': {RUNTIME: [{
+            'name': 'Lokal iPhone iOS 18.6', 'udid': 'owned-udid',
+            'state': 'Booted', 'isAvailable': True,
+        }]}})
+
+        def run(args, **kwargs):
+            if args == ['xcrun', 'simctl', 'bootstatus', 'owned-udid', '-b']:
+                raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+            if args == ['xcrun', 'simctl', 'list', 'devices', '--json']:
+                kwargs['stdout'].write(booted)
+            return subprocess.CompletedProcess(args, 0)
+
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, self.environment(directory), clear=True), \
+             patch.object(ios_simulator, 'command',
+                          side_effect=[DEVICES, RUNTIMES, 'owned-udid\\n']) as inventory, \
+             patch.object(ios_simulator.subprocess, 'run', side_effect=run) as commands, \
+             patch('builtins.print') as printed:
+            ios_simulator.boot_before_install()
+            output = Path(directory) / 'ios-simulator-boot-18.6'
+            self.assertTrue((output / 'failure.txt').exists())
+            self.assertIn('control-app', (output / 'bootstatus-deferred-to-control.txt').read_text())
+            self.assertEqual(inventory.call_count, 3, 'Do not create a second simulator')
+            self.assertEqual(
+                sum('bootstatus' in call.args[0] for call in commands.call_args_list), 1)
+            self.assertFalse(any('shutdown' in call.args[0]
+                                 for call in commands.call_args_list))
+            self.assertFalse(any('simulator ready' in str(call)
+                                 for call in printed.call_args_list))
+            self.assertEqual(os.environ['IOS_SIMULATOR_UDID'], 'owned-udid')
+            # No app installation is performed or claimed by the boot script.
+            self.assertFalse(any('install' in call.args[0]
+                                 for call in commands.call_args_list))
+
+    def test_booted_phone_does_not_bypass_strict_main_bootstatus(self):
+        booted = json.dumps({'devices': {RUNTIME: [{
+            'udid': 'owned-udid', 'state': 'Booted', 'isAvailable': True,
+        }]}})
+
+        def run(args, **kwargs):
+            if 'bootstatus' in args:
+                raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+            if args == ['xcrun', 'simctl', 'list', 'devices', '--json']:
+                kwargs['stdout'].write(booted)
+            return subprocess.CompletedProcess(args, 0)
+
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, self.environment(directory), clear=True), \
+             patch.object(ios_simulator, 'command',
+                          side_effect=[DEVICES, RUNTIMES, 'owned-udid\\n']), \
+             patch.object(ios_simulator.subprocess, 'run', side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                ios_simulator.main()
+            self.assertFalse((Path(directory) /
+                              'ios-simulator-boot-18.6/bootstatus-deferred-to-control.txt'
+                              ).exists())
+
     def test_preinstall_recovery_preserves_first_evidence_and_only_stops_owned_phone(self):
         def run(args, **kwargs):
             if args == ['xcrun', 'simctl', 'bootstatus', 'owned-udid', '-b']:
