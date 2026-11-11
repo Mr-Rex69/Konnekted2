@@ -41,7 +41,7 @@ class SimulatorCoordinatorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(os.environ, self.environment(directory), clear=True), \
              patch.object(ios_simulator, 'command',
-                          side_effect=[DEVICES, RUNTIMES, 'owned-udid\\n']) as inventory, \
+                          side_effect=[DEVICES, RUNTIMES, 'owned-udid\n']) as inventory, \
              patch.object(ios_simulator.subprocess, 'run', side_effect=run) as commands, \
              patch('builtins.print') as printed:
             ios_simulator.boot_before_install()
@@ -75,7 +75,7 @@ class SimulatorCoordinatorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(os.environ, self.environment(directory), clear=True), \
              patch.object(ios_simulator, 'command',
-                          side_effect=[DEVICES, RUNTIMES, 'owned-udid\\n']), \
+                          side_effect=[DEVICES, RUNTIMES, 'owned-udid\n']), \
              patch.object(ios_simulator.subprocess, 'run', side_effect=run):
             with self.assertRaises(subprocess.TimeoutExpired):
                 ios_simulator.main()
