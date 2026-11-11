@@ -42,6 +42,7 @@ import 'package:flick/features/spotify/spotify_storage.dart';
 
 import '../widgets/player_transport_controls.dart';
 import '../widgets/player_song_blur_background.dart';
+import '../widgets/motion_art_frame_source.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/flowing_background_vocals.dart';
 import '../widgets/lyrics_focus_timing.dart';
@@ -331,6 +332,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   );
 
   bool _canvasHidden = false;
+  final _motionFrames = MotionArtFrameSource();
   String? _canvasReadyForSong;
   late final _canvasChrome = AnimationController(
     vsync: this,
@@ -458,6 +460,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     _lyricsProgress.dispose();
     _spaceProgress.dispose();
     _canvasChrome.dispose();
+    _motionFrames.dispose();
     final videoLease = _videoOutputLease;
     if (videoLease != null)
       unawaited(videoLease.release().catchError((Object _) {}));
@@ -1501,6 +1504,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         song: song,
                         colors: colors,
                         fullCover: fullCover || tabletCover,
+                        motionFrames: _motionFrames,
                       ),
                       if (fullCover)
                         FadeTransition(
@@ -2012,6 +2016,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                               valueListenable: _player.isPlayingNotifier,
                               builder: (context, playing, _) => MotionArtView(
                                 sharedPlaybackKey: 'player:${track.id}',
+                                onFrame: (frame) => _motionFrames.update('player:${track.id}', frame),
                                 presentationBuilder: (
                                   context,
                                   artwork,
@@ -2456,6 +2461,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               valueListenable: _player.isPlayingNotifier,
               builder: (context, playing, _) => MotionArtView(
                 sharedPlaybackKey: 'player:${song.id}',
+                onFrame: (frame) => _motionFrames.update('player:${song.id}', frame),
                 title: song.title,
                 artist: song.artist,
                 album: song.album,
