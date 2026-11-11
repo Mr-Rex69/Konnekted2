@@ -145,7 +145,8 @@ void main() {
                 expect(
                   contrast,
                   greaterThan(4.5),
-                  reason: 'the frosted header must retain icon/text contrast',
+                  reason: 'contrast on $color / $rect: ink=$ink, '
+                      'backing=$backing, at=$point',
                 );
               }
               image.dispose();
