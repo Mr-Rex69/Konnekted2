@@ -50,7 +50,7 @@ void main() {
                                       outputIcon: LucideIcons.speaker,
                                       isCasting: true,
                                       brightArtwork:
-                                          value.computeLuminance() >= .42,
+                                          value.computeLuminance()  >= .18,
                                       onClose: () => calls.add('close'),
                                       onOutput: () => calls.add('output'),
                                       onCast: () => calls.add('cast'),
@@ -98,6 +98,8 @@ void main() {
             Colors.white,
             Colors.yellow,
             Colors.cyan,
+            Colors.teal,
+            Colors.blueGrey,
             Colors.black,
             const Color(0xFF122A47),
           ]) {
