@@ -1,5 +1,5 @@
-# Device, production launch, and integration compilation run concurrently.
-# Both runtime suites and all checks remain mandatory before publication.
+# Device build, basic first launch and audit gate publication.
+# Extended simulator/WebKit acceptance can be requested for a qualification run.
 name: iPhone build and sideload package
 'on':
   workflow_dispatch:
@@ -14,11 +14,15 @@ name: iPhone build and sideload package
         type: string
         default: ''
       publish:
-        description: Update the iOS release after all build, simulator and audit checks pass
+        description: Publish after build, Flutter regressions, launch and IPA audit pass
         type: boolean
         default: true
+      native_acceptance:
+        description: Also require iOS 18.6 and 26.0 native simulator acceptance before publishing
+        type: boolean
+        default: false
       live_video_probe:
-        description: Observe the public YouTube embed in actual WebKit (network-dependent evidence)
+        description: Observe public YouTube WebKit playback when native acceptance is enabled
         type: boolean
         default: false
 permissions:
@@ -309,6 +313,7 @@ jobs:
           key: ${{ steps.rust_cache.outputs.cache-primary-key }}
   simulator_build:
     name: Compile integration simulator apps
+    if: ${{ inputs.native_acceptance }}
     runs-on: macos-15
     timeout-minutes: 45
     outputs:
@@ -437,6 +442,7 @@ jobs:
   ios_acceptance:
     name: Native acceptance on iOS ${{ matrix.ios }}
     needs: simulator_build
+    if: ${{ inputs.native_acceptance }}
     runs-on: macos-15
     timeout-minutes: 50
     strategy:
@@ -559,7 +565,10 @@ jobs:
       - production_launch
       - ios_acceptance
       - ios_release_audit
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.publish }}
+    # GitHub skips jobs with skipped dependencies unless always() is present.
+    # Native acceptance is intentionally skipped by default. It remains a
+    # hard gate when explicitly requested, while build/launch/audit always gate.
+    if: ${{ always() && !cancelled() && github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.publish && needs.checks.result == 'success' && needs.iphone.result == 'success' && needs.production_launch.result == 'success' && needs.ios_release_audit.result == 'success' && (!inputs.native_acceptance || needs.ios_acceptance.result == 'success') }}
     concurrency:
       group: lokal-mobile-publication
       cancel-in-progress: false
@@ -580,6 +589,7 @@ jobs:
         id: release
         env:
           LOKAL_IOS_PUBLISH: ${{ inputs.publish }}
+          LOKAL_IOS_NATIVE_ACCEPTANCE: ${{ inputs.native_acceptance }}
         run: python3 tool/ios_sideload_release.py "$RUNNER_TEMP/audited-iphone" "$RUNNER_TEMP/sideload-release"
       - name: Publish the iOS release and AltStore/SideStore source
         env:
