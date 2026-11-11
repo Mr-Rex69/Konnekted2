@@ -12,7 +12,7 @@ def command(*args, timeout=30):
     return subprocess.check_output(args, text=True, timeout=timeout)
 
 
-def main():
+def main(*, allow_control_preflight=False):
     version = os.environ.get('IOS_SIMULATOR_RUNTIME_VERSION') or command(
         'xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version').strip()
     if not re.fullmatch(r'\d+\.\d+(?:\.\d+)?', version):
@@ -117,6 +117,32 @@ def main():
                                    check=False, timeout=20)
             except (OSError, subprocess.SubprocessError):
                 pass
+        # An iOS 26 hosted Mac can report Booted and run SpringBoard while
+        # bootstatus -b waits indefinitely for nonessential first-boot work.
+        # Only the pre-install coordinator may defer that particular timeout,
+        # and only when the *exact requested device* is reported as Booted.
+        # The next mandatory job step installs and launches a separate Flutter
+        # control app and requires its Dart VM. It is the actual readiness gate;
+        # a failed install, launch, or VM probe must still fail the workflow.
+        if (allow_control_preflight and isinstance(error, subprocess.TimeoutExpired)
+                and error.cmd == ['xcrun', 'simctl', 'bootstatus', udid, '-b']):
+            try:
+                observed = json.loads((output / 'devices-after.json').read_text())
+                booted = any(item.get('udid') == udid
+                             and item.get('state') == 'Booted'
+                             and item.get('isAvailable') is True
+                             for item in observed.get('devices', {}).get(runtime_id, []))
+            except (OSError, ValueError, TypeError):
+                booted = False
+            if booted:
+                (output / 'bootstatus-deferred-to-control.txt').write_text(
+                    'bootstatus -b exceeded 300 seconds on the requested Booted iPhone.\\n'
+                    'Simulator readiness is NOT confirmed; the mandatory Flutter '\
+                    'control-app install, launch and Dart VM probe must pass.\\n')
+                print('iPhone simulator is Booted but bootstatus timed out; '
+                      'deferring readiness to the mandatory Flutter control-app probe',
+                      flush=True)
+                return
         raise
     print(f'iPhone simulator ready: iOS {version}, {device_type["name"]} ({udid})', flush=True)
 
@@ -128,7 +154,7 @@ def boot_before_install():
     control-VM and application failures never qualify for this path.
     """
     try:
-        main()
+        main(allow_control_preflight=True)
         return
     except subprocess.TimeoutExpired as error:
         previous = os.environ.get('IOS_SIMULATOR_UDID')
@@ -150,7 +176,7 @@ def boot_before_install():
         print('New test device failed to boot before installation; preserving evidence '
               'and trying one fresh device of the same required OS', flush=True)
     # Deliberately outside the catch: any second failure propagates normally.
-    main()
+    main(allow_control_preflight=True)
 
 
 if __name__ == '__main__':
