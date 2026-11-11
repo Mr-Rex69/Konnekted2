@@ -23,7 +23,7 @@ class IosWorkflowTests(unittest.TestCase):
             dependencies = [dependencies]
         return set(dependencies).union(*(self.ancestors(dep) for dep in dependencies))
 
-    def test_publication_still_requires_every_independent_gate_and_both_runtimes(self):
+    def test_publication_keeps_full_opt_in_native_matrix_and_dependency_ancestry(self):
         needed = self.ancestors('publish_sideload_beta')
         self.assertTrue({'checks', 'iphone', 'production_launch', 'simulator_build',
                          'ios_acceptance', 'ios_release_audit'} <= needed)
