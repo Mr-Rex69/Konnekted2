@@ -1815,8 +1815,18 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         : label == 'Device DAC'
         ? lokalText('Speaker')
         : label;
+    // Only full-bleed artwork is directly behind the header. The regular
+    // player and tablet columns retain their dark gradient backgrounds.
+    final fullCoverBehindHeader = ref.watch(
+      lokalAppearanceProvider.select((look) => look.fullscreenCover),
+    ) && !LokalLayout.isLandscapeTablet(context);
+    final dominantArtwork = ref.watch(albumDominantColorSyncProvider);
+    final brightArtwork = fullCoverBehindHeader &&
+        dominantArtwork != null &&
+        dominantArtwork.computeLuminance() >= .18;
     return FullPlayerHeader(
       deviceLabel: displayLabel,
+      brightArtwork: brightArtwork,
       outputIcon: outputIcon,
       isCasting: isCasting,
       onClose: _close,

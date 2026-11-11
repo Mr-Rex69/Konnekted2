@@ -1,8 +1,8 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flick/core/theme/app_theme.dart';
 import 'package:flick/features/player/widgets/full_player_header.dart';
-import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -41,17 +41,23 @@ void main() {
                             children: [
                               ValueListenableBuilder<Color>(
                                 valueListenable: cover,
-                                builder: (_, value, __) =>
+                                builder: (_, value, __) => Stack(
+                                  fit: StackFit.expand,
+                                  children: [
                                     ColoredBox(color: value),
-                              ),
-                              FullPlayerHeader(
-                                deviceLabel: name,
-                                outputIcon: LucideIcons.speaker,
-                                isCasting: true,
-                                onClose: () => calls.add('close'),
-                                onOutput: () => calls.add('output'),
-                                onCast: () => calls.add('cast'),
-                                onMore: () => calls.add('more'),
+                                    FullPlayerHeader(
+                                      deviceLabel: name,
+                                      outputIcon: LucideIcons.speaker,
+                                      isCasting: true,
+                                      brightArtwork:
+                                          value.computeLuminance()  >= .18,
+                                      onClose: () => calls.add('close'),
+                                      onOutput: () => calls.add('output'),
+                                      onCast: () => calls.add('cast'),
+                                      onMore: () => calls.add('more'),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -66,11 +72,11 @@ void main() {
           await tester.pumpAndSettle();
           final pill = find.ancestor(
             of: find.text(name),
-            matching: find.byType(LokalGlass),
+            matching: find.byType(BackdropFilter),
           );
           final more = find.ancestor(
             of: find.byIcon(Icons.more_vert),
-            matching: find.byType(LokalGlass),
+            matching: find.byType(BackdropFilter),
           );
           final pillRect = tester.getRect(pill),
               moreRect = tester.getRect(more);
@@ -83,7 +89,20 @@ void main() {
             pillRect.right,
             lessThan(tester.getRect(find.byIcon(LucideIcons.cast)).left),
           );
-          for (final color in [Colors.white, Colors.yellow, Colors.cyan]) {
+          // Dark artwork stays light-on-dark; bright artwork becomes dark
+          // ink over transparent frost rather than opaque black buttons.
+          expect(find.byType(LokalGlass), findsNothing);
+          expect(find.byType(LokalLensBackdrop), findsNothing);
+          expect(find.byType(BackdropFilter), findsNWidgets(4));
+          for (final color in [
+            Colors.white,
+            Colors.yellow,
+            Colors.cyan,
+            Colors.teal,
+            Colors.blueGrey,
+            Colors.black,
+            const Color(0xFF122A47),
+          ]) {
             cover.value = color;
             await tester.pump();
             await tester.runAsync(() async {
@@ -106,13 +125,30 @@ void main() {
                   bytes.getUint8(offset + 1),
                   bytes.getUint8(offset + 2),
                 );
-                final contrast =
-                    (FullPlayerVisuals.primaryText.computeLuminance() + .05) /
-                    (backing.computeLuminance() + .05);
+                final ink = tester.widget<Icon>(
+                  find.byIcon(LucideIcons.cast),
+                ).color!;
+                final top = math.max(
+                  ink.computeLuminance(),
+                  backing.computeLuminance(),
+                );
+                final bottom = math.min(
+                  ink.computeLuminance(),
+                  backing.computeLuminance(),
+                );
+                final contrast = (top + .05) / (bottom + .05);
+                if (color == Colors.white) {
+                  expect(
+                    backing.computeLuminance(),
+                    greaterThan(.70),
+                    reason: 'frost must show bright artwork, not a black scrim',
+                  );
+                }
                 expect(
                   contrast,
                   greaterThan(4.5),
-                  reason: 'header glass must maintain text/icon contrast on bright frames',
+                  reason: 'contrast on $color / $rect: ink=$ink, '
+                      'backing=$backing, at=$point',
                 );
               }
               image.dispose();

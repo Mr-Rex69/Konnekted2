@@ -1,13 +1,18 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:flick/l10n/l10n.dart';
-import 'package:flick/widgets/lokal/lokal_glass.dart';
 
 import 'full_player_visuals.dart';
 
-/// Artwork can be white even when the ambient backdrop is dark. Give each
-/// header control its own guaranteed dark glass, independent of the cover.
+/// Lightweight, artwork-responsive frost shared by Android and iOS.
+///
+/// Unlike the larger moving mini-player, small static header buttons do not
+/// need a refractive shader. They use one shared, clipped Gaussian backdrop
+/// blur, a nearly clear neutral fill and a hairline highlight instead of an
+/// opaque black scrim. Artwork brightness determines foreground contrast.
 class FullPlayerHeader extends StatelessWidget {
   const FullPlayerHeader({
     super.key,
@@ -18,6 +23,7 @@ class FullPlayerHeader extends StatelessWidget {
     required this.onOutput,
     required this.onCast,
     required this.onMore,
+    this.brightArtwork = false,
   });
 
   final String deviceLabel;
@@ -25,12 +31,34 @@ class FullPlayerHeader extends StatelessWidget {
   final bool isCasting;
   final VoidCallback onClose, onOutput, onCast, onMore;
 
+  /// True when a bright full-bleed cover is directly behind the controls.
+  /// Dark gradient/background modes keep the white foreground.
+  final bool brightArtwork;
+
+  // Strong dark foreground contrasts with translucent frost on midtone covers.
+  static const Color _darkInk = Color(0xFF0B1118);
+  // Reuse the native blur filter across rebuilds and all four controls.
+  static final ImageFilter _frostFilter = ImageFilter.blur(
+    sigmaX: 3.5,
+    sigmaY: 3.5,
+  );
+
+  Color get _foreground =>
+      brightArtwork ? _darkInk : FullPlayerVisuals.primaryText;
+
+  List<Shadow> get _glyphShadow => [
+    Shadow(
+      color: brightArtwork
+          ? Colors.white.withValues(alpha: .18)
+          : Colors.black.withValues(alpha: .28),
+      blurRadius: 2,
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) => SizedBox(
     height: 58,
     child: BackdropGroup(
-      // The right-hand pair takes more space than the Back action. A Row
-      // centers the route pill in the leftover gap, not on the screen.
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -40,9 +68,8 @@ class FullPlayerHeader extends StatelessWidget {
             child: _action(LucideIcons.chevronLeft, lokalText('Back'), onClose),
           ),
           Padding(
-            // Mirror the larger right-hand cluster (44 + 6 + 44), plus 8
-            // points of breathing room, so the pill is *actually* centered.
-            // Its label may ellipsize on narrow phones without overlapping.
+            // The right-hand Cast + More cluster is wider than Back.
+            // Reserve equal space on both sides to center the output pill.
             padding: const EdgeInsets.symmetric(horizontal: 102),
             child: Center(
               child: ConstrainedBox(
@@ -63,7 +90,8 @@ class FullPlayerHeader extends StatelessWidget {
                           Icon(
                             outputIcon,
                             size: 17,
-                            color: FullPlayerVisuals.primaryText,
+                            color: _foreground,
+                            shadows: _glyphShadow,
                           ),
                           const SizedBox(width: 8),
                           Flexible(
@@ -71,11 +99,12 @@ class FullPlayerHeader extends StatelessWidget {
                               deviceLabel,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'GoogleSansFlex',
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: FullPlayerVisuals.primaryText,
+                                color: _foreground,
+                                shadows: _glyphShadow,
                               ),
                             ),
                           ),
@@ -120,7 +149,12 @@ class FullPlayerHeader extends StatelessWidget {
     selected: selected,
     child: SizedBox.square(
       dimension: 44,
-      child: Icon(icon, size: 20, color: FullPlayerVisuals.primaryText.withValues(alpha: .96)),
+      child: Icon(
+        icon,
+        size: 20,
+        color: _foreground,
+        shadows: _glyphShadow,
+      ),
     ),
   );
 
@@ -137,27 +171,36 @@ class FullPlayerHeader extends StatelessWidget {
     child: ExcludeSemantics(
       child: Tooltip(
         message: label,
-        child: LokalGlass.capsule(
-          tint: FullPlayerVisuals.scrim,
-          grouped: true,
-          shadow: false,
-          singlePassLens: true,
-          backdropBlurSigma: 9,
-          liquidTintOpacity: selected
-              ? FullPlayerVisuals.headerSelectedOpacity
-              : FullPlayerVisuals.headerOpacity,
-          fallbackTintOpacity: selected
-              ? FullPlayerVisuals.headerSelectedOpacity
-              : FullPlayerVisuals.headerOpacity,
-          performanceTintOpacity: FullPlayerVisuals.headerPerformanceOpacity,
-          pronouncedRim: false,
-          rimStrength: selected ? .35 : .16,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: onTap,
-              child: child,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: BackdropFilter.grouped(
+            // The same inexpensive frost as the footer, without a lens,
+            // custom fragment shader, or separate vibrancy pass. BackdropGroup
+            // lets the three isolated buttons reuse a single backdrop read.
+            filter: _frostFilter,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                color: Colors.white.withValues(
+                  alpha: brightArtwork
+                      ? (selected ? .22 : .15)
+                      : (selected ? .19 : .12),
+                ),
+                border: Border.all(
+                  width: .75,
+                  color: Colors.white.withValues(
+                    alpha: brightArtwork ? .30 : .21,
+                  ),
+                ),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: onTap,
+                  child: child,
+                ),
+              ),
             ),
           ),
         ),

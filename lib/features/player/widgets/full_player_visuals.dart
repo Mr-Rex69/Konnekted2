@@ -17,9 +17,6 @@ class FullPlayerVisuals {
   final Color top, middle, bottom, glow, play;
   static const surface = Color(0x15FFFFFF);
   static const scrim = Color(0xFF000000);
-  static const headerOpacity = .60;
-  static const headerSelectedOpacity = .69;
-  static const headerPerformanceOpacity = .65;
   static const border = Color(0x24FFFFFF);
   static const selectedSurface = Color(0x36FFFFFF);
   static const primaryText = Color(0xFFF8F0EB);
