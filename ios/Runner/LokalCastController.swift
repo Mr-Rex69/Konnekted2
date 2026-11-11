@@ -304,12 +304,22 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
     for request in pending { request.cancel() }
   }
 
+  private func rememberMediaIdentity(_ status: GCKMediaStatus) {
+    // Retain identity only when the terminal status omits media information.
+    // Another sender's replacement media must never finish our logical track.
+    guard let info = status.mediaInformation else { return }
+    let data = info.customData as? [String: Any]
+    let id = data?["loadId"] as? String
+    reportedLoadID = id?.isEmpty == false ? id : nil
+    reportedTrackID = reportedLoadID == nil ? nil : data?["trackId"] as? String
+  }
+
   private func sessionInfo() -> [String: Any] {
     var info: [String: Any] = ["name": connectedSession?.device.friendlyName ?? "Cast receiver"]
     if let client = client, let status = client.mediaStatus {
-      let data = status.mediaInformation?.customData as? [String: Any]
-      info["loadId"] = data?["loadId"] as? String ?? reportedLoadID ?? ""
-      info["trackId"] = data?["trackId"] as? String ?? reportedTrackID ?? ""
+      rememberMediaIdentity(status)
+      info["loadId"] = reportedLoadID ?? ""
+      info["trackId"] = reportedTrackID ?? ""
       let position = client.approximateStreamPosition()
       info["position"] = position.isFinite ? Int(max(0, min(position, Double(Int32.max))) * 1000) : 0
       let duration = status.mediaInformation?.streamDuration ?? 0
@@ -323,10 +333,7 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   private func emitStatus() {
     guard let session = connectedSession, let client = client, let status = client.mediaStatus else { return }
-    if let data = status.mediaInformation?.customData as? [String: Any], let id = data["loadId"] as? String, !id.isEmpty {
-      reportedLoadID = id
-      reportedTrackID = data["trackId"] as? String
-    }
+    rememberMediaIdentity(status)
     switch status.playerState {
     case .playing, .buffering, .loading: receiverMayBePlaying = true
     default: break

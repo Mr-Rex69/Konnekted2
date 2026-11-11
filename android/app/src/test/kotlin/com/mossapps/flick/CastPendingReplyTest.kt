@@ -40,6 +40,24 @@ class CastPendingReplyTest {
         assertEquals("load-2", info.customData!!.getString("loadId"))
     }
 
+    @Test fun terminalStatusRetainsIdentityButAnotherSendersMediaClearsIt() {
+        val identity = CastMediaIdentity()
+        val mobile = castMediaLoad("http://192.0.2.1/mobile.flac", null, null, "audio/flac", true, 0,
+            trackId = "mobile-track", loadId = "mobile-load").mediaInfo
+        identity.update(mobile)
+        identity.update(null) // CAF terminal status may omit media information.
+        assertEquals("mobile-load", identity.loadId)
+        assertEquals("mobile-track", identity.trackId)
+        val replacement = castMediaLoad("http://192.0.2.1/desktop.flac", null, null, "audio/flac", true, 0).mediaInfo
+        identity.update(replacement)
+        identity.update(null)
+        assertNull(identity.loadId)
+        assertNull(identity.trackId)
+        identity.update(mobile)
+        identity.clear()
+        assertNull(identity.loadId)
+    }
+
     @Test fun contentGrantIsNeverSentAsAReceiverUrl() {
         try {
             castMediaLoad("content://library/track", null, null, "audio/flac", true, 0)

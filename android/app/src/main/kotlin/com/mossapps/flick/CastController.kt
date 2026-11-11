@@ -45,8 +45,7 @@ class CastController(private val context: Context) {
     private var attachedClient: RemoteMediaClient? = null
     private var lastVolume: Double? = null
     private var statusTicker: Runnable? = null
-    private var reportedTrackId: String? = null
-    private var reportedLoadId: String? = null
+    private val reportedIdentity = CastMediaIdentity()
 
     private var pendingConnect: CastPendingReply? = null
     private var pendingDisconnect: CastPendingReply? = null
@@ -172,8 +171,7 @@ class CastController(private val context: Context) {
     }
 
     private fun detachMediaClientListener() {
-        reportedTrackId = null
-        reportedLoadId = null
+        reportedIdentity.clear()
         stopStatusTicker()
         val cb = mediaClientCallback
         if (cb != null) attachedClient?.unregisterCallback(cb)
@@ -205,12 +203,7 @@ class CastController(private val context: Context) {
     }
 
     private fun emitStatus(client: RemoteMediaClient) {
-        val data = client.mediaStatus?.mediaInfo?.customData
-        val loadId = data?.optString("loadId")
-        if (!loadId.isNullOrBlank()) {
-            reportedLoadId = loadId
-            reportedTrackId = data?.optString("trackId")
-        }
+        reportedIdentity.update(client.mediaStatus?.mediaInfo)
         // CAF may omit media information on terminal IDLE/FINISHED status.
         // Preserve the last reported load's identity for that completion only.
         emit(
@@ -219,8 +212,8 @@ class CastController(private val context: Context) {
                 "position" to client.approximateStreamPosition,
                 "duration" to client.streamDuration,
                 "playing" to client.isPlaying,
-                "loadId" to reportedLoadId,
-                "trackId" to reportedTrackId,
+                "loadId" to reportedIdentity.loadId,
+                "trackId" to reportedIdentity.trackId,
                 "finished" to (client.mediaStatus?.playerState == MediaStatus.PLAYER_STATE_IDLE && client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_FINISHED),
                 "sourceError" to (client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_ERROR),
             )
@@ -296,11 +289,11 @@ class CastController(private val context: Context) {
     fun sessionInfo(): Map<String, Any?> {
         val client = connectedSession?.remoteMediaClient
         val status = client?.mediaStatus
-        val data = status?.mediaInfo?.customData
+        reportedIdentity.update(status?.mediaInfo)
         return mapOf(
             "name" to (connectedSession?.castDevice?.friendlyName ?: mediaRouter.selectedRoute.name.toString()),
-            "trackId" to (data?.optString("trackId") ?: reportedTrackId),
-            "loadId" to (data?.optString("loadId") ?: reportedLoadId),
+            "trackId" to reportedIdentity.trackId,
+            "loadId" to reportedIdentity.loadId,
             "position" to client?.approximateStreamPosition,
             "duration" to client?.streamDuration,
             "playing" to client?.isPlaying,
@@ -312,10 +305,16 @@ class CastController(private val context: Context) {
     fun sendCustom(data: Map<String, Any?>, result: MethodChannel.Result) {
         val session = connectedSession
         if (session == null) { result.error("CAST_NOT_CONNECTED", "Connect to a receiver first.", null); return }
-        val reply = CastPendingReply(result, handler)
-        session.sendMessage(receiverNamespace, org.json.JSONObject(data).toString()).setResultCallback { status ->
-            if (status.isSuccess) reply.succeed()
-            else reply.fail("CAST_RECEIVER", "The receiver could not accept this view.")
+        lateinit var reply: CastPendingReply
+        reply = CastPendingReply(result, handler, onFinished = { mediaReplies.remove(reply) })
+        mediaReplies.add(reply)
+        try {
+            session.sendMessage(receiverNamespace, org.json.JSONObject(data).toString()).setResultCallback { status ->
+                if (status.isSuccess) reply.succeed()
+                else reply.fail("CAST_RECEIVER", "The receiver could not accept this view.")
+            }
+        } catch (_: Exception) {
+            reply.fail("CAST_RECEIVER", "The receiver could not accept this view.")
         }
     }
 

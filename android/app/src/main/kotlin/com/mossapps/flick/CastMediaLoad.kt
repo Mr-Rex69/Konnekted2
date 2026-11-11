@@ -28,3 +28,17 @@ internal fun castMediaLoad(
     return MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(autoplay)
         .setCurrentTime(positionMs.coerceAtLeast(0)).build()
 }
+
+/** A missing terminal mediaInfo retains identity; replacement media never does. */
+internal class CastMediaIdentity {
+    var loadId: String? = null
+        private set
+    var trackId: String? = null
+        private set
+    fun update(info: MediaInfo?) {
+        if (info == null) return
+        loadId = info.customData?.optString("loadId")?.takeIf { it.isNotBlank() }
+        trackId = if (loadId != null) info.customData?.optString("trackId")?.takeIf { it.isNotBlank() } else null
+    }
+    fun clear() { loadId = null; trackId = null }
+}
