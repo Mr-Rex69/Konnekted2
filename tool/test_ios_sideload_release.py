@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from ios_sideload_release import validate_context
+from ios_sideload_release import validate_context, native_acceptance_qualification
 
 
 class ReleaseBoundaryTests(unittest.TestCase):
@@ -38,6 +38,24 @@ class ReleaseBoundaryTests(unittest.TestCase):
         self.bridge.write_text('let libraryImport = true\n// upload still pending\n')
         with self.assertRaisesRegex(ValueError, 'upload'):
             validate_context(self.repo, self.environment)
+
+    def test_release_qualification_does_not_claim_unrun_simulator_tests(self):
+        description, detail = native_acceptance_qualification({})
+        self.assertIn('extended simulator acceptance not run', description)
+        self.assertNotIn('native and background acceptance passed', description)
+        self.assertEqual(detail, {
+            'requested': False, 'status': 'not_run', 'runtimes': [],
+        })
+        qualified, evidence = native_acceptance_qualification({
+            'LOKAL_IOS_NATIVE_ACCEPTANCE': 'true',
+        })
+        self.assertIn('native and background acceptance passed', qualified)
+        self.assertEqual(evidence, {
+            'requested': True, 'status': 'passed', 'runtimes': ['18.6', '26.0'],
+        })
+        for flag in ('', 'yes', '1'):
+            with self.subTest(flag=flag), self.assertRaises(ValueError):
+                native_acceptance_qualification({'LOKAL_IOS_NATIVE_ACCEPTANCE': flag})
 
     def test_manual_main_publication_is_explicit_and_never_accepts_a_pr(self):
         manual = {**self.environment, 'GITHUB_EVENT_NAME': 'workflow_dispatch',
