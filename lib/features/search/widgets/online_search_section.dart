@@ -477,6 +477,7 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
     OnlineSource source,
     OnlineResult result, {
     bool atmos = false,
+    String? downloadQuality,
   }) async {
     if (!await _verify(source)) return;
     final track = atmos
@@ -494,6 +495,7 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
             track,
             onStatus: onStatus,
             forDownload: true,
+            downloadQuality: downloadQuality,
           );
       final song = await prepare(source, track, (message) {
         if (mounted && _saving.contains(key)) _progress.update(message);
@@ -545,6 +547,63 @@ class _OnlineSearchSectionState extends ConsumerState<OnlineSearchSection> {
       case OnlineResultAction.addToQueue:
         await _enqueue(source, result, next: false);
       case OnlineResultAction.download:
+        if (source.id.startsWith('a-')) {
+          try {
+            final packages = await MorneyeService.instance.packages;
+            final addon = packages.find(source.id.substring(2));
+            final options = addon?.qualityOptions
+                    .whereType<Map>()
+                    .where((option) =>
+                        option['id']?.toString().isNotEmpty == true)
+                    .toList() ??
+                const <Map>[];
+            if (!mounted) return;
+            if (options.isNotEmpty) {
+              // Match Mornye's picker: manifest-defined quality choices for
+              // this save only. Do not mutate the addon playback preference.
+              final selected = await showModalBottomSheet<String>(
+                context: context,
+                useRootNavigator: true,
+                showDragHandle: true,
+                isScrollControlled: true,
+                builder: (sheetContext) => SafeArea(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(20, 12, 20, 8),
+                        child: Text(
+                          'Download quality',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      for (final option in options)
+                        ListTile(
+                          title: Text(
+                            '${option['label'] ?? option['name'] ?? option['id']}',
+                          ),
+                          subtitle: option['description'] == null
+                              ? null
+                              : Text('${option['description']}'),
+                          onTap: () => Navigator.of(sheetContext)
+                              .pop(option['id'].toString()),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+              if (!mounted || selected == null) return;
+              await _download(source, result, downloadQuality: selected);
+              break;
+            }
+          } catch (error) {
+            _say('Could not load addon qualities: $error');
+            break;
+          }
+        }
         await _download(source, result);
       case OnlineResultAction.downloadAtmos:
         await _download(source, result, atmos: true);
