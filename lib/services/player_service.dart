@@ -5022,27 +5022,42 @@ class PlayerService {
     }
   }
 
-  void _stopPlayback() async {
+  Future<void> _stopPlayback() {
     _cancelPendingPlayback();
     _pendingPresentationTrackId = null;
     _wasPlayingBeforeAudioInterruption = false;
     _crossfadeUiHandoffFromPath = null;
-    await _savePosition();
-    _positionSaveTimer?.cancel();
-    _clearReplayTracking();
-    // Release even if the engine fails to publish its final stopped state.
-    if (_priorityAnchorActive) {
-      _priorityAnchorActive = false;
-      AppLog.instance.add('[PriorityAnchor] stop requested; playback stopped');
-      unawaited(_uac2Service.stopPriorityAnchor());
-    }
-    try {
-      await _playbackManager.stop();
-    } catch (e) {
-      _debugLog('Stop failed: $e');
-    }
-    await _refreshAudioOutputDiagnostics(reason: 'playback stopped');
-    cancelSleepTimer();
+    return _enqueuePlaybackRequest(() async {
+      final stoppedSong = currentSongNotifier.value ?? _songAtCurrentIndex();
+      final stoppedPosition = positionNotifier.value;
+      if (stoppedSong != null) {
+        // Native Stop may reset its clock to zero. Keep the same bookmark in
+        // memory that startup restoration reads from disk for the next Play.
+        _rememberRestoredPlaybackContext(stoppedSong, stoppedPosition);
+      }
+      await _savePosition(
+        song: stoppedSong,
+        position: stoppedPosition,
+        wasPlaying: false,
+      );
+      _positionSaveTimer?.cancel();
+      _clearReplayTracking();
+      // Release even if the engine fails to publish its final stopped state.
+      if (_priorityAnchorActive) {
+        _priorityAnchorActive = false;
+        AppLog.instance.add(
+          '[PriorityAnchor] stop requested; playback stopped',
+        );
+        unawaited(_uac2Service.stopPriorityAnchor());
+      }
+      try {
+        await _playbackManager.stop();
+      } catch (e) {
+        _debugLog('Stop failed: $e');
+      }
+      await _refreshAudioOutputDiagnostics(reason: 'playback stopped');
+      cancelSleepTimer();
+    }, remoteOutput: _castingService.isActive);
   }
 
   /// Build audio sources for the playlist (gapless playback).
@@ -7586,9 +7601,10 @@ class PlayerService {
     if (canResumeDirectly) {
       await IosLocalAudioRequests.wait(_playbackManager.play());
     } else {
+      final retainedPosition = _consumeRestoredPositionForSong(song);
       final resumePosition = positionNotifier.value > Duration.zero
           ? positionNotifier.value
-          : _consumeRestoredPositionForSong(song);
+          : retainedPosition;
       await IosLocalAudioRequests.wait(_prepareImmediatePlaybackAsset(song));
       await _runWithSuppressedSequenceStateUpdates(() async {
         await IosLocalAudioRequests.wait(
@@ -8031,8 +8047,14 @@ class PlayerService {
     }
     try {
       await IosLocalAudioRequests.run(() async {
-        // A recovered selection has no native engine until explicit Play.
-        if (Platform.isIOS && !_playbackManager.hasAttachedEngine) {
+        // A recovered/stopped selection can have no loaded native source.
+        // An explicit seek, including to zero, replaces the retained bookmark.
+        final stoppedSelection =
+            !_playbackManager.canResumeCurrentTrack &&
+            _restoredSongId != null &&
+            _restoredSongId == currentSongNotifier.value?.id;
+        if ((Platform.isIOS && !_playbackManager.hasAttachedEngine) ||
+            stoppedSelection) {
           final song = currentSongNotifier.value ?? _songAtCurrentIndex();
           if (song != null) {
             final limit = durationNotifier.value;
@@ -8041,6 +8063,7 @@ class PlayerService {
                 : limit > Duration.zero && position > limit
                 ? limit
                 : position;
+            _rememberRestoredPlaybackContext(song, target);
             _publishRestoredPlaybackState(song, position: target);
             await _savePosition(position: target, wasPlaying: false);
           }
