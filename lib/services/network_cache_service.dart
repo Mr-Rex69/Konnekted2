@@ -113,7 +113,10 @@ class NetworkCacheService {
   Future<String?> _findByHash(Directory serverDir, String hash) async {
     await for (final entry in serverDir.list()) {
       final name = p.basename(entry.path);
-      if (name.startsWith('$hash.')) return name;
+      // Staged downloads are not complete media. In particular, a PC
+      // prefetch may still be writing hash.flac.part when Cast skips to it.
+      if (entry is File && name.startsWith('$hash.') && !name.endsWith('.part'))
+        return name;
     }
     return null;
   }
