@@ -1,3 +1,5 @@
+import 'package:flick/models/progress_bar_style.dart';
+import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
 import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/features/appearance/lokal_performance_selector.dart';
 
@@ -111,6 +113,69 @@ List<LokalSettingsSection> appearanceSettings(
     LokalSettingsSection(
       title: lokalText('Now Playing'),
       children: [
+        LokalSettingRow(
+          label: lokalText('Full player seekbar'),
+          description: lokalText(
+            'Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.',
+          ),
+          stacked: true,
+          trailing: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<ProgressBarStyle>(
+                key: ValueKey(ref.watch(progressBarStyleProvider)),
+                initialValue: ref.watch(progressBarStyleProvider),
+                isExpanded: true,
+                items: [
+                  for (final style in [
+                    ProgressBarStyle.line,
+                    ProgressBarStyle.wavy,
+                    ProgressBarStyle.waveform,
+                  ])
+                    DropdownMenuItem(value: style, child: Text(style.label)),
+                ],
+                onChanged: (style) {
+                  if (style != null) {
+                    AppHaptics.selection();
+                    unawaited(
+                      ref
+                          .read(progressBarStyleProvider.notifier)
+                          .setStyle(style),
+                    );
+                  }
+                },
+              ),
+              ExcludeSemantics(
+                child: IgnorePointer(
+                  child: FullPlayerSeekBar(
+                    style: ref.watch(progressBarStyleProvider),
+                    value: .55,
+                    // Illustration only; the player reads actual audio peaks.
+                    peaks: const [
+                      .1,
+                      .25,
+                      .4,
+                      .32,
+                      .6,
+                      .5,
+                      .8,
+                      .7,
+                      .95,
+                      .6,
+                      .45,
+                      .7,
+                      .5,
+                      .2,
+                      .3,
+                      .1,
+                    ],
+                    onChanged: (_) {},
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         LokalSettingRow.toggle(
           label: lokalText('Full resolution tags in full player'),
           description: lokalText(

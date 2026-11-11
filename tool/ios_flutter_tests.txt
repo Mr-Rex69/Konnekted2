@@ -200,3 +200,6 @@ test/konnekted/library_recently_played_shelf_test.dart
 test/konnekted/lokal_genres_grouping_test.dart
 test/widgets/lokal/lokal_swipe_to_queue_test.dart
 test/morneye/morneye_live_playback_test.dart
+
+test/features/player/full_player_seek_bar_test.dart
+test/providers/progress_bar_style_provider_test.dart

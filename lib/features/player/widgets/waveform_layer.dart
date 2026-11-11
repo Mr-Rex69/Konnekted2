@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'full_player_seek_bar.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/services/player_service.dart';
@@ -110,6 +112,26 @@ class _WaveformLayerState extends State<WaveformLayer>
                   valueListenable: widget.positionNotifier,
                   builder: (context, position, _) {
                     final seekBar = switch (style) {
+                      ProgressBarStyle.wavy => FullPlayerSeekBar(
+                        style: style,
+                        value:
+                            (position.inMilliseconds / duration.inMilliseconds)
+                                .clamp(0.0, 1.0),
+                        onChanged: (value) {
+                          widget.positionNotifier.value = Duration(
+                            milliseconds: (value * duration.inMilliseconds)
+                                .round(),
+                          );
+                        },
+                        onChangeEnd: (value) => unawaited(
+                          widget.playerService.seek(
+                            Duration(
+                              milliseconds: (value * duration.inMilliseconds)
+                                  .round(),
+                            ),
+                          ),
+                        ),
+                      ),
                       ProgressBarStyle.line => LineSeekBar(
                         position: position,
                         duration: duration,
