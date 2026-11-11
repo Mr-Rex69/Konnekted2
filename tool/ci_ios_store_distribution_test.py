@@ -137,6 +137,7 @@ class StoreDistributionTests(unittest.TestCase):
         original_id = row['assets'][0]['id']
         row['assets'] = [a for a in row['assets'] if not a['name'].endswith('.sha256')]
         refresh_ios_store(github)
+        self.assertFalse(row['prerelease'], 'store refresh must retain a standard iOS release')
         assets = {a['name']: a for a in row['assets']}
         self.assertEqual(assets['Lokal.ipa']['id'], original_id)
         self.assertIn('Lokal.ipa.sha256', assets)
