@@ -203,3 +203,5 @@ test/morneye/morneye_live_playback_test.dart
 
 test/features/player/full_player_seek_bar_test.dart
 test/providers/progress_bar_style_provider_test.dart
+
+test/services/rust_audio_engine_audio_session_test.dart

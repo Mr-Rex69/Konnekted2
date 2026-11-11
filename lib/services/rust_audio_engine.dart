@@ -25,6 +25,7 @@ class RustAudioEngine implements AudioEngine {
     required RustPlaybackPathResolver resolvePlaybackPath,
     required RustEngineDisposer disposeEngine,
     RustHttpSourceResolver? resolveHttpSource,
+    Future<void> Function()? activateAudioSession,
     bool? guardPausedState,
   }) : _playbackMode = playbackMode,
        _rustAudioService = rustAudioService,
@@ -32,6 +33,7 @@ class RustAudioEngine implements AudioEngine {
        _resolvePlaybackPath = resolvePlaybackPath,
        _disposeEngine = disposeEngine,
        _resolveHttpSource = resolveHttpSource,
+       _activateAudioSession = activateAudioSession,
        _guardPausedState = guardPausedState ?? Platform.isIOS;
 
   final AudioEngineType _playbackMode;
@@ -41,6 +43,7 @@ class RustAudioEngine implements AudioEngine {
   final RustEngineDisposer _disposeEngine;
   final RustHttpSourceResolver? _resolveHttpSource;
   final bool _guardPausedState;
+  final Future<void> Function()? _activateAudioSession;
   bool _pauseRequested = false;
   bool _retired = false;
   Future<void>? _disposal;
@@ -161,8 +164,12 @@ class RustAudioEngine implements AudioEngine {
   @override
   Future<void> play() => IosLocalAudioRequests.run(() async {
     _requireLive();
-    _pauseRequested = false;
     await _wait(_safeEnsureInitialized());
+    // A car/headset disconnect can deactivate the OS session without retiring
+    // this engine. Reacquire it for every Play, including a paused-source resume.
+    final activate = _activateAudioSession;
+    if (activate != null) await _wait(activate());
+    _pauseRequested = false;
     _attachListeners();
     final track = _loadedTrack;
     if (track == null) {

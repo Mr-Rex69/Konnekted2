@@ -60,6 +60,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     private lateinit var notificationManager: NotificationManager
     private var methodChannel: MethodChannel? = null
     private var carEngineStarting = false
+    private val pendingPlayerCommands = mutableListOf<Pair<String, Map<String, Any>?>>()
     private var carClientConnected = false
     private val pendingCarBrowses = mutableListOf<Pair<String, Result<List<MediaBrowserCompat.MediaItem>>>>()
     private external fun nativeInitRustAndroidContext(context: Context): Boolean
@@ -465,7 +466,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
             MethodChannel(messenger, PLAYER_CHANNEL).setMethodCallHandler { call, reply ->
                 when (call.method) {
                     "androidAutoReady" -> {
-                        carEngineStarting = false
+                        finishCarEngineStartup()
                         reply.success(null)
                         val waiting = pendingCarBrowses.toList()
                         pendingCarBrowses.clear()
@@ -508,6 +509,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
         } catch (error: Exception) {
             android.util.Log.e("MusicNotification", "Android Auto Flutter bootstrap failed", error)
             carEngineStarting = false
+            pendingPlayerCommands.clear()
             val waiting = pendingCarBrowses.toList()
             pendingCarBrowses.clear()
             waiting.forEach { (_, result) -> result.sendResult(emptyList()) }
@@ -550,6 +552,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         mediaServiceDestroyed = true
+        pendingPlayerCommands.clear()
         albumArtGeneration++
         albumArtExecutor.shutdownNow()
         super.onDestroy()
@@ -1129,32 +1132,47 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
         floatingOverlay?.hide()
     }
 
-    private fun sendCommandToFlutter(command: String, args: Map<String, Any>? = null) {
-        android.os.Handler(mainLooper).post {
-            try {
-                if (methodChannel == null) {
-                    android.util.Log.w("MusicNotification", "Method channel null, reconnecting…")
-                    flutterPlayerChannel()
-                    if (methodChannel == null) {
-                        android.util.Log.w("MusicNotification", "No Flutter engine for media command: $command")
-                    }
-                }
+    private fun finishCarEngineStartup() {
+        carEngineStarting = false
+        val channel = flutterPlayerChannel() ?: return
+        val waiting = pendingPlayerCommands.toList()
+        pendingPlayerCommands.clear()
+        // Dispatch in arrival order before later main-loop events. A queued
+        // Pause/Stop must still follow a queued Play during cold car startup.
+        waiting.forEach { (command, args) -> dispatchPlayerCommand(channel, command, args) }
+    }
 
-                android.util.Log.d("MusicNotification", "→ Flutter: $command")
-                methodChannel?.invokeMethod(command, args, object : MethodChannel.Result {
-                    override fun success(result: Any?) {
-                        android.util.Log.d("MusicNotification", "✓ $command")
-                    }
-                    override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                        android.util.Log.e("MusicNotification", "✗ $command: $errorCode – $errorMessage")
-                    }
-                    override fun notImplemented() {
-                        android.util.Log.e("MusicNotification", "✗ $command: not implemented")
-                    }
-                })
-            } catch (e: Exception) {
-                android.util.Log.e("MusicNotification", "Failed to send $command: ${e.message}", e)
+    private fun sendCommandToFlutter(command: String, args: Map<String, Any>? = null) {
+        Handler(mainLooper).post {
+            if (mediaServiceDestroyed) return@post
+            val channel = flutterPlayerChannel()
+            if (channel == null || carEngineStarting) {
+                // Android Auto can send Play before Dart installs its handler.
+                // Keep that explicit command instead of silently dropping it.
+                if (pendingPlayerCommands.size >= 32) pendingPlayerCommands.removeAt(0)
+                pendingPlayerCommands.add(command to args)
+                ensureCarFlutterEngine()
+                return@post
             }
+            dispatchPlayerCommand(channel, command, args)
+        }
+    }
+
+    private fun dispatchPlayerCommand(channel: MethodChannel, command: String, args: Map<String, Any>?) {
+        try {
+            channel.invokeMethod(command, args, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    android.util.Log.d("MusicNotification", "✓ $command")
+                }
+                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+                    android.util.Log.e("MusicNotification", "✗ $command: $errorCode – $errorMessage")
+                }
+                override fun notImplemented() {
+                    android.util.Log.e("MusicNotification", "✗ $command: not implemented")
+                }
+            })
+        } catch (e: Exception) {
+            android.util.Log.e("MusicNotification", "Failed to send $command: ${e.message}", e)
         }
     }
 }

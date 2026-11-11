@@ -3,6 +3,12 @@ package com.mossapps.flick
 import android.app.Application
 import android.app.Notification
 import android.content.Intent
+import android.os.Looper
+import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.StandardMethodCodec
+import java.lang.reflect.Proxy
+import java.nio.ByteBuffer
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import androidx.mediarouter.media.MediaRouter
 import org.junit.After
@@ -78,6 +84,69 @@ class MusicMediaSessionTest {
         assertNotEquals(service.sessionToken, MediaRouter.getInstance(service).mediaSessionToken)
         playLocally()
         assertEquals(service.sessionToken, MediaRouter.getInstance(service).mediaSessionToken)
+    }
+
+    private fun startingCar(channel: MethodChannel?) {
+        MusicNotificationService::class.java.getDeclaredField("carEngineStarting").apply {
+            isAccessible = true; setBoolean(service, true)
+        }
+        setPlayerChannel(channel)
+    }
+
+    private fun setPlayerChannel(channel: MethodChannel?) {
+        MusicNotificationService::class.java.getDeclaredField("methodChannel").apply {
+            isAccessible = true; set(service, channel)
+        }
+    }
+
+    private fun command(name: String, args: Map<String, Any>? = null) {
+        MusicNotificationService::class.java.getDeclaredMethod(
+            "sendCommandToFlutter", String::class.java, Map::class.java
+        ).apply { isAccessible = true }.invoke(service, name, args)
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun ready() {
+        MusicNotificationService::class.java.getDeclaredMethod("finishCarEngineStartup")
+            .apply { isAccessible = true }.invoke(service)
+    }
+
+    private fun recordingChannel(calls: MutableList<String>): MethodChannel {
+        val messenger = Proxy.newProxyInstance(
+            BinaryMessenger::class.java.classLoader, arrayOf(BinaryMessenger::class.java)
+        ) { _, method, args ->
+            if (method.name == "send") {
+                val message = (args!![1] as ByteBuffer).duplicate().apply { flip() }
+                calls.add(StandardMethodCodec.INSTANCE.decodeMethodCall(message).method)
+            }
+            null
+        } as BinaryMessenger
+        return MethodChannel(messenger, "com.mossapps.flick/player")
+    }
+
+    @Test fun carPlayWaitsForDartInsteadOfBeingDroppedDuringStartup() {
+        val calls = mutableListOf<String>()
+        startingCar(null)
+        command("play")
+        assertTrue(calls.isEmpty())
+        setPlayerChannel(recordingChannel(calls))
+        ready()
+        assertEquals(listOf("play"), calls)
+        ready()
+        assertEquals(listOf("play"), calls)
+    }
+
+    @Test fun pauseAndStopFollowPlayWhenCarConnectsBeforeDartIsReady() {
+        val calls = mutableListOf<String>()
+        startingCar(recordingChannel(calls))
+        command("play")
+        command("pause")
+        command("stop")
+        assertTrue(calls.isEmpty())
+        ready()
+        assertEquals(listOf("play", "pause", "stop"), calls)
+        command("play")
+        assertEquals(listOf("play", "pause", "stop", "play"), calls)
     }
 
 }
