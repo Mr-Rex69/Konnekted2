@@ -35,7 +35,8 @@ class FullPlayerHeader extends StatelessWidget {
   /// Dark gradient/background modes keep the white foreground.
   final bool brightArtwork;
 
-  static const Color _darkInk = Color(0xFF18212C);
+  // Strong dark foreground contrasts with translucent frost on midtone covers.
+  static const Color _darkInk = Color(0xFF0B1118);
   // Reuse the native blur filter across rebuilds and all four controls.
   static final ImageFilter _frostFilter = ImageFilter.blur(
     sigmaX: 3.5,
