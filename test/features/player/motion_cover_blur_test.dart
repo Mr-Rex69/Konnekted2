@@ -237,22 +237,23 @@ void main() {
             true,
             reason: 'cover and blur must use one decoder/clock',
           );
-          Future<List<int>> pixel() async => (await tester.runAsync(() async {
-            final image =
-                await (boundary.currentContext!.findRenderObject()
-                        as RenderRepaintBoundary)
-                    .toImage();
-            final bytes = (await image.toByteData(
-              format: ui.ImageByteFormat.rawRgba,
-            ))!;
-            final offset = (30 * image.width + 30) * 4;
-            final result = List.generate(
-              3,
-              (channel) => bytes.getUint8(offset + channel),
-            );
-            image.dispose();
-            return result;
-          }))!;
+          Future<List<int>> pixel([int y = 30]) async =>
+              (await tester.runAsync(() async {
+                final image =
+                    await (boundary.currentContext!.findRenderObject()
+                            as RenderRepaintBoundary)
+                        .toImage();
+                final bytes = (await image.toByteData(
+                  format: ui.ImageByteFormat.rawRgba,
+                ))!;
+                final offset = (y * image.width + 30) * 4;
+                final result = List.generate(
+                  3,
+                  (channel) => bytes.getUint8(offset + channel),
+                );
+                image.dispose();
+                return result;
+              }))!;
           final red = await pixel();
           expect(red[0], greaterThan(red[2] + 80));
           videoPlatform.color.value = Colors.blue;
@@ -267,6 +268,18 @@ void main() {
             controller.value.position,
             const Duration(seconds: 3),
             reason: 'painting a backdrop must not seek or restart the cover',
+          );
+          videoPlatform.color.value = Colors.white;
+          await tester.pump();
+          expect(
+            (await pixel()).every((channel) => channel < 125),
+            true,
+            reason: 'bright clips must retain header contrast',
+          );
+          expect(
+            (await pixel(170)).every((channel) => channel < 125),
+            true,
+            reason: 'bright clips must retain transport/lyrics contrast',
           );
           source.update(
             'player:track',

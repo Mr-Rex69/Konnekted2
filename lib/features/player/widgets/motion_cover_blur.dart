@@ -48,9 +48,20 @@ class MotionCoverBlur extends StatelessWidget {
                       ),
                     ),
                   ),
-                  ColoredBox(
-                    color: FullPlayerVisuals.scrim.withValues(
-                      alpha: fullCover ? .12 : .20,
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [.62, .56, fullCover ? .26 : .32, .56, .68]
+                            .map(
+                              (alpha) => FullPlayerVisuals.scrim.withValues(
+                                alpha: alpha,
+                              ),
+                            )
+                            .toList(),
+                        stops: const [0, .18, .36, .56, 1],
+                      ),
                     ),
                   ),
                 ],
