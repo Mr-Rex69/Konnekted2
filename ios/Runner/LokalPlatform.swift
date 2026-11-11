@@ -104,6 +104,9 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
         let expected = (args?["epoch"] as? String).flatMap(UInt64.init)
         result(UIApplication.shared.applicationState == .active &&
           expected == lokal_audio_local_request_epoch())
+      case "restoreNowPlayingAfterSilentVideo":
+        self?.restorePrimaryAudioOptions()
+        result(nil)
       case "startAudioLifecycle":
         guard let self = self else {
           result(FlutterError(code: "AUDIO_LIFECYCLE_UNAVAILABLE", message: "Audio lifecycle owner unavailable", details: nil))
