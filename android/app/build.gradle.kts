@@ -62,6 +62,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     buildFeatures {
         compose = true
         // BuildConfig.FLAVOR is surfaced in App Info so users can tell the
@@ -310,4 +314,14 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast:21.5.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
+}
+
+// AGP's resource-backed host tests consume Flutter's merged assets. Flutter
+// registers the copy task separately, so declare the producer explicitly.
+tasks.matching {
+    it.name.startsWith("package") && it.name.endsWith("UnitTestForUnitTest")
+}.configureEach {
+    val variant = name.removePrefix("package").removeSuffix("UnitTestForUnitTest")
+    dependsOn("copyFlutterAssets$variant")
 }

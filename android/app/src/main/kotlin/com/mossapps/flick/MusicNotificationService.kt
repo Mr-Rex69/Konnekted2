@@ -25,6 +25,7 @@ import androidx.media.MediaBrowserServiceCompat
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.Executors
 import androidx.media.VolumeProviderCompat
+import androidx.mediarouter.media.MediaRouter
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
@@ -53,6 +54,9 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     }
 
     private lateinit var mediaSession: MediaSessionCompat
+    // Hold the route manager for the whole playback-service lifetime, including
+    // when the Activity is stopped by the lock screen or dock's Hub Mode.
+    private val mediaRouter by lazy { MediaRouter.getInstance(this) }
     private lateinit var notificationManager: NotificationManager
     private var methodChannel: MethodChannel? = null
     private var carEngineStarting = false
@@ -105,7 +109,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
                     sendCommandToFlutter("togglePlayPause")
                     isPlaying = !isPlaying
                     val notification = buildNotification()
-                    notificationManager.notify(NOTIFICATION_ID, notification)
+                    publishMediaNotification(notification)
                     android.util.Log.d("MusicNotification", "Optimistically updated to isPlaying=$isPlaying")
                 }
                 ACTION_NEXT -> {
@@ -127,14 +131,14 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
                     isShuffleMode = !isShuffleMode
                     sendCommandToFlutter("toggleShuffle")
                     val notification = buildNotification()
-                    notificationManager.notify(NOTIFICATION_ID, notification)
+                    publishMediaNotification(notification)
                 }
                 ACTION_FAVORITE -> {
                     android.util.Log.d("MusicNotification", "Favorite action triggered")
                     isFavorite = !isFavorite
                     sendCommandToFlutter("toggleFavorite")
                     val notification = buildNotification()
-                    notificationManager.notify(NOTIFICATION_ID, notification)
+                    publishMediaNotification(notification)
                 }
                 ACTION_DISCONNECT_CAST -> {
                     android.util.Log.d("MusicNotification", "Disconnect cast action triggered")
@@ -264,7 +268,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
         // The expensive artwork-backed notification replaces the lightweight
         // foreground notification only after the service has been promoted.
         val notification = buildNotification()
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        publishMediaNotification(notification)
 
         updateWakeLock()
 
@@ -561,7 +565,10 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
             wakeLock?.release()
         }
         wakeLock = null
-        detachCastVolume()
+        castVolumeProvider = null
+        if (mediaRouter.mediaSessionToken == mediaSession.sessionToken) {
+            mediaRouter.setMediaSessionCompat(null)
+        }
         mediaSession.release()
         isForegroundServiceStarted = false
         hideFloatingOverlay()
@@ -660,7 +667,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
                 // Do not spin on unreadable files every position update.
                 failedAlbumArtPath = if (bitmap == null) path else null
                 if (isForegroundServiceStarted) {
-                    notificationManager.notify(NOTIFICATION_ID, buildNotification())
+                    publishMediaNotification(buildNotification())
                 }
             }
         }
@@ -724,14 +731,14 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
                             sendCommandToFlutter("toggleShuffle")
                             updatePlaybackState()
                             val notification = buildNotification()
-                            notificationManager.notify(NOTIFICATION_ID, notification)
+                            publishMediaNotification(notification)
                         }
                         ACTION_FAVORITE -> {
                             isFavorite = !isFavorite
                             sendCommandToFlutter("toggleFavorite")
                             updatePlaybackState()
                             val notification = buildNotification()
-                            notificationManager.notify(NOTIFICATION_ID, notification)
+                            publishMediaNotification(notification)
                         }
                     }
                 }
@@ -740,6 +747,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
             isActive = true
         }
 
+        detachCastVolume()
         updateMediaSessionMetadata()
         updatePlaybackState()
     }
@@ -852,13 +860,18 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     private fun syncCastRouting() {
         if ((isCasting || isRemotePlayback) && castVolumeProvider == null) {
             attachCastVolume()
-        } else if (!isCasting && !isRemotePlayback && castVolumeProvider != null) {
+        } else if (!isCasting && !isRemotePlayback) {
             detachCastVolume()
         }
         castVolumeProvider?.setCurrentVolume(castVolumePercent)
     }
 
     private fun attachCastVolume() {
+        // The route manager must not replace the explicit remote volume
+        // provider used by PC control or an app-managed Cast/DLNA session.
+        if (mediaRouter.mediaSessionToken == mediaSession.sessionToken) {
+            mediaRouter.setMediaSessionCompat(null)
+        }
         val provider = object : VolumeProviderCompat(
             VOLUME_CONTROL_ABSOLUTE,
             100,
@@ -880,10 +893,27 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     }
 
     private fun detachCastVolume() {
-        if (castVolumeProvider == null) return
+        val wasRemote = castVolumeProvider != null
+        if (mediaRouter.mediaSessionToken != mediaSession.sessionToken) {
+            mediaRouter.setMediaSessionCompat(mediaSession)
+        }
+        // File location is unrelated to output ownership: lokal:// PC songs
+        // played here use the tablet's media stream, including its dock.
         mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC)
         castVolumeProvider = null
-        android.util.Log.d("MusicNotification", "[Cast] MediaSession → local volume")
+        if (wasRemote) android.util.Log.d("MusicNotification", "[Cast] MediaSession → local volume")
+    }
+
+    private fun publishMediaNotification(notification: Notification) {
+        if (mediaServiceDestroyed) return
+        if (isForegroundServiceStarted) {
+            // Keep promotion and subsequent updates on the same publication
+            // path. The startup post is asynchronous, so every notification
+            // it can publish must remain associated with the media session.
+            startForeground(NOTIFICATION_ID, notification)
+        } else {
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun buildStartupNotification(): Notification {
@@ -892,6 +922,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setStyle(MediaNotificationCompat.MediaStyle().setMediaSession(mediaSession.sessionToken))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -915,6 +946,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
         val albumArt: Bitmap? = getAlbumArtBitmap()
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
             .setSubText(
@@ -1083,7 +1115,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
         castVolume?.let { castVolumePercent = it.coerceIn(0, 100) }
 
         val notification = buildNotification()
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        publishMediaNotification(notification)
     }
 
     private fun showFloatingOverlay() {
