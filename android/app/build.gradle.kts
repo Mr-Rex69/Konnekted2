@@ -316,3 +316,12 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16")
 }
+
+// AGP's resource-backed host tests consume Flutter's merged assets. Flutter
+// registers the copy task separately, so declare the producer explicitly.
+tasks.matching {
+    it.name.startsWith("package") && it.name.endsWith("UnitTestForUnitTest")
+}.configureEach {
+    val variant = name.removePrefix("package").removeSuffix("UnitTestForUnitTest")
+    dependsOn("copyFlutterAssets$variant")
+}
