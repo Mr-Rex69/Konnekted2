@@ -62,6 +62,7 @@ class CastingService {
   final _completion = CastCompletionGate();
   String? currentCastLoadId;
   int _loadRevision = 0;
+  int _sourceRevision = 0;
   String? _pendingCastLoadId;
   Map<String, dynamic>? _lastCcStatus;
   int _presentationRevision = 0;
@@ -212,6 +213,7 @@ class CastingService {
     _wasPlayingBeforeCast = false;
     final dev = _activeDevice!;
     currentCastLoadId = null;
+    _sourceRevision++;
     _completion.clear();
     _pendingCastLoadId = null;
     _lastCcStatus = null;
@@ -270,6 +272,7 @@ class CastingService {
 
   void _releaseCastRemote() {
     currentCastLoadId = null;
+    _sourceRevision++;
     _completion.clear();
     _pendingCastLoadId = null;
     _lastCcStatus = null;
@@ -813,23 +816,53 @@ class CastingService {
   }
 
   Future<String?> _receiverCastUrl(Song song) async {
+    final revision = ++_sourceRevision;
+    bool current() => revision == _sourceRevision && !_tearingDown;
+    try {
+      final source = _resolveReceiverCastUrl(song, current);
+      if (song.sourceType != 'lokal') return await source;
+      return await source.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (revision == _sourceRevision) _sourceRevision++;
+      throw TimeoutException(
+        'The Cast source did not become available. Retry this song.',
+      );
+    }
+  }
+
+  Future<String?> _resolveReceiverCastUrl(
+    Song song,
+    bool Function() current,
+  ) async {
     final resolved = await RemoteSourceService.instance.resolveHttpPlayback(
       song,
     );
+    if (!current()) throw const CastHandoffCancelled();
     if (resolved != null) {
       final direct = receiverDirectUrl(resolved.url, headers: resolved.headers);
       if (direct != null) return direct;
-      // Authorization stays on the phone; never silently omit required headers
-      // or forward account credentials to a receiver's metadata channel.
-      return _serveFromPhone(song);
+      if (song.sourceType != 'lokal')
+        return _serveFromPhone(song, stillCurrent: current);
+      // Relay authenticated HTTP without waiting for a complete PC download.
+      // Account headers stay on the phone and never enter receiver metadata.
+      return CastContentServer.instance.relay(
+        resolved.url,
+        filename: 'track.${song.fileType.toLowerCase()}',
+        headers: resolved.headers,
+        stillCurrent: current,
+      );
     }
-    return receiverDirectUrl(song.filePath) ?? await _serveFromPhone(song);
+    return receiverDirectUrl(song.filePath) ??
+        await _serveFromPhone(song, stillCurrent: current);
   }
 
   /// Last-resort cast source: serve the bytes from this phone via the
   /// embedded HTTP server. Covers local files, SMB, and cached network songs
   /// (including formats the local engine can't decode — the renderer decodes).
-  Future<String?> _serveFromPhone(Song song) async {
+  Future<String?> _serveFromPhone(
+    Song song, {
+    bool Function()? stillCurrent,
+  }) async {
     try {
       String? path;
       if (song.isNetworkSource) {
@@ -837,12 +870,13 @@ class CastingService {
       } else {
         path = await castLocalFile(song.filePath, extension: song.fileType);
       }
-      if (path == null) return null;
+      if (path == null || !(stillCurrent?.call() ?? true)) return null;
       final ext = song.fileType.toLowerCase();
       final title = song.title.replaceAll(RegExp(r'[^A-Za-z0-9._\- ]'), '');
       return await CastContentServer.instance.serve(
         path,
         filename: '${title.isEmpty ? 'track' : title}.$ext',
+        stillCurrent: stillCurrent,
       );
     } on NetworkAccessDenied catch (error) {
       throw PlatformException(

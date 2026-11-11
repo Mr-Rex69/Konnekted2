@@ -11,6 +11,11 @@ abstract final class LokalLayout {
       LokalContentScope.maybeOf(context)?.tablet ??
       usesSidebar(MediaQuery.sizeOf(context));
 
+  /// Portrait tablets use the same Full Player composition as a phone.
+  static bool isLandscapeTablet(BuildContext context) =>
+      isTablet(context) &&
+      MediaQuery.orientationOf(context) == Orientation.landscape;
+
   static int columns(double width, {double target = 190, int min = 2}) =>
       ((width + 16) / (target + 16)).floor().clamp(min, 8);
 

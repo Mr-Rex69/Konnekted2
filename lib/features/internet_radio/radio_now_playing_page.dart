@@ -843,8 +843,10 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
         (appearance) => appearance.fullscreenCover,
       ),
     );
-    final tabletCover = LokalLayout.isTablet(context) && coverPreference;
-    final fullCover = !LokalLayout.isTablet(context) && coverPreference;
+    final tabletCover =
+        LokalLayout.isLandscapeTablet(context) && coverPreference;
+    final fullCover =
+        !LokalLayout.isLandscapeTablet(context) && coverPreference;
     final artist = radio.trackMetadata?.artist;
     final title = radio.trackMetadata?.title ?? radio.nowPlaying;
     final artwork = radio.trackMetadata?.cover ?? station.icon;
@@ -924,7 +926,7 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
                   child: LayoutBuilder(
                     builder: (context, bounds) {
                       final wide =
-                          LokalLayout.isTablet(context) &&
+                          LokalLayout.isLandscapeTablet(context) &&
                           bounds.maxWidth >= 720 &&
                           (tabletCover || bounds.maxWidth > bounds.maxHeight);
                       final compact = bounds.maxHeight < 710;

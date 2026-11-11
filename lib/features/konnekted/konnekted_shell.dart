@@ -3,6 +3,7 @@ import 'package:flick/core/utils/lokal_layout.dart';
 import 'konnekted_tablet_footer.dart';
 import 'konnekted_tablet_player_sidebar.dart';
 import 'tablet_playback.dart';
+import 'tablet_sidebar_preferences.dart';
 
 import 'konnekted_tablet_workspace.dart';
 
@@ -98,8 +99,9 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   final _dockScroll = DockScrollHysteresis();
   final _storage = PageStorageBucket();
   final _route = ValueNotifier<String?>(null);
-  final _rightVisible = ValueNotifier<bool?>(null);
-  final _leftVisible = ValueNotifier(true);
+  late final _sidebars = TabletSidebarPreferences();
+  ValueNotifier<bool?> get _rightVisible => _sidebars.rightOpen;
+  ValueNotifier<bool> get _leftVisible => _sidebars.leftOpen;
   final _panelTab = ValueNotifier(TabletPlayerTab.details);
   late final _routeObserver = _WorkspaceRouteObserver((name) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -112,6 +114,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
   @override
   void initState() {
     super.initState();
+    unawaited(_sidebars.ready);
     // Legacy screens return Flick's old indices. They are navigation requests,
     // not the indices of Konnekted's four destinations.
     ref.listenManual<int>(navigationIndexProvider, (_, index) {
@@ -434,8 +437,7 @@ class _KonnektedShellState extends ConsumerState<KonnektedShell>
     _pull?.cancel();
     disposeArtworkGate();
     _route.dispose();
-    _rightVisible.dispose();
-    _leftVisible.dispose();
+    _sidebars.dispose();
     _panelTab.dispose();
     _tab.dispose();
     _searchFocusRequests.dispose();

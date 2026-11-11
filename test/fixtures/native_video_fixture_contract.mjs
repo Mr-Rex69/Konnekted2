@@ -19,9 +19,9 @@ let topMessage, childMessage, childContext, nextFrame, mediaBlob;
 const handlers = new Map();
 let qualityTotal = 0, droppedTotal = 0;
 const media = {
-  currentTime: 0, duration: 12, paused: true, ended: false, readyState: 1,
+  currentTime: 0, duration: 60, paused: true, ended: false, readyState: 1,
   seeking: false, playbackRate: 1, currentSrc: 'blob:https://app.lokal.mobile/generated',
-  seekable: {length: 1, start: () => 0, end: () => 12}, buffered: {length: 0},
+  seekable: {length: 1, start: () => 0, end: () => 60}, buffered: {length: 0},
   plays: 0, pauses: 0,
   getBoundingClientRect() { return {left: 1, top: 2, width: 320, height: 240}; },
   addEventListener(name, handler) { handlers.set(name, handler); },
@@ -62,7 +62,7 @@ childContext.window = childContext;
 runInContext(childScript, childContext);
 equal(mediaBlob.type, 'video/mp4');
 equal(createHash('sha256').update(Buffer.from(await mediaBlob.arrayBuffer())).digest('hex'),
-  '416a7558921761a26aca370a294be0080ae969afb3249acfef720b3d54b24f37',
+  '6cb8690ce5ad840b9b1b751dfa624559cf530411905ab8b3925c25fbc828eaad',
   'the seekable Blob must retain the exact generated H.264/AAC bytes');
 equal(media.src, media.currentSrc, 'media loads the actual owned Blob resource');
 handlers.get('loadedmetadata')();
@@ -71,7 +71,7 @@ equal(top.__lokalNativeVideoSnapshot().pendingSeekSeconds, paused ? 2.345 : null
 media.readyState = 4;
 handlers.get('loadeddata')();
 equal(top.__lokalNativeVideoSnapshot().pendingSeekSeconds, null, 'decoded media applies the queued seek');
-equal(JSON.stringify(top.__lokalNativeVideoSnapshot().seekable), '[[0,12]]',
+equal(JSON.stringify(top.__lokalNativeVideoSnapshot().seekable), '[[0,60]]',
   'native seekable ranges are reported without invented media time');
 equal(top.__lokalNativeVideoSnapshot().frames, 0, 'source-clock samples must never invent frames');
 equal(top.__lokalNativeVideoSnapshot().documentVisibility, 'visible');

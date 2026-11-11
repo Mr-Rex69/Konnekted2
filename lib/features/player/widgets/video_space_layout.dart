@@ -25,7 +25,8 @@ class VideoSpaceLayout extends StatelessWidget {
   Widget build(BuildContext context) => SafeArea(
     child: LayoutBuilder(
       builder: (context, constraints) {
-        if (LokalLayout.isTablet(context) && constraints.maxWidth >= 720) {
+        if (LokalLayout.isLandscapeTablet(context) &&
+            constraints.maxWidth >= 720) {
           return Row(
             children: [
               Expanded(

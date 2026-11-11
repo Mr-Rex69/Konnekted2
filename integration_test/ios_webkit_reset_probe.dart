@@ -15,6 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import '../test/fixtures/native_web_video_document.dart';
+import '../test/fixtures/generated_ios_video.dart'
+    show iosNativeVideoFixtureDuration;
 import 'native_probe_cleanup.dart';
 
 /// Real WKWebView, generated H.264/AAC and the exact production iframe bridge.
@@ -259,9 +261,10 @@ Future<void> probeIosWebKitReset(
         hasLength(1),
         reason: 'Space must retain the same native view',
       );
-      // Simulator startup/frame delivery can consume almost the entire
-      // 12-second fixture (build 170 reached 11.92s). Reset from a known
-      // nonzero position with enough media remaining to measure replay.
+      // Keep this reset probe away from end-of-stream: the old 12-second
+      // clip ended during Space layout on iOS 26 (build 193), leaving its Blob
+      // seek pending. The 60-second clip leaves real media headroom; native
+      // seek completion, decoded frames and retirement gates stay unchanged.
       await video.command('seek', {'positionMs': 2000});
       // This checkpoint exercises a playing-state reset. On iOS 26 WebKit
       // can keep a paused Blob seek pending until decoding resumes, even with
@@ -310,7 +313,10 @@ Future<void> probeIosWebKitReset(
       expect(
         video.sourcePosition.inMilliseconds,
         inInclusiveRange(
-          (before.inMilliseconds - 350).clamp(0, 12000),
+          (before.inMilliseconds - 350).clamp(
+            0,
+            iosNativeVideoFixtureDuration.inMilliseconds,
+          ),
           before.inMilliseconds + 1000,
         ),
       );
