@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 
 import 'package:flick/core/theme/app_theme.dart';
 import 'package:flick/features/player/widgets/full_player_header.dart';
-import 'package:flick/features/player/widgets/full_player_visuals.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
