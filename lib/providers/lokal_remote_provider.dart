@@ -6,6 +6,7 @@ import '../services/favorites_service.dart';
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocketException;
 import 'dart:typed_data';
 
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -744,8 +745,10 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       _publishLocalState();
     } catch (error) {
       if (_disposed || generation != _generation) return;
-      final message = error.toString();
-      if (message.contains('401')) {
+      final statusCode = error is WebSocketException
+          ? error.httpStatusCode
+          : null;
+      if (error is LokalRemoteAuthException || statusCode == 401) {
         _socketWanted = false;
         // The desktop may be temporarily locked or on another profile. Do
         // not abandon a durable pairing or require a new QR scan on return.
@@ -754,7 +757,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
         _pollTimer = Timer(_maximumBackoff, () => unawaited(_connectSocket()));
         return;
       }
-      if (message.contains('404') || message.contains('426')) {
+      if (statusCode == 404 || statusCode == 426) {
         _socketWanted = false;
         state = state.copyWith(socketConnected: false);
         await _poll();

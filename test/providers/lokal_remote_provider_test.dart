@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dart:async';
+import 'dart:io' show WebSocketException;
 
 import 'package:flick/services/link/lokal_link_service.dart';
 
@@ -207,7 +208,8 @@ void main() {
         remoteToken: 'synthetic-pair',
         desktopId: 'desktop-fixture',
       );
-    final link = _SocketLink()..failure = Exception('HTTP 401 Unauthorized');
+    final link = _SocketLink()
+      ..failure = const WebSocketException('Unauthorized', 401);
     final container = ProviderContainer(
       overrides: [
         lokalRemoteCredentialsStoreProvider.overrideWithValue(store),
