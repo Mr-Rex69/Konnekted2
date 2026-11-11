@@ -36,7 +36,11 @@ class FullPlayerHeader extends StatelessWidget {
   final bool brightArtwork;
 
   static const Color _darkInk = Color(0xFF18212C);
-  static const double _frostSigma = 3.5;
+  // Reuse the native blur filter across rebuilds and all four controls.
+  static final ImageFilter _frostFilter = ImageFilter.blur(
+    sigmaX: 3.5,
+    sigmaY: 3.5,
+  );
 
   Color get _foreground =>
       brightArtwork ? _darkInk : FullPlayerVisuals.primaryText;
@@ -172,10 +176,7 @@ class FullPlayerHeader extends StatelessWidget {
             // The same inexpensive frost as the footer, without a lens,
             // custom fragment shader, or separate vibrancy pass. BackdropGroup
             // lets the three isolated buttons reuse a single backdrop read.
-            filter: ImageFilter.blur(
-              sigmaX: _frostSigma,
-              sigmaY: _frostSigma,
-            ),
+            filter: _frostFilter,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
