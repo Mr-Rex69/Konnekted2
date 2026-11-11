@@ -33,6 +33,39 @@ Map<String, dynamic> _desktop(String id, String title, {
 };
 
 void main() {
+  test('playlist metadata resolves a desktop copy without a phone file path', () {
+    const reference = Song(
+      id: 'pending:playlist:saved',
+      title: 'Shared song',
+      artist: 'Singer',
+      album: 'Album',
+      duration: Duration(seconds: 180),
+      fileType: 'FLAC',
+      sourcePackage: Song.pendingSourcePackage,
+    );
+    final candidates = [
+      _desktop('wrong-album', 'Shared song', album: 'Another album'),
+      _desktop('wrong-artist', 'Shared song', artist: 'Other singer'),
+      _desktop('different-edit', 'Shared song', seconds: 190),
+      _desktop('pc-123', 'Shared song'),
+    ];
+    expect(matchedDesktopIdFromCandidates(
+      selected: reference,
+      candidates: candidates,
+      desktopServerId: 5,
+    ), 'pc-123');
+    expect(matchedDesktopIdFromCandidates(
+      selected: reference,
+      candidates: [...candidates, _desktop('pc-second', 'Shared song')],
+      desktopServerId: 5,
+    ), isNull);
+    expect(matchedDesktopIdFromCandidates(
+      selected: reference.copyWith(duration: Duration.zero),
+      candidates: candidates,
+      desktopServerId: 5,
+    ), isNull);
+  });
+
   test('legacy overlap resolves an exact desktop recording', () {
     final match = matchedDesktopIdFromCandidates(
       selected: _phone('Shared song'),
