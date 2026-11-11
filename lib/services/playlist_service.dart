@@ -572,15 +572,6 @@ class PlaylistService {
         throw FormatException('Invalid document URI returned: $uri');
       }
 
-      final content = await _storageChannel.invokeMethod<String>(
-        'readTextDocument',
-        {'uri': uri},
-      );
-      devLog('[PlaylistService] Content length: ${content?.length ?? 0}');
-      if (content == null || content.trim().isEmpty) {
-        throw const FormatException('Selected playlist file is empty');
-      }
-
       final displayName = await _storageChannel.invokeMethod<String>(
         'getDocumentDisplayName',
         {'uri': uri},
@@ -589,6 +580,15 @@ class PlaylistService {
       if (displayName != null &&
           !RegExp(r'\.m3u8?$', caseSensitive: false).hasMatch(displayName)) {
         throw const FormatException('Choose an M3U or M3U8 playlist.');
+      }
+
+      final content = await _storageChannel.invokeMethod<String>(
+        'readTextDocument',
+        {'uri': uri},
+      );
+      devLog('[PlaylistService] Content length: ${content?.length ?? 0}');
+      if (content == null || content.trim().isEmpty) {
+        throw const FormatException('Selected playlist file is empty');
       }
 
       return await _upsertPlaylistFromSource(
