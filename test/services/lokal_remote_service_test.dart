@@ -8,6 +8,50 @@ import 'package:http/testing.dart';
 
 void main() {
   test(
+    'HTTP mode commands retain booleans and strings and reject invalid values',
+    () async {
+      final sent = <Object?>[];
+      final service = LokalRemoteService(
+        client: MockClient((request) async {
+          expect(request.url.path, '/api/remote/command');
+          expect(request.headers['x-remote-token'], 'test-token');
+          sent.add(jsonDecode(request.body));
+          return http.Response('{"ok":true}', 200);
+        }),
+      );
+      addTearDown(service.close);
+      final credentials = LokalRemoteCredentials(
+        origin: Uri.parse('http://desktop'),
+        remoteToken: 'test-token',
+      );
+      for (final value in [true, false]) {
+        await service.sendPlaybackModeCommand(credentials, 'setShuffle', value);
+      }
+      for (final value in ['none', 'all', 'one']) {
+        await service.sendPlaybackModeCommand(credentials, 'setRepeat', value);
+      }
+      expect(sent, [
+        {'action': 'setShuffle', 'value': true},
+        {'action': 'setShuffle', 'value': false},
+        for (final value in ['none', 'all', 'one'])
+          {'action': 'setRepeat', 'value': value},
+      ]);
+      for (final command in [
+        ('setShuffle', 1),
+        ('setRepeat', true),
+        ('setRepeat', 'invalid'),
+        ('unsupported', false),
+      ]) {
+        await expectLater(
+          service.sendPlaybackModeCommand(credentials, command.$1, command.$2),
+          throwsA(isA<LokalRemoteProtocolException>()),
+        );
+      }
+      expect(sent, hasLength(5));
+    },
+  );
+
+  test(
     'PC artwork loads with remote credentials and no mobile library',
     () async {
       final credentials = LokalRemoteCredentials(

@@ -104,6 +104,14 @@ class _Service extends LokalRemoteService {
 
   final List<Object> responses;
   final commands = <(LokalRemoteAction, double?)>[];
+  final modeCommands = <(String, Object?)>[];
+
+  @override
+  Future<void> sendPlaybackModeCommand(
+    LokalRemoteCredentials credentials,
+    String action,
+    Object? value,
+  ) async => modeCommands.add((action, value));
 
   @override
   Future<LokalRemoteSnapshot> fetchState(
@@ -132,14 +140,16 @@ final _credentials = LokalRemoteCredentials(
 LokalRemoteSnapshot _snapshot({
   required int updatedAt,
   String title = 'Track',
+  bool shuffle = false,
+  String repeat = 'none',
 }) => LokalRemoteSnapshot(
   connected: true,
   isPlaying: true,
   progress: 2,
   duration: 10,
   volume: .7,
-  repeat: 'none',
-  shuffle: false,
+  repeat: repeat,
+  shuffle: shuffle,
   currentTrack: LokalRemoteTrack(title: title, artist: 'Artist'),
   updatedAt: updatedAt,
 );
@@ -155,6 +165,35 @@ ProviderContainer _container(_Store store, _Service service) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+    'HTTP mode commands refresh confirmed desktop shuffle and repeat',
+    () async {
+      final store = _Store()..value = _credentials;
+      final service = _Service([
+        _snapshot(updatedAt: 1),
+        _snapshot(updatedAt: 2, shuffle: true),
+        _snapshot(updatedAt: 3, shuffle: true, repeat: 'one'),
+      ]);
+      final container = _container(store, service);
+      addTearDown(container.dispose);
+      final controller = container.read(lokalRemoteControllerProvider.notifier);
+      await controller.connect();
+      await controller.sendRawCommand('setShuffle', true);
+      expect(
+        container.read(lokalRemoteControllerProvider).snapshot!.shuffle,
+        isTrue,
+      );
+      await controller.sendRawCommand('setRepeat', 'one');
+      expect(
+        container.read(lokalRemoteControllerProvider).snapshot!.repeat,
+        'one',
+      );
+      expect(service.modeCommands, [
+        ('setShuffle', true),
+        ('setRepeat', 'one'),
+      ]);
+    },
+  );
   testWidgets(
     'saved pairing survives idle and resumes after a day, respecting Disconnect',
     (tester) async {

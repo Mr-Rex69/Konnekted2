@@ -177,6 +177,12 @@ class _DesktopRemoteFullPlayerState
     final remote = ref.watch(lokalRemoteControllerProvider);
     final player = ref.watch(playerProvider);
     final song = player.currentSong;
+    final snapshot = remote.snapshot;
+    final shuffled = snapshot?.shuffle ?? false;
+    final repeat = snapshot?.repeat ?? 'none';
+    final modeAccent = ref.watch(
+      lokalAppearanceProvider.select((look) => look.tokens.accent),
+    );
     final currentTrack = remote.snapshot?.currentTrack;
     // Use the same live album palette as FullPlayerScreen. The player
     // provider already exposes the remote now-playing artwork; never tint the
@@ -694,18 +700,25 @@ class _DesktopRemoteFullPlayerState
                                               MainAxisAlignment.center,
                                           children: [
                                             IconButton(
-                                              tooltip: lokalText('Shuffle'),
-                                              onPressed: () => _command(
-                                                () => ref
-                                                    .read(
-                                                      playerProvider.notifier,
-                                                    )
-                                                    .toggleShuffle(),
+                                              key: const ValueKey(
+                                                'desktop-shuffle',
                                               ),
+                                              tooltip: lokalText('Shuffle'),
+                                              isSelected: shuffled,
+                                              onPressed: snapshot == null
+                                                  ? null
+                                                  : () => _command(
+                                                      () => ref
+                                                          .read(
+                                                            playerProvider
+                                                                .notifier,
+                                                          )
+                                                          .toggleShuffle(),
+                                                    ),
                                               icon: Icon(
                                                 Icons.shuffle_rounded,
-                                                color: player.isShuffle
-                                                    ? ink
+                                                color: shuffled
+                                                    ? modeAccent
                                                     : secondary,
                                               ),
                                             ),
@@ -728,23 +741,34 @@ class _DesktopRemoteFullPlayerState
                                             ),
                                             const SizedBox(width: 24),
                                             IconButton(
+                                              key: const ValueKey(
+                                                'desktop-repeat',
+                                              ),
                                               tooltip: lokalText('Repeat'),
-                                              onPressed: () {
-                                                if (remote.controlsDesktop)
-                                                  ref
-                                                      .read(
-                                                        playerProvider.notifier,
-                                                      )
-                                                      .toggleLoopMode();
-                                              },
+                                              isSelected: repeat != 'none',
+                                              onPressed: snapshot == null
+                                                  ? null
+                                                  : () => _command(
+                                                      () => ref
+                                                          .read(
+                                                            playerProvider
+                                                                .notifier,
+                                                          )
+                                                          .setLoopMode(
+                                                            repeat == 'none'
+                                                                ? LoopMode.all
+                                                                : repeat ==
+                                                                      'all'
+                                                                ? LoopMode.one
+                                                                : LoopMode.off,
+                                                          ),
+                                                    ),
                                               icon: Icon(
-                                                player.loopMode == LoopMode.one
+                                                repeat == 'one'
                                                     ? Icons.repeat_one_rounded
                                                     : Icons.repeat_rounded,
-                                                color:
-                                                    player.loopMode !=
-                                                        LoopMode.off
-                                                    ? ink
+                                                color: repeat != 'none'
+                                                    ? modeAccent
                                                     : secondary,
                                               ),
                                             ),
