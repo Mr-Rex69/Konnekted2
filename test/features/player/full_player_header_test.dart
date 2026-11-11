@@ -75,6 +75,11 @@ void main() {
           final pillRect = tester.getRect(pill),
               moreRect = tester.getRect(more);
           expect(
+            pillRect.center.dx,
+            closeTo(tester.getRect(find.byType(FullPlayerHeader)).center.dx, 1),
+            reason: 'the device pill must center on the player, not in an unbalanced Row',
+          );
+          expect(
             pillRect.right,
             lessThan(tester.getRect(find.byIcon(LucideIcons.cast)).left),
           );
