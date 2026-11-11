@@ -41,6 +41,25 @@ def validate_context(repo, environment):
     return commit
 
 
+def native_acceptance_qualification(environment):
+    flag = environment.get('LOKAL_IOS_NATIVE_ACCEPTANCE', 'false')
+    if flag not in ('true', 'false'):
+        raise ValueError('Invalid native acceptance qualification flag')
+    passed = flag == 'true'
+    message = (
+        'Apple SDK, Flutter regressions, production first launch and '
+        'exact AOT IPA/source/symbol audit passed; '
+        + ('installed iOS 18.6/26.0 native and background acceptance passed'
+           if passed else 'extended simulator acceptance not run')
+    )
+    detail = {
+        'requested': passed,
+        'status': 'passed' if passed else 'not_run',
+        'runtimes': ['18.6', '26.0'] if passed else [],
+    }
+    return message, detail
+
+
 def prepare(artifact, repo, destination, environment):
     commit = validate_context(repo, environment)
     result = verify(artifact, repo)
@@ -55,28 +74,16 @@ def prepare(artifact, repo, destination, environment):
         symbols.add(package / 'Symbols', arcname='Symbols')
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copyfile(repo / name, destination / name)
-    native_requested = environment.get('LOKAL_IOS_NATIVE_ACCEPTANCE', 'false')
-    if native_requested not in ('true', 'false'):
-        raise ValueError('Invalid native acceptance qualification flag')
-    native_passed = native_requested == 'true'
-    # The workflow gates publication on both simulator jobs when this flag
-    # is true. In the normal release path, do not imply unrun tests passed.
+    # The workflow requires both simulator matrices when requested. For the
+    # regular path, never imply an unrun WebKit, transfer or playback suite passed.
+    qualification, native_acceptance = native_acceptance_qualification(environment)
     report = {
         'source_commit': commit,
         'source_tree': manifest['source_tree'],
         'workflow_run': environment['GITHUB_RUN_ID'],
         'run_attempt': environment['GITHUB_RUN_ATTEMPT'],
-        'qualification': (
-            'Apple SDK, Flutter regressions, production first launch and '
-            'exact AOT IPA/source/symbol audit passed; '
-            + ('installed iOS 18.6/26.0 native and background acceptance passed'
-               if native_passed else 'extended simulator acceptance not run')
-        ),
-        'native_simulator_acceptance': {
-            'requested': native_passed,
-            'status': 'passed' if native_passed else 'not_run',
-            'runtimes': ['18.6', '26.0'] if native_passed else [],
-        },
+        'qualification': qualification,
+        'native_simulator_acceptance': native_acceptance,
         'physical_acceptance': 'User signing, installation/upgrade and real-iPhone acceptance remain required',
         'package_audit': result,
     }
