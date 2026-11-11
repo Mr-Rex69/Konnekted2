@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import '../sources/local_network_access.dart';
+import 'cast_lan_address.dart';
+
 // ponytail: one-file embedded HTTP server so the renderer can pull bytes from
 // the phone. Covers local files and SMB/cached sources that have no LAN URL.
 // Token paths on a home LAN are enough auth; add TLS/pins if this ever leaves
@@ -16,10 +19,11 @@ class CastContentServer {
 
   /// Serve [filePath] and return a LAN-reachable URL for it.
   Future<String> serve(String filePath, {required String filename}) async {
+    final ip = await _lanIp();
+    await NetworkLocalAccess.ensure(Uri(scheme: 'http', host: ip));
     final server = _server ??= await _bind();
     final token = _token();
     _paths[token] = filePath;
-    final ip = await _lanIp();
     final safe = Uri.encodeComponent(
       filename.replaceAll(RegExp(r'[^A-Za-z0-9._\- ]'), ''),
     );
@@ -55,25 +59,29 @@ class CastContentServer {
       type: InternetAddressType.IPv4,
       includeLoopback: false,
     );
-    for (final it in interfaces) {
-      for (final addr in it.addresses) {
-        final s = addr.address;
-        if (s.startsWith('192.168.') ||
-            s.startsWith('10.') ||
-            RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(s)) {
-          return s;
-        }
-      }
-    }
-    // Virtual/odd adapters only: fall back to the first IPv4 that isn't loopback.
-    return interfaces.first.addresses.first.address;
+    final address = castLanAddress({
+      for (final network in interfaces)
+        network.name: network.addresses.map((address) => address.address),
+    });
+    if (address == null)
+      throw const SocketException(
+        'Connect to Wi-Fi or Ethernet to cast local audio.',
+      );
+    return address;
   }
 
   Future<void> _handle(HttpRequest req) async {
     final head = req.method == 'HEAD';
-    if (req.method != 'GET' && !head) {
+    final preflight = req.method == 'OPTIONS';
+    // The Cast web receiver fetches this token-scoped LAN URL across origins.
+    req.response.headers.set('Access-Control-Allow-Origin', '*');
+    req.response.headers.set(
+      'Access-Control-Expose-Headers',
+      'Content-Length, Content-Range, Accept-Ranges',
+    );
+    if (req.method != 'GET' && !head && !preflight) {
       req.response.statusCode = HttpStatus.methodNotAllowed;
-      req.response.headers.set(HttpHeaders.allowHeader, 'GET, HEAD');
+      req.response.headers.set(HttpHeaders.allowHeader, 'GET, HEAD, OPTIONS');
       req.response.contentLength = 0;
       await req.response.close();
       return;
@@ -91,6 +99,26 @@ class CastContentServer {
     final file = File(path);
     if (!await file.exists()) {
       req.response.statusCode = HttpStatus.notFound;
+      await req.response.close();
+      return;
+    }
+    if (preflight) {
+      req.response.headers.set(
+        'Access-Control-Allow-Methods',
+        'GET, HEAD, OPTIONS',
+      );
+      req.response.headers.set(
+        'Access-Control-Allow-Headers',
+        'Range, Content-Type',
+      );
+      if (req.headers.value('Access-Control-Request-Private-Network') ==
+          'true') {
+        req.response.headers.set(
+          'Access-Control-Allow-Private-Network',
+          'true',
+        );
+      }
+      req.response.statusCode = HttpStatus.noContent;
       await req.response.close();
       return;
     }

@@ -1293,23 +1293,28 @@ class MainActivity: FlutterActivity() {
             when (call.method) {
                 "discover" -> result.success(cc?.discover())
                 "connect" -> {
-                    cc?.connect(call.argument<String>("id") ?: "")
-                    result.success(null)
+                    if (cc == null) result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                    else cc.connect(call.argument<String>("id") ?: "", result)
                 }
-                "disconnect" -> { cc?.disconnect(); result.success(null) }
+                "disconnect" -> {
+                    if (cc == null) result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                    else cc.disconnect(result)
+                }
                 "load" -> {
-                    cc?.load(
+                    if (cc == null) result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                    else cc.load(
                         call.argument<String>("url") ?: "",
-                        call.argument<String>("title"),
-                        call.argument<String>("artist"),
+                        call.argument<String>("title"), call.argument<String>("artist"),
+                        call.argument<String>("contentType"),
+                        call.argument<Boolean>("autoplay") ?: true,
+                        call.argument<Number>("position")?.toLong() ?: 0L, result,
                     )
-                    result.success(null)
                 }
-                "play" -> { cc?.play(); result.success(null) }
-                "pause" -> { cc?.pause(); result.success(null) }
-                "stop" -> { cc?.stop(); result.success(null) }
-                "seek" -> { cc?.seek((call.argument<Int>("position") ?: 0).toLong()); result.success(null) }
-                "setVolume" -> { cc?.setVolume((call.argument<Double>("volume") ?: 1.0)); result.success(null) }
+                "play" -> if (cc != null) cc.play(result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                "pause" -> if (cc != null) cc.pause(result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                "stop" -> if (cc != null) cc.stop(result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                "seek" -> if (cc != null) cc.seek(call.argument<Number>("position")?.toLong() ?: 0L, result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                "setVolume" -> if (cc != null) cc.setVolume(call.argument<Number>("volume")?.toDouble() ?: 1.0, result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
                 "getVolume" -> { cc?.getVolume().let { result.success(it) } }
                 "getOutputRoutes" -> result.success(cc?.getOutputRoutes())
                 "selectOutputRoute" -> result.success(cc?.selectOutputRoute(call.argument<String>("id") ?: ""))
