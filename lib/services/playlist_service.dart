@@ -64,6 +64,8 @@ class PlaylistService {
     'application/x-mpegurl',
     'audio/mpegurl',
     'text/plain',
+    // Many file managers label .m3u as a generic binary document.
+    'application/octet-stream',
   ];
 
   List<Playlist> _playlists = [];
@@ -584,6 +586,10 @@ class PlaylistService {
         {'uri': uri},
       );
       devLog('[PlaylistService] Display name: $displayName');
+      if (displayName != null &&
+          !RegExp(r'\.m3u8?$', caseSensitive: false).hasMatch(displayName)) {
+        throw const FormatException('Choose an M3U or M3U8 playlist.');
+      }
 
       return await _upsertPlaylistFromSource(
         PlaylistSourceFile(sourcePath: uri, displayName: displayName),
