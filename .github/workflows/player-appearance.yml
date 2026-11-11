@@ -27,6 +27,8 @@ on:
       - 'test/services/audio_preload_service_test.dart'
       - 'test/data/repositories/song_waveform_cache_test.dart'
       - '.github/workflows/player-appearance.yml'
+      - 'test/widgets/motion_art_*.dart'
+      - 'test/services/shared_motion_playback_test.dart'
   workflow_dispatch:
 permissions:
   contents: read
@@ -70,4 +72,12 @@ jobs:
           test/features/player/tablet_player_presentation_test.dart
           test/features/player/video_space_layout_test.dart
           test/widgets/lokal/lokal_settings_reskin_test.dart test/l10n
+          test/features/player/motion_cover_blur_test.dart
+          test/features/player/full_player_header_test.dart
+          test/features/player/player_song_blur_background_test.dart
+          test/widgets/motion_art_warm_preview_test.dart
+          test/widgets/motion_art_gating_test.dart
+          test/widgets/motion_art_suppression_test.dart
+          test/widgets/motion_art_loading_fallback_test.dart
+          test/services/shared_motion_playback_test.dart
       - run: git diff --exit-code -- pubspec.lock

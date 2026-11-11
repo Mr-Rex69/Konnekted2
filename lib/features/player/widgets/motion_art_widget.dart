@@ -19,6 +19,8 @@ import 'package:video_player/video_player.dart';
 import 'package:flick/services/motion_art/shared_motion_playback.dart';
 import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
 
+import 'motion_art_frame_source.dart';
+
 /// Renders Apple Music Motion Art for an album while falling back to [fallback]
 /// (typically the Ken Burns [AnimatedAlbumArt] or a static artwork widget).
 ///
@@ -50,6 +52,7 @@ class MotionArtView extends StatefulWidget {
     this.sharedPlaybackKey,
     this.sharedPlaybackOverride,
     this.presentationBuilder,
+    this.onFrame,
   });
 
   /// Song title, or the album name when [albumMode] is true.
@@ -84,6 +87,10 @@ class MotionArtView extends StatefulWidget {
   presentationBuilder;
 
   final BoxFit fit;
+
+  /// Borrow the displayed frame for effects such as the player backdrop.
+  /// The view keeps sole ownership of playback, suppression and disposal.
+  final ValueChanged<MotionArtFrame>? onFrame;
   final BorderRadius? borderRadius;
 
   /// Test hook: replaces [PlayerService.motionArtSuppressedNotifier].
@@ -149,6 +156,31 @@ class _MotionArtViewState extends State<MotionArtView>
       widget.sharedPlaybackOverride ?? _shared;
   MotionPlaybackLease<VideoPlayerController>? _sharedLease;
   VideoPlayerController? _controller;
+  final _frameOwner = Object();
+  VideoPlayerController? _reportedController;
+  ValueChanged<MotionArtFrame>? _reportedCallback;
+
+  void _reportFrame(VideoPlayerController? controller) {
+    if (_performance ||
+        _suppressed ||
+        _suspendedForMemoryPressure ||
+        !widget.enabled) {
+      controller = null;
+    }
+    final callback = widget.onFrame;
+    if (_reportedCallback != callback) {
+      _reportedCallback?.call(
+        MotionArtFrame(owner: _frameOwner, controller: null),
+      );
+      _reportedCallback = callback;
+      _reportedController = null;
+    } else if (identical(_reportedController, controller)) {
+      return;
+    }
+    _reportedController = controller;
+    callback?.call(MotionArtFrame(owner: _frameOwner, controller: controller));
+  }
+
   bool _hasVideo = false;
   bool _dependenciesReady = false;
   bool _reduceMotion = false;
@@ -370,6 +402,9 @@ class _MotionArtViewState extends State<MotionArtView>
       _restart();
     else if (oldWidget.playbackActive != widget.playbackActive)
       _syncPlayback();
+    if (oldWidget.onFrame != widget.onFrame) {
+      _reportFrame(_hasVideo ? _controller : null);
+    }
   }
 
   @override
@@ -388,6 +423,7 @@ class _MotionArtViewState extends State<MotionArtView>
   }
 
   void _teardown({bool immediate = false}) {
+    _reportFrame(null);
     _generation++;
     _loading = false;
     _timer?.cancel();
@@ -482,6 +518,7 @@ class _MotionArtViewState extends State<MotionArtView>
         }
         _hasVideo = true;
         _reusedClip = true;
+        _reportFrame(_controller);
         unawaited(
           lease
               .setActive(_canPlay)
@@ -702,6 +739,7 @@ class _MotionArtViewState extends State<MotionArtView>
       _sharedLease = lease;
       _hasVideo = true;
     });
+    _reportFrame(controller);
     _attempt = 0;
     await _disposeVideo(previous, lease: previousLease);
   }

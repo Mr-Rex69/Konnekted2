@@ -5,6 +5,7 @@ import 'package:flick/services/motion_art/animated_artwork_service.dart';
 import 'package:flick/services/motion_art/moving_cover_settings.dart';
 import 'package:flick/services/motion_art/shared_motion_playback.dart';
 import 'package:flick/services/motion_art/motion_art_memory_pressure.dart';
+import 'package:flick/features/player/widgets/motion_art_frame_source.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player/video_player.dart';
@@ -63,6 +64,7 @@ void main() {
     final mini = await pool.acquire(key, 'https://video.test/clip.mp4');
     await mini.setActive(true);
     final suppression = ValueNotifier(false);
+    final frames = <MotionArtFrame>[];
     await tester.pumpWidget(
       MaterialApp(
         home: SizedBox.square(
@@ -73,6 +75,7 @@ void main() {
               title: 'Song',
               artist: 'Artist',
               sharedPlaybackKey: 'player:42',
+              onFrame: frames.add,
               sharedPlaybackOverride: pool,
               suppressionOverride: suppression,
               fallback: const Text('static cover'),
@@ -84,6 +87,7 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey('decoded-frame')), findsOneWidget);
     expect(created, 1);
+    expect(frames.last.controller, same(controller));
     expect(controller.value.position, const Duration(seconds: 3));
     expect(tester.takeException(), isNull);
 
@@ -116,6 +120,7 @@ void main() {
     expect(activations.last, isFalse);
     suppression.value = true;
     await tester.pump();
+    expect(frames.last.controller, isNull);
     expect(find.byType(VideoPlayer), findsNothing);
     expect(find.text('static cover'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -131,6 +136,7 @@ void main() {
             title: 'Song',
             artist: 'Artist',
             sharedPlaybackKey: 'player:42',
+            onFrame: frames.add,
             sharedPlaybackOverride: pool,
             suppressionOverride: suppression,
             fallback: const Text('static cover'),
@@ -157,6 +163,7 @@ void main() {
     await tester.pump();
     expect(find.byType(VideoPlayer), findsNothing);
     expect(disposed, 1);
+    expect(frames.last.controller, isNull);
     await tester.pumpWidget(const SizedBox());
     suppression.dispose();
     // Process-lifetime recovery is intentionally armed by the pressure event;
