@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Prepare a pre-device iPhone beta from the exact independently audited IPA.
+"""Prepare the unsigned iPhone release from an independently audited IPA.
 
-Called by an explicit release-branch push or manual main publication after both
-installed simulator suites and external background tests pass. Signing/device acceptance is deliberately not
-claimed. This script does not send network requests or change package bytes.
+Normal publication requires verified build, Flutter regressions, first launch
+and the exact source/IPA/symbol audit. Extended simulator acceptance is opt-in
+and must be reported accurately. Signing/device acceptance is never claimed.
+This script does not send network requests or change package bytes.
 """
 import argparse
 import json
@@ -54,12 +55,28 @@ def prepare(artifact, repo, destination, environment):
         symbols.add(package / 'Symbols', arcname='Symbols')
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copyfile(repo / name, destination / name)
+    native_requested = environment.get('LOKAL_IOS_NATIVE_ACCEPTANCE', 'false')
+    if native_requested not in ('true', 'false'):
+        raise ValueError('Invalid native acceptance qualification flag')
+    native_passed = native_requested == 'true'
+    # The workflow gates publication on both simulator jobs when this flag
+    # is true. In the normal release path, do not imply unrun tests passed.
     report = {
         'source_commit': commit,
         'source_tree': manifest['source_tree'],
         'workflow_run': environment['GITHUB_RUN_ID'],
         'run_attempt': environment['GITHUB_RUN_ATTEMPT'],
-        'qualification': 'Apple SDK, installed iOS18.6/26 mixed-transfer/playback and external background/process-recovery suites passed; exact AOT IPA/source/symbol audit passed',
+        'qualification': (
+            'Apple SDK, Flutter regressions, production first launch and '
+            'exact AOT IPA/source/symbol audit passed; '
+            + ('installed iOS 18.6/26.0 native and background acceptance passed'
+               if native_passed else 'extended simulator acceptance not run')
+        ),
+        'native_simulator_acceptance': {
+            'requested': native_passed,
+            'status': 'passed' if native_passed else 'not_run',
+            'runtimes': ['18.6', '26.0'] if native_passed else [],
+        },
         'physical_acceptance': 'User signing, installation/upgrade and real-iPhone acceptance remain required',
         'package_audit': result,
     }
@@ -81,7 +98,7 @@ def main():
     tag = prepare(args.artifact, repo, args.destination, os.environ)
     with open(os.environ['GITHUB_OUTPUT'], 'a') as outputs:
         outputs.write('tag=' + tag + '\n')
-    print('Prepared audited unsigned iPhone beta: ' + tag)
+    print('Prepared audited unsigned iPhone release: ' + tag)
 
 
 if __name__ == '__main__':
