@@ -39,9 +39,14 @@ cover cards immediately reuse an already resolved local image.
 Validation is source-level only; paired-device transfer, image display and
 interrupted-copy behavior still need device verification.
 
-The link disconnects after three minutes without user interaction when no merge,
-file transfer or download outbox work is active. Routine connection checks run
-less often. Reconnect from Desktop link when more work is needed.
+Pairings no longer disconnect after three idle minutes. A saved pair retries
+network or temporary profile failures, and returning from the background reopens
+the socket unless the user explicitly disconnected it. The OS may suspend
+background networking; keeping a pairing does not keep the PC awake. With an
+updated desktop, a changed LAN address is rediscovered and proved against the
+existing pairing before its bearer is sent or its secure origin is updated.
+Forget and replacement pairing remain guarded against late recovery callbacks.
+Physical overnight iOS/Android recovery still needs device validation.
 
 The Milestones screen uses Lokal surfaces, accent colors and achievement cards;
 badge calculations remain unchanged. Online artist pages group releases into
@@ -62,7 +67,7 @@ metadata operations and already-current tag values do not rewrite song rows.
 The progress label includes metadata because the same operation log carries
 song tag edits as well as likes and playlists. Phone edits trigger a debounced
 sync; desktop changes are checked more often during recent interaction, with
-slower checks while idle. The existing idle disconnect remains in place.
+slower checks while idle. Pairing recovery remains enabled while idle.
 
 Desktop-control notifications fetch covers through the authenticated artwork
 service and pass the locally cached image to Android. Position-only notification
