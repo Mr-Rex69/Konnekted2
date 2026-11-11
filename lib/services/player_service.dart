@@ -2981,24 +2981,27 @@ class PlayerService {
     }
   }
 
-  Future<void> _activateAudioSessionForRustEngine() =>
-      IosLocalAudioRequests.run(() async {
-        if (!Platform.isAndroid && !Platform.isIOS) return;
-        await IosLocalAudioRequests.wait(_configureSystemAudioSession());
-        try {
-          final session = await IosLocalAudioRequests.wait(
-            AudioSession.instance,
-          );
-          final granted = await IosLocalAudioRequests.wait(
-            session.setActive(true),
-          );
-          _debugLog('[AudioFocus] Rust engine focus request granted=$granted');
-        } catch (e) {
-          _debugLog(
-            '[AudioFocus] Failed to activate audio session for Rust engine: $e',
-          );
-        }
-      });
+  Future<void> _activateAudioSessionForRustEngine({
+    bool requireGranted = false,
+  }) => IosLocalAudioRequests.run(() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    await IosLocalAudioRequests.wait(_configureSystemAudioSession());
+    try {
+      final session = await IosLocalAudioRequests.wait(AudioSession.instance);
+      final granted = await IosLocalAudioRequests.wait(session.setActive(true));
+      _debugLog('[AudioFocus] Rust engine focus request granted=$granted');
+      if (requireGranted && !granted) {
+        throw StateError(
+          'Audio session activation was denied. Try Play again when audio is available.',
+        );
+      }
+    } catch (e) {
+      _debugLog(
+        '[AudioFocus] Failed to activate audio session for Rust engine: $e',
+      );
+      if (requireGranted) rethrow;
+    }
+  });
 
   Future<void> _releaseAndroidManagedAudioResources({
     required String reason,
@@ -5466,6 +5469,10 @@ class PlayerService {
       ensureInitialized: () => _ensureRustEngineInitialized(playbackMode),
       resolvePlaybackPath: _resolveRustPath,
       resolveHttpSource: _resolveRustHttpSource,
+      // Direct USB owns a separate exclusive focus/transport lifecycle.
+      activateAudioSession: playbackMode.isDirectUsbExperimental
+          ? null
+          : () => _activateAudioSessionForRustEngine(requireGranted: true),
       disposeEngine: _disposeUsbEngine,
     );
   }
@@ -7537,6 +7544,12 @@ class PlayerService {
     if (Platform.isIOS) _iosPositionSavingPaused = false;
     await IosLocalAudioRequests.wait(initAudio());
 
+    // A car/lock-screen Play can arrive before main finishes restoring the
+    // paused queue. Hydrate the saved track and playhead on demand as well.
+    if (currentSongNotifier.value == null && _songAtCurrentIndex() == null) {
+      await IosLocalAudioRequests.wait(restorePlaybackModes());
+      await IosLocalAudioRequests.wait(restoreLastPlayed());
+    }
     final song = currentSongNotifier.value ?? _songAtCurrentIndex();
     if (song == null) return;
     if (song.isPending) {
