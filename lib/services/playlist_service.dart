@@ -871,6 +871,8 @@ class PlaylistService {
     final songs = await _repo.getAllSongs();
     final byPath = <String, List<Song>>{};
     final byFileName = <String, List<Song>>{};
+    // Android SAF / MediaStore paths may be opaque content:// IDs.
+    final byTitle = <String, List<Song>>{};
 
     for (final song in songs) {
       final filePath = song.filePath;
@@ -884,6 +886,8 @@ class PlaylistService {
         if (fileName.isNotEmpty) {
           byFileName.putIfAbsent(fileName, () => []).add(song);
         }
+        final title = _normalizeSearchText(song.title);
+        if (title.isNotEmpty) byTitle.putIfAbsent(title, () => []).add(song);
       } catch (e, st) {
         devLog(
           '[PlaylistService] Skipping song during import matching: path="$filePath", error=$e',
@@ -892,7 +896,7 @@ class PlaylistService {
       }
     }
 
-    return _SongLookup(byPath: byPath, byFileName: byFileName);
+    return _SongLookup(byPath: byPath, byFileName: byFileName, byTitle: byTitle);
   }
 
   _ResolvedM3uImport _resolveSongIdsWithLookup(
@@ -926,6 +930,7 @@ class PlaylistService {
               lookup.byFileName[_extractFileName(entry.pathOrUri)] ?? [];
           match = _pickBestCandidate(candidates, entry.extInfTitle);
         }
+        match ??= _matchEntryByMetadata(entry, lookup);
 
         if (match == null) {
           unmatched.add(entry.pathOrUri);
