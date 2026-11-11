@@ -5,11 +5,12 @@ import 'package:flutter/services.dart';
 
 import 'cast_device.dart';
 
-/// Shared native sender contract. iPhone transport failures must reach ownership
+/// Shared native sender contract. Mobile transport failures must reach ownership
 /// handoff and UI; unsupported desktop hosts retain the existing optional bridge.
 class ChromecastBackend {
   ChromecastBackend({bool? propagateErrors})
-    : _propagateErrors = propagateErrors ?? Platform.isIOS;
+    : _propagateErrors =
+          propagateErrors ?? (Platform.isIOS || Platform.isAndroid);
 
   static const _channel = MethodChannel('com.mossapps.flick/cast');
   static const _eventChannel = EventChannel('com.mossapps.flick/cast_events');

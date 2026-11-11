@@ -1,0 +1,37 @@
+name: Android Cast handoff
+on:
+  pull_request:
+    paths:
+      - 'android/app/src/main/kotlin/com/mossapps/flick/Cast*.kt'
+      - 'android/app/src/main/kotlin/com/mossapps/flick/MainActivity.kt'
+      - 'android/app/src/test/kotlin/com/mossapps/flick/Cast*.kt'
+      - 'lib/services/casting/**'
+      - 'test/services/casting/**'
+      - '.github/workflows/android-cast.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/android-toolchain
+      - name: Generate brand resources for Android host tests
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 tool/gen_lokal_launcher_icons.py
+      - name: Verify confirmed handoff, SAF staging and receiver HTTP requests
+        run: flutter test --no-pub test/services/casting
+      - name: Compile Android sender and verify native acknowledgement lifecycle
+        run: bash android/gradlew -p android :app:testFullDebugUnitTest --tests com.mossapps.flick.CastPendingReplyTest --tests com.mossapps.flick.MusicMediaSessionTest --console=plain --no-daemon
+      - name: Preserve native Cast test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-cast-tests
+          path: build/app/reports/tests/testFullDebugUnitTest
+          if-no-files-found: ignore

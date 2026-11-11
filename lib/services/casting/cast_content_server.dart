@@ -71,9 +71,16 @@ class CastContentServer {
 
   Future<void> _handle(HttpRequest req) async {
     final head = req.method == 'HEAD';
-    if (req.method != 'GET' && !head) {
+    final preflight = req.method == 'OPTIONS';
+    // The Cast web receiver fetches this token-scoped LAN URL across origins.
+    req.response.headers.set('Access-Control-Allow-Origin', '*');
+    req.response.headers.set(
+      'Access-Control-Expose-Headers',
+      'Content-Length, Content-Range, Accept-Ranges',
+    );
+    if (req.method != 'GET' && !head && !preflight) {
       req.response.statusCode = HttpStatus.methodNotAllowed;
-      req.response.headers.set(HttpHeaders.allowHeader, 'GET, HEAD');
+      req.response.headers.set(HttpHeaders.allowHeader, 'GET, HEAD, OPTIONS');
       req.response.contentLength = 0;
       await req.response.close();
       return;
@@ -91,6 +98,26 @@ class CastContentServer {
     final file = File(path);
     if (!await file.exists()) {
       req.response.statusCode = HttpStatus.notFound;
+      await req.response.close();
+      return;
+    }
+    if (preflight) {
+      req.response.headers.set(
+        'Access-Control-Allow-Methods',
+        'GET, HEAD, OPTIONS',
+      );
+      req.response.headers.set(
+        'Access-Control-Allow-Headers',
+        'Range, Content-Type',
+      );
+      if (req.headers.value('Access-Control-Request-Private-Network') ==
+          'true') {
+        req.response.headers.set(
+          'Access-Control-Allow-Private-Network',
+          'true',
+        );
+      }
+      req.response.statusCode = HttpStatus.noContent;
       await req.response.close();
       return;
     }

@@ -13,6 +13,7 @@ import 'dlna_backend.dart';
 import 'chromecast_backend.dart';
 import 'cast_handoff.dart';
 import 'cast_source.dart';
+import 'cast_local_file.dart';
 
 // ponytail: orchestrates DLNA + Chromecast backends; drives PlayerService notifiers
 // so the UI works unchanged while casting. Mutual import with PlayerService is fine
@@ -116,8 +117,9 @@ class CastingService {
   }
 
   Future<void> connect(CastDevice device) async {
-    if (Platform.isIOS && device.backend == CastBackend.chromecast) {
-      return _connectIosChromecast(device);
+    if ((Platform.isIOS || Platform.isAndroid) &&
+        device.backend == CastBackend.chromecast) {
+      return _connectChromecast(device);
     }
     if (_activeDevice?.id == device.id) return;
     final ps = PlayerService();
@@ -160,7 +162,8 @@ class CastingService {
   }
 
   Future<void> disconnect({bool resumeLocal = true}) async {
-    if (Platform.isIOS && _activeDevice?.backend == CastBackend.chromecast) {
+    if ((Platform.isIOS || Platform.isAndroid) &&
+        _activeDevice?.backend == CastBackend.chromecast) {
       if (isChangingOutputNotifier.value) {
         throw PlatformException(
           code: 'CAST_BUSY',
@@ -171,7 +174,7 @@ class CastingService {
       try {
         await PlayerService().runOutputTransition((local) async {
           final shouldResume = resumeLocal && local.wasPlaying;
-          await _disconnectIosChromecast();
+          await _disconnectChromecast();
           if (shouldResume && local.isCurrent()) await local.resumeLocal();
         });
       } catch (_) {
@@ -226,7 +229,7 @@ class CastingService {
     unawaited(ps.refreshNotificationState());
   }
 
-  void _claimIosRemote(
+  void _claimCastRemote(
     CastDevice device,
     Song? song,
     Duration position,
@@ -242,7 +245,7 @@ class CastingService {
     ps.positionNotifier.value = position;
   }
 
-  void _releaseIosRemote() {
+  void _releaseCastRemote() {
     _activeDevice = null;
     _currentSong = null;
     activeDeviceNotifier.value = null;
@@ -251,7 +254,7 @@ class CastingService {
     PlayerService().isPlayingNotifier.value = false;
   }
 
-  Future<void> _connectIosChromecast(CastDevice device) async {
+  Future<void> _connectChromecast(CastDevice device) async {
     if (_activeDevice?.id == device.id) return;
     if (isChangingOutputNotifier.value) {
       throw PlatformException(
@@ -265,7 +268,7 @@ class CastingService {
     try {
       await ps.runOutputTransition((local) async {
         if (_activeDevice?.backend == CastBackend.chromecast) {
-          await _disconnectIosChromecast();
+          await _disconnectChromecast();
         } else {
           await disconnect(resumeLocal: false);
         }
@@ -274,7 +277,7 @@ class CastingService {
           connect: () => _chromecast.connect(device),
           preparePaused: () async {
             final song = local.song!;
-            final url = await _iosCastUrl(song);
+            final url = await _receiverCastUrl(song);
             if (url == null) {
               throw PlatformException(
                 code: 'CAST_SOURCE',
@@ -296,8 +299,8 @@ class CastingService {
             await CastContentServer.instance.stop();
           },
           claimRemote: () =>
-              _claimIosRemote(device, local.song, local.position, false),
-          releaseRemote: _releaseIosRemote,
+              _claimCastRemote(device, local.song, local.position, false),
+          releaseRemote: _releaseCastRemote,
         );
         ps.isPlayingNotifier.value = local.wasPlaying && local.song != null;
         // A volume query is ancillary; its failure cannot undo a confirmed load.
@@ -326,7 +329,7 @@ class CastingService {
     }
   }
 
-  Future<void> _disconnectIosChromecast() async {
+  Future<void> _disconnectChromecast() async {
     _tearingDown = true;
     try {
       // Retain ownership until the native didEnd callback confirms shutdown.
@@ -335,7 +338,7 @@ class CastingService {
         await _chromecast.connect(device);
       }
       await _chromecast.disconnect();
-      _releaseIosRemote();
+      _releaseCastRemote();
       await CastContentServer.instance.stop();
       errorNotifier.value = null;
     } finally {
@@ -348,8 +351,9 @@ class CastingService {
     if (_activeDevice == null) return false;
     final ps = PlayerService();
     final String? url;
-    if (Platform.isIOS && _activeDevice?.backend == CastBackend.chromecast) {
-      url = await _iosCastUrl(song);
+    if ((Platform.isIOS || Platform.isAndroid) &&
+        _activeDevice?.backend == CastBackend.chromecast) {
+      url = await _receiverCastUrl(song);
     } else {
       final resolved = await RemoteSourceService.instance.resolveHttpPlayback(
         song,
@@ -357,10 +361,11 @@ class CastingService {
       url = resolved?.url ?? await _serveFromPhone(song);
     }
     if (url == null) {
-      if (Platform.isIOS && _activeDevice?.backend == CastBackend.chromecast) {
+      if ((Platform.isIOS || Platform.isAndroid) &&
+          _activeDevice?.backend == CastBackend.chromecast) {
         throw PlatformException(
           code: 'CAST_SOURCE',
-          message: 'This track cannot be sent to the receiver. Stop casting to play it on iPhone.',
+          message: 'This track cannot be sent to the receiver. Stop casting to play it on this device.',
         );
       }
       // Content-URI locals and unresolvable sources stay local-only.
@@ -378,9 +383,7 @@ class CastingService {
         url,
         title: song.title,
         artist: song.artist,
-        contentType: Platform.isIOS
-            ? castAudioContentType(url, song.fileType)
-            : null,
+        contentType: castAudioContentType(url, song.fileType),
       );
     }
     _currentSong = song;
@@ -473,7 +476,7 @@ class CastingService {
         final event = e['event'] as String?;
         switch (event) {
           case 'sessionEnded':
-            if (Platform.isIOS) {
+            if (Platform.isIOS || Platform.isAndroid) {
               if (e['shutdownConfirmed'] != true &&
                   _activeDevice?.backend == CastBackend.chromecast &&
                   !_tearingDown &&
@@ -489,7 +492,7 @@ class CastingService {
                 unawaited(
                   PlayerService().runOutputTransition((_) async {
                     if (!identical(_activeDevice, endedDevice)) return;
-                    _releaseIosRemote();
+                    _releaseCastRemote();
                     await CastContentServer.instance.stop();
                     unawaited(PlayerService().refreshNotificationState());
                   }),
@@ -505,7 +508,7 @@ class CastingService {
             _handleCcStatus(e);
             break;
           case 'volume':
-            if (Platform.isIOS &&
+            if ((Platform.isIOS || Platform.isAndroid) &&
                 _activeDevice?.backend != CastBackend.chromecast) {
               break;
             }
@@ -560,7 +563,7 @@ class CastingService {
     }
   }
 
-  Future<String?> _iosCastUrl(Song song) async {
+  Future<String?> _receiverCastUrl(Song song) async {
     final resolved = await RemoteSourceService.instance.resolveHttpPlayback(
       song,
     );
@@ -583,10 +586,7 @@ class CastingService {
       if (song.isNetworkSource) {
         path = await RemoteSourceService.instance.ensureLocal(song);
       } else {
-        final p = song.filePath;
-        if (p != null && !p.startsWith('content://') && File(p).existsSync()) {
-          path = p;
-        }
+        path = await castLocalFile(song.filePath, extension: song.fileType);
       }
       if (path == null) return null;
       final ext = song.fileType.toLowerCase();

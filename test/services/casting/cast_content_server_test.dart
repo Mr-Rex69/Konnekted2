@@ -44,6 +44,45 @@ void main() {
   Future<List<int>> body(HttpClientResponse response) =>
       response.fold<List<int>>([], (all, chunk) => all..addAll(chunk));
 
+  test(
+    'Cast web receiver can preflight and read a token-scoped LAN file',
+    () async {
+      await withServer((client, uri) async {
+        final request = await client.openUrl('OPTIONS', uri);
+        request.headers.set('Origin', 'https://www.gstatic.com');
+        request.headers.set('Access-Control-Request-Private-Network', 'true');
+        final preflight = await request.close();
+        expect(preflight.statusCode, 204);
+        expect(preflight.headers.value('Access-Control-Allow-Origin'), '*');
+        expect(
+          preflight.headers.value('Access-Control-Allow-Private-Network'),
+          'true',
+        );
+        expect(
+          preflight.headers.value('Access-Control-Allow-Headers'),
+          contains('Range'),
+        );
+        await body(preflight);
+        final get = await client.getUrl(uri);
+        get.headers.set('Origin', 'https://www.gstatic.com');
+        final response = await get.close();
+        expect(response.headers.value('Access-Control-Allow-Origin'), '*');
+        expect(
+          response.headers.value('Access-Control-Expose-Headers'),
+          contains('Content-Range'),
+        );
+        expect(await body(response), bytes);
+        final unknown = await client.openUrl(
+          'OPTIONS',
+          uri.replace(path: '/unknown/track.flac'),
+        );
+        final missing = await unknown.close();
+        expect(missing.statusCode, 404);
+        await body(missing);
+      });
+    },
+  );
+
   test('full GET has accurate framing and unknown tokens return 404', () async {
     await withServer((client, uri) async {
       final full = await request(client, uri);
@@ -170,7 +209,10 @@ void main() {
     await withServer((client, uri) async {
       final response = await request(client, uri, method: 'POST');
       expect(response.statusCode, 405);
-      expect(response.headers.value(HttpHeaders.allowHeader), 'GET, HEAD');
+      expect(
+        response.headers.value(HttpHeaders.allowHeader),
+        'GET, HEAD, OPTIONS',
+      );
       expect(await body(response), isEmpty);
     });
   });
