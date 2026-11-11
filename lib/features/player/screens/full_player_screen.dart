@@ -2742,7 +2742,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       ? ref
                             .watch(
                               fullPlayerWaveformProvider(
-                                _player.currentSongNotifier.value!.id,
+                                _player.currentSongNotifier.value!,
                               ),
                             )
                             .asData

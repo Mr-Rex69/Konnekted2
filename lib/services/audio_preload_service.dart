@@ -7,7 +7,7 @@ import 'package:flick/core/utils/dev_log.dart';
 import '../data/entities/song_entity.dart';
 import '../data/entities/song_audio_cache_entity.dart';
 import '../data/repositories/song_repository.dart';
-import '../src/rust/api/audio_analysis.dart';
+import 'audio_analysis_queue.dart';
 import 'album_art_service.dart';
 import 'artwork_gate.dart';
 
@@ -43,10 +43,9 @@ class AudioPreloadService {
   static final AudioPreloadService instance = AudioPreloadService();
 
   static const int _concurrency = 2;
-  static const int _peakBuckets = 240;
-  static const int _currentVersion = 1;
+  static const int _currentVersion = AudioAnalysisQueue.cacheVersion;
 
-  /// Formats [analyzeAudioFile] cannot decode yet (Rust skips them). Misses
+  /// Formats the native analyzer cannot decode yet (Rust skips them). Misses
   /// are negative-cached so every pass doesn't re-probe them. Bump
   /// [_currentVersion] when decode support lands to force a recompute.
   static const Set<String> _negativeCacheExtensions = {'dsf', 'dff', 'wv'};
@@ -101,8 +100,8 @@ class AudioPreloadService {
   AudioPreloadService({
     SongRepository? songRepository,
     AlbumArtService? albumArtService,
-  })  : _injectedSongRepository = songRepository,
-        _injectedAlbumArtService = albumArtService;
+  }) : _injectedSongRepository = songRepository,
+       _injectedAlbumArtService = albumArtService;
 
   bool get isRunning => _runnerActive || _manualPassActive;
 
@@ -282,7 +281,9 @@ class AudioPreloadService {
 
         _completed += results.where((r) => r).length;
         _failed += results.where((r) => !r).length;
-        _emitAutoProgress(currentFile: chunk.isNotEmpty ? chunk.last.title : null);
+        _emitAutoProgress(
+          currentFile: chunk.isNotEmpty ? chunk.last.title : null,
+        );
       }
     } finally {
       pauseArtworkExtraction(false);
@@ -344,10 +345,12 @@ class AudioPreloadService {
     final path = song.filePath;
     if (path.startsWith('content://')) return;
 
-    final result = await analyzeAudioFile(
-      path: path,
-      peakBuckets: _peakBuckets,
+    final pass = _cancelSignal;
+    final result = await AudioAnalysisQueue.instance.analyze(
+      path,
+      isNeeded: () => !_cancelRequested && identical(pass, _cancelSignal),
     );
+    if (_cancelRequested || !identical(pass, _cancelSignal)) return;
 
     if (result == null) {
       // Known-undecodable formats get a negative cache row so later passes

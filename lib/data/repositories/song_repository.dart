@@ -765,8 +765,11 @@ class SongRepository {
     // container extension; mobile-downloaded Atmos files keep a filename
     // suffix so ExoPlayer still receives the original JOC stream.
     final path = entity.filePath.toLowerCase();
-    final ac4 = entity.fileType?.toUpperCase() == 'AC-4' || path.endsWith('.ac4.atmos.mp4');
-    final atmos = ac4 ||
+    final ac4 =
+        entity.fileType?.toUpperCase() == 'AC-4' ||
+        path.endsWith('.ac4.atmos.mp4');
+    final atmos =
+        ac4 ||
         entity.fileType?.toUpperCase() == 'E-AC-3 JOC' ||
         path.endsWith('.atmos.m4a') ||
         path.endsWith('.atmos.mp4') ||
@@ -778,7 +781,9 @@ class SongRepository {
       artist: entity.artist,
       albumArt: entity.albumArtPath,
       duration: Duration(milliseconds: entity.durationMs ?? 0),
-      fileType: ac4 ? 'AC-4' : (atmos ? 'E-AC-3 JOC' : entity.fileType ?? 'unknown'),
+      fileType: ac4
+          ? 'AC-4'
+          : (atmos ? 'E-AC-3 JOC' : entity.fileType ?? 'unknown'),
       atmosAvailable: atmos && !ac4,
       atmosEncoded: atmos,
       resolution: _buildResolutionString(entity),
@@ -954,6 +959,48 @@ class SongRepository {
   }
 
   // --- Audio cache (preload scan) ---
+
+  bool _matchesWaveformSong(SongEntity row, Song song) =>
+      !song.isExternal &&
+      row.filePath == song.filePath &&
+      row.startOffsetMs == song.startOffsetMs &&
+      row.endOffsetMs == song.endOffsetMs &&
+      row.sourceType == song.sourceType &&
+      row.remoteId == song.remoteId &&
+      row.remoteServerId == song.remoteServerId;
+
+  /// A provider ID alone is not a library identity. Verify its source before
+  /// using analysis, including after a source was replaced or rescanned.
+  Future<SongAudioCacheEntity?> getAudioCacheForSong(Song song) async {
+    final id = int.tryParse(song.id);
+    if (id == null || song.isExternal) return null;
+    final row = await _isar.songEntitys.get(id);
+    if (row == null || !_matchesWaveformSong(row, song)) return null;
+    final cache = await getAudioCache(id);
+    if (cache == null ||
+        cache.version != SongAudioCacheEntity.currentVersion ||
+        cache.computedAt < (row.lastModified?.millisecondsSinceEpoch ?? 0))
+      return null;
+    return cache;
+  }
+
+  Future<void> upsertAudioCacheForSong(
+    Song song,
+    SongAudioCacheEntity cache,
+  ) async {
+    final id = int.tryParse(song.id);
+    if (id == null || id != cache.songId || song.isExternal) return;
+    await _isar.writeTxn(() async {
+      final row = await _isar.songEntitys.get(id);
+      if (row == null ||
+          !_matchesWaveformSong(row, song) ||
+          (row.lastModified?.millisecondsSinceEpoch ?? 0) > cache.computedAt)
+        return;
+      final previous = await getAudioCache(id);
+      if (previous != null && previous.computedAt > cache.computedAt) return;
+      await _isar.songAudioCacheEntitys.put(cache);
+    });
+  }
 
   Future<SongAudioCacheEntity?> getAudioCache(int songId) async {
     return await _isar.songAudioCacheEntitys

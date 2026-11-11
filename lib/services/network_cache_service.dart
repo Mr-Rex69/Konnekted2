@@ -43,6 +43,7 @@ class NetworkCacheService {
     int remoteServerId,
     String remoteId, {
     String? extension,
+    bool touch = true,
   }) async {
     final serverDir = Directory(
       p.join((await _root()).path, '$remoteServerId'),
@@ -59,7 +60,7 @@ class NetworkCacheService {
     if (!await file.exists()) return null;
 
     final now = DateTime.now();
-    if (file.lastModifiedSync() != now) {
+    if (touch && file.lastModifiedSync() != now) {
       await file.setLastModified(now);
     }
     return file.path;

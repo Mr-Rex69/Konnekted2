@@ -10,7 +10,7 @@ import 'package:flick/models/progress_bar_style.dart';
 import 'package:flick/features/player/widgets/line_seek_bar.dart';
 import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
 import 'package:flick/providers/providers.dart';
-import 'package:flick/data/repositories/song_repository.dart';
+import 'package:flick/providers/full_player_waveform_provider.dart';
 
 class WaveformLayer extends StatefulWidget {
   final PlayerService playerService;
@@ -37,7 +37,6 @@ class _WaveformLayerState extends State<WaveformLayer>
   late final AnimationController _appearController;
   late final Animation<double> _appearAnimation;
   String? _lastSongId;
-  List<double>? _cachedPeaks;
 
   @override
   void initState() {
@@ -52,7 +51,6 @@ class _WaveformLayerState extends State<WaveformLayer>
       curve: Curves.easeOutCubic,
     );
     _appearController.forward();
-    _loadCachedPeaks();
   }
 
   @override
@@ -61,24 +59,7 @@ class _WaveformLayerState extends State<WaveformLayer>
     if (widget.currentSong?.id != _lastSongId) {
       _lastSongId = widget.currentSong?.id;
       _appearController.forward(from: 0.0);
-      _cachedPeaks = null;
-      _loadCachedPeaks();
     }
-  }
-
-  void _loadCachedPeaks() {
-    final song = widget.currentSong;
-    if (song == null || song.isExternal) return;
-    final songId = int.tryParse(song.id);
-    if (songId == null) return;
-    SongRepository().getAudioCache(songId).then((cache) {
-      if (cache != null &&
-          cache.peaks.isNotEmpty &&
-          mounted &&
-          widget.currentSong?.id == song.id) {
-        setState(() => _cachedPeaks = cache.peaks);
-      }
-    });
   }
 
   @override
@@ -93,6 +74,10 @@ class _WaveformLayerState extends State<WaveformLayer>
       builder: (context, ref, _) {
         final ProgressBarStyle style =
             widget.styleOverride ?? ref.watch(progressBarStyleProvider);
+        final song = widget.currentSong;
+        final peaks = style == ProgressBarStyle.waveform && song != null
+            ? ref.watch(fullPlayerWaveformProvider(song)).asData?.value
+            : null;
         return AnimatedBuilder(
           animation: _appearAnimation,
           builder: (context, _) {
@@ -141,12 +126,15 @@ class _WaveformLayerState extends State<WaveformLayer>
                         targetStyle: widget.targetStyle,
                       ),
                       ProgressBarStyle.waveform => WaveformSeekBar(
+                        key: ValueKey(widget.currentSong?.id),
                         barCount: 60,
                         position: position,
                         duration: duration,
                         appearProgress: t,
-                        cachedPeaks: _cachedPeaks,
+                        cachedPeaks: peaks,
                         onChanged: (newPos) {
+                          if (!mounted || widget.currentSong?.id != songId)
+                            return;
                           widget.positionNotifier.value = newPos;
                           unawaited(widget.playerService.seek(newPos));
                         },

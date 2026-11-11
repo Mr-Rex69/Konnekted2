@@ -145,7 +145,7 @@ pub fn analyze_audio_file(path: String, peak_buckets: u32) -> Option<AudioAnalys
         )
         .ok()?;
 
-    let (codec_params, num_frames) = {
+    let codec_params = {
         let track = probed.tracks().iter().find(|t| {
             matches!(
                 &t.codec_params,
@@ -156,7 +156,7 @@ pub fn analyze_audio_file(path: String, peak_buckets: u32) -> Option<AudioAnalys
             Some(CodecParameters::Audio(p)) => p.clone(),
             _ => return None,
         };
-        (params, track.num_frames)
+        params
     };
     let sr = codec_params.sample_rate.unwrap_or(44100) as f64;
     let ch = codec_params
@@ -198,13 +198,7 @@ pub fn analyze_audio_file(path: String, peak_buckets: u32) -> Option<AudioAnalys
     let mut clips: u64 = 0;
 
     // Peaks.
-    let n_buckets = peak_buckets.max(1) as usize;
-    let mut bucket_max = vec![0.0f32; n_buckets];
-    let mut frames_seen: u64 = 0;
-    let total = num_frames
-        .map(|n| n as u64)
-        .unwrap_or_else(|| (sr * 600.0) as u64);
-    let per_bucket = (total / n_buckets as u64).max(1);
+    let mut waveform = super::waveform_peaks::WaveformPeaks::new();
 
     let mut interleaved: Vec<f32> = Vec::new();
     loop {
@@ -259,12 +253,10 @@ pub fn analyze_audio_file(path: String, peak_buckets: u32) -> Option<AudioAnalys
                 }
             }
 
-            // Peaks (channel 0).
-            let bucket = ((frames_seen / per_bucket) as usize).min(n_buckets - 1);
-            let a0f = abs0 as f32;
-            if a0f > bucket_max[bucket] {
-                bucket_max[bucket] = a0f;
-            }
+            // Describe every channel, independently of the playback mix or
+            // gain. A recording with a silent left channel still has audio.
+            waveform.push(interleaved[f * buf_ch..(f + 1) * buf_ch]
+                .iter().map(|sample| sample.abs()).fold(0.0f32, f32::max));
 
             // LUFS ring.
             ring_sum += wss;
@@ -294,17 +286,11 @@ pub fn analyze_audio_file(path: String, peak_buckets: u32) -> Option<AudioAnalys
                 dr_n = 0;
             }
 
-            frames_seen += 1;
         }
     }
 
     // -- Finalize peaks --
-    let gmax = bucket_max.iter().cloned().fold(0.0f32, f32::max);
-    let peaks: Vec<f32> = if gmax > 0.0 {
-        bucket_max.iter().map(|&m| m / gmax).collect()
-    } else {
-        vec![0.0; n_buckets]
-    };
+    let peaks = waveform.finish(peak_buckets.max(1) as usize);
 
     // -- Finalize DR: flush partial block, then top-20 % average --
     if dr_n > 0 {
@@ -437,6 +423,27 @@ mod tests {
         // True peak ≈ 0 dB.
         let tp = result.true_peak_db.expect("true peak should be present");
         assert!(tp.abs() < 0.5, "true_peak_db={tp}, expected ≈ 0.0");
+    }
+
+    #[test]
+    fn right_channel_and_final_audio_reach_the_waveform() {
+        let dir = std::env::temp_dir().join("flick_test_analysis");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("right-channel-waveform.wav");
+        let mut writer = hound::WavWriter::create(&path, hound::WavSpec {
+            channels: 2, sample_rate: 48_000, bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        }).unwrap();
+        for frame in 0..144_000 {
+            let sample = if (48_000..96_000).contains(&frame) { 0i16 } else { 16000i16 };
+            writer.write_sample(0i16).unwrap();
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        let result = analyze_audio_file(path.to_string_lossy().into_owned(), 240).unwrap();
+        assert!(result.peaks[..70].iter().all(|&peak| peak > 0.9));
+        assert!(result.peaks[90..150].iter().all(|&peak| peak == 0.0));
+        assert!(result.peaks[170..].iter().all(|&peak| peak > 0.9));
     }
 
     #[test]

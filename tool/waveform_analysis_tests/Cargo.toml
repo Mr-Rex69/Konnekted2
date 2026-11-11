@@ -1,0 +1,12 @@
+[package]
+name = "lokal-waveform-analysis-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Match the decoder locked by the app, exercising the production analysis file.
+symphonia = { version = "=0.6.1", features = ["all"] }
+
+[dev-dependencies]
+hound = "=3.5.1"

@@ -6,6 +6,7 @@ import 'package:flick/models/progress_bar_style.dart';
 
 import 'full_player_visuals.dart';
 import 'material_player_thumb.dart';
+import 'waveform_envelope.dart';
 
 /// Every appearance uses Flutter's Slider for touch, keyboard, RTL and
 /// accessibility. Only its paint changes; the timeline always occupies 48 px.
@@ -99,42 +100,18 @@ class FullPlayerSeekTrack extends SliderTrackShape with BaseSliderTrackShape {
         style == ProgressBarStyle.waveform &&
         samples != null &&
         samples.length > 1 &&
-        samples.any((v) => v.isFinite && v > 0);
+        samples.every((v) => v.isFinite && v >= 0);
 
     if (hasWaveform) {
-      // A continuous, mirrored envelope from actual cached audio peaks.
-      final path = Path();
-      for (var side = 0; side < 2; side++) {
-        for (var step = 0; step < samples.length; step++) {
-          final i = side == 0 ? step : samples.length - 1 - step;
-          final t = i / (samples.length - 1);
-          final dx = rtl
-              ? rect.right - t * rect.width
-              : rect.left + t * rect.width;
-          final sample = samples[i].isFinite ? samples[i].clamp(0.0, 1.0) : 0.0;
-          final dy =
-              rect.center.dy +
-              (side == 0 ? -1 : 1) * math.max(1.5, sample * 17);
-          if (side == 0 && step == 0) {
-            path.moveTo(dx, dy);
-          } else {
-            path.lineTo(dx, dy);
-          }
-        }
-      }
-      path.close();
-      canvas.drawPath(path, Paint()..color = inactive);
-      canvas.save();
-      canvas.clipRect(
-        Rect.fromLTRB(
-          rtl ? x : rect.left,
-          rect.center.dy - 20,
-          rtl ? rect.right : x,
-          rect.center.dy + 20,
-        ),
+      paintWaveformEnvelope(
+        canvas,
+        Rect.fromCenter(center: rect.center, width: rect.width, height: 34),
+        peaks: samples,
+        progress: (rtl ? rect.right - x : x - rect.left) / rect.width,
+        active: active,
+        inactive: inactive,
+        rtl: rtl,
       );
-      canvas.drawPath(path, Paint()..color = active);
-      canvas.restore();
       return;
     }
 

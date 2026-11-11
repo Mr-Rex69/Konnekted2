@@ -7,6 +7,8 @@ part 'song_audio_cache_entity.g.dart';
 /// hot songs row so song-list queries stay fast.
 @collection
 class SongAudioCacheEntity {
+  static const currentVersion = 2;
+
   /// Matches [SongEntity.id]. Used as PK so lookups are O(1) and cascade
   /// deletes are explicit (call [deleteBySongIds] when songs are removed).
   @Index()
@@ -22,7 +24,7 @@ class SongAudioCacheEntity {
   bool clipping = false;
 
   /// Bump to force a global recompute via the "Reprocess all" override.
-  int version = 1;
+  int version = currentVersion;
 
   /// Epoch milliseconds when this cache row was computed. Compared against
   /// [SongEntity.lastModified] to skip stale entries on incremental scans.
