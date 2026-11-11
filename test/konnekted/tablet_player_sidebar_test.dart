@@ -669,6 +669,16 @@ void main() {
                 closeTo(footerRect.center.dx, .01),
               );
             }
+            final footer = tester.getRect(
+              find.byKey(const ValueKey('tablet-footer-glass')),
+            );
+            if (footer.width >= 440) {
+              expect(
+                tester.getCenter(find.byTooltip('Play')).dx,
+                closeTo(footer.center.dx, .01),
+                reason: 'Transport must stay centred when the sidebar narrows the footer.',
+              );
+            }
             expect(
               tester.takeException(),
               isNull,
@@ -779,6 +789,12 @@ void main() {
             );
             expect(leftRect.width, greaterThanOrEqualTo(lastLeft));
             expect(rightRect.width, greaterThanOrEqualTo(lastRight));
+            if (footer.width >= 440) {
+              expect(
+                tester.getCenter(find.byTooltip('Play')).dx,
+                closeTo(footer.center.dx, .01),
+              );
+            }
             expect(footer.left, greaterThanOrEqualTo(leftRect.right - .01));
             expect(footer.right, lessThanOrEqualTo(rightRect.left + .01));
             expect(

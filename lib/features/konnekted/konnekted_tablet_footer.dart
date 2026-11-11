@@ -146,7 +146,7 @@ class KonnektedTabletFooter extends ConsumerWidget {
                 LokalArtworkRectTween(begin: begin, end: end),
             child: SizedBox.square(
               key: artworkKey,
-              dimension: 40,
+              dimension: lerpDouble(56, 40, progress)!,
               child: PlayerArtworkImage(
                 song: song,
                 radius: 8,
@@ -168,10 +168,13 @@ class KonnektedTabletFooter extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 14,
                     height: 1.15,
                     fontWeight: FontWeight.w700,
                     color: t.text,
+                    shadows: [
+                      Shadow(color: t.bg.withValues(alpha: .8), blurRadius: 4),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -179,7 +182,15 @@ class KonnektedTabletFooter extends ConsumerWidget {
                   song.artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, height: 1.2, color: t.muted),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    fontWeight: FontWeight.w500,
+                    color: t.text.withValues(alpha: .85),
+                    shadows: [
+                      Shadow(color: t.bg.withValues(alpha: .8), blurRadius: 4),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -309,7 +320,11 @@ class KonnektedTabletFooter extends ConsumerWidget {
       icon: const Icon(Icons.fullscreen_rounded, size: 20),
       onPressed: onOpenPlayer,
     );
-    Widget utilities(bool wide, double progress) => Row(
+    Widget utilities(
+      bool wide,
+      double progress, {
+      bool showPanelButton = true,
+    }) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (wide) ...[
@@ -330,11 +345,12 @@ class KonnektedTabletFooter extends ConsumerWidget {
             progress,
           ),
         ],
-        IconButton(
-          tooltip: lokalText('Now playing'),
-          icon: const Icon(Icons.view_sidebar_outlined, size: 20),
-          onPressed: () => onOpenPanel(TabletPlayerTab.details),
-        ),
+        if (showPanelButton)
+          IconButton(
+            tooltip: lokalText('Now playing'),
+            icon: const Icon(Icons.view_sidebar_outlined, size: 20),
+            onPressed: () => onOpenPanel(TabletPlayerTab.details),
+          ),
         if (wide)
           _foldControl(
             IconButton(
@@ -366,6 +382,14 @@ class KonnektedTabletFooter extends ConsumerWidget {
           final wide = bounds.maxWidth >= 1000;
           final timelineHeight = 24 * (1 - progress);
           final micro = bounds.maxWidth < 440;
+          // Equal side lanes keep Play and the timeline at the pill's centre,
+          // including when either sidebar changes the available pane width.
+          // The centre grows only after allowing readable identity/action lanes.
+          final centreWidth = math.min(
+            448.0,
+            // 16 dp outer padding, 8 dp gaps, and a 200 dp target per side.
+            math.max(220.0, width - 2 * 16 - 2 * 8 - 2 * 200),
+          );
           return Center(
             heightFactor: 1,
             child: SizedBox(
@@ -409,60 +433,58 @@ class KonnektedTabletFooter extends ConsumerWidget {
                                   if (bounds.maxWidth >= 112) fullscreenButton,
                                 ],
                               )
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                            : Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 3,
-                                        child: identity(progress, wide),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      if (wide)
-                                        Expanded(flex: 4, child: transport())
-                                      else
-                                        transport(),
-                                      const SizedBox(width: 8),
-                                      if (wide)
-                                        Expanded(
-                                          flex: 3,
-                                          child: Align(
-                                            alignment: Alignment.centerRight,
-                                            child: utilities(wide, progress),
-                                          ),
-                                        )
-                                      else
-                                        utilities(wide, progress),
-                                    ],
-                                  ),
+                                  Expanded(child: identity(progress, wide)),
+                                  const SizedBox(width: 8),
                                   SizedBox(
-                                    height: timelineHeight,
-                                    child: ClipRect(
-                                      child: OverflowBox(
-                                        alignment: Alignment.topCenter,
-                                        minHeight: 24,
-                                        maxHeight: 24,
-                                        child: ExcludeSemantics(
-                                          excluding: folded,
-                                          child: IgnorePointer(
-                                            ignoring: folded,
-                                            child: Opacity(
-                                              opacity: 1 - progress,
-                                              child: Center(
-                                                child: ConstrainedBox(
-                                                  // Match desktop's max-w-md
-                                                  // timeline, including labels.
-                                                  constraints:
-                                                      const BoxConstraints(
-                                                        maxWidth: 448,
+                                    width: centreWidth,
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        transport(),
+                                        SizedBox(
+                                          height: timelineHeight,
+                                          child: ClipRect(
+                                            child: OverflowBox(
+                                              alignment: Alignment.topCenter,
+                                              minHeight: 24,
+                                              maxHeight: 24,
+                                              child: ExcludeSemantics(
+                                                excluding: folded,
+                                                child: IgnorePointer(
+                                                  ignoring: folded,
+                                                  child: Opacity(
+                                                    opacity: 1 - progress,
+                                                    child: Center(
+                                                      child: ConstrainedBox(
+                                                        // Match desktop's max-w-md
+                                                        // timeline, including labels.
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                              maxWidth: 448,
+                                                            ),
+                                                        child: timeline,
                                                       ),
-                                                  child: timeline,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ),
                                         ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: utilities(
+                                        wide,
+                                        progress,
+                                        showPanelButton: width >= 448,
                                       ),
                                     ),
                                   ),
