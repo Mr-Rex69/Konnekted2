@@ -58,7 +58,7 @@ class MusicMediaSessionTest {
         assertEquals(service.sessionToken, MediaNotificationCompat.MediaStyle.getMediaSession(foreground))
     }
 
-    @Test fun foregroundRecordTracksUpdatesInsteadOfRetainingTheStartupPlaceholder() {
+    @Test fun foregroundUpdatesKeepTheLatestMediaNotification() {
         playLocally()
         service.onStartCommand(Intent().apply {
             putExtra("title", "Next recording")

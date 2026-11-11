@@ -907,9 +907,9 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     private fun publishMediaNotification(notification: Notification) {
         if (mediaServiceDestroyed) return
         if (isForegroundServiceStarted) {
-            // Update ServiceRecord.foregroundNoti as well as the visible card.
-            // Otherwise Android can repost the token-less startup notification
-            // after the Activity is stopped or the system refreshes the service.
+            // Keep promotion and subsequent updates on the same publication
+            // path. The startup post is asynchronous, so every notification
+            // it can publish must remain associated with the media session.
             startForeground(NOTIFICATION_ID, notification)
         } else {
             notificationManager.notify(NOTIFICATION_ID, notification)
