@@ -10,6 +10,7 @@ import '../src/rust/api/audio_api.dart' as rust_audio;
 import 'album_art_service.dart';
 import 'process_exit_diagnostics_service.dart';
 import 'sources/network_source_service.dart';
+import 'network_cache_service.dart';
 
 /// Bridges playback/download for network-sourced songs.
 ///
@@ -62,11 +63,14 @@ class RemoteSourceService {
       throw StateError('Network song has no remote id');
     }
     final service = networkSourceServiceFor(sourceType);
-    final diagnosed = reportProgress && (sourceType == 'smb' || sourceType == 'webdav');
+    final diagnosed =
+        reportProgress && (sourceType == 'smb' || sourceType == 'webdav');
     if (diagnosed) {
-      unawaited(ProcessExitDiagnosticsService.recordBreadcrumb(
-        'nas:$sourceType:download-start',
-      ));
+      unawaited(
+        ProcessExitDiagnosticsService.recordBreadcrumb(
+          'nas:$sourceType:download-start',
+        ),
+      );
     }
     try {
       final path = await service.stream(
@@ -77,10 +81,15 @@ class RemoteSourceService {
             ? (p) => downloadProgressNotifier.value = p
             : null,
       );
+      // Includes silent queue prefetches: a visible waveform can retry once
+      // the original file is complete, without polling or downloading again.
+      NetworkCacheService.notifyFileReady();
       if (diagnosed) {
-        unawaited(ProcessExitDiagnosticsService.recordBreadcrumb(
-          'nas:$sourceType:cache-ready',
-        ));
+        unawaited(
+          ProcessExitDiagnosticsService.recordBreadcrumb(
+            'nas:$sourceType:cache-ready',
+          ),
+        );
       }
       if (sourceType == 'smb' || sourceType == 'webdav') {
         if (reportProgress) {
@@ -97,9 +106,11 @@ class RemoteSourceService {
       return path;
     } catch (_) {
       if (diagnosed) {
-        unawaited(ProcessExitDiagnosticsService.recordBreadcrumb(
-          'nas:$sourceType:download-error',
-        ));
+        unawaited(
+          ProcessExitDiagnosticsService.recordBreadcrumb(
+            'nas:$sourceType:download-error',
+          ),
+        );
       }
       rethrow;
     } finally {
@@ -110,18 +121,18 @@ class RemoteSourceService {
   Future<void> _backfillMetadata(Song song, String localPath) async {
     final key = song.filePath ?? song.id;
     if (!_metadataPending.add(key)) return;
-    unawaited(ProcessExitDiagnosticsService.recordBreadcrumb(
-      'nas:metadata-start',
-    ));
+    unawaited(
+      ProcessExitDiagnosticsService.recordBreadcrumb('nas:metadata-start'),
+    );
     try {
       await _backfillArtwork(song);
-      unawaited(ProcessExitDiagnosticsService.recordBreadcrumb(
-        'nas:artwork-done',
-      ));
+      unawaited(
+        ProcessExitDiagnosticsService.recordBreadcrumb('nas:artwork-done'),
+      );
       await _backfillAudioFormat(song, localPath);
-      unawaited(ProcessExitDiagnosticsService.recordBreadcrumb(
-        'nas:metadata-done',
-      ));
+      unawaited(
+        ProcessExitDiagnosticsService.recordBreadcrumb('nas:metadata-done'),
+      );
     } finally {
       _metadataPending.remove(key);
     }

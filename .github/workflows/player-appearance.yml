@@ -8,9 +8,24 @@ on:
       - 'lib/providers/*waveform*'
       - 'lib/providers/progress_bar_style_provider.dart'
       - 'lib/services/progress_bar_style_preference_service.dart'
+      - 'lib/services/audio_analysis_queue.dart'
+      - 'lib/services/audio_preload_service.dart'
+      - 'lib/services/song_waveform_service.dart'
+      - 'lib/services/network_cache_service.dart'
+      - 'lib/services/remote_source_service.dart'
+      - 'lib/data/entities/song_audio_cache_entity.dart'
+      - 'lib/data/repositories/song_repository.dart'
+      - 'rust/src/api/audio_analysis.rs'
+      - 'rust/src/api/waveform_peaks.rs'
+      - 'tool/waveform_analysis_tests/**'
       - 'lib/l10n/model_labels.dart'
       - 'test/features/player/**'
       - 'test/providers/progress_bar_style_provider_test.dart'
+      - 'test/providers/full_player_waveform_provider_test.dart'
+      - 'test/services/*waveform*'
+      - 'test/services/audio_analysis_queue_test.dart'
+      - 'test/services/audio_preload_service_test.dart'
+      - 'test/data/repositories/song_waveform_cache_test.dart'
       - '.github/workflows/player-appearance.yml'
   workflow_dispatch:
 permissions:
@@ -29,16 +44,27 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get --enforce-lockfile
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - name: Verify real audio decoding and waveform timing
+        run: cargo test --locked --manifest-path tool/waveform_analysis_tests/Cargo.toml
       - name: Analyze player and appearance settings
         run: >-
           flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
           lib/features/player lib/features/settings/lokal/groups/appearance_group.dart
           lib/providers/full_player_waveform_provider.dart lib/providers/progress_bar_style_provider.dart
+          lib/services/audio_analysis_queue.dart lib/services/song_waveform_service.dart
       - name: Verify seeking, persistence, layouts and localization
         run: >-
           flutter test --no-pub
           test/features/player/full_player_seek_bar_test.dart
+          test/features/player/waveform_envelope_test.dart
+          test/services/audio_analysis_queue_test.dart
+          test/services/song_waveform_service_test.dart
+          test/services/audio_preload_service_test.dart
+          test/services/network_cache_service_test.dart
+          test/data/repositories/song_waveform_cache_test.dart
           test/providers/progress_bar_style_provider_test.dart
+          test/providers/full_player_waveform_provider_test.dart
           test/features/player/line_seek_bar_test.dart
           test/features/player/desktop_remote_full_player_test.dart
           test/features/player/tablet_player_presentation_test.dart

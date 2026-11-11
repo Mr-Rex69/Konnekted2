@@ -51,6 +51,21 @@ void main() {
   );
 
   test(
+    'waveform cache inspection does not change the source file stamp',
+    () async {
+      final path = await service.stash(1, 'waveform', [
+        1,
+        2,
+        3,
+      ], extension: 'flac');
+      final before = DateTime(2020);
+      await File(path).setLastModified(before);
+      expect(await service.getPath(1, 'waveform', touch: false), path);
+      expect((await File(path).stat()).modified, before);
+    },
+  );
+
+  test(
     'a staged retry cannot shadow an existing complete cache entry',
     () async {
       final path = await service.pathFor(1, 'songA', extension: 'flac');

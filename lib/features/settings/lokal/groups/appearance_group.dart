@@ -1,6 +1,7 @@
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/models/progress_bar_style.dart';
 import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
+import 'package:flick/features/player/widgets/waveform_preview_peaks.dart';
 import 'package:flick/core/utils/lokal_layout.dart';
 import 'package:flick/features/appearance/lokal_performance_selector.dart';
 
@@ -117,7 +118,7 @@ List<LokalSettingsSection> appearanceSettings(
         LokalSettingRow(
           label: lokalText('Full player seekbar'),
           description: lokalText(
-            'Line, Wavy or Waveform. Waveform uses the song’s audio when available, with a line fallback.',
+            'Line, Wavy or Waveform. Waveforms are prepared from local or downloaded audio. Other streams use a line.',
           ),
           stacked: true,
           trailing: Column(
@@ -159,24 +160,7 @@ List<LokalSettingsSection> appearanceSettings(
                       style: ref.watch(progressBarStyleProvider),
                       value: .55,
                       // Illustration only; the player reads actual audio peaks.
-                      peaks: const [
-                        .1,
-                        .25,
-                        .4,
-                        .32,
-                        .6,
-                        .5,
-                        .8,
-                        .7,
-                        .95,
-                        .6,
-                        .45,
-                        .7,
-                        .5,
-                        .2,
-                        .3,
-                        .1,
-                      ],
+                      peaks: waveformPreviewPeaks,
                       onChanged: (_) {},
                     ),
                   ),

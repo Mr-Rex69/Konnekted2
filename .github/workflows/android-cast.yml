@@ -4,6 +4,8 @@ on:
     paths:
       - 'android/app/src/main/kotlin/com/mossapps/flick/Cast*.kt'
       - 'android/app/src/main/kotlin/com/mossapps/flick/MainActivity.kt'
+      - 'android/app/src/main/kotlin/com/mossapps/flick/PlaybackStagingGate.kt'
+      - 'android/app/src/test/kotlin/com/mossapps/flick/PlaybackStagingGateTest.kt'
       - 'android/app/src/test/kotlin/com/mossapps/flick/Cast*.kt'
       - 'lib/services/casting/**'
       - 'test/services/casting/**'
@@ -27,7 +29,7 @@ jobs:
       - name: Verify confirmed handoff, SAF staging and receiver HTTP requests
         run: flutter test --no-pub test/services/casting
       - name: Compile Android sender and verify native acknowledgement lifecycle
-        run: bash android/gradlew -p android :app:testFullDebugUnitTest --tests com.mossapps.flick.CastPendingReplyTest --tests com.mossapps.flick.MusicMediaSessionTest --console=plain --no-daemon
+        run: bash android/gradlew -p android :app:testFullDebugUnitTest --tests com.mossapps.flick.CastPendingReplyTest --tests com.mossapps.flick.MusicMediaSessionTest --tests com.mossapps.flick.PlaybackStagingGateTest --console=plain --no-daemon
       - name: Preserve native Cast test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

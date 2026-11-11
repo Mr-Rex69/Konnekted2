@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
 
 /// Bounded LRU download cache for network-sourced songs.
 ///
@@ -11,6 +12,8 @@ import 'package:path_provider/path_provider.dart';
 /// LRU by file mtime; eviction runs after each [stash] once the total exceeds
 /// [sizeCapBytes].
 class NetworkCacheService {
+  static final completedRevision = ValueNotifier<int>(0);
+  static void notifyFileReady() => completedRevision.value++;
   NetworkCacheService({
     this.sizeCapBytes = defaultSizeCapBytes,
     Directory? rootDirectory,
@@ -43,6 +46,7 @@ class NetworkCacheService {
     int remoteServerId,
     String remoteId, {
     String? extension,
+    bool touch = true,
   }) async {
     final serverDir = Directory(
       p.join((await _root()).path, '$remoteServerId'),
@@ -59,7 +63,7 @@ class NetworkCacheService {
     if (!await file.exists()) return null;
 
     final now = DateTime.now();
-    if (file.lastModifiedSync() != now) {
+    if (touch && file.lastModifiedSync() != now) {
       await file.setLastModified(now);
     }
     return file.path;
@@ -85,6 +89,7 @@ class NetworkCacheService {
     );
     await file.writeAsBytes(bytes, flush: true);
     await _evictIfOverCap(protect: file);
+    notifyFileReady();
     return file.path;
   }
 

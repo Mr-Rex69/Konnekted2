@@ -1,7 +1,10 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/app_colors.dart';
+
+import 'waveform_envelope.dart';
 
 class WaveformSeekBar extends StatefulWidget {
   final Duration position;
@@ -32,7 +35,6 @@ class _WaveformSeekBarState extends State<WaveformSeekBar> {
   static const double _baseHeight = 60;
   static const double _expandedHeight = 96;
   static const double _fineScrubZoom = 2.6;
-  static const int _cachedSampleCount = 180;
 
   // Cache the waveform data so it doesn't jitter on rebuilds
   late List<double> _waveformData;
@@ -51,7 +53,8 @@ class _WaveformSeekBarState extends State<WaveformSeekBar> {
   void didUpdateWidget(WaveformSeekBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     final peaksChanged = widget.cachedPeaks != oldWidget.cachedPeaks;
-    final durationChanged = widget.duration != oldWidget.duration ||
+    final durationChanged =
+        widget.duration != oldWidget.duration ||
         widget.barCount != oldWidget.barCount;
     if ((durationChanged || peaksChanged) &&
         widget.duration.inMilliseconds > 0) {
@@ -61,22 +64,12 @@ class _WaveformSeekBarState extends State<WaveformSeekBar> {
 
   void _generateWaveform() {
     final peaks = widget.cachedPeaks;
-    if (peaks != null && peaks.isNotEmpty) {
-      // Resample cached peaks to barCount-sized array
-      final target = max(widget.barCount, _cachedSampleCount);
-      _waveformData = List.generate(target, (i) {
-        final t = i / (target - 1);
-        final idx = (t * (peaks.length - 1)).round();
-        return peaks[idx].clamp(0.0, 1.0) * 0.9 + 0.1;
-      });
-      return;
-    }
-    // Fallback: deterministic pseudo-random bar heights
-    final random = Random(widget.duration.inMilliseconds);
-    _waveformData = List.generate(
-      max(widget.barCount, _cachedSampleCount),
-      (index) => 0.3 + random.nextDouble() * 0.7,
-    );
+    _waveformData =
+        peaks != null &&
+            peaks.length > 1 &&
+            peaks.every((p) => p.isFinite && p >= 0)
+        ? List<double>.unmodifiable(peaks)
+        : const [];
   }
 
   Duration get _displayPosition => _interactivePosition ?? widget.position;
@@ -297,112 +290,58 @@ class _WaveformPainter extends CustomPainter {
     required this.appearProgress,
   });
 
-  double _sampleHeight(double progress) {
-    final sampleProgress = progress.clamp(0.0, 1.0) * (waveformData.length - 1);
-    final lowerIndex = sampleProgress.floor();
-    final upperIndex = sampleProgress.ceil();
-
-    if (lowerIndex == upperIndex) {
-      return waveformData[lowerIndex];
-    }
-
-    final t = sampleProgress - lowerIndex;
-    return waveformData[lowerIndex] * (1 - t) + waveformData[upperIndex] * t;
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
-    // Spacing between bars
-    final spacing = 2.0;
-    // Calculate total available width for bars (width - total spacing)
-    final totalSpacing = (barCount - 1) * spacing;
-    final barWidth = (size.width - totalSpacing) / barCount;
-
-    final currentProgress = duration.inMilliseconds == 0
+    final progress = duration.inMilliseconds > 0
+        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final window = 1 / zoomFactor;
+    final start = zoomFactor <= 1
         ? 0.0
-        : position.inMilliseconds / duration.inMilliseconds;
-    final visibleProgressWindow = 1 / zoomFactor;
-    final startProgress = zoomFactor <= 1
-        ? 0.0
-        : (currentProgress - visibleProgressWindow / 2).clamp(
-            0.0,
-            max(0.0, 1.0 - visibleProgressWindow),
-          );
-
-    final paint = Paint()..strokeCap = StrokeCap.round;
-
-    // Number of bars for the smooth transition zone
-    const transitionBars = 3.0;
-    final transitionWidth = transitionBars / barCount;
-
-    for (int i = 0; i < barCount; i++) {
-      final barProgress = zoomFactor <= 1
-          ? i / barCount
-          : startProgress + (i / max(1, barCount - 1)) * visibleProgressWindow;
-      final barHeight = _sampleHeight(barProgress) * size.height * appearProgress;
-      final x = i * (barWidth + spacing) + barWidth / 2;
-      final yCenter = size.height / 2;
-
-      // Smooth color interpolation around the current progress
-      // Calculate how far this bar is from the current progress
-      final distanceFromProgress = currentProgress - barProgress;
-
-      Color barColor;
-      if (distanceFromProgress >= transitionWidth) {
-        // Fully played
-        barColor = activeColor;
-      } else if (distanceFromProgress <= 0) {
-        // Not yet played
-        barColor = color;
-      } else {
-        // In the transition zone - smoothly interpolate
-        final t = distanceFromProgress / transitionWidth;
-        barColor = Color.lerp(color, activeColor, t)!;
-      }
-
-      paint.color = barColor;
-      paint.strokeWidth = barWidth;
-
-      // Draw line from center up and down
+        : (progress - window / 2).clamp(0.0, max(0.0, 1.0 - window));
+    if (waveformData.length < 2) {
+      // Missing analysis is an ordinary timeline, never random fake audio.
+      final line = Paint()
+        ..color = color
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round;
       canvas.drawLine(
-        Offset(x, yCenter - barHeight / 2),
-        Offset(x, yCenter + barHeight / 2),
-        paint,
+        Offset(0, size.height / 2),
+        Offset(size.width, size.height / 2),
+        line,
       );
+      line.color = activeColor;
+      canvas.drawLine(
+        Offset(0, size.height / 2),
+        Offset(size.width * progress, size.height / 2),
+        line,
+      );
+      return;
     }
+    paintWaveformEnvelope(
+      canvas,
+      Rect.fromCenter(
+        center: size.center(Offset.zero),
+        width: size.width,
+        height: size.height * .72,
+      ),
+      peaks: waveformData,
+      progress: progress,
+      active: activeColor,
+      inactive: color,
+      start: start.toDouble(),
+      end: start + window,
+      reveal: appearProgress,
+    );
   }
 
   @override
-  bool shouldRepaint(_WaveformPainter oldDelegate) {
-    // Only repaint if duration changed
-    if (oldDelegate.duration != duration) {
-      return true;
-    }
-
-    if (oldDelegate.zoomFactor != zoomFactor ||
-        oldDelegate.waveformData != waveformData ||
-        oldDelegate.appearProgress != appearProgress) {
-      return true;
-    }
-
-    // For position changes, only repaint if the visual progress (which bar is highlighted) changed
-    // Calculate which bar index corresponds to the current progress
-    if (duration.inMilliseconds == 0) {
-      return false;
-    }
-
-    final oldProgress =
-        oldDelegate.position.inMilliseconds /
-        oldDelegate.duration.inMilliseconds;
-    final newProgress = position.inMilliseconds / duration.inMilliseconds;
-
-    // Calculate bar indices (0 to barCount-1)
-    final oldBarIndex = (oldProgress * barCount).floor();
-    final newBarIndex = (newProgress * barCount).floor();
-
-    // Only repaint if we've crossed a bar boundary or if the difference is significant
-    // This reduces repaints from ~60fps to ~10fps for a typical song
-    return oldBarIndex != newBarIndex ||
-        (oldProgress - newProgress).abs() > (1.0 / barCount);
-  }
+  bool shouldRepaint(_WaveformPainter old) =>
+      old.position != position ||
+      old.duration != duration ||
+      old.waveformData != waveformData ||
+      old.appearProgress != appearProgress ||
+      old.zoomFactor != zoomFactor ||
+      old.color != color ||
+      old.activeColor != activeColor;
 }

@@ -8,6 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/player/widgets/full_player_seek_bar.dart';
 import 'package:flick/models/progress_bar_style.dart';
 
+import 'dart:async';
+
+import 'package:flick/data/entities/song_audio_cache_entity.dart';
+import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
+import 'package:flick/providers/full_player_waveform_provider.dart';
+import 'package:flick/services/song_waveform_service.dart';
+
 class _SeekPlayer extends Fake implements PlayerService {
   @override
   final durationNotifier = ValueNotifier(const Duration(minutes: 3));
@@ -19,6 +26,75 @@ class _SeekPlayer extends Fake implements PlayerService {
 }
 
 void main() {
+  testWidgets('late waveform results cannot replace the next song timeline', (
+    tester,
+  ) async {
+    final player = _SeekPlayer();
+    final position = ValueNotifier(const Duration(seconds: 10));
+    final first = Completer<SongAudioCacheEntity?>(),
+        second = Completer<SongAudioCacheEntity?>();
+    final service = SongWaveformService(
+      readCache: (song) => song.id == 'first' ? first.future : second.future,
+      resolveFile: (_) async => null,
+      writeCache: (_, __) async {},
+    );
+    var id = 'first';
+    late StateSetter change;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [songWaveformServiceProvider.overrideWithValue(service)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  change = setState;
+                  return SizedBox(
+                    width: 320,
+                    child: WaveformLayer(
+                      playerService: player,
+                      positionNotifier: position,
+                      currentSong: Song(
+                        id: id,
+                        title: id,
+                        artist: 'Fixture',
+                        fileType: 'FLAC',
+                        filePath: 'https://example.invalid/$id',
+                        duration: const Duration(minutes: 3),
+                      ),
+                      styleOverride: ProgressBarStyle.waveform,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    change(() => id = 'second');
+    await tester.pump();
+    first.complete(SongAudioCacheEntity()..peaks = [.9, .9]);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<WaveformSeekBar>(find.byType(WaveformSeekBar)).cachedPeaks,
+      isNull,
+    );
+    second.complete(SongAudioCacheEntity()..peaks = [.1, .4, 0, .7]);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<WaveformSeekBar>(find.byType(WaveformSeekBar)).cachedPeaks,
+      [.1, .4, 0, .7],
+    );
+    await tester.tapAt(tester.getRect(find.byType(WaveformSeekBar)).center);
+    await tester.pumpAndSettle();
+    expect(player.seeks, [const Duration(seconds: 90)]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    position.dispose();
+    player.durationNotifier.dispose();
+  });
+
   testWidgets(
     'classic Wavy drag stays under the finger during engine updates',
     (tester) async {
