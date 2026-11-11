@@ -71,19 +71,37 @@ Future<int> _expectPlaybackProgress(
   WidgetTester tester,
   PlayerService player,
 ) async {
-  // Establish a baseline after initial seek/position events have arrived. A
-  // retained position from a previous backend must not pass a playback check.
-  await tester.pump(const Duration(milliseconds: 500));
+  // The AVPlayer/Core Audio clock is a real-time clock. Pumping 24 artificial
+  // 250ms frames is not equivalent to allowing six seconds of native audio
+  // time on a busy (particularly iOS 18) simulator.
+  await tester.pump();
   final initial = player.positionNotifier.value;
-  for (var i = 0; i < 24; i++) {
-    await tester.pump(const Duration(milliseconds: 250));
-    if (player.positionNotifier.value - initial >
-        const Duration(milliseconds: 300)) {
+  final wallClock = Stopwatch()..start();
+  const maxWait = Duration(seconds: 10);
+  do {
+    // Let actual native playback/position callbacks run on the host clock.
+    // Keep pumping a frame to deliver state into the widget under test.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 150)),
+    );
+    await tester.pump();
+    final delta = player.positionNotifier.value - initial;
+    if (delta > const Duration(milliseconds: 300)) {
       expect(player.isPlayingNotifier.value, true);
-      return (player.positionNotifier.value - initial).inMilliseconds;
+      wallClock.stop();
+      return delta.inMilliseconds;
     }
-  }
-  fail('The actual playback position did not advance after $initial');
+  } while (wallClock.elapsed < maxWait);
+  wallClock.stop();
+  fail(
+    'The native playback position did not advance in '
+    '${wallClock.elapsedMilliseconds}ms of real time '
+    '(from $initial to ${player.positionNotifier.value}; '
+    'engine=${player.currentEngineType.name}, '
+    'playing=${player.isPlayingNotifier.value}, '
+    'buffering=${player.isBufferingNotifier.value}, '
+    'error=${player.onlinePlaybackError.value}).',
+  );
 }
 
 void main() {
