@@ -425,54 +425,66 @@ class PlayerNotifier extends Notifier<PlayerState> {
       }
     }
 
-    ref.listen(lokalRemoteControllerProvider, (previous, next) {
-      if (next.controlsDesktop) {
-        final remote = next.snapshot;
-        if (remote == null) {
-          // The PC target takes ownership immediately, even if its first
-          // state snapshot is still connecting. Never flash the last mobile
-          // recording in either player during this handoff.
-          state = state.copyWith(
-            clearSong: true,
-            isPlaying: false,
-            position: Duration.zero,
-            duration: Duration.zero,
-            queue: const [],
-            playlist: const [],
-            currentIndex: -1,
-          );
-          return;
-        }
-        Song convert(LokalRemoteTrack track, {bool current = false}) =>
-            songFromDesktopRemoteTrack(
-              track,
-              artworkPath: current ? next.remoteArtworkPath : null,
-              artworkServerId: next.artworkServerId,
-            );
-        state = state.copyWith(
-          currentSong: remote.currentTrack == null
-              ? null
-              : convert(remote.currentTrack!, current: true),
-          clearSong: remote.currentTrack == null,
-          isPlaying: remote.isPlaying,
+    PlayerState desktopState(
+      PlayerState current,
+      LokalRemoteControllerState next,
+    ) {
+      final remote = next.snapshot;
+      if (remote == null) {
+        // The PC target takes ownership immediately, even if its first
+        // state snapshot is still connecting. Never flash the last mobile
+        // recording in either player during this handoff.
+        return current.copyWith(
+          clearSong: true,
+          isPlaying: false,
           isBuffering: false,
-          position: Duration(milliseconds: (remote.progress * 1000).round()),
-          duration: Duration(milliseconds: (remote.duration * 1000).round()),
-          isShuffle: remote.shuffle,
-          shuffleMode: remote.shuffle ? ShuffleMode.songs : ShuffleMode.off,
-          loopMode: remote.repeat == 'one'
-              ? LoopMode.one
-              : remote.repeat == 'all'
-              ? LoopMode.all
-              : LoopMode.off,
-          queue: remote.queue.map(convert).toList(),
+          isShuffle: false,
+          shuffleMode: ShuffleMode.off,
+          loopMode: LoopMode.off,
           upNext: const [],
           autoplayUpNext: const [],
-          // Desktop queue indices belong to its own playback context.
-          // Never display the previous mobile playlist as desktop history.
+          position: Duration.zero,
+          duration: Duration.zero,
+          queue: const [],
           playlist: const [],
           currentIndex: -1,
         );
+      }
+      Song convert(LokalRemoteTrack track, {bool current = false}) =>
+          songFromDesktopRemoteTrack(
+            track,
+            artworkPath: current ? next.remoteArtworkPath : null,
+            artworkServerId: next.artworkServerId,
+          );
+      return current.copyWith(
+        currentSong: remote.currentTrack == null
+            ? null
+            : convert(remote.currentTrack!, current: true),
+        clearSong: remote.currentTrack == null,
+        isPlaying: remote.isPlaying,
+        isBuffering: false,
+        position: Duration(milliseconds: (remote.progress * 1000).round()),
+        duration: Duration(milliseconds: (remote.duration * 1000).round()),
+        isShuffle: remote.shuffle,
+        shuffleMode: remote.shuffle ? ShuffleMode.songs : ShuffleMode.off,
+        loopMode: remote.repeat == 'one'
+            ? LoopMode.one
+            : remote.repeat == 'all'
+            ? LoopMode.all
+            : LoopMode.off,
+        queue: remote.queue.map(convert).toList(),
+        upNext: const [],
+        autoplayUpNext: const [],
+        // Desktop queue indices belong to its own playback context.
+        // Never display the previous mobile playlist as desktop history.
+        playlist: const [],
+        currentIndex: -1,
+      );
+    }
+
+    ref.listen(lokalRemoteControllerProvider, (previous, next) {
+      if (next.controlsDesktop) {
+        state = desktopState(state, next);
       } else if (previous?.controlsDesktop == true) {
         syncState();
       }
@@ -514,7 +526,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _service.currentIndexNotifier.removeListener(syncState);
     });
 
-    return initial;
+    final connection = ref.read(lokalRemoteControllerProvider);
+    return connection.controlsDesktop
+        ? desktopState(initial, connection)
+        : initial;
   }
 
   void _handleTrackStarted(Song song) {
@@ -681,7 +696,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> toggleShuffle() async {
     final desktop = _desktop;
     if (desktop != null) {
-      await desktop.command('setShuffle', !state.isShuffle);
+      final snapshot = ref.read(lokalRemoteControllerProvider).snapshot;
+      await desktop.command('setShuffle', !(snapshot?.shuffle ?? false));
       return;
     }
     await _service.toggleShuffle();
@@ -777,14 +793,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void toggleLoopMode() {
     final desktop = _desktop;
     if (desktop != null) {
+      final repeat = ref.read(lokalRemoteControllerProvider).snapshot?.repeat;
       unawaited(
         desktop.command(
           'setRepeat',
-          state.loopMode == LoopMode.off
-              ? 'all'
-              : state.loopMode == LoopMode.all
+          repeat == 'all'
               ? 'one'
-              : 'none',
+              : repeat == 'one'
+              ? 'none'
+              : 'all',
         ),
       );
       return;

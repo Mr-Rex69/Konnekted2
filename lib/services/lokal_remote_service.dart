@@ -226,6 +226,31 @@ class LokalRemoteService {
         'This remote library command is not supported.',
       );
     }
+    await _postCommand(credentials, action, value);
+  }
+
+  /// Preserve boolean/string mode values when the paired socket is offline.
+  Future<void> sendPlaybackModeCommand(
+    LokalRemoteCredentials credentials,
+    String action,
+    Object? value,
+  ) async {
+    final valid =
+        action == 'setShuffle' && value is bool ||
+        action == 'setRepeat' && const {'none', 'all', 'one'}.contains(value);
+    if (!valid) {
+      throw const LokalRemoteProtocolException(
+        'Invalid playback mode command.',
+      );
+    }
+    await _postCommand(credentials, action, value);
+  }
+
+  Future<void> _postCommand(
+    LokalRemoteCredentials credentials,
+    String action,
+    Object? value,
+  ) async {
     final response = await _request(
       () => _client
           .post(
@@ -242,14 +267,14 @@ class LokalRemoteService {
       final payload = jsonDecode(response.body);
       if (payload is! Map || payload['ok'] != true) {
         throw const LokalRemoteProtocolException(
-          'The desktop rejected the library playback command.',
+          'The desktop rejected the playback command.',
         );
       }
     } on LokalRemoteProtocolException {
       rethrow;
     } on Object {
       throw const LokalRemoteProtocolException(
-        'The desktop returned an invalid library playback response.',
+        'The desktop returned an invalid playback response.',
       );
     }
   }

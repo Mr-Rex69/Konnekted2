@@ -612,6 +612,21 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       });
       return;
     }
+    if (action == 'setShuffle' || action == 'setRepeat') {
+      final credentials = _credentials;
+      if (!state.reachable || credentials == null) {
+        throw const LokalRemoteNetworkException(
+          'Connect to Lokal before changing a playback mode.',
+        );
+      }
+      await ref
+          .read(lokalRemoteServiceProvider)
+          .sendPlaybackModeCommand(credentials, action, value);
+      // Refresh the confirmed desktop modes after an HTTP command, just as
+      // the socket state event does for a paired connection.
+      await refresh();
+      return;
+    }
     // A connected desktop can remain reachable over HTTP after the paired
     // socket closes. Preserve exact recording IDs and queue payloads instead
     // of discarding them through the scalar-only transport action enum.

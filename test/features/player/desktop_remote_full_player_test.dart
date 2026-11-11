@@ -62,9 +62,35 @@ class _RemotePlayer extends PlayerNotifier {
   @override
   Future<void> setVolume(double volume) async =>
       actions.add('volume:${volume.toStringAsFixed(2)}');
+
+  @override
+  Future<void> toggleShuffle() async => actions.add('shuffle');
+
+  @override
+  Future<void> setLoopMode(LoopMode mode) async =>
+      actions.add('repeat:${mode.name}');
 }
 
 class _RemoteController extends LokalRemoteController {
+  void setModes({required bool shuffle, required String repeat}) {
+    final previous = state.snapshot!;
+    state = state.copyWith(
+      snapshot: LokalRemoteSnapshot(
+        connected: previous.connected,
+        isPlaying: previous.isPlaying,
+        progress: previous.progress,
+        duration: previous.duration,
+        volume: previous.volume,
+        repeat: repeat,
+        shuffle: shuffle,
+        currentTrack: previous.currentTrack,
+        updatedAt: previous.updatedAt + 1,
+        queue: previous.queue,
+        currentIndex: previous.currentIndex,
+      ),
+    );
+  }
+
   @override
   LokalRemoteControllerState build() => LokalRemoteControllerState(
     controlsDesktop: true,
@@ -138,6 +164,60 @@ class _RemoteWithoutQueue extends _RemoteController {
 }
 
 void main() {
+  testWidgets(
+    'remote mode buttons follow desktop snapshots rather than phone modes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view
+        ..physicalSize = const Size(390, 844)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final remote = _RemoteController();
+      final player = _RemotePlayer();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            playerProvider.overrideWith(() => player),
+            lokalRemoteControllerProvider.overrideWith(() => remote),
+          ],
+          child: MaterialApp(
+            theme: LokalTheme.build(LokalTokens.themes[LokalThemeId.dark]!),
+            home: DesktopRemoteFullPlayer(onClose: () {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final shuffle = find.byKey(const ValueKey('desktop-shuffle'));
+      final repeat = find.byKey(const ValueKey('desktop-repeat'));
+      expect(tester.widget<IconButton>(shuffle).isSelected, isFalse);
+      expect(tester.widget<IconButton>(repeat).isSelected, isFalse);
+      final inactive = (tester.widget<IconButton>(shuffle).icon as Icon).color;
+      remote.setModes(shuffle: true, repeat: 'one');
+      await tester.pumpAndSettle();
+      expect(tester.widget<IconButton>(shuffle).isSelected, isTrue);
+      expect(tester.widget<IconButton>(repeat).isSelected, isTrue);
+      expect(
+        (tester.widget<IconButton>(repeat).icon as Icon).icon,
+        Icons.repeat_one_rounded,
+      );
+      expect(
+        (tester.widget<IconButton>(shuffle).icon as Icon).color,
+        isNot(inactive),
+      );
+      remote.setModes(shuffle: true, repeat: 'all');
+      await tester.pumpAndSettle();
+      expect(
+        (tester.widget<IconButton>(repeat).icon as Icon).icon,
+        Icons.repeat_rounded,
+      );
+      await tester.tap(shuffle);
+      await tester.tap(repeat);
+      await tester.pump();
+      expect(player.actions, ['shuffle', 'repeat:one']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   test('remote artwork state retains and clears only the current cover', () {
     const initial = LokalRemoteControllerState();
     final cover = initial.copyWith(remoteArtworkPath: '/app/cache/cover.webp');
