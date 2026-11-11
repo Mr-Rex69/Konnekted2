@@ -117,8 +117,8 @@ def main(*, allow_control_preflight=False):
                                    check=False, timeout=20)
             except (OSError, subprocess.SubprocessError):
                 pass
-        # An iOS 26 hosted Mac can report Booted and run SpringBoard while
-        # bootstatus -b waits indefinitely for nonessential first-boot work.
+        # On hosted iOS 26, simctl can report Booted with SpringBoard
+        # running even when bootstatus -b does not return before its deadline.
         # Only the pre-install coordinator may defer that particular timeout,
         # and only when the *exact requested device* is reported as Booted.
         # The next mandatory job step installs and launches a separate Flutter
@@ -137,7 +137,7 @@ def main(*, allow_control_preflight=False):
             if booted:
                 (output / 'bootstatus-deferred-to-control.txt').write_text(
                     'bootstatus -b exceeded 300 seconds on the requested Booted iPhone.\n'
-                    'Simulator readiness is NOT confirmed; the mandatory Flutter '\
+                    'Simulator readiness is NOT confirmed; the mandatory Flutter '
                     'control-app install, launch and Dart VM probe must pass.\n')
                 print('iPhone simulator is Booted but bootstatus timed out; '
                       'deferring readiness to the mandatory Flutter control-app probe',
