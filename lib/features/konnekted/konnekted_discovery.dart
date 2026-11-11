@@ -887,6 +887,7 @@ Future<List<_PlaybackSource>> _morneyeSources(
   void Function(String status)? onStatus, {
   Future<void>? cancel,
   bool forDownload = false,
+  String? downloadQuality,
   String? selectedSourceId,
 }) async {
   final List<MorneyeAddon> addons;
@@ -1031,15 +1032,25 @@ Future<List<_PlaybackSource>> _morneyeSources(
             // establish the codec and the iPhone must support its output.
             final settings = packages.settings(addon);
             final configured = settings['downloadQuality']?.toString();
+            // One-off choices affect Save only; the user's Play preference
+            // and catalogue quality badges remain unchanged.
+            final selectedTier = forDownload && downloadQuality != null
+                ? downloadQuality
+                : configured;
             final provider = addon.name.replaceFirst(RegExp(r'-web$'), '');
             final configuredAmazonJoc =
                 (provider == 'amazon' || provider == 'amazon-new') &&
-                configured?.trim().toLowerCase() == 'eac3';
+                selectedTier?.trim().toLowerCase() == 'eac3';
             final configuredAtmos =
-                configured != null &&
-                (isMorneyeAtmosQuality(configured) || configuredAmazonJoc) &&
+                selectedTier != null &&
+                (isMorneyeAtmosQuality(selectedTier) || configuredAmazonJoc ||
+                    addon.qualityOptions.any(
+                      (option) => option is Map &&
+                          option['id'] == selectedTier &&
+                          option['kind'] == 'spatial',
+                    )) &&
                 addon.qualityOptions.any(
-                  (option) => option is Map && option['id'] == configured,
+                  (option) => option is Map && option['id'] == selectedTier,
                 );
             if (found.atmosAvailable ||
                 found.atmosRequested ||
@@ -1063,7 +1074,9 @@ Future<List<_PlaybackSource>> _morneyeSources(
               );
             }
             final tryAtmos = found.atmosRequested || configuredAtmos;
-            final explicitTier = found.atmosRequested
+            final explicitTier = forDownload && downloadQuality != null
+                ? downloadQuality
+                : found.atmosRequested
                 ? explicitMorneyePlaybackTier(
                     atmosRequested: true,
                     provider: addon.name,
@@ -1637,6 +1650,7 @@ Future<List<OnlineSource>> _playbackSources(
   MorneyeService morneye, {
   Future<void>? cancel,
   bool forDownload = false,
+  String? downloadQuality,
   bool includeMorneye = true,
   String? selectedSourceId,
   bool respectEnabledDiscoverySources = false,
@@ -1861,6 +1875,7 @@ Future<List<OnlineSource>> _playbackSources(
           onStatus,
           cancel: cancel,
           forDownload: forDownload,
+          downloadQuality: downloadQuality,
           selectedSourceId: selectedSourceId,
         ),
     ],
@@ -2063,6 +2078,7 @@ Future<Song> playOnlineTrack(
   MorneyeService? morneye,
   http.Client? client,
   bool forDownload = false,
+  String? downloadQuality,
 }) async {
   var settings = const DiscoverySettings();
   // The chosen native YouTube or Morneye source has no dependency on HTTP
@@ -2088,6 +2104,7 @@ Future<Song> playOnlineTrack(
       morneye ?? MorneyeService.instance,
       cancel: cancel,
       forDownload: forDownload,
+      downloadQuality: downloadQuality,
       // HTTP playback never waits for unrelated Morneye initialization.
       includeMorneye: canonicalId.startsWith('a-'),
       selectedSourceId: canonicalId,

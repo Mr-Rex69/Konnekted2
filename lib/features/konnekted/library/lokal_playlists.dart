@@ -290,7 +290,7 @@ Future<void> lokalImportM3u(BuildContext context, WidgetRef ref) async {
     _say(
       context,
       'Imported “${result.playlist.name}” with ${lokalSongCount(result.importedSongs)}'
-      '${result.unmatchedEntries > 0 ? ', ${result.unmatchedEntries} not found' : ''}.',
+      '${result.unmatchedEntries > 0 ? ', ${result.unmatchedEntries} not in your library (kept as pending entries)' : ''}.',
     );
   } catch (e) {
     if (context.mounted) _say(context, 'Couldn’t import this file: $e');
