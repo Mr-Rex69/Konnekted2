@@ -115,6 +115,59 @@ class LokalRemoteService {
     }
   }
 
+  /// Fetch a PC cover without requiring a synced library/database on this device.
+  /// Redirects lose all desktop credentials and may target HTTPS images only.
+  Future<List<int>> fetchArtwork(
+    LokalRemoteCredentials credentials,
+    String trackId,
+  ) async {
+    final request =
+        http.Request(
+            'GET',
+            credentials.origin.replace(
+              pathSegments: ['api', 'artwork', trackId],
+              queryParameters: {'full': '1'},
+            ),
+          )
+          ..headers.addAll(_headers(credentials))
+          ..followRedirects = false;
+    var response = await _client.send(request).timeout(requestTimeout);
+    if ({301, 302, 307, 308}.contains(response.statusCode)) {
+      final target = Uri.tryParse(response.headers['location'] ?? '');
+      await response.stream.drain<void>().timeout(requestTimeout);
+      if (target == null ||
+          target.scheme != 'https' ||
+          target.host.isEmpty ||
+          target.userInfo.isNotEmpty) {
+        throw const LokalRemoteProtocolException(
+          'Invalid desktop artwork redirect.',
+        );
+      }
+      response = await _client
+          .send(http.Request('GET', target)..followRedirects = false)
+          .timeout(requestTimeout);
+    }
+    if (response.statusCode != 200) {
+      await response.stream.drain<void>().timeout(requestTimeout);
+      throw const LokalRemoteProtocolException(
+        'Desktop artwork is unavailable.',
+      );
+    }
+    final bytes = <int>[];
+    await for (final chunk in response.stream.timeout(requestTimeout)) {
+      bytes.addAll(chunk);
+      if (bytes.length > 10 * 1024 * 1024) {
+        throw const LokalRemoteProtocolException(
+          'Desktop artwork is too large.',
+        );
+      }
+    }
+    if (bytes.isEmpty) {
+      throw const LokalRemoteProtocolException('Desktop artwork is empty.');
+    }
+    return bytes;
+  }
+
   Future<void> sendCommand(
     LokalRemoteCredentials credentials,
     LokalRemoteAction action, {
@@ -161,8 +214,6 @@ class LokalRemoteService {
     }
   }
 
-
-
   /// Desktop library playback also works if the paired WebSocket has dropped
   /// but the authenticated HTTP remote remains reachable.
   Future<void> sendLibraryCommand(
@@ -176,14 +227,16 @@ class LokalRemoteService {
       );
     }
     final response = await _request(
-      () => _client.post(
-        _endpoint(credentials.origin, 'command'),
-        headers: {
-          ..._headers(credentials),
-          'content-type': 'application/json',
-        },
-        body: jsonEncode({'action': action, 'value': value}),
-      ).timeout(requestTimeout),
+      () => _client
+          .post(
+            _endpoint(credentials.origin, 'command'),
+            headers: {
+              ..._headers(credentials),
+              'content-type': 'application/json',
+            },
+            body: jsonEncode({'action': action, 'value': value}),
+          )
+          .timeout(requestTimeout),
     );
     try {
       final payload = jsonDecode(response.body);
@@ -224,14 +277,13 @@ class LokalRemoteService {
         },
       );
       final response = await _request(
-        () => _client.get(uri, headers: _headers(credentials))
+        () => _client
+            .get(uri, headers: _headers(credentials))
             .timeout(requestTimeout),
       );
       Map<String, dynamic> payload;
       try {
-        payload = Map<String, dynamic>.from(
-          jsonDecode(response.body) as Map,
-        );
+        payload = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
       } on Object {
         throw const LokalRemoteProtocolException(
           'Lokal returned invalid desktop library search results.',

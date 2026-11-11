@@ -18,6 +18,9 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
   private var commandTargets: [(MPRemoteCommand, Any)] = []
   private var pickerResult: FlutterResult?
   private var nowPlaying: [String: Any] = [:]
+  private var remotePlayback = false
+  private var receivingRemoteEvents = false
+  private var audioCategoryObserver: NSObjectProtocol?
   private var spotify: LokalSpotifySession?
   private var cast: LokalCastBridge?
   private var audioLifecycle: LokalAudioLifecycle?
@@ -54,6 +57,10 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
         result(nil)
       case "hideNotification":
         self.nowPlaying = [:]
+        if self.receivingRemoteEvents {
+          UIApplication.shared.endReceivingRemoteControlEvents()
+          self.receivingRemoteEvents = false
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         result(nil)
       case "androidAutoReady": result(nil)
@@ -176,11 +183,21 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
         result(["previous": String(previous), "epoch": String(epoch)])
       case "castSenderState": result(self?.cast?.diagnosticState)
       case "initializeCastSenderForAcceptance": result(self?.cast?.initializeForAcceptance())
+      case "mixAudioSessionForIntegrationTest":
+        do {
+          try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+          result(nil)
+        } catch { result(FlutterError(code: "SESSION_PROBE_FAILED", message: String(describing: error), details: nil)) }
       case "nowPlayingMetadataState":
         // Native acceptance probe only; no song names, paths or credentials.
         let metadata = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         let artwork = metadata[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork
         let state: [String: Any] = [
+          "mixesWithOthers": AVAudioSession.sharedInstance().categoryOptions.contains(.mixWithOthers),
+          "audioCategory": AVAudioSession.sharedInstance().category.rawValue,
+          "remotePlayback": self?.remotePlayback ?? false,
+          "receivingRemoteEvents": self?.receivingRemoteEvents ?? false,
+          "playCommandEnabled": MPRemoteCommandCenter.shared().playCommand.isEnabled,
           "artworkWidth": Double(artwork?.bounds.width ?? 0),
           "artworkHeight": Double(artwork?.bounds.height ?? 0),
           "durationSeconds": metadata[MPMediaItemPropertyPlaybackDuration] as? Double ?? 0,
@@ -234,6 +251,9 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
       }
     }
     installRemoteCommands()
+    audioCategoryObserver = NotificationCenter.default.addObserver(
+      forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.restorePrimaryAudioOptions() }
   }
 
   private func register(_ name: String, _ messenger: FlutterBinaryMessenger,
@@ -251,6 +271,7 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
       (center.nextTrackCommand, "next"), (center.previousTrackCommand, "previous"),
     ]
     for (command, method) in commands {
+      command.isEnabled = true
       let target = command.addTarget { [weak self] _ in
         guard let self = self else { return .commandFailed }
         DispatchQueue.main.async { self.player.invokeMethod(method, arguments: nil) }
@@ -271,7 +292,36 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
     commandTargets.append((seek, target))
   }
 
+  deinit {
+    if let observer = audioCategoryObserver { NotificationCenter.default.removeObserver(observer) }
+    for (command, target) in commandTargets { command.removeTarget(target) }
+  }
+
+  // Silent animated artwork can add mixWithOthers to the shared session after
+  // Dart configured music playback. A mixing session cannot own Now Playing.
+  // Keep activation/category/mode under the audio engine's lifecycle owner.
+  private func restorePrimaryAudioOptions() {
+    guard !remotePlayback,
+          (nowPlaying[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0) > 0 else { return }
+    let session = AVAudioSession.sharedInstance()
+    guard session.category == .playback else { return }
+    let mixing: AVAudioSession.CategoryOptions = [.mixWithOthers, .duckOthers, .interruptSpokenAudioAndMixWithOthers]
+    let options = session.categoryOptions.subtracting(mixing)
+    guard options != session.categoryOptions else { return }
+    do { try session.setCategory(session.category, mode: session.mode, options: options) }
+    catch { NSLog("[NowPlaying] Could not restore primary music options: %@", String(describing: error)) }
+  }
+
   private func publish(_ args: [String: Any]) {
+    if args.keys.contains("title") || args.keys.contains("isRemotePlayback") || args.keys.contains("isCasting") {
+      remotePlayback = (args["isRemotePlayback"] as? Bool ?? false) || (args["isCasting"] as? Bool ?? false)
+    }
+    if !receivingRemoteEvents {
+      UIApplication.shared.beginReceivingRemoteControlEvents()
+      receivingRemoteEvents = true
+    }
+    nowPlaying[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
+    nowPlaying[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
     if let title = args["title"] as? String { nowPlaying[MPMediaItemPropertyTitle] = title }
     if let artist = args["artist"] as? String { nowPlaying[MPMediaItemPropertyArtist] = artist }
     if let duration = args["duration"] as? NSNumber {
@@ -296,6 +346,7 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
         nowPlaying[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
       }
     }
+    restorePrimaryAudioOptions()
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlaying
   }
 

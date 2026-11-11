@@ -187,6 +187,47 @@ void main() {
     },
   );
 
+  testWidgets('collapsed iPad and Android navigation keeps usable icons', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      for (final width in [768.0, 1366.0]) {
+        tester.view.physicalSize = Size(width, 1024);
+        KonnektedDestination? destination;
+        KonnektedTab? selected;
+        await tester.pumpWidget(
+          _app(
+            _workspace(
+              child: const SizedBox.expand(),
+              leftOpen: false,
+              navigate: (value) => destination = value,
+              select: (value) => selected = value,
+            ),
+            platform: platform,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('tablet-navigation-reveal')))
+              .width,
+          80,
+        );
+        expect(find.byTooltip('Expand navigation sidebar'), findsOneWidget);
+        for (final label in ['Library', 'Albums', 'Settings']) {
+          expect(find.byTooltip(label).hitTestable(), findsOneWidget);
+        }
+        await tester.tap(find.byTooltip('Albums'));
+        expect(destination, KonnektedDestination.albums);
+        await tester.tap(find.byTooltip('Library'));
+        expect(selected, KonnektedTab.library);
+        expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
   testWidgets('phone dock uses system insets once on Android and iOS', (
     tester,
   ) async {

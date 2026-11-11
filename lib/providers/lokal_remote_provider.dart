@@ -1,12 +1,14 @@
 import '../services/link/library_sync_notification.dart';
 import '../services/link/file_copy_notification.dart';
 import '../data/database.dart';
-import '../services/album_art_service.dart';
 import '../services/link/link_download_outbox.dart';
 import '../services/favorites_service.dart';
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -110,6 +112,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   Timer? _statsDebounce;
   String? _notificationArtworkKey;
   String? _notificationArtwork;
+  String? _loadingArtworkKey;
+  int _artworkAttempts = 0;
+  DateTime _artworkRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
   LinkSyncCoordinator? _linkSync;
   final _downloadOutbox = LinkDownloadOutbox();
   final _syncNotification = LibrarySyncNotification();
@@ -140,6 +145,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     onToggleShuffle: () => unawaited(
       sendRawCommand('setShuffle', !(state.snapshot?.shuffle ?? false)),
     ),
+    onSetVolume: (volume) => unawaited(sendRawCommand('volume', volume)),
     onPrevious: () => unawaited(sendRawCommand('prev')),
     onSeek: (position) =>
         unawaited(sendRawCommand('seek', position.inMilliseconds / 1000)),
@@ -565,12 +571,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       PlayerService().refreshNotificationState();
     } else {
       _updateRemoteNotification();
-      // The now-playing artwork fetch already registers the network-source
-      // row. Avoid two concurrent ensureServer writes during first pairing.
-      // Register separately only if there is no current PC track to fetch.
-      if (state.snapshot?.currentTrack?.id == null) {
-        unawaited(_registerRemoteArtworkSource());
-      }
+      // Queue artwork still uses a registered library source; the current
+      // cover itself no longer depends on library/database readiness.
+      unawaited(_registerRemoteArtworkSource());
     }
   }
 
@@ -1148,7 +1151,14 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   void _updateRemoteNotification() {
     final snapshot = state.snapshot, track = snapshot?.currentTrack;
     if (snapshot == null || track == null) return;
-    final artworkKey = '$_generation:${track.id}';
+    final artworkKey = jsonEncode([
+      _generation,
+      track.id,
+      track.title,
+      track.artist,
+      track.artworkPath,
+      track.hasArtwork,
+    ]);
     if (_notificationArtworkKey != artworkKey) {
       _notificationArtworkKey = artworkKey;
       _notificationArtwork = null;
@@ -1157,11 +1167,18 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       if (state.remoteArtworkPath != null) {
         state = state.copyWith(clearRemoteArtwork: true);
       }
+      _artworkAttempts = 0;
+      _artworkRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    if (_notificationArtwork == null &&
+        _artworkAttempts < 3 &&
+        _loadingArtworkKey != artworkKey &&
+        DateTime.now().isAfter(_artworkRetryAfter)) {
       unawaited(_loadNotificationArtwork(artworkKey, track.id));
     }
     final position = Duration(milliseconds: (snapshot.progress * 1000).round());
     final duration = desktopNotificationDuration(snapshot);
-    if (_notificationTrack == track.id &&
+    if (_notificationTrack == artworkKey &&
         _notificationPlaying == snapshot.isPlaying &&
         _notificationFavorite == track.liked &&
         NotificationService().isClaimed) {
@@ -1171,17 +1188,20 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
           position: position,
           isPlaying: snapshot.isPlaying,
           duration: duration,
+          remoteVolume: snapshot.volume,
         ),
       );
       return;
     }
-    _notificationTrack = track.id;
+    _notificationTrack = artworkKey;
     _notificationPlaying = snapshot.isPlaying;
     _notificationFavorite = track.liked;
     unawaited(
       NotificationService().showFor(
         _notificationOwner,
         outputName: state.desktopName,
+        isRemotePlayback: true,
+        remoteVolume: snapshot.volume,
         song: Song(
           id: 'desktop:${track.id}',
           title: track.title,
@@ -1202,39 +1222,37 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
 
   Future<void> _loadNotificationArtwork(String key, String? trackId) async {
     final credentials = _credentials;
-    if (credentials == null ||
-        trackId == null ||
-        credentials.desktopId == null ||
-        !Database.isInitialized)
-      return;
+    if (credentials == null || trackId == null) return;
+    _loadingArtworkKey = key;
+    _artworkAttempts++;
     try {
-      final server = await LokalDesktopSource.instance.ensureServer(
-        credentials,
+      final bytes = await ref
+          .read(lokalRemoteServiceProvider)
+          .fetchArtwork(credentials, trackId);
+      if (_disposed || !state.controlsDesktop || _notificationArtworkKey != key)
+        return;
+      final file = await DefaultCacheManager().putFile(
+        credentials.origin
+            .replace(pathSegments: ['api', 'artwork', trackId])
+            .toString(),
+        Uint8List.fromList(bytes),
+        fileExtension: 'img',
       );
       if (_disposed || !state.controlsDesktop || _notificationArtworkKey != key)
         return;
-      if (state.artworkServerId != server.id) {
-        state = state.copyWith(artworkServerId: server.id);
-      }
-      final path = await AlbumArtService.instance.resolveArtworkPath(
-        existingPath: 'lokal-cover://$trackId',
-        audioSourcePath: 'lokal://${server.id}/${Uri.encodeComponent(trackId)}',
-      );
-      if (_disposed ||
-          !state.controlsDesktop ||
-          _notificationArtworkKey != key ||
-          path == null)
-        return;
-      if (state.snapshot?.currentTrack?.id != trackId) return;
-      _notificationArtwork = path;
-      // The same cached file drives Android media metadata, the miniplayer,
-      // and the desktop-controlled full player. The image is never loaded
-      // from an inaccessible Windows/Linux filesystem path.
-      state = state.copyWith(remoteArtworkPath: path);
-      _notificationTrack = null; // Publish the local image to Android metadata.
+      _notificationArtwork = file.path;
+      state = state.copyWith(remoteArtworkPath: file.path);
+      _notificationTrack = null;
       _updateRemoteNotification();
     } catch (_) {
-      // Controls remain usable while an offline/missing cover uses Lokal art.
+      // A transient failure must not strand this recording without artwork.
+      if (_notificationArtworkKey == key) {
+        _artworkRetryAfter = DateTime.now().add(
+          Duration(seconds: 5 * _artworkAttempts),
+        );
+      }
+    } finally {
+      if (_loadingArtworkKey == key) _loadingArtworkKey = null;
     }
   }
 

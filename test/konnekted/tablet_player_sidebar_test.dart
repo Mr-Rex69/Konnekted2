@@ -758,7 +758,7 @@ void main() {
             const ValueKey('tablet-navigation-reveal'),
           );
           final rightSlot = find.byKey(const ValueKey('tablet-player-reveal'));
-          expect(tester.getSize(leftSlot).width, 0);
+          expect(tester.getSize(leftSlot).width, 104);
           expect(tester.getSize(rightSlot).width, 0);
           expect(
             tester.getRect(find.byKey(const ValueKey('tablet-footer-glass'))),
@@ -769,7 +769,7 @@ void main() {
             searchBefore,
           );
           final buildsAtReveal = panelBuilds;
-          var lastLeft = 0.0, lastRight = 0.0;
+          var lastLeft = 104.0, lastRight = 0.0;
           for (var frame = 0; frame < 44; frame++) {
             await tester.pump(const Duration(microseconds: 8333));
             final leftRect = tester.getRect(leftSlot);
@@ -819,19 +819,20 @@ void main() {
             right = false;
           });
           await tester.pump();
-          expect(leftSlot, findsNothing);
+          expect(leftSlot, findsOneWidget);
+          expect(tester.getSize(leftSlot).width, 104);
           expect(rightSlot, findsNothing);
           expect(
             tester
                 .getSize(find.byKey(const ValueKey('reveal-page-state')))
                 .width,
-            width,
+            width - 104,
           );
           expect(
             tester
                 .getRect(find.byKey(const ValueKey('tablet-player-bar')))
                 .left,
-            0,
+            104,
           );
           expect(
             tester

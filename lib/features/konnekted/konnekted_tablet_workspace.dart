@@ -139,6 +139,7 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace>
       // Its labels must not snap into an icon rail halfway through the motion.
       final extended = size.width >= 1180;
       final fullLeftWidth = (extended ? 216.0 : 80.0) + media.padding.left;
+      final railWidth = 80.0 + media.padding.left;
       final rightWidth = _panelWidth.clamp(
         300.0,
         (size.width - 32).clamp(300.0, 420.0),
@@ -146,13 +147,17 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace>
       final t = context.lokal;
       final navigation = RepaintBoundary(
         child: TickerMode(
-          enabled: tablet && widget.leftOpen,
-          child: _Sidebar(
-            extended: extended,
-            selected: widget.selected,
-            route: widget.route,
-            onSelect: widget.onSelect,
-            onNavigate: widget.onNavigate,
+          enabled: tablet,
+          child: AnimatedBuilder(
+            animation: _leftReveal,
+            builder: (context, _) => _Sidebar(
+              extended: extended,
+              expansion: Curves.easeInOutCubic.transform(_leftReveal.value),
+              selected: widget.selected,
+              route: widget.route,
+              onSelect: widget.onSelect,
+              onNavigate: widget.onNavigate,
+            ),
           ),
         ),
       );
@@ -220,8 +225,8 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace>
           final rightProgress = Curves.easeInOutCubic.transform(
             _rightReveal.value,
           );
-          final leftWidth = tablet && widget.leftOpen
-              ? fullLeftWidth * leftProgress
+          final leftWidth = tablet
+              ? lerpDouble(railWidth, fullLeftWidth, leftProgress)!
               : 0.0;
           final rightExtent = showRight ? rightWidth * rightProgress : 0.0;
           final leftInset = (media.padding.left - leftWidth).clamp(
@@ -260,15 +265,10 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (tablet)
-                            Offstage(
-                              offstage: !widget.leftOpen,
-                              child: _SidebarReveal(
-                                key: const ValueKey('tablet-navigation-reveal'),
-                                width: fullLeftWidth,
-                                progress: leftProgress,
-                                alignment: Alignment.centerRight,
-                                child: navigation,
-                              ),
+                            SizedBox(
+                              key: const ValueKey('tablet-navigation-reveal'),
+                              width: leftWidth,
+                              child: ClipRect(child: navigation),
                             ),
                           Expanded(
                             key: const ValueKey('workspace-content'),
@@ -298,8 +298,8 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace>
                                               ),
                                               tooltip: lokalText(
                                                 widget.leftOpen
-                                                    ? 'Hide navigation sidebar'
-                                                    : 'Show navigation sidebar',
+                                                    ? 'Collapse navigation sidebar'
+                                                    : 'Expand navigation sidebar',
                                               ),
                                               isSelected: widget.leftOpen,
                                               onPressed: widget.onToggleLeft,
@@ -436,7 +436,7 @@ class _KonnektedTabletWorkspaceState extends State<KonnektedTabletWorkspace>
                       if (tablet && widget.hasPlayer)
                         Positioned(
                           key: const ValueKey('tablet-player-bar'),
-                          left: widget.leftOpen ? leftWidth : 0,
+                          left: leftWidth,
                           right: rightExtent,
                           bottom: 0,
                           child: SafeArea(
@@ -498,12 +498,14 @@ class _SidebarReveal extends StatelessWidget {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.extended,
+    required this.expansion,
     required this.selected,
     required this.route,
     required this.onSelect,
     required this.onNavigate,
   });
   final bool extended;
+  final double expansion;
   final KonnektedTab selected;
   final String? route;
   final ValueChanged<KonnektedTab> onSelect;
@@ -538,15 +540,18 @@ class _Sidebar extends StatelessWidget {
                   if (extended) ...[
                     const SizedBox(width: 12),
                     Flexible(
-                      child: Text(
-                        'Lokal',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: t.text,
-                          fontSize: 25,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -1,
+                      child: Opacity(
+                        opacity: expansion,
+                        child: Text(
+                          'Lokal',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -1,
+                          ),
                         ),
                       ),
                     ),
@@ -615,7 +620,7 @@ class _Sidebar extends StatelessWidget {
         onTap: onTap,
         excludeSemantics: true,
         child: Tooltip(
-          message: extended ? '' : label,
+          message: extended && expansion >= .5 ? '' : label,
           child: LokalGlass(
             staticSurface: true,
             shadow: false,
@@ -630,27 +635,33 @@ class _Sidebar extends StatelessWidget {
                 onTap: onTap,
                 borderRadius: BorderRadius.circular(12),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: extended ? 14 : 0,
-                    vertical: 14,
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   child: Row(
-                    mainAxisAlignment: extended
-                        ? MainAxisAlignment.start
-                        : MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      Icon(icon, size: 23, color: active ? t.accent : t.muted),
+                      SizedBox(
+                        width: 56,
+                        child: Icon(
+                          icon,
+                          size: 23,
+                          color: active ? t.accent : t.muted,
+                        ),
+                      ),
                       if (extended) ...[
-                        const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              color: active ? t.text : t.muted,
-                              fontSize: 14,
-                              fontWeight: active
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
+                          child: Opacity(
+                            opacity: expansion,
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: active ? t.text : t.muted,
+                                fontSize: 14,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),

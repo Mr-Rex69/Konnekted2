@@ -76,6 +76,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     private var fallbackArt: Bitmap? = null
     private var fallbackAccent: String? = null
     private var isCasting: Boolean = false
+    private var isRemotePlayback: Boolean = false
     /** A live stream (internet radio): no next/previous, seek, shuffle or favorite. */
     private var isLive: Boolean = false
     private var castDeviceName: String? = null
@@ -148,7 +149,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
                 // ponytail: audio is on the TV while casting — headphone unplug
                 // says nothing about remote playback.
-                if (isCasting) {
+                if (isCasting || isRemotePlayback) {
                     android.util.Log.d(
                         "MusicNotification",
                         "ACTION_AUDIO_BECOMING_NOISY ignored while casting"
@@ -226,6 +227,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
             if (it.hasExtra("isFavorite")) isFavorite = it.getBooleanExtra("isFavorite", false)
             if (it.hasExtra("color")) currentColor = it.getIntExtra("color", 0)
             if (it.hasExtra("isCasting")) isCasting = it.getBooleanExtra("isCasting", false)
+            if (it.hasExtra("isRemotePlayback")) isRemotePlayback = it.getBooleanExtra("isRemotePlayback", false)
             if (it.hasExtra("isLive")) isLive = it.getBooleanExtra("isLive", false)
             if (it.hasExtra("castDeviceName")) castDeviceName = it.getStringExtra("castDeviceName")
             if (it.hasExtra("castVolume")) {
@@ -516,7 +518,7 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
         fields.forEach { key ->
             if (args.containsKey(key)) intent.putExtra(key, args[key] as? String)
         }
-        listOf("isPlaying", "isShuffle", "isFavorite", "isCasting", "isLive")
+        listOf("isPlaying", "isShuffle", "isFavorite", "isCasting", "isRemotePlayback", "isLive")
             .forEach { key ->
                 (args[key] as? Boolean)?.let { intent.putExtra(key, it) }
             }
@@ -750,6 +752,8 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
 
         getAlbumArtBitmap()?.let { bitmap ->
             metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+            metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
+            metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap)
         }
 
         mediaSession.setMetadata(metadata.build())
@@ -846,9 +850,9 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
     // cast target (TV icon, remote slider, hardware keys forwarded to us).
     // Route descriptor publishing alone doesn't do that.
     private fun syncCastRouting() {
-        if (isCasting && castVolumeProvider == null) {
+        if ((isCasting || isRemotePlayback) && castVolumeProvider == null) {
             attachCastVolume()
-        } else if (!isCasting && castVolumeProvider != null) {
+        } else if (!isCasting && !isRemotePlayback && castVolumeProvider != null) {
             detachCastVolume()
         }
         castVolumeProvider?.setCurrentVolume(castVolumePercent)
@@ -905,6 +909,8 @@ class MusicNotificationService : MediaBrowserServiceCompat() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         }
+
+        mediaSession.setSessionActivity(contentIntent)
 
         val albumArt: Bitmap? = getAlbumArtBitmap()
 
