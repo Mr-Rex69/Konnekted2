@@ -1764,7 +1764,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     bool isCasting,
     AudioOutputDiagnostics? diagnostics,
   ) {
-    final label = diagnostics?.outputDeviceLabel.trim().isNotEmpty == true
+    final castName = ref.watch(activeCastDeviceProvider)?.name.trim();
+    final label = isCasting && castName != null && castName.isNotEmpty
+        ? castName
+        : diagnostics?.outputDeviceLabel.trim().isNotEmpty == true
         ? diagnostics!.outputDeviceLabel.trim()
         : diagnostics?.routeLabel.trim().isNotEmpty == true
         ? diagnostics!.routeLabel.trim()

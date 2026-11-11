@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,8 @@ import 'chromecast_backend.dart';
 import 'cast_handoff.dart';
 import 'cast_source.dart';
 import 'cast_local_file.dart';
+import 'cast_receiver_presentation.dart';
+import '../lyrics_service.dart';
 
 // ponytail: orchestrates DLNA + Chromecast backends; drives PlayerService notifiers
 // so the UI works unchanged while casting. Mutual import with PlayerService is fine
@@ -54,6 +57,12 @@ class CastingService {
   final ValueNotifier<double?> remoteVolumeNotifier = ValueNotifier<double?>(
     null,
   );
+
+  final receiverViewNotifier = ValueNotifier<String>('nowplaying');
+  final _completion = CastCompletionGate();
+  String? currentCastLoadId;
+  int _loadRevision = 0;
+  int _presentationRevision = 0;
 
   CastDevice? _activeDevice;
   Song? _currentSong;
@@ -199,6 +208,9 @@ class CastingService {
     final wasPlaying = _wasPlayingBeforeCast;
     _wasPlayingBeforeCast = false;
     final dev = _activeDevice!;
+    currentCastLoadId = null;
+    _completion.clear();
+    _presentationRevision++;
     _activeDevice = null;
     _currentSong = null;
     activeDeviceNotifier.value = null;
@@ -252,6 +264,9 @@ class CastingService {
   }
 
   void _releaseCastRemote() {
+    currentCastLoadId = null;
+    _completion.clear();
+    _presentationRevision++;
     _activeDevice = null;
     _currentSong = null;
     activeDeviceNotifier.value = null;
@@ -271,6 +286,7 @@ class CastingService {
     isChangingOutputNotifier.value = true;
     errorNotifier.value = null;
     final ps = PlayerService();
+    var selectedDevice = device;
     try {
       await ps.runOutputTransition((local) async {
         if (_activeDevice?.backend == CastBackend.chromecast) {
@@ -280,7 +296,18 @@ class CastingService {
         }
         await handoffToCast(
           local: local,
-          connect: () => _chromecast.connect(device),
+          connect: () async {
+            await _chromecast.connect(device);
+            try {
+              final name = (await _chromecast.sessionInfo())['name'] as String?;
+              if (name != null && name.trim().isNotEmpty)
+                selectedDevice = CastDevice(
+                  id: device.id,
+                  name: name.trim(),
+                  backend: device.backend,
+                );
+            } catch (_) {}
+          },
           preparePaused: () async {
             final song = local.song!;
             final url = await _receiverCastUrl(song);
@@ -290,13 +317,11 @@ class CastingService {
                 message: 'This track has no receiver-accessible audio source.',
               );
             }
-            await _chromecast.load(
+            await _loadCastSong(
+              song,
               url,
-              title: song.title,
-              artist: song.artist,
               autoplay: false,
               position: local.position,
-              contentType: castAudioContentType(url, song.fileType),
             );
           },
           play: _chromecast.play,
@@ -304,11 +329,16 @@ class CastingService {
             await _chromecast.disconnect();
             await CastContentServer.instance.stop();
           },
-          claimRemote: () =>
-              _claimCastRemote(device, local.song, local.position, false),
+          claimRemote: () => _claimCastRemote(
+            selectedDevice,
+            local.song,
+            local.position,
+            false,
+          ),
           releaseRemote: _releaseCastRemote,
         );
         ps.isPlayingNotifier.value = local.wasPlaying && local.song != null;
+        if (local.song != null) unawaited(_presentReceiverSong(local.song!));
         // A volume query is ancillary; its failure cannot undo a confirmed load.
         try {
           final volume = await _chromecast.getVolume();
@@ -385,12 +415,7 @@ class CastingService {
       await _dlna.play(control);
       _startDlnaPolling(control, dev.renderingControlUrl);
     } else {
-      await _chromecast.load(
-        url,
-        title: song.title,
-        artist: song.artist,
-        contentType: castAudioContentType(url, song.fileType),
-      );
+      await _loadCastSong(song, url);
     }
     errorNotifier.value = null;
     _currentSong = song;
@@ -398,7 +423,95 @@ class CastingService {
     ps.durationNotifier.value = song.duration;
     ps.positionNotifier.value = Duration.zero;
     ps.isPlayingNotifier.value = true;
+    if (dev.backend == CastBackend.chromecast)
+      unawaited(_presentReceiverSong(song));
     return true;
+  }
+
+  Future<void> _loadCastSong(
+    Song song,
+    String url, {
+    bool autoplay = true,
+    Duration position = Duration.zero,
+  }) async {
+    final loadId =
+        '${DateTime.now().microsecondsSinceEpoch}:${++_loadRevision}';
+    currentCastLoadId = loadId;
+    _completion.loaded(loadId);
+    String? art;
+    try {
+      art = await castArtwork(
+        song,
+        stillCurrent: () => currentCastLoadId == loadId,
+      ).timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    if (currentCastLoadId != loadId) throw const CastHandoffCancelled();
+    await _chromecast.load(
+      url,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      trackId: song.id,
+      loadId: loadId,
+      artworkUrl: art,
+      autoplay: autoplay,
+      position: position,
+      contentType: castAudioContentType(url, song.fileType),
+    );
+  }
+
+  Future<void> setReceiverView(String view) async {
+    if (!const ['nowplaying', 'lyrics', 'video'].contains(view) ||
+        _activeDevice?.backend != CastBackend.chromecast)
+      return;
+    receiverViewNotifier.value = view;
+    final song = _currentSong;
+    if (song != null) await _presentReceiverSong(song, reportError: true);
+  }
+
+  Future<void> _presentReceiverSong(
+    Song song, {
+    bool reportError = false,
+  }) async {
+    final revision = ++_presentationRevision;
+    final device = _activeDevice;
+    bool current() =>
+        revision == _presentationRevision &&
+        identical(device, _activeDevice) &&
+        _currentSong?.id == song.id;
+    try {
+      final view = receiverViewNotifier.value;
+      await _chromecast.sendCustom({'type': 'view', 'view': view});
+      if (!current()) return;
+      if (view == 'lyrics') {
+        final lyrics = await LyricsService().loadLyricsForSong(
+          song,
+          fetchOnline: true,
+          stillCurrent: current,
+        );
+        if (current())
+          await _chromecast.sendCustom(castLyrics(song.id, lyrics));
+      } else if (view == 'video') {
+        final id = await castMusicVideo(song);
+        if (!current()) return;
+        await _chromecast.sendCustom({
+          'type': 'video',
+          'trackId': song.id,
+          if (id != null) 'videoId': id,
+        });
+        if (id == null && reportError)
+          throw PlatformException(
+            code: 'CAST_VIDEO',
+            message: 'No matching music video was found for this song.',
+          );
+      }
+    } catch (error) {
+      if (current()) {
+        errorNotifier.value =
+            'The receiver could not display this view. Try again.';
+        if (reportError) rethrow;
+      }
+    }
   }
 
   Future<void> delegatePause() async {
@@ -436,7 +549,7 @@ class CastingService {
     if (_activeDevice!.backend == CastBackend.dlna) {
       await _dlna.stop(_activeDevice!.controlUrl!);
     } else {
-      await _chromecast.stop();
+      await _disconnectChromecast();
     }
   }
 
@@ -511,6 +624,28 @@ class CastingService {
               unawaited(disconnect());
             }
             break;
+          case 'receiverMessage':
+            try {
+              final data = e['data'] is String
+                  ? jsonDecode(e['data'] as String)
+                  : e['data'];
+              if (data is Map &&
+                  data['type'] == 'hello' &&
+                  _currentSong != null)
+                unawaited(_presentReceiverSong(_currentSong!));
+              if (data is Map &&
+                  data['type'] == 'view' &&
+                  const [
+                    'nowplaying',
+                    'lyrics',
+                    'video',
+                  ].contains(data['view'])) {
+                receiverViewNotifier.value = data['view'] as String;
+                if (_currentSong != null)
+                  unawaited(_presentReceiverSong(_currentSong!));
+              }
+            } catch (_) {}
+            break;
           case 'status':
             _handleCcStatus(e);
             break;
@@ -548,6 +683,17 @@ class CastingService {
   void _handleCcStatus(Map<String, dynamic> e) {
     if (_activeDevice?.backend != CastBackend.chromecast) return;
     final ps = PlayerService();
+    if (e['loadId'] is String && e['loadId'] != currentCastLoadId) return;
+    if (e['trackId'] is String &&
+        e['trackId'] != ps.currentSongNotifier.value?.id)
+      return;
+    if (e['trackId'] == _currentSong?.id &&
+        _completion.accept(e, changingOutput: isChangingOutputNotifier.value)) {
+      final id = e['trackId'] as String?;
+      if (id != null)
+        unawaited(ps.castTrackFinished(id, e['loadId'] as String));
+      return;
+    }
     if (e['sourceError'] == true) {
       errorNotifier.value =
           'The receiver could not play this audio format or reach its source.';

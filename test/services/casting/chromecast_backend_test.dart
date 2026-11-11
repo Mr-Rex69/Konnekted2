@@ -87,6 +87,36 @@ void main() {
     },
   );
 
+  test(
+    'cover, album, load identity and receiver view cross the native bridge',
+    () async {
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+      final backend = ChromecastBackend(propagateErrors: true);
+      await backend.load(
+        'http://192.0.2.1/song.flac',
+        album: 'Album',
+        artworkUrl: 'http://192.0.2.1/cover.jpg',
+        trackId: 'recording',
+        loadId: 'load-2',
+      );
+      await backend.sendCustom({'type': 'view', 'view': 'lyrics'});
+      expect(
+        calls.first.arguments,
+        containsPair('artworkUrl', 'http://192.0.2.1/cover.jpg'),
+      );
+      expect(calls.first.arguments, containsPair('loadId', 'load-2'));
+      expect(calls.last.arguments, {
+        'protocol': 1,
+        'type': 'view',
+        'view': 'lyrics',
+      });
+    },
+  );
+
   test('discovery excludes malformed devices without IDs', () async {
     messenger.setMockMethodCallHandler(
       channel,

@@ -30,6 +30,16 @@ class CastPendingReplyTest {
         assertEquals(17250L, load.currentTime)
     }
 
+    @Test fun artworkAndIdentityReachTheBrandedReceiver() {
+        val load = castMediaLoad("http://192.0.2.1/track.flac", "Track", "Artist", "audio/flac", false, 0,
+            "Album", "http://192.0.2.1/cover.jpg", "recording", "load-2")
+        val info = load.mediaInfo!!
+        assertEquals("Album", info.metadata!!.getString(com.google.android.gms.cast.MediaMetadata.KEY_ALBUM_TITLE))
+        assertEquals("http://192.0.2.1/cover.jpg", info.metadata!!.images.first().url.toString())
+        assertEquals("recording", info.customData!!.getString("trackId"))
+        assertEquals("load-2", info.customData!!.getString("loadId"))
+    }
+
     @Test fun contentGrantIsNeverSentAsAReceiverUrl() {
         try {
             castMediaLoad("content://library/track", null, null, "audio/flac", true, 0)

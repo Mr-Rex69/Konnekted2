@@ -4823,6 +4823,26 @@ class PlayerService {
     await _showFloatingPlayerOverlay();
   }
 
+  /// The receiver owns its clock. Its completion bypasses the paused local
+  /// engine's gapless/crossfade flags and advances the logical queue once.
+  Future<void> castTrackFinished(String trackId, String loadId) =>
+      _enqueuePlaybackRequest(() async {
+        if (!_castingService.isActive ||
+            _castingService.currentCastLoadId != loadId ||
+            currentSongNotifier.value?.id != trackId)
+          return;
+        if (loopModeNotifier.value == LoopMode.stopAfterCurrent) {
+          isPlayingNotifier.value = false;
+          return;
+        }
+        if (loopModeNotifier.value == LoopMode.one) {
+          final song = currentSongNotifier.value;
+          if (song != null) await _playInternal(song);
+        } else {
+          await _nextInternal();
+        }
+      }, remoteOutput: true);
+
   Future<void> _onSongFinished({String? endedPath}) {
     return _enqueuePlaybackRequest(
       () => _onSongFinishedInternal(endedPath: endedPath),
@@ -4830,6 +4850,7 @@ class PlayerService {
   }
 
   Future<void> _onSongFinishedInternal({String? endedPath}) async {
+    if (_castingService.isActive) return;
     _debugLog(
       '_onSongFinished: loopMode=${loopModeNotifier.value}, currentIndex=$_currentIndex, playlistLength=${_playlist.length}, usingRustBackend=$_usingRustBackend, endedPath=$endedPath',
     );

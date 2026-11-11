@@ -1308,6 +1308,7 @@ class MainActivity: FlutterActivity() {
                         call.argument<String>("contentType"),
                         call.argument<Boolean>("autoplay") ?: true,
                         call.argument<Number>("position")?.toLong() ?: 0L, result,
+                        call.argument<String>("album"), call.argument<String>("artworkUrl"), call.argument<String>("trackId"), call.argument<String>("loadId"),
                     )
                 }
                 "play" -> if (cc != null) cc.play(result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
@@ -1315,6 +1316,8 @@ class MainActivity: FlutterActivity() {
                 "stop" -> if (cc != null) cc.stop(result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
                 "seek" -> if (cc != null) cc.seek(call.argument<Number>("position")?.toLong() ?: 0L, result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
                 "setVolume" -> if (cc != null) cc.setVolume(call.argument<Number>("volume")?.toDouble() ?: 1.0, result) else result.error("CAST_UNAVAILABLE", "Google Cast is unavailable.", null)
+                "sessionInfo" -> result.success(cc?.sessionInfo())
+                "sendCustom" -> if (cc != null) cc.sendCustom(call.arguments as? Map<String, Any?> ?: emptyMap(), result) else result.error("CAST_UNAVAILABLE", "Connect to a receiver first.", null)
                 "getVolume" -> { cc?.getVolume().let { result.success(it) } }
                 "getOutputRoutes" -> result.success(cc?.getOutputRoutes())
                 "selectOutputRoute" -> result.success(cc?.selectOutputRoute(call.argument<String>("id") ?: ""))

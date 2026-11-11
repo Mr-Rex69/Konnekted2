@@ -14,6 +14,7 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   var onEvent: (([String: Any]) -> Void)?
   private var context: GCKCastContext?
+  private var receiverChannel: LokalReceiverChannel?
   private var client: GCKRemoteMediaClient?
   private var ticker: Timer?
   private var discoveryReply: Reply?
@@ -88,6 +89,13 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
         options.relative = false
         track(client.seek(with: options), reply)
       }
+    case "sessionInfo": reply(.success(["name": connectedSession?.device.friendlyName ?? "Cast receiver"]))
+    case "sendCustom":
+      guard let channel = receiverChannel, let data = try? JSONSerialization.data(withJSONObject: arguments),
+            let text = String(data: data, encoding: .utf8), channel.sendTextMessage(text, error: nil) else {
+        reject(reply, "CAST_RECEIVER", "The receiver could not accept this view."); return
+      }
+      reply(.success(nil))
     case "getOutputRoutes": reply(.success([])) // AirPlay uses AVRoutePickerView.
     case "selectOutputRoute": reply(.success(false))
     default: reject(reply, "CAST_METHOD", "This Cast command is unavailable.")
@@ -103,7 +111,7 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   private func prepare() -> GCKCastContext {
     if let context = context { return context }
-    let criteria = GCKDiscoveryCriteria(applicationID: kGCKDefaultMediaReceiverApplicationID)
+    let criteria = GCKDiscoveryCriteria(applicationID: "2060B9B3")
     let options = GCKCastOptions(discoveryCriteria: criteria)
     options.disableDiscoveryAutostart = true
     options.startDiscoveryAfterFirstTapOnCastButton = false
@@ -240,7 +248,12 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
     let metadata = GCKMediaMetadata(metadataType: .musicTrack)
     if let title = args["title"] as? String { metadata.setString(title, forKey: kGCKMetadataKeyTitle) }
     if let artist = args["artist"] as? String { metadata.setString(artist, forKey: kGCKMetadataKeyArtist) }
+    if let album = args["album"] as? String { metadata.setString(album, forKey: kGCKMetadataKeyAlbumTitle) }
+    if let art = args["artworkUrl"] as? String, let image = URL(string: art), ["http", "https"].contains(image.scheme ?? "") {
+      metadata.addImage(GCKImage(url: image, width: 0, height: 0))
+    }
     let media = GCKMediaInformationBuilder(contentURL: url)
+    media.customData = ["lokal": 1, "trackId": args["trackId"] as? String ?? "", "loadId": args["loadId"] as? String ?? ""]
     media.streamType = .buffered
     media.contentType = args["contentType"] as? String ?? "audio/*"
     media.metadata = metadata
@@ -266,6 +279,10 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   private func attach(_ session: GCKCastSession) {
     detach()
+    let channel = LokalReceiverChannel(namespace: "urn:x-cast:app.lokal.cast")
+    channel.message = { [weak self] text in self?.onEvent?(["event": "receiverMessage", "data": text]) }
+    session.add(channel)
+    receiverChannel = channel
     client = session.remoteMediaClient
     client?.add(self)
     ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.emitStatus() }
@@ -273,6 +290,8 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
   }
 
   private func detach() {
+    if let channel = receiverChannel { context?.sessionManager.currentCastSession?.remove(channel) }
+    receiverChannel = nil
     ticker?.invalidate()
     ticker = nil
     client?.remove(self)
@@ -293,7 +312,10 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
     }
     onEvent?(["event": "status", "position": milliseconds(client.approximateStreamPosition()),
               "duration": milliseconds(status.mediaInformation?.streamDuration ?? 0),
-              "playing": status.playerState == .playing])
+              "playing": status.playerState == .playing,
+              "loadId": (status.mediaInformation?.customData as? [String: Any])?["loadId"] as? String ?? "",
+              "trackId": (status.mediaInformation?.customData as? [String: Any])?["trackId"] as? String ?? "",
+              "finished": status.playerState == .idle && status.idleReason == .finished])
     onEvent?(["event": "volume", "volume": Double(session.currentDeviceVolume)])
   }
 
@@ -331,6 +353,7 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   func sessionManager(_ sessionManager: GCKSessionManager, didEnd session: GCKCastSession, withError error: Error?) {
     detach()
+    if error == nil { receiverMayBePlaying = false }
     if !receiverMayBePlaying { ownedDeviceID = nil }
     finishConnection(.failure(Failure(code: "CAST_DISCONNECTED", message: "The Cast session ended before connecting.")))
     if receiverMayBePlaying {
@@ -406,4 +429,9 @@ private final class LokalCastRequest: NSObject, GCKRequestDelegate {
   func request(_ request: GCKRequest, didAbortWith reason: GCKRequestAbortReason) {
     finish(.failure(.init(code: "CAST_CANCELLED", message: "The Cast command was interrupted.")))
   }
+}
+
+private final class LokalReceiverChannel: GCKCastChannel {
+  var message: ((String) -> Void)?
+  override func didReceiveTextMessage(_ text: String) { message?(text) }
 }
