@@ -1,0 +1,30 @@
+name: Tablet player layout
+on:
+  pull_request:
+    paths:
+      - 'lib/features/konnekted/konnekted_tablet_*.dart'
+      - 'lib/features/konnekted/tablet_playback.dart'
+      - 'test/konnekted/tablet_player_sidebar_test.dart'
+      - '.github/workflows/tablet-player-layout.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tablet-player-layout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Analyze tablet player footer
+        run: flutter analyze --no-pub lib/features/konnekted/konnekted_tablet_footer.dart
+      - name: Verify layout, sidebar transitions and playback controls
+        run: flutter test --no-pub test/konnekted/tablet_player_sidebar_test.dart
+      - run: git diff --exit-code -- pubspec.lock
