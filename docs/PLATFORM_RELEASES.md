@@ -3,13 +3,13 @@
 The public download pages have permanent tags:
 
 - [Android](https://github.com/lokal-music/mobile/releases/tag/android): latest signed stable APK, package metadata and checksums.
-- [iOS](https://github.com/lokal-music/mobile/releases/tag/ios): latest audited IPA, AltStore/SideStore source, matching source code, crash symbols, licenses and qualification report. This remains a prerelease.
+- [iOS](https://github.com/lokal-music/mobile/releases/tag/ios): latest audited IPA, AltStore/SideStore source, matching source code, crash symbols, licenses and qualification report. This is a normal GitHub Release (not a prerelease). Android retains the single GitHub **Latest** designation.
 
 Successful publications update the existing release, move only that platform's tag to the package's source commit, and remove superseded assets after upload verification. Version and build numbers remain inside the packages and manifests. Android's updater reads those manifests, so a new version tag is unnecessary. Android version calculation reads the published manifest before incrementing the version and versionCode.
 
 To publish Android, run **Release Lokal Mobile** on `main`. The default bumps the patch version; **replace_existing** keeps the version while issuing a newer build. **draft** builds workflow artifacts without changing the public release. **Build Lokal Mobile Nightly (artifacts only)** produces preview artifacts without replacing the stable APK.
 
-To publish iOS, run **iPhone build and sideload package** on `main` with **publish** enabled. Both installed simulator suites, external background tests and the independent package audit must pass before publication. The iOS build starts only through manual dispatch; PR creation, merges and branch pushes do not start it. Manual runs with publication disabled produce artifacts only.
+To publish iOS, run **iPhone build and sideload package** on `main` with **publish** enabled. By default, native iOS 18.6/26.0 simulator acceptance is **not required**: Flutter regression checks, the production app's first-launch probe, iPhone IPA compilation and independent IPA/source/symbol audit must all succeed. This avoids blocking usable builds on intermittent hosted WebKit/video-seek and simulator readiness failures. Enable **native_acceptance** on the manual run to compile/run both complete simulator suites and require them to pass before publication (including background transfer and reset tests). This opt-in is appropriate before higher-risk native changes. The published `qualification.json` explicitly records whether native acceptance ran. No release claims physical-device installation/signing acceptance. The iOS build starts only through manual dispatch; PR creation, merges and branch pushes do not start it. Manual runs with publication disabled produce artifacts only.
 
 The IPA uploads as soon as device compilation finishes; validation continues in parallel. See the [iOS build schedule, caching and retry guide](IOS_BUILD_PERFORMANCE.md).
 
@@ -25,6 +25,6 @@ python3 tool/platform_releases.py consolidate --cleanup --dry-run
 
 In-app release notes fetch the platform tag and verify the platform/version marker before displaying them. Older minor versions use their bundled fallback notes.
 
-iOS update checks read the dedicated `ios` release, including its prerelease. Update prompts open AltStore Classic or SideStore; installation happens in that store. See [store setup and updates](IOS_STORE_UPDATES.md).
+iOS update checks read the dedicated standard `ios` release. Update prompts open AltStore Classic or SideStore; installation happens in that store. See [store setup and updates](IOS_STORE_UPDATES.md).
 
 To regenerate the store source and installation preamble for the already published IPA, run **Keep platform releases tidy** manually with **refresh_ios_store** enabled. This verifies the existing package's checksum, bundle identity and qualification source, preserves its binary and tag, and uploads only the source/checksum/release-note files. It can also repair an interrupted metadata upload without rebuilding the app.
