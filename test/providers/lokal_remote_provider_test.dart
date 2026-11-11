@@ -22,7 +22,7 @@ class _DelayedPairing extends LokalLinkService {
     required Uri origin,
     required String code,
     String? expectedDesktopId,
-    String deviceName = 'Lokal phone',
+    String? deviceName,
   }) {
     started.complete();
     return response.future;
