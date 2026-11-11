@@ -29,11 +29,21 @@ class FullPlayerHeader extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(
     height: 58,
     child: BackdropGroup(
-      child: Row(
+      // The right-hand pair takes more space than the Back action. A Row
+      // centers the route pill in the leftover gap, not on the screen.
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          _action(LucideIcons.chevronLeft, lokalText('Back'), onClose),
-          const SizedBox(width: 8),
-          Expanded(
+          Positioned(
+            left: 0,
+            top: 7,
+            child: _action(LucideIcons.chevronLeft, lokalText('Back'), onClose),
+          ),
+          Padding(
+            // Mirror the larger right-hand cluster (44 + 6 + 44), plus 8
+            // points of breathing room, so the pill is *actually* centered.
+            // Its label may ellipsize on narrow phones without overlapping.
+            padding: const EdgeInsets.symmetric(horizontal: 102),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 215),
@@ -77,15 +87,23 @@ class FullPlayerHeader extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          _action(
-            LucideIcons.cast,
-            lokalText('Cast'),
-            onCast,
-            selected: isCasting,
+          Positioned(
+            right: 0,
+            top: 7,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _action(
+                  LucideIcons.cast,
+                  lokalText('Cast'),
+                  onCast,
+                  selected: isCasting,
+                ),
+                const SizedBox(width: 6),
+                _action(Icons.more_vert, lokalText('More options'), onMore),
+              ],
+            ),
           ),
-          const SizedBox(width: 6),
-          _action(Icons.more_vert, lokalText('More options'), onMore),
         ],
       ),
     ),
@@ -102,7 +120,7 @@ class FullPlayerHeader extends StatelessWidget {
     selected: selected,
     child: SizedBox.square(
       dimension: 44,
-      child: Icon(icon, size: 22, color: FullPlayerVisuals.primaryText),
+      child: Icon(icon, size: 20, color: FullPlayerVisuals.primaryText.withValues(alpha: .90)),
     ),
   );
 
@@ -124,7 +142,7 @@ class FullPlayerHeader extends StatelessWidget {
           grouped: true,
           shadow: false,
           singlePassLens: true,
-          backdropBlurSigma: 12,
+          backdropBlurSigma: 9,
           liquidTintOpacity: selected
               ? FullPlayerVisuals.headerSelectedOpacity
               : FullPlayerVisuals.headerOpacity,
@@ -132,8 +150,8 @@ class FullPlayerHeader extends StatelessWidget {
               ? FullPlayerVisuals.headerSelectedOpacity
               : FullPlayerVisuals.headerOpacity,
           performanceTintOpacity: FullPlayerVisuals.headerPerformanceOpacity,
-          pronouncedRim: true,
-          rimStrength: selected ? 1.2 : .8,
+          pronouncedRim: false,
+          rimStrength: selected ? .35 : .16,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
