@@ -3004,6 +3004,15 @@ class MainActivity: FlutterActivity() {
         extensionHint: String?,
         maxSizeBytes: Long? = null,
         maxStagingBytes: Long? = null,
+    ): String? = PlaybackStagingGate.withUri(uriString) {
+        cacheUriForPlaybackLocked(uriString, extensionHint, maxSizeBytes, maxStagingBytes)
+    }
+
+    private fun cacheUriForPlaybackLocked(
+        uriString: String,
+        extensionHint: String?,
+        maxSizeBytes: Long? = null,
+        maxStagingBytes: Long? = null,
     ): String? {
         val uri = Uri.parse(uriString)
         val normalizedExt = resolveStagedExtension(uri, extensionHint)
