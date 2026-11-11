@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # GitHub's Azure apt mirror can trickle downloads for tens of minutes.
-# Use isolated official Ubuntu sources, and bound downloads before touching dpkg.
+# Prefer isolated official Ubuntu sources, with a bounded Azure mirror fallback
+# when their indexes are unavailable. Keep apt signature verification enabled.
 set -euo pipefail
 source /etc/os-release
 : "${VERSION_CODENAME:?Expected an Ubuntu runner}"
@@ -24,7 +25,15 @@ apt_options=(
 packages=(libclang-dev clang cmake ninja-build pkg-config libasound2-dev
           libudev-dev libusb-1.0-0-dev autoconf automake libtool)
 # Timeouts only surround index/archive downloads, never dpkg unpack/configure.
-sudo timeout --kill-after=15s 120s apt-get "${apt_options[@]}" update --error-on=any
+if ! sudo timeout --kill-after=15s 120s apt-get "${apt_options[@]}" update --error-on=any; then
+  echo 'Ubuntu indexes unavailable; trying the signed Azure Ubuntu mirror.'
+  cat > "$apt_sources" <<SOURCES
+deb https://azure.archive.ubuntu.com/ubuntu $VERSION_CODENAME main universe restricted multiverse
+deb https://azure.archive.ubuntu.com/ubuntu $VERSION_CODENAME-updates main universe restricted multiverse
+deb https://azure.archive.ubuntu.com/ubuntu $VERSION_CODENAME-security main universe restricted multiverse
+SOURCES
+  sudo timeout --kill-after=15s 120s apt-get "${apt_options[@]}" update --error-on=any
+fi
 if ! sudo timeout --kill-after=15s 240s apt-get "${apt_options[@]}" install \
     --download-only --no-install-recommends -y "${packages[@]}"; then
   echo '::error::Host dependency download failed or exceeded four minutes; no package installation was started.'
