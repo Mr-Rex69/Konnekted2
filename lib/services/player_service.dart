@@ -4832,7 +4832,12 @@ class PlayerService {
             currentSongNotifier.value?.id != trackId)
           return;
         if (loopModeNotifier.value == LoopMode.stopAfterCurrent) {
-          isPlayingNotifier.value = false;
+          final song = currentSongNotifier.value;
+          if (song != null) {
+            await _castingService.delegatePlay(song, autoplay: false);
+            positionNotifier.value = Duration.zero;
+            isPlayingNotifier.value = false;
+          }
           return;
         }
         if (loopModeNotifier.value == LoopMode.one) {
@@ -7108,6 +7113,14 @@ class PlayerService {
         'on ${currentEngineType.logLabel}: $e',
       );
       debugPrintStack(stackTrace: stackTrace);
+      if (_castingService.isActive) {
+        final confirmed = _castingService.currentSong;
+        if (confirmed != null) {
+          _selectPlaybackSong(confirmed);
+          durationNotifier.value = confirmed.duration;
+          _castingService.replayConfirmedStatus();
+        }
+      }
       rethrow;
     } finally {
       // Only the most-recent play request is allowed to clear the loading

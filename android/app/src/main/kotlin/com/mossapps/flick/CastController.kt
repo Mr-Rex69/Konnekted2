@@ -293,7 +293,21 @@ class CastController(private val context: Context) {
     private fun client(): RemoteMediaClient? = connectedSession?.remoteMediaClient
         ?: castContext?.sessionManager?.currentCastSession?.takeIf { it.isConnected }?.remoteMediaClient
 
-    fun sessionInfo(): Map<String, Any?> = mapOf("name" to (connectedSession?.castDevice?.friendlyName ?: mediaRouter.selectedRoute.name.toString()))
+    fun sessionInfo(): Map<String, Any?> {
+        val client = connectedSession?.remoteMediaClient
+        val status = client?.mediaStatus
+        val data = status?.mediaInfo?.customData
+        return mapOf(
+            "name" to (connectedSession?.castDevice?.friendlyName ?: mediaRouter.selectedRoute.name.toString()),
+            "trackId" to (data?.optString("trackId") ?: reportedTrackId),
+            "loadId" to (data?.optString("loadId") ?: reportedLoadId),
+            "position" to client?.approximateStreamPosition,
+            "duration" to client?.streamDuration,
+            "playing" to client?.isPlaying,
+            "finished" to (status?.playerState == MediaStatus.PLAYER_STATE_IDLE && status?.idleReason == MediaStatus.IDLE_REASON_FINISHED),
+            "sourceError" to (status?.idleReason == MediaStatus.IDLE_REASON_ERROR),
+        )
+    }
 
     fun sendCustom(data: Map<String, Any?>, result: MethodChannel.Result) {
         val session = connectedSession

@@ -91,7 +91,7 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
         options.relative = false
         track(client.seek(with: options), reply)
       }
-    case "sessionInfo": reply(.success(["name": connectedSession?.device.friendlyName ?? "Cast receiver"]))
+    case "sessionInfo": reply(.success(sessionInfo()))
     case "sendCustom":
       guard let channel = receiverChannel, let data = try? JSONSerialization.data(withJSONObject: arguments),
             let text = String(data: data, encoding: .utf8), channel.sendTextMessage(text, error: nil) else {
@@ -304,6 +304,23 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
     for request in pending { request.cancel() }
   }
 
+  private func sessionInfo() -> [String: Any] {
+    var info: [String: Any] = ["name": connectedSession?.device.friendlyName ?? "Cast receiver"]
+    if let client = client, let status = client.mediaStatus {
+      let data = status.mediaInformation?.customData as? [String: Any]
+      info["loadId"] = data?["loadId"] as? String ?? reportedLoadID ?? ""
+      info["trackId"] = data?["trackId"] as? String ?? reportedTrackID ?? ""
+      let position = client.approximateStreamPosition()
+      info["position"] = position.isFinite ? Int(max(0, min(position, Double(Int32.max))) * 1000) : 0
+      let duration = status.mediaInformation?.streamDuration ?? 0
+      info["duration"] = duration.isFinite ? Int(max(0, min(duration, Double(Int32.max))) * 1000) : 0
+      info["playing"] = status.playerState == .playing
+      info["finished"] = status.playerState == .idle && status.idleReason == .finished
+      info["sourceError"] = status.playerState == .idle && status.idleReason == .error
+    }
+    return info
+  }
+
   private func emitStatus() {
     guard let session = connectedSession, let client = client, let status = client.mediaStatus else { return }
     if let data = status.mediaInformation?.customData as? [String: Any], let id = data["loadId"] as? String, !id.isEmpty {
@@ -323,7 +340,8 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
               "playing": status.playerState == .playing,
               "loadId": reportedLoadID ?? "",
               "trackId": reportedTrackID ?? "",
-              "finished": status.playerState == .idle && status.idleReason == .finished])
+              "finished": status.playerState == .idle && status.idleReason == .finished,
+              "sourceError": status.playerState == .idle && status.idleReason == .error])
     onEvent?(["event": "volume", "volume": Double(session.currentDeviceVolume)])
   }
 

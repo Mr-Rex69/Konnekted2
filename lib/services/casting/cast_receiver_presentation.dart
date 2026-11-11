@@ -29,18 +29,60 @@ Map<String, dynamic> castLyrics(String trackId, LyricsData? lyrics) => {
 /// Distinguishes repeated FINISHED reports and late reports from an earlier
 /// load of the same recording (repeat-one, manual replay, reconnect).
 class CastCompletionGate {
-  String? _loadId;
-  void loaded(String loadId) => _loadId = loadId;
-  void clear() => _loadId = null;
-  bool accept(Map<String, dynamic> event, {required bool changingOutput}) {
-    if (changingOutput ||
-        event['finished'] != true ||
-        _loadId == null ||
-        event['loadId'] != _loadId)
-      return false;
-    _loadId = null;
+  _CastCompletion? _current;
+  _CastCompletion? _previous;
+  String? get loadId => _current?.loadId;
+
+  void loaded(String loadId) {
+    _previous = null;
+    _current = _CastCompletion(loadId);
+  }
+
+  void begin(String loadId) {
+    _previous = _current;
+    _current = _CastCompletion(loadId);
+  }
+
+  void commit(String loadId) {
+    if (_current?.loadId == loadId) _previous = null;
+  }
+
+  bool rollback(String loadId) {
+    if (_current?.loadId != loadId) return false;
+    _current = _previous;
+    _previous = null;
     return true;
   }
+
+  void clear() {
+    _current = null;
+    _previous = null;
+  }
+
+  // Retain a terminal report even when LOAD has not replied or the output
+  // handoff has not committed. Android need not repeat its final idle status.
+  void observe(Map<String, dynamic> event) {
+    if (event['finished'] != true) return;
+    for (final state in [_current, _previous]) {
+      if (state != null && !state.consumed && event['loadId'] == state.loadId)
+        state.pending = Map.of(event);
+    }
+  }
+
+  Map<String, dynamic>? takePending({required bool ready}) {
+    final state = _current;
+    if (!ready || state == null || state.consumed || state.pending == null)
+      return null;
+    state.consumed = true;
+    return state.pending;
+  }
+}
+
+class _CastCompletion {
+  _CastCompletion(this.loadId);
+  final String loadId;
+  Map<String, dynamic>? pending;
+  bool consumed = false;
 }
 
 Future<String?> castArtwork(Song song, {bool Function()? stillCurrent}) async {
@@ -71,6 +113,8 @@ Future<String?> castArtwork(Song song, {bool Function()? stillCurrent}) async {
       ? 'image/webp'
       : header.length >= 3 && String.fromCharCodes(header.take(3)) == 'GIF'
       ? 'image/gif'
+      : header.length >= 2 && header[0] == 0x42 && header[1] == 0x4d
+      ? 'image/bmp'
       : 'image/jpeg';
   return CastContentServer.instance.serve(
     path,
@@ -81,7 +125,7 @@ Future<String?> castArtwork(Song song, {bool Function()? stillCurrent}) async {
 
 String _imageExtension(String path) {
   final extension = path.split('.').last.toLowerCase();
-  return ['png', 'webp', 'gif', 'jpg', 'jpeg'].contains(extension)
+  return ['png', 'webp', 'gif', 'bmp', 'jpg', 'jpeg'].contains(extension)
       ? '.$extension'
       : '.jpg';
 }
@@ -93,8 +137,8 @@ Future<String?> castMusicVideo(Song song) async {
     matches =
         jsonDecode(prefs.getString('lokal_music_video_matches') ?? '{}') as Map;
   } catch (_) {}
-  if (matches[song.id] is String && (matches[song.id] as String).isNotEmpty)
-    return matches[song.id] as String;
+  if (matches[song.id] case final String saved)
+    return saved.isEmpty ? null : saved;
   // Called only for the explicitly selected receiver Video view.
   final client = http.Client();
   try {

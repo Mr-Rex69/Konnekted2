@@ -62,6 +62,8 @@ class CastingService {
   final _completion = CastCompletionGate();
   String? currentCastLoadId;
   int _loadRevision = 0;
+  String? _pendingCastLoadId;
+  Map<String, dynamic>? _lastCcStatus;
   int _presentationRevision = 0;
 
   CastDevice? _activeDevice;
@@ -210,6 +212,8 @@ class CastingService {
     final dev = _activeDevice!;
     currentCastLoadId = null;
     _completion.clear();
+    _pendingCastLoadId = null;
+    _lastCcStatus = null;
     _presentationRevision++;
     _activeDevice = null;
     _currentSong = null;
@@ -266,6 +270,8 @@ class CastingService {
   void _releaseCastRemote() {
     currentCastLoadId = null;
     _completion.clear();
+    _pendingCastLoadId = null;
+    _lastCcStatus = null;
     _presentationRevision++;
     _activeDevice = null;
     _currentSong = null;
@@ -361,6 +367,7 @@ class CastingService {
       );
     } finally {
       isChangingOutputNotifier.value = false;
+      _drainCastCompletion();
       unawaited(ps.refreshNotificationState());
     }
   }
@@ -383,7 +390,7 @@ class CastingService {
   }
 
   // Called by PlayerService._playInternal hook. Returns true if handled.
-  Future<bool> delegatePlay(Song song) async {
+  Future<bool> delegatePlay(Song song, {bool autoplay = true}) async {
     if (_activeDevice == null) return false;
     final ps = PlayerService();
     final String? url;
@@ -415,14 +422,15 @@ class CastingService {
       await _dlna.play(control);
       _startDlnaPolling(control, dev.renderingControlUrl);
     } else {
-      await _loadCastSong(song, url);
+      await _loadCastSong(song, url, autoplay: autoplay);
     }
     errorNotifier.value = null;
     _currentSong = song;
     ps.currentSongNotifier.value = song;
     ps.durationNotifier.value = song.duration;
     ps.positionNotifier.value = Duration.zero;
-    ps.isPlayingNotifier.value = true;
+    ps.isPlayingNotifier.value = autoplay;
+    _drainCastCompletion();
     if (dev.backend == CastBackend.chromecast)
       unawaited(_presentReceiverSong(song));
     return true;
@@ -436,42 +444,93 @@ class CastingService {
   }) async {
     final loadId =
         '${DateTime.now().microsecondsSinceEpoch}:${++_loadRevision}';
+    final device = _activeDevice;
+    final previousLoadId = currentCastLoadId;
+    final previousSong = _currentSong;
+    final previousStatus = _lastCcStatus;
     currentCastLoadId = loadId;
-    _completion.loaded(loadId);
-    String? art;
+    _pendingCastLoadId = loadId;
+    _lastCcStatus = null;
+    _completion.begin(loadId);
     try {
-      art = await castArtwork(
-        song,
-        stillCurrent: () => currentCastLoadId == loadId,
-      ).timeout(const Duration(seconds: 5));
-    } catch (_) {}
-    if (currentCastLoadId != loadId) throw const CastHandoffCancelled();
-    await _chromecast.load(
-      url,
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      trackId: song.id,
-      loadId: loadId,
-      artworkUrl: art,
-      autoplay: autoplay,
-      position: position,
-      contentType: castAudioContentType(url, song.fileType),
-    );
+      String? art;
+      try {
+        art = await castArtwork(
+          song,
+          stillCurrent: () => currentCastLoadId == loadId,
+        ).timeout(const Duration(seconds: 5));
+      } catch (_) {}
+      if (currentCastLoadId != loadId) throw const CastHandoffCancelled();
+      await _chromecast.load(
+        url,
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        trackId: song.id,
+        loadId: loadId,
+        artworkUrl: art,
+        autoplay: autoplay,
+        position: position,
+        contentType: castAudioContentType(url, song.fileType),
+      );
+      _completion.commit(loadId);
+    } catch (_) {
+      // A failed/late reply does not establish what is actually on the TV.
+      // Reconcile against native SDK media status, without reviving an old
+      // session or overwriting a more recent load.
+      Map<String, dynamic> status = {};
+      try {
+        status = await _chromecast.sessionInfo();
+      } catch (_) {}
+      if (identical(device, _activeDevice) && currentCastLoadId == loadId) {
+        if (status['loadId'] == loadId &&
+            status['trackId'] == song.id &&
+            status['sourceError'] != true) {
+          _completion.commit(loadId);
+          _lastCcStatus = status;
+          _completion.observe(status);
+          return; // Receiver confirms the requested media despite the lost reply.
+        }
+        if (previousLoadId != null &&
+            status['loadId'] == previousLoadId &&
+            status['trackId'] == previousSong?.id) {
+          _completion.rollback(loadId);
+          currentCastLoadId = previousLoadId;
+          _currentSong = previousSong;
+          _lastCcStatus = {...?previousStatus, ...status};
+          _completion.observe(status);
+        } else {
+          currentCastLoadId = null;
+          _completion.clear();
+          _currentSong = null;
+          _lastCcStatus = null;
+        }
+      }
+      rethrow;
+    } finally {
+      if (_pendingCastLoadId == loadId) _pendingCastLoadId = null;
+    }
   }
 
   Future<void> setReceiverView(String view) async {
     if (!const ['nowplaying', 'lyrics', 'video'].contains(view) ||
         _activeDevice?.backend != CastBackend.chromecast)
       return;
+    final device = _activeDevice;
+    final revision = ++_presentationRevision;
+    await _chromecast.sendCustom({'type': 'view', 'view': view});
+    if (!identical(device, _activeDevice) || revision != _presentationRevision)
+      return;
     receiverViewNotifier.value = view;
     final song = _currentSong;
-    if (song != null) await _presentReceiverSong(song, reportError: true);
+    if (song != null)
+      await _presentReceiverSong(song, reportError: true, sendView: false);
   }
 
   Future<void> _presentReceiverSong(
     Song song, {
     bool reportError = false,
+    bool sendView = true,
   }) async {
     final revision = ++_presentationRevision;
     final device = _activeDevice;
@@ -481,7 +540,8 @@ class CastingService {
         _currentSong?.id == song.id;
     try {
       final view = receiverViewNotifier.value;
-      await _chromecast.sendCustom({'type': 'view', 'view': view});
+      if (sendView)
+        await _chromecast.sendCustom({'type': 'view', 'view': view});
       if (!current()) return;
       if (view == 'lyrics') {
         final lyrics = await LyricsService().loadLyricsForSong(
@@ -518,7 +578,7 @@ class CastingService {
     if (_activeDevice == null) return;
     if (_activeDevice!.backend == CastBackend.dlna) {
       await _dlna.pause(_activeDevice!.controlUrl!);
-    } else {
+    } else if (_lastCcStatus?['finished'] != true) {
       await _chromecast.pause();
     }
     PlayerService().isPlayingNotifier.value = false;
@@ -538,6 +598,11 @@ class CastingService {
     if (_activeDevice == null) return;
     if (_activeDevice!.backend == CastBackend.dlna) {
       await _dlna.seek(_activeDevice!.controlUrl!, position);
+    } else if (_lastCcStatus?['finished'] == true && _currentSong != null) {
+      final song = _currentSong!;
+      final url = await _receiverCastUrl(song);
+      if (url == null) throw StateError('The Cast source is unavailable.');
+      await _loadCastSong(song, url, autoplay: false, position: position);
     } else {
       await _chromecast.seek(position);
     }
@@ -682,18 +747,18 @@ class CastingService {
 
   void _handleCcStatus(Map<String, dynamic> e) {
     if (_activeDevice?.backend != CastBackend.chromecast) return;
+    // Record both the in-flight and prior load before checking presentation:
+    // a short track can finish before LOAD replies and the song UI commits.
+    _completion.observe(e);
     final ps = PlayerService();
     if (e['loadId'] is String && e['loadId'] != currentCastLoadId) return;
+    if (_pendingCastLoadId != null) return;
     if (e['trackId'] is String &&
         e['trackId'] != ps.currentSongNotifier.value?.id)
       return;
-    if (e['trackId'] == _currentSong?.id &&
-        _completion.accept(e, changingOutput: isChangingOutputNotifier.value)) {
-      final id = e['trackId'] as String?;
-      if (id != null)
-        unawaited(ps.castTrackFinished(id, e['loadId'] as String));
-      return;
-    }
+    _lastCcStatus = Map.of(e);
+    _drainCastCompletion();
+    if (e['finished'] == true) return;
     if (e['sourceError'] == true) {
       errorNotifier.value =
           'The receiver could not play this audio format or reach its source.';
@@ -710,6 +775,30 @@ class CastingService {
     if (duration != null && duration > 0) {
       ps.durationNotifier.value = Duration(milliseconds: duration);
     }
+  }
+
+  void _drainCastCompletion() {
+    final song = _currentSong;
+    final ps = PlayerService();
+    final event = _completion.takePending(
+      ready:
+          _activeDevice?.backend == CastBackend.chromecast &&
+          !isChangingOutputNotifier.value &&
+          _pendingCastLoadId == null &&
+          song != null &&
+          ps.currentSongNotifier.value?.id == song.id,
+    );
+    if (event == null || event['trackId'] != song?.id) return;
+    _lastCcStatus = event;
+    unawaited(ps.castTrackFinished(song!.id, event['loadId'] as String));
+  }
+
+  /// Replay only a receiver-confirmed prior load after PlayerService restores
+  /// the selected queue occurrence following a failed track replacement.
+  void replayConfirmedStatus() {
+    final status = _lastCcStatus;
+    if (status != null) _handleCcStatus(status);
+    _drainCastCompletion();
   }
 
   void _handleDlnaRouteSelected(Map<String, dynamic> e) {
