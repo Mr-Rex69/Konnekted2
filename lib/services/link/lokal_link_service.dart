@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/lokal_remote_state.dart';
 import '../lokal_remote_service.dart';
 import 'link_protocol.dart';
+import 'link_identity.dart';
 
 class LokalDiscoveredDesktop {
   const LokalDiscoveredDesktop({
@@ -51,6 +52,10 @@ class LokalPairingLink {
 
 /// Paired LAN socket. Secrets stay in headers and encrypted storage, never URLs.
 class LokalLinkService {
+  LokalLinkService({http.Client? identityClient})
+    : _identityClient = identityClient ?? http.Client();
+
+  final http.Client _identityClient;
   static const channel = MethodChannel('lokal/desktop_link');
   final _messages = StreamController<LinkMessage>.broadcast();
   final _connections = StreamController<bool>.broadcast();
@@ -58,6 +63,7 @@ class LokalLinkService {
   WebSocket? _socket;
   StreamSubscription<dynamic>? _subscription;
   bool _closed = false;
+  int _epoch = 0;
   Stream<LinkMessage> get messages => _messages.stream;
   Stream<bool> get connections => _connections.stream;
   bool get connected => _socket?.readyState == WebSocket.open;
@@ -148,29 +154,106 @@ class LokalLinkService {
     );
   }
 
-  Future<void> connect(LokalRemoteCredentials credentials) async {
+  Future<Uri> connect(LokalRemoteCredentials credentials) async {
+    final epoch = ++_epoch;
+    await _disconnectSocket();
     await _requestLocalNetwork();
-    await disconnect();
-    if (_closed) return;
-    final uri = credentials.origin.replace(
-      scheme: credentials.origin.scheme == 'https' ? 'wss' : 'ws',
+    _checkEpoch(epoch);
+    try {
+      await _openSocket(credentials, credentials.origin, epoch);
+      return credentials.origin;
+    } catch (_) {
+      _checkEpoch(epoch);
+      if (credentials.desktopId == null ||
+          credentials.remoteToken.isEmpty ||
+          credentials.origin.scheme != 'http')
+        rethrow;
+      // A DHCP lease or Wi-Fi/Ethernet change can invalidate the QR address.
+      // Retain the same pairing; discovery never creates or replaces one.
+      final discovered = await discover().timeout(const Duration(seconds: 8));
+      _checkEpoch(epoch);
+      final seen = <Uri>{credentials.origin};
+      for (final desktop
+          in discovered
+              .where((item) => item.id == credentials.desktopId)
+              .take(8)) {
+        final address = InternetAddress.tryParse(desktop.host);
+        if (address == null ||
+            desktop.port < 1 ||
+            desktop.port > 65535 ||
+            address.isMulticast ||
+            address.rawAddress.every((byte) => byte == 0))
+          continue;
+        final origin = desktop.origin;
+        if (!seen.add(origin)) continue;
+        try {
+          final verified = await verifyLinkedDesktop(
+            client: _identityClient,
+            origin: origin,
+            credentials: credentials,
+            deviceId: await deviceId(),
+          );
+          _checkEpoch(epoch);
+          if (!verified) continue;
+          await _openSocket(credentials, origin, epoch);
+          return origin;
+        } on Object {
+          _checkEpoch(epoch);
+          // Try another address of this same desktop, never another pairing.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  void _checkEpoch(int epoch) {
+    if (_closed || epoch != _epoch) {
+      throw const LokalRemoteNetworkException('Desktop connection changed.');
+    }
+  }
+
+  Future<void> _openSocket(
+    LokalRemoteCredentials credentials,
+    Uri origin,
+    int epoch,
+  ) async {
+    _checkEpoch(epoch);
+    final uri = origin.replace(
+      scheme: origin.scheme == 'https' ? 'wss' : 'ws',
       path: '/api/remote/ws',
     );
-    final socket = await WebSocket.connect(
-      uri.toString(),
-      headers: {
-        'x-remote-token': credentials.remoteToken,
-        if (credentials.apiKey.isNotEmpty) 'x-api-key': credentials.apiKey,
-      },
-    ).timeout(const Duration(seconds: 8));
-    if (_closed) {
-      await socket.close();
-      return;
-    }
+    var expired = false;
+    final socket =
+        await WebSocket.connect(
+              uri.toString(),
+              headers: {
+                'x-remote-token': credentials.remoteToken,
+                if (credentials.apiKey.isNotEmpty)
+                  'x-api-key': credentials.apiKey,
+              },
+            )
+            .then((socket) {
+              if (expired || _closed || epoch != _epoch) {
+                unawaited(socket.close());
+                throw const LokalRemoteNetworkException(
+                  'Desktop connection changed.',
+                );
+              }
+              return socket;
+            })
+            .timeout(
+              const Duration(seconds: 8),
+              onTimeout: () {
+                expired = true;
+                throw TimeoutException('Desktop connection timed out.');
+              },
+            );
+    _checkEpoch(epoch);
     _socket = socket;
     socket.pingInterval = const Duration(seconds: 25);
     _subscription = socket.listen(
       (raw) {
+        if (!identical(_socket, socket)) return;
         if (raw is! String || raw.length > 1024 * 1024) return;
         try {
           final message = LinkMessage.decode(raw);
@@ -184,16 +267,22 @@ class LokalLinkService {
         }
       },
       onError: (Object error) {
-        _lost();
+        _lost(socket);
       },
-      onDone: _lost,
+      onDone: () => _lost(socket),
       cancelOnError: true,
     );
     _connections.add(true);
   }
 
-  void _lost() {
+  void _lost(WebSocket socket) {
+    if (!identical(_socket, socket)) return;
     _socket = null;
+    _failRequests();
+    if (!_closed) _connections.add(false);
+  }
+
+  void _failRequests() {
     for (final request in _requests.values) {
       if (!request.isCompleted)
         request.completeError(
@@ -201,7 +290,6 @@ class LokalLinkService {
         );
     }
     _requests.clear();
-    if (!_closed) _connections.add(false);
   }
 
   void send(String type, Map<String, dynamic> body, {String? id}) {
@@ -229,17 +317,25 @@ class LokalLinkService {
   }
 
   Future<void> disconnect() async {
+    ++_epoch;
+    await _disconnectSocket();
+  }
+
+  Future<void> _disconnectSocket() async {
     final socket = _socket;
+    final subscription = _subscription;
     _socket = null;
-    await _subscription?.cancel();
     _subscription = null;
+    _failRequests();
+    if (socket != null && !_closed) _connections.add(false);
+    await subscription?.cancel();
     await socket?.close(WebSocketStatus.normalClosure);
-    _lost();
   }
 
   Future<void> close() async {
     _closed = true;
     await disconnect();
+    _identityClient.close();
     await _messages.close();
     await _connections.close();
   }

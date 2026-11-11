@@ -30,6 +30,24 @@ class _Store implements LokalRemoteCredentialsStore {
   }
 
   @override
+  Future<LokalRemoteCredentials> relocateIfMatching(
+    LokalRemoteCredentials expected,
+    Uri origin,
+  ) async {
+    if (!SecureLokalRemoteCredentialsStore.sameAuthority(value, expected))
+      throw StateError('Pairing changed.');
+    final relocated = LokalRemoteCredentials(
+      origin: origin,
+      remoteToken: expected.remoteToken,
+      apiKey: expected.apiKey,
+      desktopId: expected.desktopId,
+      desktopUserId: expected.desktopUserId,
+      pairingID: expected.pairingID,
+    );
+    return relocated;
+  }
+
+  @override
   Future<void> clear() async {}
 }
 

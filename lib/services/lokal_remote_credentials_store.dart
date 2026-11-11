@@ -18,6 +18,12 @@ abstract interface class LokalRemoteCredentialsStore {
   /// Compare and delete in the same serialized credential-store operation.
   /// A replacement pairing must never be erased by a stale Forget callback.
   Future<void> clearIfMatching(LokalRemoteCredentials? expected);
+
+  /// Persist a verified LAN address without reviving a forgotten/replaced pair.
+  Future<LokalRemoteCredentials> relocateIfMatching(
+    LokalRemoteCredentials expected,
+    Uri origin,
+  );
 }
 
 /// Stores an atomic origin/pairing/credential record in secure storage.
@@ -142,6 +148,34 @@ class SecureLokalRemoteCredentialsStore implements LokalRemoteCredentialsStore {
 
   @override
   Future<void> clear() => _serial(_clear);
+
+  @override
+  Future<LokalRemoteCredentials> relocateIfMatching(
+    LokalRemoteCredentials expected,
+    Uri origin,
+  ) => _serial(() async {
+    final current = await _read();
+    if (!sameAuthority(current, expected)) {
+      throw StateError('Desktop pairing changed. Refresh and retry.');
+    }
+    final relocated = LokalRemoteCredentials(
+      origin: LokalRemoteService.normalizeOrigin(origin.toString()),
+      remoteToken: expected.remoteToken,
+      apiKey: expected.apiKey,
+      desktopId: expected.desktopId,
+      desktopUserId: expected.desktopUserId,
+      pairingID: expected.pairingID ?? linkUuid(),
+    );
+    try {
+      await _write(relocated);
+    } catch (_) {
+      // The secure record is authoritative. A legacy preferences-mirror
+      // failure after its atomic write must not strand the live controller
+      // on the old address until the app restarts.
+      if (!sameAuthority(await _read(), relocated)) rethrow;
+    }
+    return relocated;
+  });
 
   Future<void> _clear() async {
     // Delete authority first. A preferences failure must not leave background

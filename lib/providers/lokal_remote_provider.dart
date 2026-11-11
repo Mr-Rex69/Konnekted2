@@ -6,6 +6,7 @@ import '../services/favorites_service.dart';
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocketException;
 import 'dart:typed_data';
 
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -29,6 +30,7 @@ import '../core/theme/lokal_appearance.dart';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 
 import '../models/lokal_remote_state.dart';
 import '../services/lokal_remote_credentials_store.dart';
@@ -77,29 +79,6 @@ Duration desktopNotificationDuration(LokalRemoteSnapshot snapshot) {
   return Duration(milliseconds: (seconds * 1000).round());
 }
 
-/// A passive paired socket may be suspended to conserve resources. An active
-/// remote-control session must not be treated as idle merely because the phone
-/// itself is not playing: the desktop owns playback in that mode.
-///
-/// Pure predicate shared by the link timer and its timeout regression tests.
-bool shouldSuspendIdleDesktopLink({
-  required Duration idleFor,
-  required bool controlsDesktop,
-  required bool desktopPlaying,
-  required bool phonePlaying,
-  required bool statsSyncBusy,
-  required bool fileCopyBusy,
-  required bool outboxBusy,
-}) {
-  return !controlsDesktop &&
-      !desktopPlaying &&
-      !phonePlaying &&
-      !statsSyncBusy &&
-      !fileCopyBusy &&
-      !outboxBusy &&
-      idleFor > const Duration(minutes: 3);
-}
-
 /// Owns one authenticated desktop connection, including polling and bounded
 /// reconnects. Paired desktop state is kept separate from the local engine.
 class LokalRemoteController extends Notifier<LokalRemoteControllerState>
@@ -125,7 +104,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   bool _statsSyncInFlight = false;
   Map<String, dynamic>? _desktopState;
   DateTime? _desktopStateAt;
-  DateTime _lastActivity = DateTime.now(), _lastPhoneStateAt = DateTime.now();
+  DateTime _lastPhoneStateAt = DateTime.now();
   String _lastPhoneSignature = '';
   List<Song>? _lastPhoneQueue;
   double _lastPhoneProgress = 0;
@@ -168,6 +147,15 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     final link = ref.read(lokalLinkServiceProvider);
     final messages = link.messages.listen(_onLinkMessage);
     final connections = link.connections.listen(_socketConnectionChanged);
+    var wasBackgrounded = false;
+    final lifecycle = AppLifecycleListener(
+      onPause: () => wasBackgrounded = true,
+      onResume: () {
+        if (!wasBackgrounded) return;
+        wasBackgrounded = false;
+        unawaited(resumeConnection());
+      },
+    );
     // Only play events may initiate background synchronization. Library,
     // metadata, likes and playlists still require explicit Sync now.
     final historyChanges = LinkJournal.instance.historyChanges.stream.listen(
@@ -181,6 +169,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       _syncNotification.dispose();
       _copyNotification.dispose();
       _disposed = true;
+      lifecycle.dispose();
       if (identical(FavoritesService.remoteDelegate, this))
         FavoritesService.remoteDelegate = null;
       _pollTimer?.cancel();
@@ -252,7 +241,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     _generation++;
     _shouldPoll = false;
     _pollTimer?.cancel();
-    _credentials = credentials;
+    final saved = await ref.read(lokalRemoteCredentialsStoreProvider).read();
+    if (_disposed || revision != _configurationRevision) return;
+    _credentials = saved;
     state = LokalRemoteControllerState(
       config: LokalRemoteConfig.fromCredentials(credentials),
       status: LokalRemoteConnectionStatus.disconnected,
@@ -310,8 +301,22 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     );
   }
 
+  /// The OS may suspend the socket while backgrounded. Reopen it on return,
+  /// retaining the same saved pair and respecting an explicit Disconnect.
+  Future<void> resumeConnection() async {
+    await _ensureRestored();
+    if (_disposed ||
+        !_shouldPoll ||
+        _credentials?.desktopId == null ||
+        _openingSocket)
+      return;
+    if (ref.read(lokalLinkServiceProvider).connected &&
+        (_syncInFlight || _statsSyncInFlight || state.fileCopyProgress.busy))
+      return;
+    await connect();
+  }
+
   Future<void> connect() async {
-    _lastActivity = DateTime.now();
     await _ensureRestored();
     if (_disposed) return;
     if (_credentials == null) {
@@ -325,7 +330,11 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     _shouldPoll = true;
     _failures = 0;
     _pollTimer?.cancel();
+    _linkTimer?.cancel();
+    _statsDebounce?.cancel();
+    _linkSync = null;
     state = state.copyWith(
+      socketConnected: false,
       status: LokalRemoteConnectionStatus.connecting,
       clearError: true,
     );
@@ -337,7 +346,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<void> refresh() async {
-    _lastActivity = DateTime.now();
     if (state.socketConnected) {
       // Refreshing playback/connection state must not initiate library sync.
       _refreshSocketSnapshot();
@@ -349,7 +357,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<void> sendCommand(LokalRemoteAction action, {double? value}) {
-    _lastActivity = DateTime.now();
     final generation = _generation;
     Future<void> run() async {
       if (_disposed || generation != _generation) return;
@@ -438,7 +445,9 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('lokal.link.${credentials.desktopId}.theme', syncTheme);
     if (_disposed || revision != _configurationRevision) return;
-    _credentials = credentials;
+    final saved = await ref.read(lokalRemoteCredentialsStoreProvider).read();
+    if (_disposed || revision != _configurationRevision) return;
+    _credentials = saved;
     ref.invalidate(linkedDesktopProfileProvider);
     state = LokalRemoteControllerState(
       config: LokalRemoteConfig.fromCredentials(credentials),
@@ -447,7 +456,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<void> approveMerge() async {
-    _lastActivity = DateTime.now();
     if (state.fileCopyProgress.busy)
       throw StateError('Wait for the current file copy to finish.');
     final sync = _linkSync;
@@ -457,14 +465,12 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       );
     _syncNotification.begin(deviceName: state.desktopName);
     await sync.enableMerge();
-    _lastActivity = DateTime.now();
   }
 
   /// The only post-merge entry point for a full desktop/phone library sync.
   /// Pairing, reconnecting, periodic link polls and local journal edits
   /// intentionally do not call this method.
   Future<void> syncNow() async {
-    _lastActivity = DateTime.now();
     if (!state.socketConnected || _linkSync == null || !state.mergeApproved) {
       throw StateError('Connect and merge with your desktop before syncing.');
     }
@@ -476,7 +482,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     }
     _syncNotification.begin(deviceName: state.desktopName);
     await _syncLink();
-    _lastActivity = DateTime.now();
   }
 
   LinkFileCopy _fileCopier() {
@@ -504,7 +509,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<LinkCopyPlan> prepareFileCopy() async {
-    _lastActivity = DateTime.now();
     if (state.syncProgress.busy || state.fileCopyProgress.busy)
       throw StateError('Wait for the current library operation to finish.');
     final copier = _fileCopier();
@@ -539,7 +543,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       await copier.copy(plan);
     } finally {
       await _copyNotification.finish(state.fileCopyProgress);
-      _lastActivity = DateTime.now();
     }
   }
 
@@ -602,7 +605,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<void> sendRawCommand(String action, [Object? value]) async {
-    _lastActivity = DateTime.now();
     if (state.socketConnected) {
       await ref.read(lokalLinkServiceProvider).request('command', {
         'action': action,
@@ -649,12 +651,38 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
     _openingSocket = true;
     _socketWanted = true;
     try {
-      await ref.read(lokalLinkServiceProvider).connect(credentials);
+      final origin = await ref
+          .read(lokalLinkServiceProvider)
+          .connect(credentials);
       if (_disposed || generation != _generation) return;
+      if (origin != credentials.origin) {
+        late final LokalRemoteCredentials relocated;
+        try {
+          relocated = await ref
+              .read(lokalRemoteCredentialsStoreProvider)
+              .relocateIfMatching(credentials, origin);
+        } catch (_) {
+          if (!_disposed && generation == _generation) {
+            await ref.read(lokalLinkServiceProvider).disconnect();
+          }
+          rethrow;
+        }
+        if (_disposed || generation != _generation) return;
+        _credentials = relocated;
+        state = state.copyWith(
+          config: LokalRemoteConfig.fromCredentials(relocated),
+        );
+        ref.invalidate(linkedDesktopProfileProvider);
+      }
       _failures = 0;
       _pollTimer?.cancel();
       final prefs = await SharedPreferences.getInstance();
-      final prefix = LinkSyncCoordinator.prefixFor(credentials);
+      if (_disposed || generation != _generation) return;
+      if (!ref.read(lokalLinkServiceProvider).connected) {
+        throw const LokalRemoteNetworkException('Desktop link disconnected.');
+      }
+      final activeCredentials = _credentials!;
+      final prefix = LinkSyncCoordinator.prefixFor(activeCredentials);
       final lastSync = prefs.getInt('$prefix.last_sync');
       final initialProgress = LinkSyncProgress(
         phase: lastSync == null ? LinkSyncPhase.idle : LinkSyncPhase.complete,
@@ -666,7 +694,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       late final LinkSyncCoordinator coordinator;
       coordinator = LinkSyncCoordinator(
         socket: ref.read(lokalLinkServiceProvider),
-        credentials: credentials,
+        credentials: activeCredentials,
         favorites: ref.read(favoritesServiceProvider),
         initialProgress: initialProgress,
         onProgress: (progress) {
@@ -700,7 +728,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
         syncProgress: initialProgress,
         mergeApproved:
             prefs.getBool(
-              '${LinkSyncCoordinator.prefixFor(credentials)}.merge',
+              '${LinkSyncCoordinator.prefixFor(activeCredentials)}.merge',
             ) ==
             true,
         clearError: true,
@@ -717,14 +745,19 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
       _publishLocalState();
     } catch (error) {
       if (_disposed || generation != _generation) return;
-      final message = error.toString();
-      if (message.contains('401')) {
+      final statusCode = error is WebSocketException
+          ? error.httpStatusCode
+          : null;
+      if (error is LokalRemoteAuthException || statusCode == 401) {
         _socketWanted = false;
-        _shouldPoll = false;
+        // The desktop may be temporarily locked or on another profile. Do
+        // not abandon a durable pairing or require a new QR scan on return.
         _setFailure(const LokalRemoteAuthException());
+        _pollTimer?.cancel();
+        _pollTimer = Timer(_maximumBackoff, () => unawaited(_connectSocket()));
         return;
       }
-      if (message.contains('404') || message.contains('426')) {
+      if (statusCode == 404 || statusCode == 426) {
         _socketWanted = false;
         state = state.copyWith(socketConnected: false);
         await _poll();
@@ -734,7 +767,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
         _pollTimer = Timer(_nextDelay(), () => unawaited(_connectSocket()));
       }
     } finally {
-      _openingSocket = false;
+      if (!_disposed && generation == _generation) _openingSocket = false;
     }
   }
 
@@ -758,8 +791,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
 
   void _onLinkMessage(LinkMessage message) {
     if (_disposed || !_shouldPoll) return;
-    if (const {'state', 'command', 'theme'}.contains(message.type))
-      _lastActivity = DateTime.now();
     switch (message.type) {
       case 'hello':
         if (message.body['desktopId'] != _credentials?.desktopId) {
@@ -822,21 +853,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
 
   void _tickLink() {
     if (_disposed || !state.socketConnected) return;
-    if (shouldSuspendIdleDesktopLink(
-      idleFor: DateTime.now().difference(_lastActivity),
-      controlsDesktop: state.controlsDesktop,
-      desktopPlaying: state.snapshot?.isPlaying == true,
-      phonePlaying: PlayerService().isPlayingNotifier.value,
-      statsSyncBusy: state.syncProgress.busy,
-      fileCopyBusy: state.fileCopyProgress.busy,
-      outboxBusy: _downloadOutbox.busy,
-    )) {
-      disconnect();
-      state = state.copyWith(
-        error: 'Desktop link paused after 3 minutes without interaction. Reconnect when you need it.',
-      );
-      return;
-    }
     _refreshSocketSnapshot();
     _publishLocalState();
     if (DateTime.now().difference(_lastStatsSyncAt) >=
@@ -927,7 +943,7 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
 
   void _publishLocalState() {
     final socket = ref.read(lokalLinkServiceProvider);
-    if (!socket.connected) return;
+    if (!socket.connected || !Database.isInitialized) return;
     final player = PlayerService(), song = player.currentSongNotifier.value;
     final queue = player.queueNotifier.value, now = DateTime.now();
     final progress = player.positionNotifier.value.inMilliseconds / 1000;
@@ -968,7 +984,6 @@ class LokalRemoteController extends Notifier<LokalRemoteControllerState>
   }
 
   Future<void> _handlePhoneCommand(Map<String, dynamic> body) async {
-    _lastActivity = DateTime.now();
     final player = PlayerService(),
         action = body['action'],
         value = body['value'];

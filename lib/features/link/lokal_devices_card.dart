@@ -26,8 +26,7 @@ class _LokalDevicesCardState extends ConsumerState<LokalDevicesCard> {
     try {
       final controller = ref.read(lokalRemoteControllerProvider.notifier);
       if (enabled && !ref.read(lokalRemoteControllerProvider).reachable) {
-        // The desktop link can suspend itself after being idle. Reconnect
-        // here instead of forcing the user through the configuration screen.
+        // Recover a sleeping PC using the existing pairing.
         await controller.connect();
       }
       if (enabled && !ref.read(lokalRemoteControllerProvider).reachable) {

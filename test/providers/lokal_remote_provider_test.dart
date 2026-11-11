@@ -1,12 +1,16 @@
 import 'package:flick/models/lokal_remote_state.dart';
 import 'package:flick/providers/lokal_remote_provider.dart';
+import 'package:flick/providers/favorites_provider.dart';
+import 'package:flick/services/favorites_service.dart';
 import 'package:flick/services/lokal_remote_credentials_store.dart';
 import 'package:flick/services/lokal_remote_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dart:async';
+import 'dart:io' show WebSocketException;
 
 import 'package:flick/services/link/lokal_link_service.dart';
 
@@ -22,6 +26,35 @@ class _DelayedPairing extends LokalLinkService {
   }) {
     started.complete();
     return response.future;
+  }
+}
+
+class _Favorites implements FavoritesService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _SocketLink extends LokalLinkService {
+  int attempts = 0;
+  bool _connected = false;
+  @override
+  bool get connected => _connected;
+  @override
+  void send(String type, Map<String, dynamic> body, {String? id}) {}
+  @override
+  Future<void> disconnect() async {
+    _connected = false;
+    await super.disconnect();
+  }
+
+  Object? failure;
+  Uri? recoveredOrigin;
+  @override
+  Future<Uri> connect(LokalRemoteCredentials credentials) async {
+    attempts++;
+    if (failure != null) throw failure!;
+    _connected = true;
+    return recoveredOrigin ?? credentials.origin;
   }
 }
 
@@ -41,6 +74,25 @@ class _Store implements LokalRemoteCredentialsStore {
       throw StateError('Pairing changed.');
     }
     value = null;
+  }
+
+  @override
+  Future<LokalRemoteCredentials> relocateIfMatching(
+    LokalRemoteCredentials expected,
+    Uri origin,
+  ) async {
+    if (!SecureLokalRemoteCredentialsStore.sameAuthority(value, expected))
+      throw StateError('Pairing changed.');
+    final relocated = LokalRemoteCredentials(
+      origin: origin,
+      remoteToken: expected.remoteToken,
+      apiKey: expected.apiKey,
+      desktopId: expected.desktopId,
+      desktopUserId: expected.desktopUserId,
+      pairingID: expected.pairingID,
+    );
+    value = relocated;
+    return relocated;
   }
 
   @override
@@ -103,6 +155,120 @@ ProviderContainer _container(_Store store, _Service service) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'saved pairing survives idle and resumes after a day, respecting Disconnect',
+    (tester) async {
+      final credentials = LokalRemoteCredentials(
+        origin: Uri.parse('http://desktop'),
+        remoteToken: 'synthetic-pair',
+        desktopId: 'desktop-fixture',
+      );
+      final store = _Store()..value = credentials;
+      final link = _SocketLink();
+      final container = ProviderContainer(
+        overrides: [
+          lokalRemoteCredentialsStoreProvider.overrideWithValue(store),
+          lokalLinkServiceProvider.overrideWithValue(link),
+          favoritesServiceProvider.overrideWithValue(_Favorites()),
+        ],
+      );
+      final controller = container.read(lokalRemoteControllerProvider.notifier);
+      await tester.pump();
+      expect(link.attempts, 1);
+      await tester.pump(const Duration(minutes: 4));
+      expect(
+        container.read(lokalRemoteControllerProvider).socketConnected,
+        isTrue,
+        reason: container.read(lokalRemoteControllerProvider).error,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(days: 1));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(link.attempts, 2);
+      expect(store.value, same(credentials));
+      controller.disconnect();
+      await controller.resumeConnection();
+      expect(link.attempts, 2);
+      container.dispose();
+      await link.close();
+    },
+  );
+
+  testWidgets('temporary authentication failure retries the same saved pair', (
+    tester,
+  ) async {
+    final store = _Store()
+      ..value = LokalRemoteCredentials(
+        origin: Uri.parse('http://desktop'),
+        remoteToken: 'synthetic-pair',
+        desktopId: 'desktop-fixture',
+      );
+    final link = _SocketLink()
+      ..failure = const WebSocketException('Unauthorized', 401);
+    final container = ProviderContainer(
+      overrides: [
+        lokalRemoteCredentialsStoreProvider.overrideWithValue(store),
+        lokalLinkServiceProvider.overrideWithValue(link),
+        favoritesServiceProvider.overrideWithValue(_Favorites()),
+      ],
+    );
+    container.read(lokalRemoteControllerProvider);
+    await tester.pump();
+    expect(
+      container.read(lokalRemoteControllerProvider).status,
+      LokalRemoteConnectionStatus.unauthorized,
+    );
+    final saved = store.value;
+    link.failure = null;
+    await tester.pump(const Duration(seconds: 20));
+    await tester.pump();
+    expect(link.attempts, 2);
+    expect(
+      container.read(lokalRemoteControllerProvider).socketConnected,
+      isTrue,
+      reason: container.read(lokalRemoteControllerProvider).error,
+    );
+    expect(store.value, same(saved));
+    container.dispose();
+    await link.close();
+  });
+
+  testWidgets(
+    'verified address recovery updates origin without replacing the pairing',
+    (tester) async {
+      final old = LokalRemoteCredentials(
+        origin: Uri.parse('http://desktop'),
+        remoteToken: 'synthetic-pair',
+        desktopId: 'desktop-fixture',
+      );
+      final store = _Store()..value = old;
+      final link = _SocketLink()
+        ..recoveredOrigin = Uri.parse('http://new-address');
+      final container = ProviderContainer(
+        overrides: [
+          lokalRemoteCredentialsStoreProvider.overrideWithValue(store),
+          lokalLinkServiceProvider.overrideWithValue(link),
+          favoritesServiceProvider.overrideWithValue(_Favorites()),
+        ],
+      );
+      container.read(lokalRemoteControllerProvider);
+      await tester.pump();
+      expect(store.value!.origin, link.recoveredOrigin);
+      expect(store.value!.remoteToken, old.remoteToken);
+      expect(
+        container.read(lokalRemoteControllerProvider).config!.origin,
+        link.recoveredOrigin,
+      );
+      container.dispose();
+      await link.close();
+    },
+  );
+
   test(
     'forgetting a desktop retires a pairing reply still in flight',
     () async {
@@ -113,6 +279,7 @@ void main() {
           lokalRemoteCredentialsStoreProvider.overrideWithValue(store),
           lokalRemoteServiceProvider.overrideWithValue(_Service([])),
           lokalLinkServiceProvider.overrideWithValue(link),
+          favoritesServiceProvider.overrideWithValue(_Favorites()),
         ],
       );
       addTearDown(link.close);
@@ -215,46 +382,6 @@ void main() {
       desktopNotificationDuration(state(missingDuration, 189)),
       const Duration(seconds: 189),
     );
-  });
-
-  bool idleLink({
-    Duration idleFor = const Duration(minutes: 4),
-    bool controlsDesktop = false,
-    bool desktopPlaying = false,
-    bool phonePlaying = false,
-    bool statsSyncBusy = false,
-    bool fileCopyBusy = false,
-    bool outboxBusy = false,
-  }) => shouldSuspendIdleDesktopLink(
-    idleFor: idleFor,
-    controlsDesktop: controlsDesktop,
-    desktopPlaying: desktopPlaying,
-    phonePlaying: phonePlaying,
-    statsSyncBusy: statsSyncBusy,
-    fileCopyBusy: fileCopyBusy,
-    outboxBusy: outboxBusy,
-  );
-
-  test('desktop remote control stays connected past three minutes of no phone playback', () {
-    expect(idleLink(controlsDesktop: true), isFalse);
-    expect(
-      idleLink(controlsDesktop: true, idleFor: const Duration(hours: 2)),
-      isFalse,
-    );
-    // Remote control remains active even if the desktop is paused.
-    expect(idleLink(controlsDesktop: true, desktopPlaying: false), isFalse);
-    // A desktop playing music must not be mistaken for an idle phone link.
-    expect(idleLink(desktopPlaying: true), isFalse);
-  });
-
-  test('passive desktop link still suspends after three minutes', () {
-    expect(idleLink(idleFor: const Duration(minutes: 2)), isFalse);
-    expect(idleLink(idleFor: const Duration(minutes: 3)), isFalse);
-    expect(idleLink(idleFor: const Duration(minutes: 4)), isTrue);
-    expect(idleLink(phonePlaying: true), isFalse);
-    expect(idleLink(statsSyncBusy: true), isFalse);
-    expect(idleLink(fileCopyBusy: true), isFalse);
-    expect(idleLink(outboxBusy: true), isFalse);
   });
 
   test(

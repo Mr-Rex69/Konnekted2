@@ -1,0 +1,45 @@
+name: Mobile desktop link recovery
+on:
+  pull_request:
+    paths:
+      - 'lib/providers/lokal_remote_provider.dart'
+      - 'lib/services/link/**'
+      - 'lib/services/lokal_remote_credentials_store.dart'
+      - 'test/providers/lokal_remote_provider_test.dart'
+      - 'test/services/link/**'
+      - 'test/services/lokal_remote_credentials_store_test.dart'
+      - '.github/workflows/desktop-link-reconnect.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reconnect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+      - run: flutter pub get --enforce-lockfile
+      - name: Analyze reconnection and secure address persistence
+        run: >-
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+          lib/providers/lokal_remote_provider.dart
+          lib/services/link/lokal_link_service.dart
+          lib/services/link/link_identity.dart
+          lib/services/lokal_remote_credentials_store.dart
+      - name: Verify idle, resume, handshake races, discovery proof and Forget boundaries
+        run: >-
+          flutter test --no-pub
+          test/providers/lokal_remote_provider_test.dart
+          test/services/link/link_reconnect_test.dart
+          test/services/link/link_identity_test.dart
+          test/services/link/desktop_discovery_test.dart
+          test/services/lokal_remote_credentials_store_test.dart
+          test/services/lokal_remote_service_test.dart
+          test/services/ios_pairing_retirement_test.dart
+          test/widgets/lokal/lokal_remote_settings_screen_test.dart
