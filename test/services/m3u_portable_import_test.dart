@@ -80,9 +80,11 @@ void main() {
         _song('4', 'A Song', 'Artist', '/Music/album-b.flac'),
       ],
     );
-    expect(result.importedSongs, 0);
+    expect(result.importedSongs, 1);
     expect(result.unmatchedEntries, 1);
-    expect(result.playlist.songIds, isEmpty);
+    expect(result.playlist.songIds.single, startsWith('pending:playlist:m3u-'));
+    expect(result.playlist.songSnapshots.values.single.title, 'A Song');
+    expect(result.playlist.songSnapshots.values.single.artist, 'Artist');
   });
 
   test('an EXTINF artist does not match the wrong artist', () async {
@@ -90,6 +92,8 @@ void main() {
       '#EXTM3U\n#EXTINF:180,Artist A - A Song\nnot-in-library.mp3\n',
       [_song('5', 'A Song', 'Artist B', '/Music/song.flac')],
     );
-    expect(result.importedSongs, 0);
+    expect(result.importedSongs, 1);
+    expect(result.unmatchedEntries, 1);
+    expect(result.playlist.songSnapshots.values.single.artist, 'Artist A');
   });
 }
