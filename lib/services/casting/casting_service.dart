@@ -199,6 +199,7 @@ class CastingService {
         rethrow;
       } finally {
         isChangingOutputNotifier.value = false;
+        _drainCastCompletion();
       }
       return;
     }
