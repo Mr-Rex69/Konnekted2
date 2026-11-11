@@ -78,6 +78,33 @@ class LokalLinkService {
     return id;
   }
 
+  /// Optional presentation metadata. Missing native support must never block
+  /// pairing/reconnect or replace a previously reported name with a fallback.
+  Future<String?> deviceDisplayName() async {
+    try {
+      final value = await channel
+          .invokeMethod<Object?>('getDeviceName')
+          .timeout(const Duration(seconds: 2));
+      return _cleanDeviceName(value);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    } on TimeoutException {
+      return null;
+    }
+  }
+
+  static String? _cleanDeviceName(Object? value) {
+    if (value is! String) return null;
+    final clean = value
+        .replaceAll(RegExp(r'[\x00-\x1f\x7f-\x9f]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (clean.isEmpty) return null;
+    return String.fromCharCodes(clean.runes.take(100));
+  }
+
   Future<void> _requestLocalNetwork() async {
     try {
       if (await channel.invokeMethod<bool>('requestLocalNetwork') == false)
@@ -116,7 +143,7 @@ class LokalLinkService {
     required Uri origin,
     required String code,
     String? expectedDesktopId,
-    String deviceName = 'Lokal phone',
+    String? deviceName,
   }) async {
     if (!RegExp(r'^\d{6}$').hasMatch(code))
       throw const LokalRemoteConfigurationException(
@@ -124,13 +151,21 @@ class LokalLinkService {
       );
     await _requestLocalNetwork();
     final normalized = LokalRemoteService.normalizeOrigin(origin.toString());
+    final name =
+        _cleanDeviceName(deviceName) ??
+        await deviceDisplayName() ??
+        (Platform.isIOS
+            ? 'iOS device'
+            : Platform.isAndroid
+            ? 'Android device'
+            : 'Mobile device');
     final response = await http
         .post(
           normalized.replace(path: '/api/remote/pair'),
           headers: {'content-type': 'application/json'},
           body: jsonEncode({
             'code': code,
-            'deviceName': deviceName,
+            'deviceName': name,
             'deviceId': await deviceId(),
           }),
         )
@@ -222,6 +257,8 @@ class LokalLinkService {
       scheme: origin.scheme == 'https' ? 'wss' : 'ws',
       path: '/api/remote/ws',
     );
+    final name = await deviceDisplayName();
+    _checkEpoch(epoch);
     var expired = false;
     final socket =
         await WebSocket.connect(
@@ -272,6 +309,7 @@ class LokalLinkService {
       onDone: () => _lost(socket),
       cancelOnError: true,
     );
+    if (name != null) send('hello', {'deviceName': name});
     _connections.add(true);
   }
 

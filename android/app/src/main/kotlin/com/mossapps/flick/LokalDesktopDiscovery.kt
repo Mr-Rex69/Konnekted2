@@ -24,6 +24,16 @@ object LokalDesktopDiscovery {
         val handler = Handler(Looper.getMainLooper())
         var active = false
         MethodChannel(messenger, "lokal/desktop_link").setMethodCallHandler { call, result ->
+            if (call.method == "getDeviceName") {
+                val configured = try {
+                    android.provider.Settings.Global.getString(context.contentResolver, "device_name")?.trim()
+                } catch (_: SecurityException) { null }
+                val model = android.os.Build.MODEL.trim().takeUnless { it.equals("unknown", true) }.orEmpty()
+                val maker = android.os.Build.MANUFACTURER.trim().takeUnless { it.equals("unknown", true) }.orEmpty()
+                val fallback = if (model.startsWith(maker, ignoreCase = true)) model else "$maker $model".trim()
+                result.success(configured?.takeIf { it.isNotBlank() } ?: fallback.ifBlank { "Android device" })
+                return@setMethodCallHandler
+            }
             if (call.method == "requestLocalNetwork") {
                 val permission = "android.permission.ACCESS_LOCAL_NETWORK"
                 if (android.os.Build.VERSION.SDK_INT < 37 || activity.checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) {

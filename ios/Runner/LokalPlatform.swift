@@ -46,8 +46,15 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
     spotify = LokalSpotifySession(messenger: messenger, presenter: { [weak self] in self?.presenter })
     cast = LokalCastBridge(messenger: messenger)
     register("lokal/desktop_link", messenger) { [weak self] call, result in
-      guard call.method == "discover" else { result(FlutterMethodNotImplemented); return }
-      self?.desktopDiscovery.discover(result)
+      switch call.method {
+      case "getDeviceName":
+        // iOS may expose only the model family without Apple's user-assigned
+        // device-name entitlement. Desktop labels remain individually editable.
+        let name = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        result(name.isEmpty ? UIDevice.current.model : name)
+      case "discover": self?.desktopDiscovery.discover(result)
+      default: result(FlutterMethodNotImplemented)
+      }
     }
     player.setMethodCallHandler { [weak self] call, result in
       guard let self = self else { return }
