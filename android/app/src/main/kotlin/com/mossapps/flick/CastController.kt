@@ -327,7 +327,9 @@ class CastController(private val context: Context) {
         val routes = mediaRouter.routes
         val out = mutableListOf<Map<String, Any>>()
         for (r in routes) {
-            if (r.isDefault) continue
+            // Remote receivers need a confirmed media handoff, not a local
+            // route switch that launches an empty Cast receiver app.
+            if (r.isDefault || r.playbackType != MediaRouter.RouteInfo.PLAYBACK_TYPE_LOCAL) continue
             out.add(
                 mapOf(
                     "id" to r.id.toString(),
@@ -341,7 +343,7 @@ class CastController(private val context: Context) {
     }
 
     fun selectOutputRoute(deviceId: String): Boolean {
-        val target = mediaRouter.routes.firstOrNull { it.id.toString() == deviceId } ?: return false
+        val target = mediaRouter.routes.firstOrNull { it.id.toString() == deviceId && it.playbackType == MediaRouter.RouteInfo.PLAYBACK_TYPE_LOCAL } ?: return false
         mediaRouter.selectRoute(target)
         return true
     }
