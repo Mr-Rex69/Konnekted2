@@ -1,0 +1,36 @@
+name: Android system media session
+on:
+  pull_request:
+    paths:
+      - 'android/app/src/main/kotlin/com/mossapps/flick/MusicNotificationService.kt'
+      - 'android/app/src/test/kotlin/com/mossapps/flick/MusicMediaSessionTest.kt'
+      - 'android/app/build.gradle.kts'
+      - 'lib/services/notification_service.dart'
+      - '.github/workflows/android-media-session.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  media-session:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/android-toolchain
+      - name: Generate app brand assets
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 tool/gen_lokal_launcher_icons.py
+      - name: Verify local and PC-controlled notification contracts
+        run: flutter test --no-pub test/services/remote_notification_duration_test.dart test/services/notification_artwork_resolver_test.dart
+      - name: Verify foreground notifications and route-manager session association
+        run: bash android/gradlew -p android :app:testFullDebugUnitTest --tests com.mossapps.flick.MusicMediaSessionTest --console=plain --no-daemon
+      - name: Preserve native session test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-media-session-tests
+          path: build/app/reports/tests/testFullDebugUnitTest
+          if-no-files-found: ignore

@@ -121,4 +121,74 @@ void main() {
     await service.updateNotification(song: firstSong, isPlaying: true);
     expect((calls.last.arguments as Map)['isRemotePlayback'], false);
   });
+  test(
+    'synced PC recording played on the tablet keeps local media controls',
+    () async {
+      const channel = MethodChannel('com.mossapps.flick/player');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      var plays = 0, pauses = 0;
+      final service = NotificationService();
+      service.init(
+        onTogglePlayPause: () {},
+        onPlay: () {
+          plays++;
+        },
+        onPause: () {
+          pauses++;
+        },
+        onNext: () {},
+        onPrevious: () {},
+        onStop: () {},
+        onSeek: (_) {},
+        onToggleShuffle: () {},
+        onToggleFavorite: () {},
+      );
+      const song = Song(
+        id: 'pc-library:one',
+        title: 'PC library recording',
+        artist: 'Artist',
+        filePath: 'lokal://42/recording',
+        sourceType: 'lokal',
+        remoteId: 'recording',
+        remoteServerId: 42,
+        duration: Duration(minutes: 4),
+        fileType: 'FLAC',
+      );
+      await service.updateNotification(
+        song: song,
+        isPlaying: true,
+        isCasting: false,
+        position: const Duration(seconds: 12),
+        duration: song.duration,
+      );
+      final metadata =
+          calls
+                  .lastWhere((call) => call.method == 'updateNotification')
+                  .arguments
+              as Map;
+      expect(metadata['isPlaying'], true);
+      expect(metadata['isRemotePlayback'], false);
+      expect(metadata['isCasting'], false);
+      expect(metadata['duration'], 240000);
+      for (final command in ['pause', 'play']) {
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              channel.name,
+              const StandardMethodCodec().encodeMethodCall(MethodCall(command)),
+              (_) {},
+            );
+      }
+      expect(pauses, 1);
+      expect(plays, 1);
+    },
+  );
 }

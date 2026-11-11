@@ -62,6 +62,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     buildFeatures {
         compose = true
         // BuildConfig.FLAVOR is surfaced in App Info so users can tell the
@@ -310,4 +314,5 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast:21.5.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
 }
