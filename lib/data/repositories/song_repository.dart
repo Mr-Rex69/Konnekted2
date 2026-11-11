@@ -974,14 +974,17 @@ class SongRepository {
   Future<SongAudioCacheEntity?> getAudioCacheForSong(Song song) async {
     final id = int.tryParse(song.id);
     if (id == null || song.isExternal) return null;
-    final row = await _isar.songEntitys.get(id);
-    if (row == null || !_matchesWaveformSong(row, song)) return null;
-    final cache = await getAudioCache(id);
-    if (cache == null ||
-        cache.version != SongAudioCacheEntity.currentVersion ||
-        cache.computedAt < (row.lastModified?.millisecondsSinceEpoch ?? 0))
-      return null;
-    return cache;
+    return _isar.txn(() async {
+      final row = await _isar.songEntitys.get(id);
+      if (row == null || !_matchesWaveformSong(row, song)) return null;
+      final cache = await getAudioCache(id);
+      if (cache == null ||
+          cache.version != SongAudioCacheEntity.currentVersion ||
+          cache.computedAt < (row.lastModified?.millisecondsSinceEpoch ?? 0)) {
+        return null;
+      }
+      return cache;
+    });
   }
 
   Future<void> upsertAudioCacheForSong(

@@ -12,6 +12,7 @@ on:
       - 'lib/services/audio_preload_service.dart'
       - 'lib/services/song_waveform_service.dart'
       - 'lib/services/network_cache_service.dart'
+      - 'lib/services/remote_source_service.dart'
       - 'lib/data/entities/song_audio_cache_entity.dart'
       - 'lib/data/repositories/song_repository.dart'
       - 'rust/src/api/audio_analysis.rs'
@@ -20,6 +21,7 @@ on:
       - 'lib/l10n/model_labels.dart'
       - 'test/features/player/**'
       - 'test/providers/progress_bar_style_provider_test.dart'
+      - 'test/providers/full_player_waveform_provider_test.dart'
       - 'test/services/*waveform*'
       - 'test/services/audio_analysis_queue_test.dart'
       - 'test/services/audio_preload_service_test.dart'
@@ -62,6 +64,7 @@ jobs:
           test/services/network_cache_service_test.dart
           test/data/repositories/song_waveform_cache_test.dart
           test/providers/progress_bar_style_provider_test.dart
+          test/providers/full_player_waveform_provider_test.dart
           test/features/player/line_seek_bar_test.dart
           test/features/player/desktop_remote_full_player_test.dart
           test/features/player/tablet_player_presentation_test.dart

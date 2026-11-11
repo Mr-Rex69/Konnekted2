@@ -33,7 +33,7 @@ class SongWaveformService {
   final WaveformCacheWriter _writeCache;
   final WaveformFileResolver _resolveFile;
   final AudioAnalysisQueue _analysis;
-  final _jobs = <(String?, String?, int?, String?), _WaveformJob>{};
+  final _jobs = <(String?, String?, int?, String?, int), _WaveformJob>{};
   final _memory = <(String, int, int), AudioAnalysisResult>{};
 
   static bool validPeaks(List<double>? peaks) =>
@@ -52,7 +52,10 @@ class SongWaveformService {
     try {
       SongAudioCacheEntity? cached;
       try {
-        cached = await _readCache(song);
+        // Remote IDs can be reused without a library rescan. Only an actual
+        // completed file establishes their peaks; never trust a library row
+        // after a download was replaced under that same remote ID.
+        if (!song.isNetworkSource) cached = await _readCache(song);
       } catch (_) {}
       if (!current()) return null;
       if (cached != null && validPeaks(cached.peaks)) {
@@ -70,6 +73,7 @@ class SongWaveformService {
         song.sourceType,
         song.remoteServerId,
         song.remoteId,
+        song.isNetworkSource ? NetworkCacheService.completedRevision.value : 0,
       );
       var job = _jobs[key];
       if (job == null) {
@@ -84,7 +88,7 @@ class SongWaveformService {
       if (!current() || result == null || !validPeaks(result.peaks))
         return null;
       final id = int.tryParse(song.id);
-      if (id != null && !song.isExternal) {
+      if (id != null && !song.isExternal && !song.isNetworkSource) {
         try {
           await _writeCache(
             song,
