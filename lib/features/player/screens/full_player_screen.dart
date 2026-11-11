@@ -1823,7 +1823,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final dominantArtwork = ref.watch(albumDominantColorSyncProvider);
     final brightArtwork = fullCoverBehindHeader &&
         dominantArtwork != null &&
-        dominantArtwork.computeLuminance() >= .42;
+        dominantArtwork.computeLuminance() >= .18;
     return FullPlayerHeader(
       deviceLabel: displayLabel,
       brightArtwork: brightArtwork,
