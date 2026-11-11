@@ -120,7 +120,7 @@ class FullPlayerHeader extends StatelessWidget {
     selected: selected,
     child: SizedBox.square(
       dimension: 44,
-      child: Icon(icon, size: 20, color: FullPlayerVisuals.primaryText.withValues(alpha: .90)),
+      child: Icon(icon, size: 20, color: FullPlayerVisuals.primaryText.withValues(alpha: .96)),
     ),
   );
 
