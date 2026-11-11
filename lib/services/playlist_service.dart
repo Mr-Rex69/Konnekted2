@@ -4,6 +4,7 @@ import 'link/link_protocol.dart';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flick/data/database.dart';
@@ -15,6 +16,7 @@ import 'package:flick/services/sources/subsonic_service.dart';
 import 'package:flick/l10n/l10n.dart';
 
 import 'ios_document_service.dart';
+import 'online_playlist_reference.dart' show onlinePlaylistPrefix;
 
 class PlaylistImportResult {
   final Playlist playlist;
@@ -659,7 +661,7 @@ class PlaylistService {
     final lookup = songLookup ?? await _buildSongLookup();
     final resolved = _resolveSongIdsWithLookup(entries, lookup);
     devLog(
-      '[PlaylistService] Resolved ${resolved.ids.length} songs, ${resolved.unmatchedEntries.length} unmatched',
+      '[PlaylistService] Resolved ${resolved.ids.length} entries, ${resolved.unmatchedEntries.length} without local files',
     );
 
     final now = DateTime.now();
@@ -668,6 +670,7 @@ class PlaylistService {
       final updated = existing.copyWith(
         name: playlistName,
         songIds: resolved.ids,
+        songSnapshots: resolved.snapshots,
         updatedAt: now,
         sourcePath: source.sourcePath,
       );
@@ -681,6 +684,7 @@ class PlaylistService {
         id: now.millisecondsSinceEpoch.toString(),
         name: playlistName,
         songIds: resolved.ids,
+        songSnapshots: resolved.snapshots,
         createdAt: now,
         updatedAt: now,
         sourcePath: source.sourcePath,
@@ -832,6 +836,7 @@ class PlaylistService {
     final lines = sanitizedContent.split(RegExp(r'\r\n?|\n'));
     final entries = <_M3uEntry>[];
     String? pendingExtInf;
+    int? pendingDuration;
 
     for (var line in lines) {
       line = line.trim();
@@ -841,8 +846,12 @@ class PlaylistService {
         line = line.substring(1).trim();
       }
 
-      if (line.startsWith('#EXTINF:')) {
+      if (line.toUpperCase().startsWith('#EXTINF:')) {
         pendingExtInf = _extractExtInfTitle(line);
+        final header = line.substring('#EXTINF:'.length).split(',').first.trim();
+        final seconds = double.tryParse(header.split(' ').first);
+        pendingDuration = seconds == null || seconds <= 0
+            ? null : seconds.round();
         continue;
       }
 
@@ -852,9 +861,11 @@ class PlaylistService {
         _M3uEntry(
           pathOrUri: _stripWrappingQuotes(line),
           extInfTitle: pendingExtInf,
+          durationSeconds: pendingDuration,
         ),
       );
       pendingExtInf = null;
+      pendingDuration = null;
     }
 
     return entries;
@@ -910,6 +921,7 @@ class PlaylistService {
     final ids = <String>[];
     final seen = <String>{};
     final unmatched = <String>[];
+    final snapshots = <String, PlaylistSongSnapshot>{};
 
     for (final entry in entries) {
       try {
@@ -934,6 +946,14 @@ class PlaylistService {
 
         if (match == null) {
           unmatched.add(entry.pathOrUri);
+          // Mornye keeps unscanned M3U entries as metadata-only tracks.
+          // Lokal can do likewise with its existing durable online
+          // playlist snapshots instead of silently dropping the entry.
+          final pending = _pendingM3uSong(entry);
+          if (pending != null && seen.add(pending.id)) {
+            ids.add(pending.id);
+            snapshots[pending.id] = PlaylistSongSnapshot.fromSong(pending);
+          }
           continue;
         }
 
@@ -949,7 +969,40 @@ class PlaylistService {
       }
     }
 
-    return _ResolvedM3uImport(ids: ids, unmatchedEntries: unmatched);
+    return _ResolvedM3uImport(
+      ids: ids,
+      unmatchedEntries: unmatched,
+      snapshots: snapshots,
+    );
+  }
+
+  Song? _pendingM3uSong(_M3uEntry entry) {
+    final name = entry.extInfTitle?.trim().isNotEmpty == true
+        ? entry.extInfTitle!.trim()
+        : _extractFileName(entry.pathOrUri)
+            .replaceFirst(RegExp(r'\.[^.]+$'), '');
+    if (name.isEmpty) return null;
+    final separator = RegExp(r'\s+[-–—]\s+').firstMatch(name);
+    final artist = separator == null
+        ? 'Unknown Artist'
+        : name.substring(0, separator.start).trim();
+    final title = separator == null
+        ? name
+        : name.substring(separator.end).trim();
+    if (title.isEmpty) return null;
+    // A stable source-path fingerprint retains different M3U entries and
+    // prevents transient player/queue IDs from being serialized.
+    final digest = sha256.convert(utf8.encode([
+      artist.toLowerCase(), title.toLowerCase(), entry.pathOrUri,
+    ].join('\u001f'))).toString().substring(0, 24);
+    return Song(
+      id: '${onlinePlaylistPrefix}m3u-$digest',
+      title: title,
+      artist: artist,
+      duration: Duration(seconds: entry.durationSeconds ?? 0),
+      fileType: 'ONLINE',
+      sourcePackage: Song.pendingSourcePackage,
+    );
   }
 
   /// Match portable M3U metadata when the scanned path is an opaque URI.
@@ -1264,15 +1317,25 @@ class PlaylistService {
 class _M3uEntry {
   final String pathOrUri;
   final String? extInfTitle;
+  final int? durationSeconds;
 
-  const _M3uEntry({required this.pathOrUri, this.extInfTitle});
+  const _M3uEntry({
+    required this.pathOrUri,
+    this.extInfTitle,
+    this.durationSeconds,
+  });
 }
 
 class _ResolvedM3uImport {
   final List<String> ids;
   final List<String> unmatchedEntries;
+  final Map<String, PlaylistSongSnapshot> snapshots;
 
-  const _ResolvedM3uImport({required this.ids, required this.unmatchedEntries});
+  const _ResolvedM3uImport({
+    required this.ids,
+    required this.unmatchedEntries,
+    this.snapshots = const {},
+  });
 }
 
 class _SongLookup {
