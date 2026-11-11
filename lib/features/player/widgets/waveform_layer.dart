@@ -38,7 +38,6 @@ class _WaveformLayerState extends State<WaveformLayer>
   late final Animation<double> _appearAnimation;
   String? _lastSongId;
   List<double>? _cachedPeaks;
-  double? _wavyDrag;
 
   @override
   void initState() {
@@ -63,7 +62,6 @@ class _WaveformLayerState extends State<WaveformLayer>
       _lastSongId = widget.currentSong?.id;
       _appearController.forward(from: 0.0);
       _cachedPeaks = null;
-      _wavyDrag = null;
       _loadCachedPeaks();
     }
   }
@@ -113,22 +111,21 @@ class _WaveformLayerState extends State<WaveformLayer>
                 return ValueListenableBuilder<Duration>(
                   valueListenable: widget.positionNotifier,
                   builder: (context, position, _) {
+                    final songId = widget.currentSong?.id;
                     final seekBar = switch (style) {
-                      ProgressBarStyle.wavy => FullPlayerSeekBar(
-                        style: style,
+                      ProgressBarStyle.wavy => _WavyLayerSeekBar(
+                        key: ValueKey(widget.currentSong?.id),
                         value:
-                            _wavyDrag ??
                             (position.inMilliseconds / duration.inMilliseconds)
                                 .clamp(0.0, 1.0),
-                        onChangeStart: (value) =>
-                            setState(() => _wavyDrag = value),
-                        onChanged: (value) => setState(() => _wavyDrag = value),
-                        onChangeEnd: (value) {
+                        onSeek: (value) {
+                          if (!mounted || widget.currentSong?.id != songId) {
+                            return;
+                          }
                           final target = Duration(
                             milliseconds: (value * duration.inMilliseconds)
                                 .round(),
                           );
-                          setState(() => _wavyDrag = null);
                           widget.positionNotifier.value = target;
                           unawaited(widget.playerService.seek(target));
                         },
@@ -171,3 +168,32 @@ class _WaveformLayerState extends State<WaveformLayer>
 }
 
 /// Extracted player controls widget to reduce nesting and improve performance
+
+/// Drag state belongs to the keyed Wavy subtree. Changing song or style
+/// disposes its gesture and preview together, so neither can affect a new track.
+class _WavyLayerSeekBar extends StatefulWidget {
+  const _WavyLayerSeekBar({
+    super.key,
+    required this.value,
+    required this.onSeek,
+  });
+  final double value;
+  final ValueChanged<double> onSeek;
+  @override
+  State<_WavyLayerSeekBar> createState() => _WavyLayerSeekBarState();
+}
+
+class _WavyLayerSeekBarState extends State<_WavyLayerSeekBar> {
+  double? _drag;
+  @override
+  Widget build(BuildContext context) => FullPlayerSeekBar(
+    style: ProgressBarStyle.wavy,
+    value: _drag ?? widget.value,
+    onChangeStart: (value) => setState(() => _drag = value),
+    onChanged: (value) => setState(() => _drag = value),
+    onChangeEnd: (value) {
+      setState(() => _drag = null);
+      widget.onSeek(value);
+    },
+  );
+}

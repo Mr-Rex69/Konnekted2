@@ -1,3 +1,4 @@
+import 'package:flick/models/song.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/features/player/widgets/waveform_layer.dart';
 import 'package:flick/services/player_service.dart';
@@ -65,6 +66,77 @@ void main() {
     },
   );
 
+  for (final changeSong in [false, true]) {
+    testWidgets(
+      'classic Wavy cancels a drag across ${changeSong ? "song" : "style"} changes',
+      (tester) async {
+        final player = _SeekPlayer();
+        final position = ValueNotifier(const Duration(seconds: 10));
+        var style = ProgressBarStyle.wavy;
+        var songId = 'before';
+        late StateSetter change;
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              home: Scaffold(
+                body: Center(
+                  child: StatefulBuilder(
+                    builder: (context, setState) {
+                      change = setState;
+                      return SizedBox(
+                        width: 320,
+                        child: WaveformLayer(
+                          playerService: player,
+                          positionNotifier: position,
+                          currentSong: Song(
+                            id: songId,
+                            title: 'Track',
+                            artist: 'Artist',
+                            album: 'Album',
+                            fileType: 'FLAC',
+                            duration: const Duration(minutes: 3),
+                          ),
+                          styleOverride: style,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(find.byType(Slider));
+        final gesture = await tester.startGesture(
+          Offset(rect.left + 60, rect.center.dy),
+        );
+        await gesture.moveTo(Offset(rect.left + 240, rect.center.dy));
+        await tester.pump();
+        change(() {
+          if (changeSong) {
+            songId = 'after';
+          } else {
+            style = ProgressBarStyle.line;
+          }
+        });
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(player.seeks, isEmpty);
+        position.value = const Duration(seconds: 11);
+        change(() => style = ProgressBarStyle.wavy);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Slider>(find.byType(Slider)).value,
+          closeTo(11 / 180, .001),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        position.dispose();
+        player.durationNotifier.dispose();
+      },
+    );
+  }
   for (final style in ProgressBarStyle.values) {
     for (final rtl in [false, true]) {
       testWidgets(
