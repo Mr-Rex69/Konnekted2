@@ -14,6 +14,8 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   var onEvent: (([String: Any]) -> Void)?
   private var context: GCKCastContext?
+  private var reportedTrackID: String?
+  private var reportedLoadID: String?
   private var receiverChannel: LokalReceiverChannel?
   private var client: GCKRemoteMediaClient?
   private var ticker: Timer?
@@ -290,6 +292,8 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
   }
 
   private func detach() {
+    reportedTrackID = nil
+    reportedLoadID = nil
     if let channel = receiverChannel { context?.sessionManager.currentCastSession?.remove(channel) }
     receiverChannel = nil
     ticker?.invalidate()
@@ -302,6 +306,10 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
 
   private func emitStatus() {
     guard let session = connectedSession, let client = client, let status = client.mediaStatus else { return }
+    if let data = status.mediaInformation?.customData as? [String: Any], let id = data["loadId"] as? String, !id.isEmpty {
+      reportedLoadID = id
+      reportedTrackID = data["trackId"] as? String
+    }
     switch status.playerState {
     case .playing, .buffering, .loading: receiverMayBePlaying = true
     default: break
@@ -313,8 +321,8 @@ final class LokalCastController: NSObject, GCKSessionManagerListener,
     onEvent?(["event": "status", "position": milliseconds(client.approximateStreamPosition()),
               "duration": milliseconds(status.mediaInformation?.streamDuration ?? 0),
               "playing": status.playerState == .playing,
-              "loadId": (status.mediaInformation?.customData as? [String: Any])?["loadId"] as? String ?? "",
-              "trackId": (status.mediaInformation?.customData as? [String: Any])?["trackId"] as? String ?? "",
+              "loadId": reportedLoadID ?? "",
+              "trackId": reportedTrackID ?? "",
               "finished": status.playerState == .idle && status.idleReason == .finished])
     onEvent?(["event": "volume", "volume": Double(session.currentDeviceVolume)])
   }

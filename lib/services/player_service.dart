@@ -4911,6 +4911,7 @@ class PlayerService {
   /// instead of waiting for the outgoing track's TrackEnded event (which now
   /// only queues the following successor).
   Future<void> _onCrossfadeStarted(String fromPath, String toPath) async {
+    if (_castingService.isActive) return;
     if (_playlist.isEmpty || _currentIndex < 0) return;
     if (_crossfadeUiHandoffFromPath == fromPath) return;
 
@@ -6740,11 +6741,14 @@ class PlayerService {
           return;
         }
         final generation = _pendingPlaybackGeneration;
+        final selectedSongId = currentSongNotifier.value?.id;
         final local = PlaybackOutputTransition(
           song: currentSongNotifier.value,
           position: positionNotifier.value,
           wasPlaying: isPlayingNotifier.value,
-          isCurrent: () => generation == _pendingPlaybackGeneration,
+          isCurrent: () =>
+              generation == _pendingPlaybackGeneration &&
+              currentSongNotifier.value?.id == selectedSongId,
           pauseLocal: () => IosLocalAudioRequests.run(() async {
             // Deliberately address the attached local engine directly: publishing
             // remote ownership first would make pause() pause the receiver instead.

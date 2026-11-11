@@ -1,8 +1,55 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flick/models/song.dart';
+import 'package:flick/services/casting/cast_content_server.dart';
 import 'package:flick/services/casting/cast_receiver_presentation.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'cached artwork with an opaque filename is served as its real image type',
+    () async {
+      await binding.runAsync(() async {
+        final directory = await Directory.systemTemp.createTemp('cast-cover-');
+        final file = File('${directory.path}/opaque.file');
+        final bytes = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6F4sAAAAASUVORK5CYII=',
+        );
+        final client = HttpClient();
+        try {
+          await file.writeAsBytes(bytes);
+          final song = Song(
+            id: 'art',
+            title: 'Artwork',
+            artist: 'Fixture',
+            duration: const Duration(seconds: 10),
+            fileType: 'flac',
+            albumArt: file.path,
+          );
+          final url = await castArtwork(song);
+          final response = await (await client.getUrl(
+            Uri.parse(url!).replace(host: '127.0.0.1'),
+          )).close();
+          expect(response.headers.contentType?.mimeType, 'image/png');
+          expect(
+            await response.fold<List<int>>(
+              [],
+              (all, bytes) => all..addAll(bytes),
+            ),
+            bytes,
+          );
+          expect(await castArtwork(song, stillCurrent: () => false), isNull);
+        } finally {
+          client.close(force: true);
+          await CastContentServer.instance.stop();
+          await directory.delete(recursive: true);
+        }
+      });
+    },
+  );
   test('lyrics carry stable recording identity and fractional timing', () {
     final message = castLyrics(
       'recording',

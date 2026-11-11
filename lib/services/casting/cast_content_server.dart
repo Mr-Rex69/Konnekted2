@@ -38,6 +38,8 @@ class CastContentServer {
       }
       if (_server != null) {
         await opened.close(force: true);
+        if (epoch != _epoch || _server == null)
+          throw StateError('Cast session ended.');
         server = _server!;
       } else {
         _server = server = opened;

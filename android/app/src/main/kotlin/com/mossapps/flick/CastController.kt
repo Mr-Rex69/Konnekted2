@@ -45,6 +45,8 @@ class CastController(private val context: Context) {
     private var attachedClient: RemoteMediaClient? = null
     private var lastVolume: Double? = null
     private var statusTicker: Runnable? = null
+    private var reportedTrackId: String? = null
+    private var reportedLoadId: String? = null
 
     private var pendingConnect: CastPendingReply? = null
     private var pendingDisconnect: CastPendingReply? = null
@@ -170,6 +172,8 @@ class CastController(private val context: Context) {
     }
 
     private fun detachMediaClientListener() {
+        reportedTrackId = null
+        reportedLoadId = null
         stopStatusTicker()
         val cb = mediaClientCallback
         if (cb != null) attachedClient?.unregisterCallback(cb)
@@ -201,14 +205,22 @@ class CastController(private val context: Context) {
     }
 
     private fun emitStatus(client: RemoteMediaClient) {
+        val data = client.mediaStatus?.mediaInfo?.customData
+        val loadId = data?.optString("loadId")
+        if (!loadId.isNullOrBlank()) {
+            reportedLoadId = loadId
+            reportedTrackId = data.optString("trackId")
+        }
+        // CAF may omit media information on terminal IDLE/FINISHED status.
+        // Preserve the last reported load's identity for that completion only.
         emit(
             mapOf(
                 "event" to "status",
                 "position" to client.approximateStreamPosition,
                 "duration" to client.streamDuration,
                 "playing" to client.isPlaying,
-                "loadId" to client.mediaStatus?.mediaInfo?.customData?.optString("loadId"),
-                "trackId" to client.mediaStatus?.mediaInfo?.customData?.optString("trackId"),
+                "loadId" to reportedLoadId,
+                "trackId" to reportedTrackId,
                 "finished" to (client.mediaStatus?.playerState == MediaStatus.PLAYER_STATE_IDLE && client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_FINISHED),
                 "sourceError" to (client.mediaStatus?.idleReason == MediaStatus.IDLE_REASON_ERROR),
             )
