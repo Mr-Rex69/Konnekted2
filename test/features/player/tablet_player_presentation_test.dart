@@ -34,7 +34,7 @@ void main() {
   });
 
   testWidgets(
-    'tablet metadata and controls form one column in both cover modes',
+    'tablet player follows mobile portrait and split landscape in both cover modes',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -137,7 +137,11 @@ void main() {
               find.byKey(const ValueKey('transport')),
             );
             expect(video.width / video.height, closeTo(16 / 9, .01));
-            expect(identity.left, greaterThan(video.right));
+            if (size.width > size.height) {
+              expect(identity.left, greaterThan(video.right));
+            } else {
+              expect(identity.top, greaterThanOrEqualTo(video.bottom));
+            }
             expect(timeline.top, greaterThan(identity.bottom));
             expect(transport.top, greaterThan(timeline.bottom));
             expect(tester.takeException(), isNull);
