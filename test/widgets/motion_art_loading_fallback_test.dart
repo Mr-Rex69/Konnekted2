@@ -95,6 +95,19 @@ void main() {
 
   late Directory cacheDir;
 
+  setUpAll(() {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (call) async => <String>['wifi'],
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+      (call) async => null,
+    );
+  });
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     cacheDir = await Directory.systemTemp.createTemp('motion_art_widget_test_');
