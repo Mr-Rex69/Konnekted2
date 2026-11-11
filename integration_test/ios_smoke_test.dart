@@ -411,10 +411,24 @@ void main() {
     binding.reportData!['system_wav_progress_ms'] = systemProgress;
     // Reproduce the video plugin changing the shared audio category while
     // music owns playback. Keep actual audio progress and system controls.
-    await const MethodChannel('lokal/ios').invokeMethod('mixAudioSessionForIntegrationTest');
-    await tester.pump(const Duration(milliseconds: 250));
-    final categoryRecovery = await const MethodChannel('lokal/ios')
+    // Playback progress can precede asynchronous favorites/artwork metadata.
+    // Establish the same published music owner that a later video update sees.
+    await NotificationService().updateNotification(song: song, isPlaying: true,
+      duration: song.duration, position: player.positionNotifier.value);
+    final beforeMotion = await const MethodChannel('lokal/ios')
       .invokeMapMethod<String, dynamic>('nowPlayingMetadataState');
+    expect(beforeMotion?['playbackRate'], 1);
+    expect(beforeMotion?['remotePlayback'], false);
+    binding.reportData!['before_motion_audio_session'] = beforeMotion;
+    await const MethodChannel('lokal/ios').invokeMethod('mixAudioSessionForIntegrationTest');
+    Map<String, dynamic>? categoryRecovery;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      categoryRecovery = await const MethodChannel('lokal/ios')
+        .invokeMapMethod<String, dynamic>('nowPlayingMetadataState');
+      if (categoryRecovery?['mixesWithOthers'] == false) break;
+    }
+    binding.reportData!['after_motion_audio_session'] = categoryRecovery;
     expect(categoryRecovery?['mixesWithOthers'], false);
     await NotificationService().updateNotification(song: song, isPlaying: true,
       duration: song.duration, position: player.positionNotifier.value);
