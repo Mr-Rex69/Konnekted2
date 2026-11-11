@@ -1,0 +1,47 @@
+name: Mobile player appearance
+on:
+  pull_request:
+    paths:
+      - 'lib/features/player/**'
+      - 'lib/features/settings/lokal/groups/appearance_group.dart'
+      - 'lib/models/progress_bar_style.dart'
+      - 'lib/providers/*waveform*'
+      - 'lib/providers/progress_bar_style_provider.dart'
+      - 'lib/services/progress_bar_style_preference_service.dart'
+      - 'lib/l10n/model_labels.dart'
+      - 'test/features/player/**'
+      - 'test/providers/progress_bar_style_provider_test.dart'
+      - '.github/workflows/player-appearance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  player-appearance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Analyze player and appearance settings
+        run: >-
+          flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+          lib/features/player lib/features/settings/lokal/groups/appearance_group.dart
+          lib/providers/full_player_waveform_provider.dart lib/providers/progress_bar_style_provider.dart
+      - name: Verify seeking, persistence, layouts and localization
+        run: >-
+          flutter test --no-pub
+          test/features/player/full_player_seek_bar_test.dart
+          test/providers/progress_bar_style_provider_test.dart
+          test/features/player/line_seek_bar_test.dart
+          test/features/player/desktop_remote_full_player_test.dart
+          test/features/player/tablet_player_presentation_test.dart
+          test/features/player/video_space_layout_test.dart
+          test/widgets/lokal/lokal_settings_reskin_test.dart test/l10n
+      - run: git diff --exit-code -- pubspec.lock

@@ -162,9 +162,7 @@ extension ProgressBarStyleL10n on ProgressBarStyle {
   };
 
   String get description => switch (this) {
-    ProgressBarStyle.waveform => lokalText(
-      'The audio waveform when available; otherwise a line.',
-    ),
+    ProgressBarStyle.waveform => l10n.verticalBarsThatAnimateAcrossThe,
     ProgressBarStyle.wavy => lokalText(
       'A gentle wave along the played part of the track.',
     ),
