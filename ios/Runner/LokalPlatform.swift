@@ -292,11 +292,6 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
     commandTargets.append((seek, target))
   }
 
-  deinit {
-    if let observer = audioCategoryObserver { NotificationCenter.default.removeObserver(observer) }
-    for (command, target) in commandTargets { command.removeTarget(target) }
-  }
-
   // Silent animated artwork can add mixWithOthers to the shared session after
   // Dart configured music playback. A mixing session cannot own Now Playing.
   // Keep activation/category/mode under the audio engine's lifecycle owner.
@@ -499,6 +494,7 @@ final class LokalPlatform: NSObject, UIDocumentPickerDelegate {
   }
 
   deinit {
+    if let observer = audioCategoryObserver { NotificationCenter.default.removeObserver(observer) }
     for (command, target) in commandTargets { command.removeTarget(target) }
   }
 }
