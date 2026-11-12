@@ -119,3 +119,13 @@ When reporting playback or UI problems, include your phone, Android version, ins
 ## License and credits
 
 Lokal Mobile is **GPL-3.0**. It builds on Lokal's music experience and Flick's audio architecture. MIT-derived material retains its attribution; see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Bundled fonts and third-party SDKs retain their own notices.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=lokal-music%2Fdesktop%2Clokal-music%2Fmobile&type=date&logscale=&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=lokal-music/desktop%2Clokal-music/mobile&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=lokal-music/desktop%2Clokal-music/mobile&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=lokal-music/desktop%2Clokal-music/mobile&type=date&legend=top-left" />
+ </picture>
+</a>
