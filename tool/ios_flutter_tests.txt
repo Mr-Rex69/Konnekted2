@@ -211,3 +211,4 @@ test/providers/progress_bar_style_provider_test.dart
 test/services/rust_audio_engine_audio_session_test.dart
 test/konnekted/collection_downloads_test.dart
 test/konnekted/collection_download_actions_test.dart
+test/features/player/full_player_header_test.dart

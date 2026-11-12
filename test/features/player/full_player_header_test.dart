@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flick/core/theme/app_theme.dart';
+import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/features/player/widgets/full_player_header.dart';
 import 'package:flick/widgets/lokal/lokal_glass.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,94 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  Widget header(bool bright, {bool reducedMotion = false}) => MaterialApp(
+    theme: AppTheme.darkTheme,
+    home: MediaQuery(
+      data: MediaQueryData(disableAnimations: reducedMotion),
+      child: Scaffold(
+        body: FullPlayerHeader(
+          deviceLabel: 'Speaker',
+          outputIcon: LucideIcons.speaker,
+          isCasting: false,
+          brightArtwork: bright,
+          onClose: () {},
+          onOutput: () {},
+          onCast: () {},
+          onMore: () {},
+        ),
+      ),
+    ),
+  );
+  Color ink(WidgetTester tester) =>
+      tester.widget<Text>(find.text('Speaker')).style!.color!;
+  void expectGlyphsMatch(WidgetTester tester, Color color) {
+    for (final glyph in [
+      LucideIcons.chevronLeft,
+      LucideIcons.speaker,
+      LucideIcons.cast,
+      Icons.more_vert,
+    ]) {
+      expect(tester.widget<Icon>(find.byIcon(glyph)).color, color);
+    }
+  }
+
+  testWidgets('header text blends between contrast colors in both directions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(header(false));
+    final light = ink(tester);
+    await tester.pumpWidget(header(true));
+    expect(ink(tester), light, reason: 'the first changed frame must not snap');
+    await tester.pump(AppConstants.animationVerySlow ~/ 2);
+    final middle = ink(tester);
+    expect(middle, isNot(light));
+    expectGlyphsMatch(tester, middle);
+    await tester.pumpAndSettle();
+    final dark = ink(tester);
+    expect(middle, isNot(dark));
+    expect(dark.computeLuminance(), lessThan(light.computeLuminance()));
+
+    await tester.pumpWidget(header(false));
+    expect(ink(tester), dark);
+    await tester.pump(AppConstants.animationVerySlow ~/ 2);
+    expect(ink(tester), isNot(dark));
+    expect(ink(tester), isNot(light));
+    expectGlyphsMatch(tester, ink(tester));
+    await tester.pumpAndSettle();
+    expect(ink(tester), light);
+  });
+
+  testWidgets('rapid song changes retarget from the current text color', (
+    tester,
+  ) async {
+    await tester.pumpWidget(header(false));
+    final light = ink(tester);
+    await tester.pumpWidget(header(true));
+    await tester.pump(AppConstants.animationVerySlow ~/ 2);
+    final middle = ink(tester);
+    await tester.pumpWidget(header(false));
+    expect(ink(tester), middle);
+    await tester.pump(AppConstants.animationVerySlow ~/ 2);
+    expect(
+      ink(tester).computeLuminance(),
+      greaterThan(middle.computeLuminance()),
+    );
+    await tester.pumpAndSettle();
+    expect(ink(tester), light);
+  });
+
+  testWidgets('reduced motion updates header text without animating', (
+    tester,
+  ) async {
+    await tester.pumpWidget(header(false, reducedMotion: true));
+    final light = ink(tester);
+    await tester.pumpWidget(header(true, reducedMotion: true));
+    await tester.pump();
+    expect(ink(tester), isNot(light));
+    expect(tester.hasRunningAnimations, isFalse);
+    expectGlyphsMatch(tester, ink(tester));
+  });
+
   for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
     for (final scale in [1.0, 2.0]) {
       testWidgets(
@@ -50,7 +139,7 @@ void main() {
                                       outputIcon: LucideIcons.speaker,
                                       isCasting: true,
                                       brightArtwork:
-                                          value.computeLuminance()  >= .18,
+                                          value.computeLuminance() >= .18,
                                       onClose: () => calls.add('close'),
                                       onOutput: () => calls.add('output'),
                                       onCast: () => calls.add('cast'),
@@ -104,7 +193,7 @@ void main() {
             const Color(0xFF122A47),
           ]) {
             cover.value = color;
-            await tester.pump();
+            await tester.pumpAndSettle();
             await tester.runAsync(() async {
               final render =
                   boundary.currentContext!.findRenderObject()
@@ -125,9 +214,9 @@ void main() {
                   bytes.getUint8(offset + 1),
                   bytes.getUint8(offset + 2),
                 );
-                final ink = tester.widget<Icon>(
-                  find.byIcon(LucideIcons.cast),
-                ).color!;
+                final ink = tester
+                    .widget<Icon>(find.byIcon(LucideIcons.cast))
+                    .color!;
                 final top = math.max(
                   ink.computeLuminance(),
                   backing.computeLuminance(),
@@ -147,7 +236,8 @@ void main() {
                 expect(
                   contrast,
                   greaterThan(4.5),
-                  reason: 'contrast on $color / $rect: ink=$ink, '
+                  reason:
+                      'contrast on $color / $rect: ink=$ink, '
                       'backing=$backing, at=$point',
                 );
               }
