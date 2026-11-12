@@ -214,6 +214,29 @@ void main() {
     resetPreparedPlaylistBanners();
   });
 
+  testWidgets('prepared banner is present in the first destination frame', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1170, 2532)
+      ..devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _page(provider: false, insets: const EdgeInsets.only(top: 47)),
+    );
+    await _warmArtwork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      _page(provider: false, insets: const EdgeInsets.only(top: 47)),
+    );
+    expect(
+      tester.widget<RawImage>(find.byType(RawImage).first).image,
+      isNotNull,
+    );
+    expect(find.byType(PlaylistDiagonalCollage), findsNothing);
+    expect(find.byType(ShaderMask), findsNothing);
+  });
+
   for (final provider in [false, true]) {
     testWidgets(
       'playlist search remains usable above the keyboard: provider=$provider',

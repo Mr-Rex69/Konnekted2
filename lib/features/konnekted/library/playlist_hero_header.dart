@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/services/album_art_service.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
@@ -246,6 +247,21 @@ Future<ui.Image> _prepareBanner(
     covers: covers,
   );
   _preparedBanners[key] = future;
+  // A warmed route must paint its art in its very first frame. A normal
+  // completed Future still defers the image until after that frame's build.
+  unawaited(
+    future.then(
+      (image) {
+        if (identical(_preparedBanners[key], future)) {
+          _preparedBanners[key] = SynchronousFuture(image);
+        }
+      },
+      onError: (Object _) {
+        if (identical(_preparedBanners[key], future))
+          _preparedBanners.remove(key);
+      },
+    ),
+  );
   while (_preparedBanners.length > 6) {
     final oldest = _preparedBanners.remove(_preparedBanners.keys.first)!;
     unawaited(oldest.then((image) => image.dispose(), onError: (Object _) {}));
