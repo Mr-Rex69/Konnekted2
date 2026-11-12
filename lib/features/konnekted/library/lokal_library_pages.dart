@@ -64,6 +64,7 @@ Widget? lokalLibraryPage(String name) => switch (name) {
   ),
   'favorites' => LokalSongListPage(
     title: lokalText('Liked'),
+    downloadMissing: true,
     source: (ref) => ref.watch(konnektedFavoritesProvider),
     // "Recently added" means added to Likes here, not imported into Library.
     initialSort: LokalSongSort.recentlyAdded,

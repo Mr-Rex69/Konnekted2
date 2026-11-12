@@ -1,3 +1,5 @@
+import 'collection_download_dialog.dart';
+
 import 'package:flick/l10n/l10n.dart';
 import 'package:flick/widgets/lokal/lokal_toast.dart';
 
@@ -147,7 +149,11 @@ final lokalResolvedPlaylistSongsProvider = Provider.autoDispose
       final byId =
           ref.watch(konnektedLibraryIndexProvider).value?.byId ??
           const <String, Song>{};
-      return lokalPlaylistSongs(playlist, byId);
+      final offline = ref.watch(collectionOfflineIndexProvider).value;
+      return [
+        for (final song in lokalPlaylistSongs(playlist, byId))
+          offline?.resolve(song) ?? song,
+      ];
     });
 
 /// Prepare the local playlist's generated or custom hero image before the
@@ -577,6 +583,11 @@ class LokalPlaylistPage extends ConsumerWidget {
       title: playlist.name,
       choices: [
         LokalChoice(
+          value: 'download',
+          label: lokalText('Download missing songs'),
+          icon: Icons.download_rounded,
+        ),
+        LokalChoice(
           value: 'queue',
           label: lokalText('Add to queue'),
           icon: Icons.queue_music_rounded,
@@ -608,6 +619,8 @@ class LokalPlaylistPage extends ConsumerWidget {
     );
     if (!context.mounted) return;
     switch (selected) {
+      case 'download':
+        await downloadMissingCollectionSongs(context, ref, songs);
       case 'queue':
         await lokalQueueAll(context, ref, songs);
       case 'reorder':

@@ -15,7 +15,8 @@ class PlaylistDownloadSourceUnavailable implements Exception {
   const PlaylistDownloadSourceUnavailable();
 
   @override
-  String toString() => 'No verified downloadable source matched this entry. '
+  String toString() =>
+      'No verified downloadable source matched this entry. '
       'Check enabled add-ons or search for it manually.';
 }
 
@@ -25,11 +26,14 @@ class PlaylistUnmatchedDownloader {
   static final _videoId = RegExp(r'^[A-Za-z0-9_-]{11}$');
 
   static PlaylistDownloadChoice? directYouTube(
-    ParsedPlaylistLink link, RemotePlaylistEntry entry,
+    ParsedPlaylistLink? link,
+    RemotePlaylistEntry entry,
   ) {
     final id = entry.remoteId;
-    if (link.source != PlaylistLinkSource.youtube ||
-        id == null || !_videoId.hasMatch(id)) return null;
+    if (link?.source != PlaylistLinkSource.youtube ||
+        id == null ||
+        !_videoId.hasMatch(id))
+      return null;
     return (
       sourceId: 'yt',
       track: DiscoveryTrack(
@@ -55,8 +59,10 @@ class PlaylistUnmatchedDownloader {
   }) async {
     if (entry.artist.trim().isEmpty || entry.title.trim().isEmpty) return null;
     final wanted = RecommendationCandidate(
-      title: entry.title, artist: entry.artist,
-      album: entry.album, duration: entry.duration,
+      title: entry.title,
+      artist: entry.artist,
+      album: entry.album,
+      duration: entry.duration,
     );
     Object? searchError;
     StackTrace? searchStack;
@@ -76,10 +82,13 @@ class PlaylistUnmatchedDownloader {
         try {
           final results = await source.search(query);
           final found = recommendationMatch(
-            wanted, results,
+            wanted,
+            results,
             (track) => RecommendationCandidate(
-              title: track.title, artist: track.artist,
-              album: track.album, duration: track.duration,
+              title: track.title,
+              artist: track.artist,
+              album: track.album,
+              duration: track.duration,
             ),
           );
           if (found != null) return (sourceId: source.id, track: found);
@@ -90,14 +99,17 @@ class PlaylistUnmatchedDownloader {
         }
       }
     }
-    if (searchError != null) Error.throwWithStackTrace(searchError, searchStack!);
+    if (searchError != null)
+      Error.throwWithStackTrace(searchError, searchStack!);
     return null;
   }
 
   Future<LibraryDownloadResult> download(
-    ParsedPlaylistLink link, RemotePlaylistEntry entry, {
+    ParsedPlaylistLink? link,
+    RemotePlaylistEntry entry, {
     void Function(String message)? onStatus,
     Future<void>? cancel,
+    bool requireAtmos = false,
     bool Function()? cancelled,
     Future<bool> Function(OnlineSource source)? verifySource,
     Future<List<OnlineSource>> Function(http.Client client)? sources,
@@ -124,11 +136,20 @@ class PlaylistUnmatchedDownloader {
       throw const DiscoveryException('Download cancelled.');
     }
     onStatus?.call('Downloading ${entry.title} to library…');
-    final ready = await (prepare?.call(chosen.sourceId, chosen.track) ??
-        playOnlineTrack(chosen.sourceId, chosen.track,
-          forDownload: true, onStatus: onStatus, cancel: cancel));
+    final ready =
+        await (prepare?.call(chosen.sourceId, chosen.track) ??
+            playOnlineTrack(
+              chosen.sourceId,
+              chosen.track,
+              forDownload: true,
+              onStatus: onStatus,
+              cancel: cancel,
+            ));
     if (cancelled?.call() == true) {
       throw const DiscoveryException('Download cancelled.');
+    }
+    if (requireAtmos && !ready.atmosEncoded) {
+      throw StateError('No verified Dolby Atmos download matched this song.');
     }
     onStatus?.call('Saving ${entry.title} to your library…');
     return save?.call(ready) ??

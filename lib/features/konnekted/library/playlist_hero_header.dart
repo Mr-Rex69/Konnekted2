@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flick/core/theme/lokal_performance_scope.dart';
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/services/album_art_service.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
@@ -27,8 +29,8 @@ final int _playlistHeroSessionSeed = math.Random().nextInt(0x7fffffff);
 // during the route push. On the first tap, prepare the exact hero image-cache
 // keys before starting the transition. Always bound the wait for offline art.
 // Returning to the same playlist during this app session remains immediate.
-const playlistHeroFirstOpenTapDelay = Duration(milliseconds: 220);
-const playlistHeroWarmupTimeout = Duration(milliseconds: 650);
+const playlistHeroFirstOpenTapDelay = Duration(milliseconds: 350);
+const playlistHeroWarmupTimeout = Duration(milliseconds: 1500);
 final Set<String> _openedPlaylistPages = <String>{};
 final Set<String> _openingPlaylistPages = <String>{};
 
@@ -50,6 +52,7 @@ Future<void> openPlaylistAfterFirstTap(
         }
       }
       await minimumWait;
+      if (context.mounted) await WidgetsBinding.instance.endOfFrame;
     }
     if (!context.mounted) return;
     _openedPlaylistPages.add(playlistId);
@@ -127,112 +130,353 @@ List<PlaylistHeroCover> playlistHeroCoversForSession(
   final selected = unique.values.toList(growable: false);
   if (selected.isEmpty) return const [];
   final shuffled = List<PlaylistHeroCover>.of(selected)
-    ..shuffle(math.Random(
-      Object.hash(playlistId, _playlistHeroSessionSeed) & 0x7fffffff,
-    ));
+    ..shuffle(
+      math.Random(
+        Object.hash(playlistId, _playlistHeroSessionSeed) & 0x7fffffff,
+      ),
+    );
   return shuffled.take(limit).toList(growable: false);
 }
 
-// Precache the same resized image providers that CachedImageWidget uses for
-// the 320px collage thumbnails, so the subsequent route reuses decoded frames.
-Future<void> _precacheHeroImage(
+// Keep a few prepared banners for return navigation. Widgets own image clones,
+// so evicting a cache entry cannot dispose an image still on screen.
+final _preparedBanners = <String, Future<ui.Image>>{};
+
+@visibleForTesting
+void resetPreparedPlaylistBanners() {
+  final images = _preparedBanners.values.toList();
+  _preparedBanners.clear();
+  for (final future in images) {
+    unawaited(future.then((image) => image.dispose(), onError: (Object _) {}));
+  }
+}
+
+String _bannerKey(
   BuildContext context,
+  String playlistId,
+  String? coverUrl,
+  String? coverPath,
+  Uint8List? coverBytes,
+  List<PlaylistHeroCover> covers,
+) =>
+    '$playlistId|${MediaQuery.sizeOf(context)}|${MediaQuery.devicePixelRatioOf(context).clamp(1, 2)}|'
+    '${context.lokal.bg.toARGB32()}|$coverUrl|$coverPath|${identityHashCode(coverBytes)}|'
+    '${coverUrl?.isNotEmpty == true || coverPath?.isNotEmpty == true || coverBytes?.isNotEmpty == true ? '' : playlistHeroCoversForSession(playlistId, covers).map((cover) => '${cover.imagePath}:${cover.audioSourcePath}').join('|')}';
+
+Future<ImageInfo?> _decodeBannerImage(
+  ImageConfiguration configuration,
   ImageProvider provider,
 ) async {
-  if (!context.mounted) return;
+  final stream = provider.resolve(configuration);
+  final ready = Completer<ImageInfo?>();
+  late ImageStreamListener listener;
+  listener = ImageStreamListener(
+    (info, _) {
+      if (!ready.isCompleted) {
+        ready.complete(info);
+      } else {
+        info.dispose();
+      }
+    },
+    onError: (Object error, StackTrace? stack) {
+      if (!ready.isCompleted) ready.complete(null);
+    },
+  );
+  stream.addListener(listener);
   try {
-    await precacheImage(
-      provider,
-      context,
-      onError: (error, stackTrace) {},
+    return await ready.future.timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => null,
     );
-  } catch (_) {
-    // A failed thumbnail is handled by the normal hero fallback.
+  } finally {
+    stream.removeListener(listener);
   }
 }
 
-Future<void> _precacheHeroTile(
-  BuildContext context,
-  PlaylistHeroCover cover,
-) async {
+Future<ImageProvider?> _bannerTileProvider(PlaylistHeroCover cover) async {
   var path = cover.imagePath.trim();
   if (!path.startsWith('http') &&
-      (path.isEmpty || !(await File(path).exists()))) {
-    final audioPath = cover.audioSourcePath?.trim();
-    if (audioPath == null || audioPath.isEmpty) return;
-    path = AlbumArtService.instance.cachedArtworkPathFor(audioPath) ?? '';
-    if (path.isEmpty || !(await File(path).exists())) {
-      try {
-        path = await AlbumArtService.instance.resolveArtworkPath(
-              existingPath: cover.imagePath,
-              audioSourcePath: audioPath,
-            ) ??
-            '';
-      } catch (_) {
-        return;
-      }
+      (path.isEmpty || !await File(path).exists())) {
+    final audio = cover.audioSourcePath;
+    if (audio == null || audio.isEmpty) return null;
+    try {
+      path =
+          await AlbumArtService.instance.resolveArtworkPath(
+            existingPath: cover.imagePath,
+            audioSourcePath: audio,
+          ) ??
+          '';
+    } catch (_) {
+      return null;
     }
   }
-  if (path.isEmpty || !context.mounted) return;
-  if (!path.startsWith('http') && !(await File(path).exists())) return;
-  if (!context.mounted) return;
-  final ImageProvider source =
-      path.startsWith('http') ? NetworkImage(path) : FileImage(File(path));
-  await _precacheHeroImage(
-    context,
-    ResizeImage.resizeIfNeeded(320, 320, source),
-  );
+  if (path.isEmpty) return null;
+  final ImageProvider provider = path.startsWith('http')
+      ? NetworkImage(path)
+      : FileImage(File(path));
+  return ResizeImage.resizeIfNeeded(320, 320, provider);
 }
 
-/// Warm artwork on tap, not after the playlist page has begun sliding.
-/// An explicit cover takes priority over the generated collage, just as in
-/// PlaylistHeroHeader. The opening gate applies a deadline separately.
+Future<ui.Image> _prepareBanner(
+  BuildContext context, {
+  required String playlistId,
+  String? coverUrl,
+  String? coverPath,
+  Uint8List? coverBytes,
+  required List<PlaylistHeroCover> covers,
+}) {
+  final key = _bannerKey(
+    context,
+    playlistId,
+    coverUrl,
+    coverPath,
+    coverBytes,
+    covers,
+  );
+  final existing = _preparedBanners.remove(key);
+  if (existing != null) {
+    _preparedBanners[key] = existing;
+    return existing;
+  }
+  final future = _renderBanner(
+    context,
+    playlistId: playlistId,
+    coverUrl: coverUrl,
+    coverPath: coverPath,
+    coverBytes: coverBytes,
+    covers: covers,
+  );
+  _preparedBanners[key] = future;
+  // A warmed route must paint its art in its very first frame. A normal
+  // completed Future still defers the image until after that frame's build.
+  unawaited(
+    future.then(
+      (image) {
+        if (identical(_preparedBanners[key], future)) {
+          _preparedBanners[key] = SynchronousFuture(image);
+        }
+      },
+      onError: (Object _) {
+        if (identical(_preparedBanners[key], future))
+          _preparedBanners.remove(key);
+      },
+    ),
+  );
+  while (_preparedBanners.length > 6) {
+    final oldest = _preparedBanners.remove(_preparedBanners.keys.first)!;
+    unawaited(oldest.then((image) => image.dispose(), onError: (Object _) {}));
+  }
+  return future;
+}
+
+Future<ui.Image> _renderBanner(
+  BuildContext context, {
+  required String playlistId,
+  String? coverUrl,
+  String? coverPath,
+  Uint8List? coverBytes,
+  required List<PlaylistHeroCover> covers,
+}) async {
+  // Capture context values before any asynchronous artwork work.
+  final configuration = createLocalImageConfiguration(context);
+  final width = MediaQuery.sizeOf(context).width;
+  final height = playlistHeroHeightForScreen(MediaQuery.sizeOf(context).height);
+  final scale = MediaQuery.devicePixelRatioOf(context).clamp(1.0, 2.0);
+  final bg = context.lokal.bg;
+  final surface = context.lokal.surface2;
+  final sampled = playlistHeroCoversForSession(playlistId, covers);
+  final images = <ImageInfo?>[];
+  ImageInfo? primary;
+  try {
+    ImageProvider? provider;
+    if (coverBytes != null && coverBytes.isNotEmpty) {
+      provider = MemoryImage(coverBytes);
+    } else if (coverPath?.isNotEmpty == true) {
+      provider = coverPath!.startsWith('http')
+          ? NetworkImage(coverPath)
+          : FileImage(File(coverPath));
+    } else if (coverUrl?.startsWith('https://') == true) {
+      provider = NetworkImage(coverUrl!);
+    }
+    if (provider != null) {
+      primary = await _decodeBannerImage(
+        configuration,
+        ResizeImage.resizeIfNeeded((width * scale).ceil(), null, provider),
+      );
+    }
+    if (primary == null) {
+      for (var i = 0; i < sampled.length; i += 3) {
+        final providers = await Future.wait(
+          sampled.skip(i).take(3).map(_bannerTileProvider),
+        );
+        images.addAll(
+          await Future.wait(
+            providers.map(
+              (provider) async => provider == null
+                  ? null
+                  : _decodeBannerImage(configuration, provider),
+            ),
+          ),
+        );
+      }
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)..scale(scale);
+    final bounds = Rect.fromLTWH(0, 0, width, height);
+    canvas.drawRect(bounds, Paint()..color = bg);
+    // Artwork is physically confined above the opaque lower surface. Nothing
+    // textured can reach the sliver's fractional raster edge, on any backend.
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, width, height * .84));
+    canvas.drawRect(bounds, Paint()..color = surface);
+    void drawCover(ui.Image image, Rect target) {
+      final sizes = applyBoxFit(
+        BoxFit.cover,
+        Size(image.width.toDouble(), image.height.toDouble()),
+        target.size,
+      );
+      final source = Alignment.center.inscribe(
+        sizes.source,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      );
+      canvas.drawImageRect(
+        image,
+        source,
+        target,
+        Paint()..filterQuality = FilterQuality.low,
+      );
+    }
+
+    if (primary != null) {
+      drawCover(primary.image, bounds);
+    } else if (images.any((image) => image != null)) {
+      final tile = (width * .34).clamp(105.0, 190.0);
+      const gap = 14.0;
+      final side = tile * 4 + gap * 3;
+      canvas.translate(width / 2, height / 2);
+      canvas.rotate(-.26);
+      canvas.translate(-side / 2, -side / 2);
+      for (var i = 0; i < 16; i++) {
+        final image = images[i % images.length]?.image;
+        if (image == null) continue;
+        final target = Rect.fromLTWH(
+          (i % 4) * (tile + gap),
+          (i ~/ 4) * (tile + gap),
+          tile,
+          tile,
+        );
+        canvas.save();
+        canvas.clipRRect(
+          RRect.fromRectAndRadius(target, const Radius.circular(16)),
+        );
+        drawCover(image, target);
+        canvas.restore();
+      }
+    }
+    canvas.restore();
+    canvas.drawRect(
+      bounds,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset.zero,
+          Offset(0, height),
+          [
+            Colors.black.withValues(alpha: .38),
+            Colors.black.withValues(alpha: .08),
+            bg.withValues(alpha: 0),
+            bg,
+            bg,
+          ],
+          [0, .16, .36, .84, 1],
+        ),
+    );
+    final picture = recorder.endRecording();
+    try {
+      return await picture.toImage(
+        (width * scale).ceil(),
+        (height * scale).ceil(),
+      );
+    } finally {
+      picture.dispose();
+    }
+  } finally {
+    primary?.dispose();
+    for (final image in images) {
+      image?.dispose();
+    }
+  }
+}
+
+class _PreparedBanner extends StatefulWidget {
+  const _PreparedBanner({required this.prepare});
+  final Future<ui.Image> prepare;
+  @override
+  State<_PreparedBanner> createState() => _PreparedBannerState();
+}
+
+class _PreparedBannerState extends State<_PreparedBanner> {
+  ui.Image? _image;
+  int _generation = 0;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_PreparedBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.prepare != widget.prepare) _load();
+  }
+
+  void _load() {
+    final generation = ++_generation;
+    unawaited(
+      widget.prepare.then((image) {
+        if (!mounted || generation != _generation) return;
+        final copy = image.clone();
+        setState(() {
+          _image?.dispose();
+          _image = copy;
+        });
+      }, onError: (Object _) {}),
+    );
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    _image?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _image == null
+      ? ColoredBox(color: context.lokal.bg)
+      : RawImage(
+          image: _image,
+          fit: BoxFit.fill,
+          filterQuality: FilterQuality.low,
+        );
+}
+
+/// Decode and rasterize the exact banner before starting its first transition.
 Future<void> precachePlaylistHeroArtwork(
   BuildContext context, {
   required String playlistId,
   String? coverUrl,
   String? coverPath,
   Uint8List? coverBytes,
-  Iterable<PlaylistHeroCover> covers = const <PlaylistHeroCover>[],
+  Iterable<PlaylistHeroCover> covers = const [],
 }) async {
-  if (!context.mounted) return;
-  if (coverBytes != null && coverBytes.isNotEmpty) {
-    await _precacheHeroImage(context, MemoryImage(coverBytes));
-    return;
-  }
-  final localCover = coverPath?.trim() ?? '';
-  if (localCover.isNotEmpty &&
-      (localCover.startsWith('http') || await File(localCover).exists())) {
-    if (!context.mounted) return;
-    final physicalWidth =
-        MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context);
-    final requestedWidth = ((physicalWidth / 64).ceil() * 64).clamp(64, 2048);
-    final decodeWidth = LokalPerformanceScope.of(context)
-        ? requestedWidth.clamp(64, 768)
-        : requestedWidth;
-    final ImageProvider source = localCover.startsWith('http')
-        ? NetworkImage(localCover)
-        : FileImage(File(localCover));
-    await _precacheHeroImage(
-      context,
-      ResizeImage.resizeIfNeeded(decodeWidth, null, source),
-    );
-    return;
-  }
-  final remoteCover = coverUrl?.trim() ?? '';
-  if (remoteCover.startsWith('https://')) {
-    await _precacheHeroImage(context, NetworkImage(remoteCover));
-    return;
-  }
-  final sampled = playlistHeroCoversForSession(playlistId, covers);
-  // Limit concurrent decodes/extractions while preparing the first frame.
-  for (var i = 0; i < sampled.length; i += 3) {
-    if (!context.mounted) return;
-    await Future.wait([
-      for (final cover in sampled.skip(i).take(3))
-        _precacheHeroTile(context, cover),
-    ]);
-  }
+  await _prepareBanner(
+    context,
+    playlistId: playlistId,
+    coverUrl: coverUrl,
+    coverPath: coverPath,
+    coverBytes: coverBytes,
+    covers: covers.toList(),
+  );
 }
 
 /// Full-width, gradient-faded playlist art and title. A dedicated playlist
@@ -265,37 +509,9 @@ class PlaylistHeroHeader extends StatelessWidget {
     final width = MediaQuery.sizeOf(context).width;
     // The hero occupies at most ~34% of the screen, including the status
     // bar. Its image extends behind system chrome rather than starting below it.
-    final height = playlistHeroHeightForScreen(MediaQuery.sizeOf(context).height);
-    final sampled = playlistHeroCoversForSession(playlistId, covers);
-    final fallback = PlaylistDiagonalCollage(
-      key: ValueKey('playlist-art:$playlistId'),
-      covers: sampled,
+    final height = playlistHeroHeightForScreen(
+      MediaQuery.sizeOf(context).height,
     );
-    final cover = coverUrl?.trim();
-    final localCover = coverPath?.trim();
-    final image = coverBytes != null && coverBytes!.isNotEmpty
-        ? Image.memory(
-            coverBytes!,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, _, _) => fallback,
-          )
-        : localCover != null && localCover.isNotEmpty
-            ? CachedImageWidget(
-                imagePath: localCover,
-                fit: BoxFit.cover,
-                placeholder: ColoredBox(color: theme.surface2),
-                errorWidget: fallback,
-              )
-            : cover != null && cover.startsWith('https://')
-                ? Image.network(
-                    cover,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => fallback,
-                  )
-                : fallback;
-
     return SizedBox(
       height: height,
       width: double.infinity,
@@ -303,44 +519,14 @@ class PlaylistHeroHeader extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           ColoredBox(color: theme.bg),
-          // Fade the image itself to zero alpha before the sliver boundary.
-          // Painting an opaque wash over an image at the same fractional
-          // edge leaves a one-pixel fringe from their separate coverage.
-          RepaintBoundary(
-            child: ShaderMask(
-              blendMode: BlendMode.dstIn,
-              shaderCallback: (bounds) => const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: [0, .36, .84, 1],
-                colors: [
-                  Colors.white,
-                  Colors.white,
-                  Colors.transparent,
-                  Colors.transparent,
-                ],
-              ).createShader(bounds),
-              child: image,
-            ),
-          ),
-          // Contrast for the floating navigation; the lower surface is the
-          // page background, without an overpainted joining strip.
-          IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0.0, .16, .43, .84, 1.0],
-                  colors: [
-                    Colors.black.withValues(alpha: .38),
-                    Colors.black.withValues(alpha: .08),
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.transparent,
-                  ],
-                ),
-              ),
+          _PreparedBanner(
+            prepare: _prepareBanner(
+              context,
+              playlistId: playlistId,
+              coverUrl: coverUrl,
+              coverPath: coverPath,
+              coverBytes: coverBytes,
+              covers: covers,
             ),
           ),
           Positioned(
@@ -442,11 +628,15 @@ class PlaylistDiagonalCollage extends StatelessWidget {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(16),
                               child: CachedImageWidget(
-                                key: ValueKey('playlist-collage-slot-${row * 4 + col}'),
-                                imagePath: covers[
-                                    (row * 4 + col) % covers.length].imagePath,
-                                audioSourcePath: covers[
-                                    (row * 4 + col) % covers.length].audioSourcePath,
+                                key: ValueKey(
+                                  'playlist-collage-slot-${row * 4 + col}',
+                                ),
+                                imagePath:
+                                    covers[(row * 4 + col) % covers.length]
+                                        .imagePath,
+                                audioSourcePath:
+                                    covers[(row * 4 + col) % covers.length]
+                                        .audioSourcePath,
                                 width: tile,
                                 height: tile,
                                 useThumbnail: true,

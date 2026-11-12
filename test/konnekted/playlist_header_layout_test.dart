@@ -127,14 +127,39 @@ Future<void> _jump(WidgetTester tester, double offset) async {
 }
 
 Future<void> _warmArtwork(WidgetTester tester) async {
-  await tester.runAsync(
-    () => precachePlaylistHeroArtwork(
-      tester.element(find.byType(PlaylistHeroHeader)),
-      playlistId: 'test:generated',
-      covers: [for (final path in _covers) PlaylistHeroCover(imagePath: path)],
-    ).timeout(playlistHeroWarmupTimeout, onTimeout: () {}),
-  );
+  for (var attempt = 0; attempt < 150; attempt++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    final images = tester.widgetList<RawImage>(find.byType(RawImage));
+    if (images.any((image) => image.image != null)) break;
+  }
   await tester.pumpAndSettle();
+  expect(
+    tester.widget<RawImage>(find.byType(RawImage).first).image,
+    isNotNull,
+    reason: 'the test must inspect the rendered banner, not its loading placeholder',
+  );
+  final artwork = tester.widget<RawImage>(find.byType(RawImage).first).image!;
+  await tester.runAsync(() async {
+    final data = (await artwork.toByteData(format: ui.ImageByteFormat.rawRgba))!
+        .buffer
+        .asUint8List();
+    final colors = <int>{};
+    final y = (artwork.height * .25).floor();
+    for (var x = 0; x < artwork.width; x += 20) {
+      final offset = (y * artwork.width + x) * 4;
+      colors.add(
+        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2],
+      );
+    }
+    expect(
+      colors.length,
+      greaterThan(1),
+      reason: 'real collage artwork must have decoded',
+    );
+  });
 }
 
 Future<void> _preview(WidgetTester tester, String name) async {
@@ -184,7 +209,33 @@ void main() {
     )..addFont(rootBundle.load('assets/fonts/DMMono-Regular.ttf'))).load();
   });
   tearDownAll(() => _art.deleteSync(recursive: true));
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    resetPreparedPlaylistBanners();
+  });
+
+  testWidgets('prepared banner is present in the first destination frame', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1170, 2532)
+      ..devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _page(provider: false, insets: const EdgeInsets.only(top: 47)),
+    );
+    await _warmArtwork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      _page(provider: false, insets: const EdgeInsets.only(top: 47)),
+    );
+    expect(
+      tester.widget<RawImage>(find.byType(RawImage).first).image,
+      isNotNull,
+    );
+    expect(find.byType(PlaylistDiagonalCollage), findsNothing);
+    expect(find.byType(ShaderMask), findsNothing);
+  });
 
   for (final provider in [false, true]) {
     testWidgets(
@@ -282,6 +333,7 @@ void main() {
               ),
             );
             await tester.pumpAndSettle();
+            await _warmArtwork(tester);
             final color = LokalTokens.resolve(theme).bg.toARGB32();
             final expected = [
               (color >> 16) & 255,
@@ -303,10 +355,10 @@ void main() {
                   final data = (await image.toByteData(
                     format: ui.ImageByteFormat.rawRgba,
                   ))!.buffer.asUint8List();
-                  for (final dx in [.25, .5, .75]) {
+                  // The final screenshot column is only partially inside a fractional-width surface.
+                  for (var x = 0; x < (390 * dpr).floor(); x++) {
                     for (var dy = -2; dy <= 2; dy++) {
                       final y = (edge * dpr).floor() + dy;
-                      final x = (image.width * dx).floor();
                       final index = (y * image.width + x) * 4;
                       for (var channel = 0; channel < 4; channel++) {
                         expect(

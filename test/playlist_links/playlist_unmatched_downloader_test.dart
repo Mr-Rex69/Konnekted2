@@ -126,4 +126,34 @@ void main() {
     expect(saved, isTrue);
     expect(result.path, '/music/downloaded.mp3');
   });
+  test(
+    'an Atmos collection reference cannot save a stereo replacement',
+    () async {
+      var saved = false;
+      await expectLater(
+        const PlaylistUnmatchedDownloader().download(
+          _youtube,
+          const RemotePlaylistEntry(
+            title: 'Spatial song',
+            artist: 'Artist',
+            remoteId: 'abcdefghijk',
+          ),
+          requireAtmos: true,
+          prepare: (_, track) async => Song(
+            id: 'stereo',
+            title: track.title,
+            artist: track.artist,
+            duration: const Duration(minutes: 3),
+            fileType: 'FLAC',
+          ),
+          save: (_) async {
+            saved = true;
+            throw StateError('must not save');
+          },
+        ),
+        throwsStateError,
+      );
+      expect(saved, isFalse);
+    },
+  );
 }

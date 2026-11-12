@@ -1,3 +1,5 @@
+import 'library/collection_downloads.dart';
+
 import 'package:flick/services/link/library_song_identity.dart';
 
 import 'dart:async';
@@ -86,10 +88,22 @@ AsyncValue<R> _homeData<T, R>(AsyncValue<T> source, R Function(T) map) {
   );
 }
 
-final konnektedFavoritesProvider = Provider<AsyncValue<List<Song>>>(
-  (ref) =>
-      _homeData(ref.watch(favoritesProvider), (state) => state.favoriteSongs),
-);
+final collectionOfflineIndexProvider = FutureProvider<OfflineCollectionIndex>((
+  ref,
+) async {
+  final songs = ref.watch(songsProvider).value?.songs ?? const <Song>[];
+  return OfflineCollectionIndex.build(songs);
+});
+
+final konnektedFavoritesProvider = Provider<AsyncValue<List<Song>>>((ref) {
+  final offline = ref.watch(collectionOfflineIndexProvider).value;
+  return _homeData(
+    ref.watch(favoritesProvider),
+    (state) => [
+      for (final song in state.favoriteSongs) offline?.resolve(song) ?? song,
+    ],
+  );
+});
 
 /// Keep playlist ID resolution tied to the same deduplication decision as
 /// the displayed library: hidden desktop duplicates resolve to phone copies.
