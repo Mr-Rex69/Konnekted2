@@ -34,6 +34,7 @@ class FavoritesService {
     'atmosAvailable': song.atmosAvailable,
     'atmosEncoded': song.atmosEncoded,
     'remoteId': song.remoteId,
+    'remoteServerId': song.remoteServerId,
   };
 
   /// Preserve metadata for online songs, which are never inserted into
@@ -83,6 +84,7 @@ class FavoritesService {
       atmosAvailable: song['atmosAvailable'] == true,
       atmosEncoded: song['atmosEncoded'] == true,
       remoteId: song['remoteId'] as String?,
+      remoteServerId: (song['remoteServerId'] as num?)?.toInt(),
       isExternal: true,
     );
   }

@@ -15,6 +15,8 @@ does not mean a USB DAC or every Android OEM has been tested here.
 | Flow save as a local playlist | Delivered | Uses inherited `PlaylistService`, not a second playlist database |
 | Local songs, albums, artists, folders | Inherited | Flick screens, Isar repository and scanner |
 | Favorites and recent history | Inherited / shell integrated | Real providers feed Listen and Library |
+| Playlist and Liked Songs bulk offline downloads | Delivered | Collection actions skip existing phone files, deduplicate, report progress/failures, and stop; downloaded references resolve offline without rewriting membership/order. `test/konnekted/collection_download*_test.dart`; live source/device transfer validation pending. |
+| Mobile playlist banner preparation | Delivered | First-open artwork decode/raster preparation with bounded delay; single composited image and full-width pixel regression checks. Device frame-time validation pending. |
 | Local playlist creation, editing, M3U import/export | Inherited | `PlaylistService` and playlist screens |
 | Playlist links and refresh | Delivered | Spotify public embed, YouTube/YouTube Music browse, built-in paginated Deezer metadata, and enabled Tidal/Apple Music/Qobuz link-handler add-ons; preview, partial safety, matching, refresh, unlink. New providers covered by fixtures; device/live-provider validation pending. |
 | Spotify OAuth and library | Delivered | PKCE, secure tokens, paginated Web API, playlist import, bounded retry |

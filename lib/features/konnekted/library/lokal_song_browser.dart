@@ -1,3 +1,5 @@
+import 'collection_download_dialog.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -622,6 +624,7 @@ class LokalSongListPage extends ConsumerWidget {
     this.recentlyAddedRanks,
     this.preferencesKey,
     this.showTotalDuration = false,
+    this.downloadMissing = false,
   });
 
   final String title;
@@ -635,6 +638,7 @@ class LokalSongListPage extends ConsumerWidget {
   final Map<String, int> Function(WidgetRef ref)? recentlyAddedRanks;
   final String? preferencesKey;
   final bool showTotalDuration;
+  final bool downloadMissing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -650,6 +654,15 @@ class LokalSongListPage extends ConsumerWidget {
               : lokalText('Loading history…'));
     return LokalLibraryPage(
       title: title,
+      actions: [
+        if (downloadMissing && list != null && list.isNotEmpty)
+          LokalRoundAction(
+            icon: Icons.download_rounded,
+            label: lokalText('Download missing songs'),
+            onPressed: () =>
+                unawaited(downloadMissingCollectionSongs(context, ref, list)),
+          ),
+      ],
       // Recently Played uses a full-size metadata row: never hide its
       // running time in the small uppercase section-label treatment.
       subtitle: showTotalDuration

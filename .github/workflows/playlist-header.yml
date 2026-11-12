@@ -1,7 +1,13 @@
-name: Mobile playlist headers
+name: Mobile playlists and offline downloads
 on:
   pull_request:
     paths:
+      - 'lib/features/konnekted/library/collection_download*.dart'
+      - 'lib/features/konnekted/konnekted_data.dart'
+      - 'lib/features/konnekted/library/lokal_library_pages.dart'
+      - 'lib/services/favorites_service.dart'
+      - 'lib/features/playlist_links/playlist_unmatched_downloader.dart'
+      - 'test/konnekted/collection_download*test.dart'
       - 'lib/features/konnekted/library/lokal_library_kit.dart'
       - 'lib/features/konnekted/library/lokal_playlists.dart'
       - 'lib/features/konnekted/library/lokal_song_browser.dart'
@@ -32,6 +38,8 @@ jobs:
       - name: Analyze shared playlist presentation
         run: >-
           flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+          lib/features/konnekted/library/collection_downloads.dart
+          lib/features/konnekted/library/collection_download_dialog.dart
           lib/features/konnekted/library/lokal_library_kit.dart
           lib/features/konnekted/library/playlist_hero_header.dart
           lib/features/spotify/provider_playlist_track_browser.dart
@@ -40,6 +48,10 @@ jobs:
       - name: Verify safe areas, keyboard, text scaling, pixel seams and playlist controls
         run: >-
           flutter test --no-pub
+          test/konnekted/collection_downloads_test.dart
+          test/konnekted/collection_download_actions_test.dart
+          test/playlist_links/playlist_unmatched_downloader_test.dart
+          test/services/online_favorites_test.dart
           test/konnekted/playlist_header_layout_test.dart
           test/konnekted/playlist_hero_header_test.dart
           test/widgets/provider_playlist_track_browser_test.dart

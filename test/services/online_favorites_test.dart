@@ -200,7 +200,7 @@ void main() {
     const tidal = Song(
       id: 'tidal:track-24', title: 'Tidal favourite', artist: 'Artist',
       duration: Duration(minutes: 3), fileType: 'FLAC',
-      sourceType: 'tidal', remoteId: 'track-24',
+      sourceType: 'tidal', remoteId: 'track-24', remoteServerId: 7,
     );
     final instance = FavoritesService(songRepository: _Songs([]));
     expect(await instance.toggleFavorite(tidal.id, song: tidal), isTrue);
@@ -209,6 +209,7 @@ void main() {
     expect(reopened.single.title, tidal.title);
     expect(reopened.single.sourceType, 'tidal');
     expect(reopened.single.remoteId, 'track-24');
+    expect(reopened.single.remoteServerId, 7);
   });
 
 
