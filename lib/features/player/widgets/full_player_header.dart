@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:flick/l10n/l10n.dart';
+import 'package:flick/core/constants/app_constants.dart';
 
 import 'full_player_visuals.dart';
 
@@ -43,20 +44,33 @@ class FullPlayerHeader extends StatelessWidget {
     sigmaY: 3.5,
   );
 
-  Color get _foreground =>
-      brightArtwork ? _darkInk : FullPlayerVisuals.primaryText;
+  Color _foreground(double brightness) =>
+      Color.lerp(FullPlayerVisuals.primaryText, _darkInk, brightness)!;
 
-  List<Shadow> get _glyphShadow => [
+  List<Shadow> _glyphShadow(double brightness) => [
     Shadow(
-      color: brightArtwork
-          ? Colors.white.withValues(alpha: .18)
-          : Colors.black.withValues(alpha: .28),
+      color: Color.lerp(
+        Colors.black.withValues(alpha: .28),
+        Colors.white.withValues(alpha: .18),
+        brightness,
+      )!,
       blurRadius: 2,
     ),
   ];
 
   @override
-  Widget build(BuildContext context) => SizedBox(
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    // One continuous value keeps the label, glyphs and their soft contrast
+    // shadows together. Rapid skips retarget from the currently painted ink.
+    tween: Tween<double>(end: brightArtwork ? 1 : 0),
+    duration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : AppConstants.animationVerySlow,
+    curve: Curves.easeInOutCubic,
+    builder: (context, brightness, _) => _buildHeader(brightness),
+  );
+
+  Widget _buildHeader(double brightness) => SizedBox(
     height: 58,
     child: BackdropGroup(
       child: Stack(
@@ -65,7 +79,12 @@ class FullPlayerHeader extends StatelessWidget {
           Positioned(
             left: 0,
             top: 7,
-            child: _action(LucideIcons.chevronLeft, lokalText('Back'), onClose),
+            child: _action(
+              LucideIcons.chevronLeft,
+              lokalText('Back'),
+              onClose,
+              brightness,
+            ),
           ),
           Padding(
             // The right-hand Cast + More cluster is wider than Back.
@@ -90,8 +109,8 @@ class FullPlayerHeader extends StatelessWidget {
                           Icon(
                             outputIcon,
                             size: 17,
-                            color: _foreground,
-                            shadows: _glyphShadow,
+                            color: _foreground(brightness),
+                            shadows: _glyphShadow(brightness),
                           ),
                           const SizedBox(width: 8),
                           Flexible(
@@ -103,8 +122,8 @@ class FullPlayerHeader extends StatelessWidget {
                                 fontFamily: 'GoogleSansFlex',
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: _foreground,
-                                shadows: _glyphShadow,
+                                color: _foreground(brightness),
+                                shadows: _glyphShadow(brightness),
                               ),
                             ),
                           ),
@@ -126,10 +145,16 @@ class FullPlayerHeader extends StatelessWidget {
                   LucideIcons.cast,
                   lokalText('Cast'),
                   onCast,
+                  brightness,
                   selected: isCasting,
                 ),
                 const SizedBox(width: 6),
-                _action(Icons.more_vert, lokalText('More options'), onMore),
+                _action(
+                  Icons.more_vert,
+                  lokalText('More options'),
+                  onMore,
+                  brightness,
+                ),
               ],
             ),
           ),
@@ -141,7 +166,8 @@ class FullPlayerHeader extends StatelessWidget {
   Widget _action(
     IconData icon,
     String label,
-    VoidCallback onTap, {
+    VoidCallback onTap,
+    double brightness, {
     bool selected = false,
   }) => _surface(
     label: label,
@@ -152,8 +178,8 @@ class FullPlayerHeader extends StatelessWidget {
       child: Icon(
         icon,
         size: 20,
-        color: _foreground,
-        shadows: _glyphShadow,
+        color: _foreground(brightness),
+        shadows: _glyphShadow(brightness),
       ),
     ),
   );
